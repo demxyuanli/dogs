@@ -18,7 +18,7 @@ use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Vertex, Wire};
 use crate::shell_check::shell_is_closed;
 use crate::tgeometry::{EdgeGeom, GeometryRegistry};
-use crate::topo_tools_full::{faces_of, wires_of_face, ShapeMapKey};
+use crate::topo_tools::{faces_of, wires_of_face, ShapeMapKey};
 
 /// `BRepCheck_Status` (`BRepCheck_Status.hxx:20-59`), declaration order kept.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -217,7 +217,7 @@ fn edge_check(e: &Edge) -> Vec<Status> {
 }
 
 fn wire_check(w: &Wire) -> Vec<Status> {
-    let edges = crate::topo_tools_full::edges_of_wire(w);
+    let edges = crate::topo_tools::edges_of_wire(w);
     if edges.is_empty() {
         return vec![Status::EmptyWire];
     }

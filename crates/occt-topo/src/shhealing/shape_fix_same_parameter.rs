@@ -23,7 +23,7 @@ use crate::abs::Orientation;
 use crate::brep_tool::BRepTool;
 use crate::iterator::cumulated_children;
 use crate::shape_fix_compose_shell::{ReShape, SharedReShape};
-use crate::topo_tools_full::{
+use crate::topo_tools::{
     edges_of_wire, explorer_shapes, faces_of, map_shapes_and_ancestors, wires_of_face,
 };
 
@@ -97,7 +97,7 @@ pub fn shape_fix_same_parameter(shape: &TopoShape, enforce: bool, preci: f64) ->
         // `cxx:135-148`: `aMapEF.FindFromKey(E, aListOfFaces)`, keyed by
         // `TopTools_ShapeMapHasher` (`IsSame`: `TShape` + `Location`), so a
         // moved occurrence of the edge is looked up at its own location.
-        let key = crate::topo_tools_full::shape_map_key(&edge.0);
+        let key = crate::topo_tools::shape_map_key(&edge.0);
         match ancestors.get(&key) {
             Some(faces) if !faces.is_empty() => {
                 for face in faces {

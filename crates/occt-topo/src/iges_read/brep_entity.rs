@@ -46,7 +46,7 @@ use crate::builder::TopoBuilder;
 use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Vertex};
 use crate::shhealing::{first_vertex, last_vertex};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::is_same;
+use crate::topo_tools::is_same;
 
 use super::iges_data_iges_model::EntityData;
 use super::iges_to_brep_basic_curve::eps_geom;

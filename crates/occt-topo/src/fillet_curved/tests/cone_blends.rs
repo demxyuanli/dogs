@@ -7,7 +7,7 @@ use super::*;
     use crate::shape::{Solid};
     use crate::shell_check::shell_is_closed;
 
-    use crate::topo_tools_full::{faces_of, vertices_of};
+    use crate::topo_tools::{faces_of, vertices_of};
 
     // ------------------------------------------------------------------
     // Test solid builders

@@ -3,7 +3,7 @@ use crate::brep_gprop::volume as shape_volume;
 use crate::primitives::BRepPrimBox;
 use crate::shell_check::shell_invariants;
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{faces_of, shapes_of};
+use crate::topo_tools::{faces_of, shapes_of};
 use occt_core::gp::GpPnt;
 
     pub(super) fn box_vol(s: &TopoShape) -> f64 {

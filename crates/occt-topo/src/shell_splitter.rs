@@ -8,7 +8,7 @@
 //! Face adjacency is decided purely topologically: two faces belong to the
 //! same block when they share an edge, and an edge is identified by the
 //! coordinate pair of its two endpoints (order independent), taken from
-//! `topo_tools_full::{edge_vertices, vertex_position}`.
+//! `topo_tools::{edge_vertices, vertex_position}`.
 
 use std::collections::{HashMap, HashSet};
 
@@ -20,7 +20,7 @@ use crate::builder::TopoBuilder;
 use crate::connexity_block::ConnexityBlock;
 use crate::shape::{Edge, Face, Shell, TopoShape, Vertex};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{edge_vertices, edges_of, faces_of, vertex_position};
+use crate::topo_tools::{edge_vertices, edges_of, faces_of, vertex_position};
 
 /// Vertex identity: 3D coordinates quantized onto a `1e-6` grid.
 pub(crate) type VKey = (i64, i64, i64);
@@ -310,7 +310,7 @@ mod tests {
     use super::*;
     use crate::brep_extrema::test_box::unit_box;
     use crate::primitives::BRepPrimBox;
-    use crate::topo_tools_full::{edges_of, faces_of};
+    use crate::topo_tools::{edges_of, faces_of};
     use occt_core::gp::GpPnt;
 
     #[test]

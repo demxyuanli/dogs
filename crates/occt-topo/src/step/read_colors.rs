@@ -45,7 +45,7 @@ use super::prelude::*;
 use super::*;
 use crate::iterator::cumulated_children;
 use crate::model::ModelShape;
-use crate::topo_tools_full::is_same;
+use crate::topo_tools::is_same;
 use crate::xcaf_prs::XcafPrsStyle;
 use occt_core::quantity::ColorRGBA;
 

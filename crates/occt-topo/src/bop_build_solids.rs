@@ -77,7 +77,7 @@ use crate::builder::TopoBuilder;
 use crate::fclass2d::FaceState;
 use crate::shape::{Edge, Face, Shell, TopoShape};
 use crate::shell_splitter::{EKey};
-use crate::topo_tools_full::{edges_of_wire, faces_of, vertices_of, wires_of_face, ShapeMapKey};
+use crate::topo_tools::{edges_of_wire, faces_of, vertices_of, wires_of_face, ShapeMapKey};
 
 // ---------------------------------------------------------------------------
 // FillImagesSolids — draft pass
@@ -425,7 +425,7 @@ fn reverse_face_surface(face: &TopoShape) -> TopoShape {
         let rev_ax = GpAx3::new(loc, n.reversed(), &xd).unwrap_or(pln.position());
         let rev_pln = GpPln::new(rev_ax);
         let bld = TopoBuilder::new();
-        let wires = crate::topo_tools_full::wires_of_face(&f);
+        let wires = crate::topo_tools::wires_of_face(&f);
         let new_face = bld.make_face(Arc::new(GeomPlane::new(rev_pln)), &wires);
         let reg = crate::tgeometry::GeometryRegistry::global();
         if let Some(mut g) = reg.face_geom(&new_face.0) {
@@ -439,7 +439,7 @@ fn reverse_face_surface(face: &TopoShape) -> TopoShape {
 
 /// Undirected quantized edge key of an edge.
 fn edge_key(e: &Edge) -> EKey {
-    let (a, b) = crate::topo_tools_full::edge_vertices(e);
+    let (a, b) = crate::topo_tools::edge_vertices(e);
     let (Some(a), Some(b)) = (a, b) else {
         return ((0, 0, 0), (0, 0, 0));
     };
@@ -464,7 +464,7 @@ fn face_sample_point(face: &Face) -> Option<GpPnt> {
         let s = BRepTool::face_surface(face)?;
         return Some(s.d0(0.5 * (u1 + u2), 0.5 * (v1 + v2)));
     }
-    let e = crate::topo_tools_full::edges_of(&face.0).into_iter().next()?;
+    let e = crate::topo_tools::edges_of(&face.0).into_iter().next()?;
     let (a, b) = BRepTool::edge_parameters(&e);
     if a.is_finite() && b.is_finite() {
         let c = BRepTool::edge_curve(&e)?;
@@ -506,7 +506,7 @@ mod tests {
     use crate::brep_gprop::volume;
     use crate::primitives::BRepPrimBox;
     use crate::shape::{Face, Solid};
-    use crate::topo_tools_full::{edges_of, shapes_of, vertices_of};
+    use crate::topo_tools::{edges_of, shapes_of, vertices_of};
 
     /// A minimal `BopBuildOps` host for the isolated tests.
     struct StubBuilder {

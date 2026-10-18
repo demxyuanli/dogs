@@ -51,9 +51,9 @@ fn curved_face_fillet_sphere_plane() {
     use occt_topo::brep_surface::{classify_surface, SurfaceKind};
     use occt_topo::brep_tool::BRepTool;
     use occt_topo::tgeometry::GeometryRegistry;
-    use occt_topo::topo_tools_full::{edges_of_wire, faces_of, wires_of_face};
+    use occt_topo::topo_tools::{edges_of_wire, faces_of, wires_of_face};
     let faces = faces_of(&fused.shape);
-    let edge = occt_topo::topo_tools_full::edges_of(&fused.shape)
+    let edge = occt_topo::topo_tools::edges_of(&fused.shape)
         .into_iter()
         .find(|e| {
             let is_circ_at_2 = BRepTool::edge_curve(e)
@@ -80,10 +80,10 @@ fn curved_face_fillet_sphere_plane() {
         });
     if let Some(e) = edge {
         let f = fillet_edge_curved(&fused.shape, &e, 0.2, 1e-6).expect("curved fillet");
-        assert!(occt_topo::topo_tools_full::faces_of(&f).len() > 0);
+        assert!(occt_topo::topo_tools::faces_of(&f).len() > 0);
     }
     // At minimum the fuse produced a valid shape.
-    assert!(occt_topo::topo_tools_full::faces_of(&fused.shape).len() > 0);
+    assert!(occt_topo::topo_tools::faces_of(&fused.shape).len() > 0);
 }
 
 #[test]
@@ -124,10 +124,10 @@ fn draw_tcl_vars_and_transform() {
     assert!(s.shapes.contains_key("b"));
     assert!(s.shapes.contains_key("b2"));
     // b translated +1 in x → some vertex at x≈4 (box spans [0,3]×[0,2]×[0,2]).
-    let verts = occt_topo::topo_tools_full::vertices_of(&s.shapes["b"]);
+    let verts = occt_topo::topo_tools::vertices_of(&s.shapes["b"]);
     assert!(verts.iter().any(|v| (occt_topo::brep_tool::BRepTool::vertex_point(v).x() - 4.0).abs() < 1e-6));
     // b2 is the un-translated copy → x≈3 max.
-    let verts2 = occt_topo::topo_tools_full::vertices_of(&s.shapes["b2"]);
+    let verts2 = occt_topo::topo_tools::vertices_of(&s.shapes["b2"]);
     assert!(verts2.iter().any(|v| (occt_topo::brep_tool::BRepTool::vertex_point(v).x() - 3.0).abs() < 1e-6));
 }
 

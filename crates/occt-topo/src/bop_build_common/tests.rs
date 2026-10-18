@@ -10,7 +10,7 @@ use std::collections::HashMap;
     use crate::builder::TopoBuilder;
     use crate::primitives::BRepPrimBox;
     use crate::shape::{Edge, Face, Vertex};
-    use crate::topo_tools_full::{faces_of, shapes_of};
+    use crate::topo_tools::{faces_of, shapes_of};
 
     // -----------------------------------------------------------------------
     // Stub host
@@ -54,7 +54,7 @@ use std::collections::HashMap;
         faces
             .iter()
             .find(|f| {
-                let vs = crate::topo_tools_full::vertices_of(&f.0);
+                let vs = crate::topo_tools::vertices_of(&f.0);
                 if vs.is_empty() {
                     return false;
                 }
@@ -70,7 +70,7 @@ use std::collections::HashMap;
     /// TShape, so it is a distinct split image).
     fn re_face(src: &Face) -> Face {
         let b = TopoBuilder::new();
-        let edges = crate::topo_tools_full::edges_of(&src.0);
+        let edges = crate::topo_tools::edges_of(&src.0);
         let wire = b.make_wire(&edges);
         let surf = BRepTool::face_surface(src).expect("face surface");
         b.make_face(surf, &[wire])

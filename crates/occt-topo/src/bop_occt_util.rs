@@ -33,7 +33,7 @@ use crate::builder::TopoBuilder;
 use crate::iterator::cumulated_children;
 use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Vertex, Wire};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{edges_of, faces_of, shape_map_key, vertices_of, ShapeMapKey};
+use crate::topo_tools::{edges_of, faces_of, shape_map_key, vertices_of, ShapeMapKey};
 
 /// `TopTools_ShapeMapHasher` key (`TopTools_ShapeMapHasher.hxx:30-38`; equal
 /// keys are `TopoDS_Shape::IsSame`, `TopoDS_Shape.hxx:262-267`).
@@ -45,7 +45,7 @@ pub fn shape_key(s: &TopoShape) -> ShapeMapKey {
 /// (`TopTools_ShapeMapHasher.hxx:35-38`): same `TShape`, same location; the
 /// orientation is not part of the comparison.
 pub fn same_shape(a: &TopoShape, b: &TopoShape) -> bool {
-    crate::topo_tools_full::is_same_occurrence(a, b)
+    crate::topo_tools::is_same_occurrence(a, b)
 }
 
 /// `NCollection_List`-backed fence (`aMFence.Add(shape)`, `aList.Append`):
@@ -113,7 +113,7 @@ pub fn map_shape_keys(s: &TopoShape, ty: ShapeType) -> HashSet<ShapeMapKey> {
 }
 
 /// `TopExp::MapShapesAndAncestors(s, sub, anc, map)` (`TopExp.cxx:80-120`).
-/// Delegates to the single port in [`crate::topo_tools_full`] so the whole
+/// Delegates to the single port in [`crate::topo_tools`] so the whole
 /// crate walks one control flow and one hasher key (`TopTools_ShapeMapHasher`:
 /// `TShape` + `Location`). The list keeps per-occurrence duplicates; the
 /// previous local copy deduplicated the ancestors, which is
@@ -123,7 +123,7 @@ pub fn origin_map_shapes_and_ancestors(
     sub: ShapeType,
     anc: ShapeType,
 ) -> HashMap<ShapeMapKey, Vec<TopoShape>> {
-    crate::topo_tools_full::map_shapes_and_ancestors(s, sub, anc)
+    crate::topo_tools::map_shapes_and_ancestors(s, sub, anc)
 }
 
 /// Whether the history table has an image list for `s` (`myImages.IsBound`).

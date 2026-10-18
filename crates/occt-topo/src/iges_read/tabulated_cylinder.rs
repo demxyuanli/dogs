@@ -16,7 +16,7 @@ use crate::abs::Orientation;
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::shape::{Edge, TopoShape, Vertex, Wire};
-use crate::topo_tools_full::{edge_vertices, edges_of_wire, is_same};
+use crate::topo_tools::{edge_vertices, edges_of_wire, is_same};
 
 use super::iges_data_iges_model::EntityData;
 use super::iges_to_brep_basic_curve::{convert_location, entity_location};

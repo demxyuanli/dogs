@@ -14,7 +14,7 @@ use occt_topo::meshing::range_splitter::{
 use occt_topo::shhealing::{edge_proj_aux_params, fix_shifted_wire};
 use occt_topo::step::read_step_file;
 use occt_topo::abs::Orientation;
-use occt_topo::topo_tools_full::{edge_vertices, edges_of, edges_of_wire, faces_of, wires_of_face};
+use occt_topo::topo_tools::{edge_vertices, edges_of, edges_of_wire, faces_of, wires_of_face};
 
 fn vf(obj: &str) -> (usize, usize) {
     let mut v = 0usize;

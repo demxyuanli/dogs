@@ -123,14 +123,14 @@ impl ComposeShell {
                     .collect();
                 let mut dw = builder.make_wire(&old_edges);
                 if crate::shhealing::fix_degenerated_all(&mut dw, &face_val, self.precision) {
-                    let new_edges = crate::topo_tools_full::edges_of_wire(&dw);
+                    let new_edges = crate::topo_tools::edges_of_wire(&dw);
                     let manifold = wires[i].manifold_mode();
                     wires[i].clear();
                     wires[i].load_edges(&new_edges, manifold);
                     for (k, e) in new_edges.iter().enumerate() {
                         if let Some(pos) = old_edges
                             .iter()
-                            .position(|o| crate::topo_tools_full::is_same(&o.0, &e.0))
+                            .position(|o| crate::topo_tools::is_same(&o.0, &e.0))
                         {
                             if let Some((a, b, c, d)) = old_patches[pos] {
                                 wires[i].set_patch_index(k + 1, a, b, c, d);

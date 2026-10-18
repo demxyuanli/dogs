@@ -28,7 +28,7 @@ use crate::brep_tool::BRepTool;
 use crate::meshing::edge_discret::CurveOnSurface;
 use crate::shape::{Edge, Face, TopoShape, Wire};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{edges_of_wire, faces_of, is_equal, is_same, wires_of_face};
+use crate::topo_tools::{edges_of_wire, faces_of, is_equal, is_same, wires_of_face};
 
 /// `GeomAbs_Shape` (`GeomAbs_Shape.hxx`). Order matches the comparisons in
 /// `ContinuityOfFaces` (`BRepLib.cxx:2300-2408`).

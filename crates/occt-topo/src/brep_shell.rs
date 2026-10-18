@@ -14,7 +14,7 @@ use crate::brep_surface::surface_normal;
 use crate::brep_tool::BRepTool;
 use crate::shape::{Face, Shell, TopoShape};
 
-use crate::topo_tools_full::{faces_of, wires_of_face};
+use crate::topo_tools::{faces_of, wires_of_face};
 
 /// Unit normal of a face at its centroid (robust FD normal).
 pub fn face_normal_at_centroid(face: &Face) -> Option<GpVec> {
@@ -189,7 +189,7 @@ mod tests {
 
     fn box_shell() -> Shell {
         let b = BRepPrimBox::make_box(1.0, 1.0, 1.0);
-        let shells = crate::topo_tools_full::shapes_of(&b.solid.0, crate::abs::ShapeType::Shell);
+        let shells = crate::topo_tools::shapes_of(&b.solid.0, crate::abs::ShapeType::Shell);
         crate::shape::Shell(shells[0].clone())
     }
 

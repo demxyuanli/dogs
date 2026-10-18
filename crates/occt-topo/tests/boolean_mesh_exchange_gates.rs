@@ -145,7 +145,7 @@ fn geom2d_offset_and_math_stats() {
 #[test]
 fn shell_orientation_and_shape_checks() {
     let b = BRepPrimBox::make_box(1.0, 1.0, 1.0);
-    let shells = occt_topo::topo_tools_full::shapes_of(&b.solid.0, occt_topo::ShapeType::Shell);
+    let shells = occt_topo::topo_tools::shapes_of(&b.solid.0, occt_topo::ShapeType::Shell);
     let shell = occt_topo::shape::Shell(shells[0].clone());
     assert!(occt_topo::brep_shell::shell_is_valid(&shell));
     let (errors, _) = occt_topo::shape_checks::check_shape(&b.solid.0);

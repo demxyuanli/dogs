@@ -15,7 +15,7 @@ use crate::pcurve_full::surface_value_of_uv;
 use crate::shape::{Edge, TopoShape, Vertex, Wire};
 use crate::shhealing::transfer_params::copy_nm_vertex_face;
 use crate::shhealing::ShapeFixFace;
-use crate::topo_tools_full::edges_of_wire;
+use crate::topo_tools::edges_of_wire;
 
 use super::reshape::ReShape;
 use super::shell::ComposeShell;
@@ -186,7 +186,7 @@ impl ComposeShell {
         while i < loops.len() {
             let mut removed = false;
             for r in &roots {
-                if crate::topo_tools_full::is_same(&loops[i], r) {
+                if crate::topo_tools::is_same(&loops[i], r) {
                     loops.remove(i);
                     removed = true;
                     break;

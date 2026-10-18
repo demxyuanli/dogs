@@ -2,7 +2,7 @@ use super::prelude::*;
 use super::*;
     use crate::brep_extrema::test_box::unit_box;
     use crate::builder_face::build_face_with_holes;
-    use crate::topo_tools_full::wire_is_closed;
+    use crate::topo_tools::wire_is_closed;
     use occt_core::gp::{GpAx3, GpDir, GpLin, GpPln, GpPnt};
     use occt_geom::GeomLine;
 

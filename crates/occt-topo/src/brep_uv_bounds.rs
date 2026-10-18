@@ -39,7 +39,7 @@ use crate::bnd_lib_add2d::add_geom2d_range;
 use crate::boptools_2d::curve_on_surface_range;
 use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, Face, Wire};
-use crate::topo_tools_full::{edges_of, edges_of_wire};
+use crate::topo_tools::{edges_of, edges_of_wire};
 
 /// `BRepTools::AddUVBounds(const TopoDS_Face& FF, Bnd_Box2d& B)`.
 pub fn add_uv_bounds_face(ff: &Face, b: &mut BndBox2d) {

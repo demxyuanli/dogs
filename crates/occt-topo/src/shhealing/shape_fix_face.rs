@@ -33,7 +33,7 @@ use crate::shape_fix_compose_shell::{
 };
 use crate::shhealing::{adjust_by_period, first_vertex, fix_reorder_wire, last_vertex};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{edges_of_wire, wires_of_face};
+use crate::topo_tools::{edges_of_wire, wires_of_face};
 
 /// `CheckWire(wire, face, dU, dV, isuopen, isvopen, isDeg)`
 /// (`ShapeFix_Face.cxx:1652-1718`).
@@ -106,7 +106,7 @@ pub(in crate::shhealing) fn wire_from_wire_data(data: &[Edge], non_manifold: &[E
         let vf = data.first().and_then(first_vertex);
         let vl = data.last().and_then(last_vertex);
         if let (Some(vf), Some(vl)) = (vf, vl) {
-            if crate::topo_tools_full::is_same(&vf.0, &vl.0) {
+            if crate::topo_tools::is_same(&vf.0, &vl.0) {
                 wire.0.set_closed(true); // cxx:670-676 `W.Closed(true)`
             }
         }
@@ -1024,9 +1024,9 @@ impl ShapeFixFace {
         let mut tmp_wires: Vec<Wire> = Vec::new();
         for w in &ws {
             let mut wire = w.clone();
-            if crate::topo_tools_full::is_same(&wire.0, &w1.0) {
+            if crate::topo_tools::is_same(&wire.0, &w1.0) {
                 wire = w11.clone();
-            } else if crate::topo_tools_full::is_same(&wire.0, &w2.0) {
+            } else if crate::topo_tools::is_same(&wire.0, &w2.0) {
                 wire = w21.clone();
             } else {
                 // cxx:2052-2062.
@@ -1069,10 +1069,10 @@ impl ShapeFixFace {
             }
             let tmp_face_wires = wires_of_face(&tmp_f);
             for w in &tmp_face_wires {
-                if crate::topo_tools_full::is_same(&w.0, &w11.0) {
+                if crate::topo_tools::is_same(&w.0, &w11.0) {
                     continue;
                 }
-                let shift = if crate::topo_tools_full::is_same(&w.0, &w21.0) {
+                let shift = if crate::topo_tools::is_same(&w.0, &w21.0) {
                     shiftw2
                 } else {
                     let mw = wire_uv_bounds(w);
@@ -1242,7 +1242,7 @@ impl ShapeFixFace {
                 let builder = TopoBuilder::new();
                 // First round: FixSmall.
                 let mut round1: Vec<(Face, Vec<Wire>)> = Vec::new();
-                for f in crate::topo_tools_full::faces_of(res) {
+                for f in crate::topo_tools::faces_of(res) {
                     let mut kept: Vec<Wire> = Vec::new();
                     for w in wires_of_face(&f) {
                         let mut w2 = w.clone();

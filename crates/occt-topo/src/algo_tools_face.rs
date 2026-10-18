@@ -31,7 +31,7 @@ use crate::int_tools_full::IntToolsContext;
 use crate::iterator::ShapeIterator;
 use crate::shape::{Edge, Face, TopoShape};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{edges_of, is_equal, is_same, shape_map_key};
+use crate::topo_tools::{edges_of, is_equal, is_same, shape_map_key};
 
 fn shape_key(s: &TopoShape) -> usize {
     GeometryRegistry::shape_key(s)
@@ -478,7 +478,7 @@ pub fn is_internal_face_by_list(
 pub fn is_internal_face(
     face: &Face,
     solid: &TopoShape,
-    mef: &std::collections::HashMap<crate::topo_tools_full::ShapeMapKey, Vec<TopoShape>>,
+    mef: &std::collections::HashMap<crate::topo_tools::ShapeMapKey, Vec<TopoShape>>,
     tol: f64,
     ctx: &IntToolsContext,
 ) -> bool {
@@ -601,7 +601,7 @@ fn edge_state_point(e: &Edge) -> Option<GpPnt> {
         };
         return Some(c.d0(t));
     }
-    crate::topo_tools_full::vertices_of(&e.0)
+    crate::topo_tools::vertices_of(&e.0)
         .first()
         .map(BRepTool::vertex_point)
 }

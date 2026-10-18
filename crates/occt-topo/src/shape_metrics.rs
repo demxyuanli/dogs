@@ -8,7 +8,7 @@ use occt_core::gp::{GpPnt, GpVec};
 
 use crate::brep_tool::BRepTool;
 use crate::shape::{TopoShape};
-use crate::topo_tools_full::{edges_of, faces_of, vertices_of};
+use crate::topo_tools::{edges_of, faces_of, vertices_of};
 
 /// Aggregated geometric metrics of a shape.
 #[derive(Debug, Clone)]

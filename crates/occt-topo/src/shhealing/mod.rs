@@ -31,7 +31,7 @@ pub(crate) use crate::brep_measure::edge_length;
 pub(crate) use crate::builder::TopoBuilder;
 pub(crate) use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Vertex, Wire};
 pub(crate) use crate::tgeometry::GeometryRegistry;
-pub(crate) use crate::topo_tools_full::{
+pub(crate) use crate::topo_tools::{
     edges_of, edges_of_wire, edge_vertices, faces_of, is_same, vertex_position, vertices_of,
     wires_of, wires_of_face,
 };

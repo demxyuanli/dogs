@@ -2,7 +2,7 @@
 use super::*;
     use crate::bbox_from_geometry::shape_bbox;
     use crate::brep_tool::BRepTool;
-    use crate::topo_tools_full::{faces_of, vertices_of};
+    use crate::topo_tools::{faces_of, vertices_of};
 
     /// (min, max) corners of a named shape's axis-aligned bbox.
     fn bbox_pts(s: &DrawSession, name: &str) -> ((f64, f64, f64), (f64, f64, f64)) {

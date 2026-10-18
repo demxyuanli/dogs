@@ -50,14 +50,14 @@ fn main() {
         use occt_topo::meshing::parameters::MeshParameters;
         use occt_topo::shape::TopoShape;
         use occt_topo::shhealing::ShapeFixFace;
-        use occt_topo::topo_tools_full::{faces_of, wires_of_face};
+        use occt_topo::topo_tools::{faces_of, wires_of_face};
 
         // For each face, ask the port's seam fix whether it would change the
         // loop, and record the edge counts before/after. Read-only measurement.
         let mut n_fix = 0usize;
         let mut grown: Vec<(usize, usize, usize)> = Vec::new();
         for (i, f) in faces_of(&shape).iter().enumerate() {
-            let before: usize = wires_of_face(f).iter().map(|w| occt_topo::topo_tools_full::edges_of_wire(w).len()).sum();
+            let before: usize = wires_of_face(f).iter().map(|w| occt_topo::topo_tools::edges_of_wire(w).len()).sum();
             let mut sff = ShapeFixFace::with_face(f);
             let ret = sff.fix_missing_seam();
             let after = sff.result.as_ref().map(|res| {
@@ -65,7 +65,7 @@ fn main() {
                     let rf = occt_topo::shape::Face(res.clone());
                     wires_of_face(&rf)
                         .iter()
-                        .map(|w| occt_topo::topo_tools_full::edges_of_wire(w).len())
+                        .map(|w| occt_topo::topo_tools::edges_of_wire(w).len())
                         .sum::<usize>()
                 } else {
                     0
@@ -94,7 +94,7 @@ fn main() {
         use occt_topo::brep_bnd_lib;
         use occt_topo::brep_tool::BRepTool;
         use occt_topo::shhealing::ShapeFixFace;
-        use occt_topo::topo_tools_full::{edges_of_wire, faces_of, wires_of_face};
+        use occt_topo::topo_tools::{edges_of_wire, faces_of, wires_of_face};
         let list: Vec<usize> = args
             .iter()
             .enumerate()
@@ -234,7 +234,7 @@ fn main() {
         use occt_topo::brep_bnd_lib;
         use occt_topo::brep_tool::BRepTool;
         use occt_topo::meshing::range_splitter::{mesh_surface_type, MeshSurfaceType};
-        use occt_topo::topo_tools_full::{edges_of_wire, faces_of, wires_of_face};
+        use occt_topo::topo_tools::{edges_of_wire, faces_of, wires_of_face};
         for (i, f) in faces_of(&shape).iter().enumerate() {
             let Some(surf) = BRepTool::face_surface(f) else { continue };
             if mesh_surface_type(surf.as_ref()) != MeshSurfaceType::Sphere {
@@ -276,7 +276,7 @@ fn main() {
     if mode_ids {
         use occt_topo::brep_bnd_lib;
         use occt_topo::brep_tool::BRepTool;
-        use occt_topo::topo_tools_full::{faces_of, wires_of_face};
+        use occt_topo::topo_tools::{faces_of, wires_of_face};
         for (i, f) in faces_of(&shape).iter().enumerate() {
             let bb = brep_bnd_lib::shape_bnd_box(&f.0);
             let (b0, b1) = (bb.corner_min(), bb.corner_max());

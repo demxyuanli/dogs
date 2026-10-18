@@ -361,7 +361,7 @@ impl Quilt {
 
 /// `ShapeMap` / `ShapeSet` key comparison: `TopoDS_Shape::IsSame`.
 fn same_shape(a: &TopoShape, b: &TopoShape) -> bool {
-    crate::topo_tools_full::is_same(a, b)
+    crate::topo_tools::is_same(a, b)
 }
 
 fn need_copied(shape: &TopoShape, bounds: &ShapeMap) -> bool {

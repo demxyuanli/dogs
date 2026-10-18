@@ -28,7 +28,7 @@ use crate::builder_face::FaceBuilder;
 use crate::iterator::ShapeIterator;
 use crate::shape::{Edge, TopoShape};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{edges_of, is_same, vertices_of};
+use crate::topo_tools::{edges_of, is_same, vertices_of};
 
 fn shape_key(s: &TopoShape) -> usize {
     GeometryRegistry::shape_key(s)

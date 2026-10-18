@@ -18,7 +18,7 @@ use occt_topo::meshing::range_splitter::create_range_splitter;
 use occt_topo::shhealing::ShapeFixFace;
 use occt_topo::shape::Face;
 use occt_topo::step::read_step_file;
-use occt_topo::topo_tools_full::{edges_of_wire, faces_of, wires_of_face};
+use occt_topo::topo_tools::{edges_of_wire, faces_of, wires_of_face};
 
 /// First / last vertex of a wire, in wire order (orientation-aware).
 fn first_vertex_of(es: &[occt_topo::shape::Edge]) -> Option<occt_topo::shape::Vertex> {
@@ -235,7 +235,7 @@ fn main() {
     println!("--- BEFORE ---");
     describe("BEFORE", &face);
     if std::env::args().any(|a| a == "--ep") {
-        let ws = occt_topo::topo_tools_full::wires_of_face(&face);
+        let ws = occt_topo::topo_tools::wires_of_face(&face);
         let vpt = |v: &occt_topo::shape::Vertex| {
             let q = BRepTool::vertex_point(v);
             (q.x(), q.y(), q.z())
@@ -243,8 +243,8 @@ fn main() {
         for (i, wa) in ws.iter().enumerate() {
             for (j, wb) in ws.iter().enumerate() {
                 if i >= j { continue; }
-                for ea in occt_topo::topo_tools_full::edges_of_wire(wa) {
-                    for eb in occt_topo::topo_tools_full::edges_of_wire(wb) {
+                for ea in occt_topo::topo_tools::edges_of_wire(wa) {
+                    for eb in occt_topo::topo_tools::edges_of_wire(wb) {
                         let pa = [
                             occt_topo::shhealing::first_vertex(&ea),
                             occt_topo::shhealing::last_vertex(&ea),
@@ -260,7 +260,7 @@ fn main() {
                                 let (bx, by, bz) = vpt(vb);
                                 let close = (ax - bx).abs() < 1e-9 && (ay - by).abs() < 1e-9 && (az - bz).abs() < 1e-9;
                                 if close {
-                                    let id = occt_topo::topo_tools_full::is_same(&va.0, &vb.0);
+                                    let id = occt_topo::topo_tools::is_same(&va.0, &vb.0);
                                     println!(
                                         "WIREEND w{}e{}[{}] vs w{}e{}[{}] close={} is_same={} at ({:.3},{:.3},{:.3})",
                                         i, 0, x, j, 0, y, close, id, ax, ay, az
@@ -274,8 +274,8 @@ fn main() {
         }
     }
     if std::env::args().any(|a| a == "--ep") {
-        for (wi, w) in occt_topo::topo_tools_full::wires_of_face(&face).iter().enumerate() {
-            let es = occt_topo::topo_tools_full::edges_of_wire(w);
+        for (wi, w) in occt_topo::topo_tools::wires_of_face(&face).iter().enumerate() {
+            let es = occt_topo::topo_tools::edges_of_wire(w);
             let mut segs: Vec<String> = Vec::new();
             for e in &es {
                 let f = occt_topo::shhealing::first_vertex(e)
@@ -309,8 +309,8 @@ fn main() {
         describe("HEALED", hf);
         // `--ep`: per-edge endpoints of the healed result (read-only instrument, §9.450).
         if std::env::args().any(|a| a == "--ep") {
-            for (wi, w) in occt_topo::topo_tools_full::wires_of_face(hf).iter().enumerate() {
-                let es = occt_topo::topo_tools_full::edges_of_wire(w);
+            for (wi, w) in occt_topo::topo_tools::wires_of_face(hf).iter().enumerate() {
+                let es = occt_topo::topo_tools::edges_of_wire(w);
                 let segs: Vec<String> = es
                     .iter()
                     .map(|e| {

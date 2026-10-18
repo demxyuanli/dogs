@@ -53,7 +53,7 @@ use super::*;
 
     use crate::abs::ShapeType;
     use crate::brep_tool::BRepTool;
-    use crate::topo_tools_full::{faces_of, vertices_of};
+    use crate::topo_tools::{faces_of, vertices_of};
     use occt_core::gp::GpVec;
     use std::sync::atomic::{AtomicUsize, Ordering};
 

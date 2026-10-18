@@ -284,7 +284,7 @@ mod tests {
     #[test]
     fn box_faces_are_planar() {
         let b = BRepPrimBox::make_box(2.0, 2.0, 2.0);
-        for f in crate::topo_tools_full::faces_of(&b.solid.0) {
+        for f in crate::topo_tools::faces_of(&b.solid.0) {
             assert!(face_is_plane_type(&f));
             let pln = face_plane(&f).expect("planar face has plane");
             let _ = pln;
@@ -317,7 +317,7 @@ mod tests {
     #[test]
     fn box_face_normal_and_centroid() {
         let b = BRepPrimBox::make_box(1.0, 1.0, 2.0);
-        let top = crate::topo_tools_full::faces_of(&b.solid.0)
+        let top = crate::topo_tools::faces_of(&b.solid.0)
             .into_iter()
             .find(|f| BRepTool::face_surface(&Face(f.0.clone()))
                 .map(|s| (s.d0(0.0, 0.0).z() - 2.0).abs() < 1e-9).unwrap_or(false))

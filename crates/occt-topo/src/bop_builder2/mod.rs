@@ -42,9 +42,9 @@ pub(crate) use crate::fclass2d::FaceState;
 pub(crate) use crate::pave_filler::PaveFiller;
 pub(crate) use crate::shape::TopoShape;
 pub(crate) use crate::tgeometry::GeometryRegistry;
-pub(crate) use crate::topo_tools_full::all_subshapes;
-pub(crate) use crate::topo_tools_full::is_same;
-pub(crate) use crate::topo_tools_full::ShapeMapKey;
+pub(crate) use crate::topo_tools::all_subshapes;
+pub(crate) use crate::topo_tools::is_same;
+pub(crate) use crate::topo_tools::ShapeMapKey;
 
 }
 

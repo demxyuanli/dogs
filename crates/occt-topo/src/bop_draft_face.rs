@@ -37,7 +37,7 @@ use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::int_tools_full::IntToolsContext;
 use crate::shape::{Edge, Face, TopoShape};
-use crate::topo_tools_full::{edge_vertices, ShapeMapKey};
+use crate::topo_tools::{edge_vertices, ShapeMapKey};
 
 /// Vertex → incident edges map used by `HasMultiConnected`.
 ///

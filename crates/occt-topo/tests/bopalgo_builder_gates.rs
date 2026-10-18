@@ -30,7 +30,7 @@ fn volume(s: &TopoShape) -> f64 {
 /// Sum of volumes of the shapes in a compound (or single shape).
 fn total_volume(s: &TopoShape) -> f64 {
     let shapes =
-        occt_topo::topo_tools_full::shapes_of(s, occt_topo::abs::ShapeType::Solid);
+        occt_topo::topo_tools::shapes_of(s, occt_topo::abs::ShapeType::Solid);
     if shapes.is_empty() {
         return volume(s);
     }
@@ -86,7 +86,7 @@ fn full_pipeline_runs_without_errors() {
     let a = box_at(0.0, 0.0, 0.0);
     let b = box_at(0.5, 0.0, 0.0);
     let r = bop_fuse(&[a], &[b]).expect("fuse");
-    let n = occt_topo::topo_tools_full::shapes_of(&r, occt_topo::abs::ShapeType::Solid)
+    let n = occt_topo::topo_tools::shapes_of(&r, occt_topo::abs::ShapeType::Solid)
         .len();
     assert!(n > 0, "result should contain shapes");
 }

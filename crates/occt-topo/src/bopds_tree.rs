@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::abs::ShapeType;
 use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Wire};
-use crate::topo_tools_full::{edges_of, edges_of_wire, faces_of, shapes_of, vertices_of, wires_of_face};
+use crate::topo_tools::{edges_of, edges_of_wire, faces_of, shapes_of, vertices_of, wires_of_face};
 
 // ---------------------------------------------------------------------------
 // Sub-shape extraction helpers

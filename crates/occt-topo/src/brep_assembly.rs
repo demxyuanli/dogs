@@ -99,7 +99,7 @@ impl Assembly {
         use crate::shape_ops::transformed_copy;
         let t = self.accumulated(idx);
         match transformed_copy(&self.parts[idx].shape, &t) {
-            Ok(copy) => crate::topo_tools_full::vertices_of(&copy)
+            Ok(copy) => crate::topo_tools::vertices_of(&copy)
                 .iter()
                 .map(|v| BRepTool::vertex_point(v))
                 .collect(),

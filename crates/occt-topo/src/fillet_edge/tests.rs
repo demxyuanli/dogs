@@ -4,7 +4,7 @@ use super::*;
     use crate::primitives::BRepPrimBox;
     use crate::shape::Shell;
     use crate::shell_check::shell_is_closed;
-    use crate::topo_tools_full::vertices_of;
+    use crate::topo_tools::vertices_of;
 
     fn box_edges(b: &BRepPrimBox) -> Vec<Edge> {
         edges_of(&b.solid.0)

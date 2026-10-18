@@ -10,7 +10,7 @@ use occt_core::bnd::BndBox2d;
 use crate::brep_tool::BRepTool;
 use crate::brep_uv_bounds::{add_uv_bounds_edge, add_uv_bounds_face, add_uv_bounds_wire};
 use crate::shape::{Edge, Face, TopoShape, Wire};
-use crate::topo_tools_full::wires_of_face;
+use crate::topo_tools::wires_of_face;
 
 /// `BRepTools::AddUVBounds(Face, Box2d)`.
 pub fn add_uv_bounds(face: &Face, box2d: &mut BndBox2d) {
@@ -66,7 +66,7 @@ pub fn outer_wire(face: &Face) -> Option<Wire> {
 
 /// `BRepTools::Map3DEdges` — unique 3-D edges of `shape`.
 pub fn map_3d_edges(shape: &TopoShape) -> Vec<Edge> {
-    crate::topo_tools_full::edges_of(shape)
+    crate::topo_tools::edges_of(shape)
 }
 
 /// Dump the incremental-mesh triangulation of `shape` as ASCII

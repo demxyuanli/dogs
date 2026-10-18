@@ -9,7 +9,7 @@ use crate::brep_lprop;
 use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, Face, TopoShape};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{edges_of, is_same};
+use crate::topo_tools::{edges_of, is_same};
 
 use super::grid::{shape_of, SweepOps};
 use super::num_shape::NumShape;
@@ -303,5 +303,5 @@ fn vertex_edges(wire: &TopoShape) -> Vec<(TopoShape, Vec<TopoShape>)> {
 }
 
 fn same_located(a: &TopoShape, b: &TopoShape) -> bool {
-    crate::topo_tools_full::is_same(a, b)
+    crate::topo_tools::is_same(a, b)
 }

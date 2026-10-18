@@ -17,7 +17,7 @@ use crate::shape_fix_compose_shell::{ReShape, SharedReShape};
 use crate::shhealing::shape_analysis_curve::project_adaptor_bounds;
 use crate::shhealing::transfer_params::TransferParameters;
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::edges_of_wire;
+use crate::topo_tools::edges_of_wire;
 
 use super::pcurve_range::fix_add_pcurve;
 use super::pcurve_range::is_seam_use;

@@ -24,7 +24,7 @@
 //! iterators.
 //!
 //! This module is **self-contained**: it depends only on already-ported
-//! modules (`crate::topo_tools_full`, `crate::brep_tool`,
+//! modules (`crate::topo_tools`, `crate::brep_tool`,
 //! `crate::bbox_from_geometry`, `occt_core::kernel::containers`) and not on
 //! the other Phase-15 wave-1 modules.
 
@@ -39,7 +39,7 @@ use crate::bbox_from_geometry::shape_bbox;
 use crate::bopds_ff::BopdsInterfFf;
 use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, TopoShape};
-use crate::topo_tools_full::shapes_of;
+use crate::topo_tools::shapes_of;
 use crate::bopds_pave::ShapeKey;
 use crate::bopds_tree::{prepared_sub_shapes, structural_children};
 

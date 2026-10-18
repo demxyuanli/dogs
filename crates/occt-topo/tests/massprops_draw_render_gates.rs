@@ -44,7 +44,7 @@ fn fillet_corner_patch_closes_chain() {
             .map(|(a, c)| a.is_equal(&origin) || c.is_equal(&origin))
             .unwrap_or(false)
     };
-    let edges = occt_topo::topo_tools_full::edges_of(&b.solid.0);
+    let edges = occt_topo::topo_tools::edges_of(&b.solid.0);
     let mut at_origin: Vec<usize> = edges.iter().enumerate()
         .filter(|(_, e)| touches_origin(e))
         .map(|(i, _)| i)
@@ -53,7 +53,7 @@ fn fillet_corner_patch_closes_chain() {
     at_origin.truncate(2);
     let spec = VarFilletSpec { r_start: 0.4, r_end: 0.4, law: RadiusLaw::Linear };
     let f = fillet_edges_chain_with_corner(&b.solid.0, &at_origin, &[spec, spec], 1e-6).expect("chain");
-    let nf = occt_topo::topo_tools_full::faces_of(&f).len();
+    let nf = occt_topo::topo_tools::faces_of(&f).len();
     assert!(nf >= 7, "box + blends + corner patch → {nf}");
 }
 

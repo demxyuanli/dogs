@@ -337,7 +337,7 @@ mod tests {
         let mut solid = b.solid.0;
         translate_shape(&mut solid, &GpVec::new(5.0, 0.0, 0.0)).unwrap();
         // No vertex remains at the origin (all moved +5 X).
-        let verts = crate::topo_tools_full::vertices_of(&solid);
+        let verts = crate::topo_tools::vertices_of(&solid);
         assert!(!verts.iter().any(|v| {
             let p = BRepTool::vertex_point(v);
             approx(p.x(), 0.0) && approx(p.y(), 0.0) && approx(p.z(), 0.0)
@@ -348,7 +348,7 @@ mod tests {
             approx(p.x(), 5.0) && approx(p.y(), 0.0) && approx(p.z(), 0.0)
         }), "origin vertex now at (5,0,0)");
         // A face surface's sample point moved with the geometry.
-        let faces = crate::topo_tools_full::faces_of(&solid);
+        let faces = crate::topo_tools::faces_of(&solid);
         assert!(faces.iter().any(|f| {
             let s = BRepTool::face_surface(f).unwrap();
             approx(s.d0(0.0, 0.0).x(), 5.0) || approx(s.d0(0.0, 0.0).x(), 6.0)
@@ -360,12 +360,12 @@ mod tests {
         let b = BRepPrimBox::make_box(1.0, 1.0, 1.0);
         let copy = translated_copy(&b.solid.0, &GpVec::new(2.0, 0.0, 0.0)).unwrap();
         // Original unchanged, copy moved.
-        let orig_verts = crate::topo_tools_full::vertices_of(&b.solid.0);
-        let copy_verts = crate::topo_tools_full::vertices_of(&copy);
+        let orig_verts = crate::topo_tools::vertices_of(&b.solid.0);
+        let copy_verts = crate::topo_tools::vertices_of(&copy);
         assert_eq!(orig_verts.len(), copy_verts.len());
         let has_2x = copy_verts.iter().any(|v| approx(BRepTool::vertex_point(v).x(), 2.0));
         assert!(has_2x, "copy has a vertex at x=2");
-        assert!(!crate::topo_tools_full::vertices_of(&b.solid.0)
+        assert!(!crate::topo_tools::vertices_of(&b.solid.0)
             .iter().any(|v| approx(BRepTool::vertex_point(v).x(), 2.0)));
     }
 
@@ -376,7 +376,7 @@ mod tests {
         let z = GpAx1::new(GpPnt::zero(), GpDir::new(0.0, 0.0, 1.0).unwrap());
         rotate_shape(&mut solid, &z, std::f64::consts::FRAC_PI_2).unwrap();
         // Corner (1,0,0) → (0,1,0) after +90° about Z.
-        let verts = crate::topo_tools_full::vertices_of(&solid);
+        let verts = crate::topo_tools::vertices_of(&solid);
         let rotated = verts.iter().any(|v| {
             let p = BRepTool::vertex_point(v);
             approx(p.x(), 0.0) && approx(p.y(), 1.0) && approx(p.z(), 0.0)

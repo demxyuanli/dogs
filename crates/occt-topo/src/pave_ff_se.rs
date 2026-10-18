@@ -18,7 +18,7 @@ use crate::pave_ff_exist::pb_key;
 use crate::pave_filler::PaveFiller;
 use crate::pave_force_ef::force_interf_ef_on;
 use crate::shape::{Edge, Face, TopoShape};
-use crate::topo_tools_full::is_same;
+use crate::topo_tools::is_same;
 
 fn pb_has_edge(pb: &BopdsPaveBlock) -> bool {
     pb.edge() != 0

@@ -281,7 +281,7 @@ impl AlgoTools2D {
 
 /// `BRep_Tool::MaxTolerance(face, TopAbs_EDGE)`.
 fn max_tolerance_edge(face: &Face) -> f64 {
-    crate::topo_tools_full::edges_of(&face.0)
+    crate::topo_tools::edges_of(&face.0)
         .iter()
         .map(|e| crate::brep_tool::BRepTool::edge_tolerance(e))
         .fold(0.0f64, f64::max)

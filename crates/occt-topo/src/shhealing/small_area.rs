@@ -7,7 +7,7 @@ use crate::boptools_2d;
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::shape::{Face, Wire};
-use crate::topo_tools_full::edges_of_wire;
+use crate::topo_tools::edges_of_wire;
 
 /// `ShapeAnalysis_Wire::CheckSmallArea(theWire)` (`ShapeAnalysis_Wire.cxx:2004-2098`).
 ///

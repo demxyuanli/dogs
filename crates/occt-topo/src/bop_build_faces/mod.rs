@@ -58,7 +58,7 @@ pub(crate) use crate::fclass2d::{FClass2d, FaceState};
 pub(crate) use crate::int_tools_full::IntToolsContext;
 pub(crate) use crate::shape::{Edge, Face, TopoShape, Wire};
 pub(crate) use crate::tgeometry::GeometryRegistry;
-pub(crate) use crate::topo_tools_full::{edge_vertices, edges_of_wire, vertex_position, ShapeMapKey};
+pub(crate) use crate::topo_tools::{edge_vertices, edges_of_wire, vertex_position, ShapeMapKey};
 
 
 }
@@ -77,7 +77,7 @@ mod tests {
     use crate::builder::TopoBuilder;
     use crate::builder_face::loop_signed_area;
     use crate::brep_extrema::test_box::unit_box;
-    use crate::topo_tools_full::wires_of_face;
+    use crate::topo_tools::wires_of_face;
     use occt_core::gp::GpPnt;
 
     /// A minimal `BopBuilderLike` host for the isolated tests.

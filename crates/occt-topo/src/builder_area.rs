@@ -33,7 +33,7 @@ use crate::brep_lib_make_wire::MakeWire;
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::shape::{Edge, TopoShape, Wire};
-use crate::topo_tools_full::{edge_vertices, edges_of_wire, is_equal, vertex_position};
+use crate::topo_tools::{edge_vertices, edges_of_wire, is_equal, vertex_position};
 
 /// Quantized 3-D vertex key: two vertices whose positions agree to within
 /// ~1e-9 collapse to the same key.

@@ -6,7 +6,7 @@ use occt_core::gp::GpPnt;
 
 use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, Face, TopoShape, Wire};
-use crate::topo_tools_full::{edges_of, edges_of_wire, faces_of, wires_of_face};
+use crate::topo_tools::{edges_of, edges_of_wire, faces_of, wires_of_face};
 
 /// Length of a single edge: the exact `BRepGProp::LinearProperties` integral
 /// along the edge's curve (Gauss order from `BRepGProp_EdgeTool`, so lines and

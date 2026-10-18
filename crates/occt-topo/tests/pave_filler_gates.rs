@@ -61,7 +61,7 @@ fn argument_subshapes(shape: &TopoShape) -> usize {
         T::Solid,
     ]
     .iter()
-    .map(|k| occt_topo::topo_tools_full::shapes_of(shape, *k).len())
+    .map(|k| occt_topo::topo_tools::shapes_of(shape, *k).len())
     .sum()
 }
 
@@ -124,7 +124,7 @@ fn full_box_with_split_keeps_vertices_bounded() {
         if let Some(si) = ds.shape_info(i) {
             if si.kind == occt_topo::abs::ShapeType::Vertex {
                 let v = occt_topo::shape::Vertex::wrap(si.shape.clone()).expect("vertex");
-                let p = occt_topo::topo_tools_full::vertex_position(&v);
+                let p = occt_topo::topo_tools::vertex_position(&v);
                 for c in [p.x(), p.y(), p.z()] {
                     assert!(c >= -0.1 && c <= 1.1, "vertex out of bounds: {p:?}");
                 }

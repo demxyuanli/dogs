@@ -31,7 +31,7 @@ use crate::abs::{Orientation, ShapeType};
 use crate::bop_occt_util::{iter_children, shape_key};
 use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, TopoShape};
-use crate::topo_tools_full::ShapeMapKey;
+use crate::topo_tools::ShapeMapKey;
 
 /// A `BOPTools_Set`: explorer list of sub-shape TShape keys plus the
 /// representative (`myShape`).

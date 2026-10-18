@@ -10,7 +10,7 @@ use crate::abs::ShapeType;
 use crate::builder::TopoBuilder;
 use crate::loft;
 use crate::shape::{Face, Shell, Solid, Wire};
-use crate::topo_tools_full;
+use crate::topo_tools;
 
 /// Result of a polyline sweep: the solid plus its boundary faces and the path.
 #[derive(Debug, Clone)]
@@ -56,8 +56,8 @@ pub fn pipe_along_polyline(profile: &[GpPnt], path: &[GpPnt]) -> Result<Pipe, St
         .collect::<Result<_, _>>()?;
 
     let lofted = loft::loft_sections(&sections)?;
-    let faces = topo_tools_full::faces_of(&lofted.solid.0);
-    let shell = topo_tools_full::shapes_of(&lofted.solid.0, ShapeType::Shell)
+    let faces = topo_tools::faces_of(&lofted.solid.0);
+    let shell = topo_tools::shapes_of(&lofted.solid.0, ShapeType::Shell)
         .into_iter()
         .next()
         .map(Shell)
@@ -82,8 +82,8 @@ pub fn pipe_volume(pipe: &Pipe) -> f64 {
     // ponytail: bbox fallback — only hit when the tessellated volume is unusable.
     let mut min = GpXyz::new(f64::INFINITY, f64::INFINITY, f64::INFINITY);
     let mut max = GpXyz::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
-    for v in topo_tools_full::vertices_of(&pipe.shell.0) {
-        let p = topo_tools_full::vertex_position(&v).coord;
+    for v in topo_tools::vertices_of(&pipe.shell.0) {
+        let p = topo_tools::vertex_position(&v).coord;
         min.x = min.x.min(p.x);
         min.y = min.y.min(p.y);
         min.z = min.z.min(p.z);
@@ -97,7 +97,7 @@ pub fn pipe_volume(pipe: &Pipe) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::topo_tools_full::faces_of;
+    use crate::topo_tools::faces_of;
 
     fn square_profile() -> Vec<GpPnt> {
         vec![

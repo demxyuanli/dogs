@@ -3,7 +3,7 @@ use super::*;
     use crate::brep_builder_api::{make_face_from_polygon, make_wire_from_points};
     use crate::brep_tool::BRepTool;
     use crate::primitives::BRepPrimBox;
-    use crate::topo_tools_full::{faces_of, wire_is_closed};
+    use crate::topo_tools::{faces_of, wire_is_closed};
 
     #[test]
     fn weld_two_boxes_glue_vertices() {
@@ -231,7 +231,7 @@ use super::*;
     fn heal_preserves_solid_closure() {
         let b = BRepPrimBox::make_box(1.0, 1.0, 1.0);
         let (healed, _) = heal_shape(&b.solid.0, 1e-6, 0.01);
-        let shells = crate::topo_tools_full::shapes_of(&healed, ShapeType::Shell);
+        let shells = crate::topo_tools::shapes_of(&healed, ShapeType::Shell);
         assert_eq!(shells.len(), 1);
         let shell = Shell(shells[0].clone());
         assert!(crate::shell_check::shell_is_closed(&shell), "shell stays closed");

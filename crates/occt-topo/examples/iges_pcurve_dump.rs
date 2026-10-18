@@ -21,7 +21,7 @@ use occt_topo::brep_tool::BRepTool;
 use occt_topo::shape::{Edge, Face, TopoShape};
 use occt_topo::iges_read::read_iges_shape;
 use occt_topo::step::read_step_file;
-use occt_topo::topo_tools_full::{edges_of_wire, wires_of_face};
+use occt_topo::topo_tools::{edges_of_wire, wires_of_face};
 
 fn c3_kind(c: &dyn Curve) -> String {
     if c.is_geom_trimmed() {
@@ -190,7 +190,7 @@ fn main() {
                 // compared per edge.
                 if let Some(c3) = c3.as_ref() {
                     let prec = BRepTool::edge_tolerance(&edge);
-                    let (v1, v2) = occt_topo::topo_tools_full::edge_vertices(&edge);
+                    let (v1, v2) = occt_topo::topo_tools::edge_vertices(&edge);
                     let tf = v1.as_ref().map_or(0.0, BRepTool::vertex_tolerance);
                     let tl = v2.as_ref().map_or(0.0, BRepTool::vertex_tolerance);
                     let mut cache = occt_topo::pcurve_full::ProjectorCache::new();

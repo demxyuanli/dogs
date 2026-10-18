@@ -17,7 +17,7 @@ use occt_topo::bop_builder2::{builder_bop, BoolOp2};
 use occt_topo::builder::TopoBuilder;
 use occt_topo::primitives::BRepPrimBox;
 use occt_topo::shape::{Edge, Face, TopoShape};
-use occt_topo::topo_tools_full::{faces_of, wires_of};
+use occt_topo::topo_tools::{faces_of, wires_of};
 
 /// A faceted cylinder whose base and top are SINGLE 24-gon faces (OCCT-style).
 fn single_disc_cylinder(radius: f64, height: f64, slices: usize) -> TopoShape {
@@ -126,7 +126,7 @@ fn assert_boss_one_solid(cyl: &TopoShape) {
     let box_s = BRepPrimBox::make_box(2.0, 2.0, 1.0);
     let cyl = occt_topo::shape_ops::translated_copy(cyl, &GpVec::new(1.0, 1.0, 1.0)).unwrap();
     let result = builder_bop(&[box_s.solid.0.clone()], &[cyl], BoolOp2::Fuse).expect("fuse");
-    let counts = occt_topo::topo_tools_full::shape_counts(&result);
+    let counts = occt_topo::topo_tools::shape_counts(&result);
     let n_solids = counts.get(&occt_topo::abs::ShapeType::Solid).copied().unwrap_or(0);
     assert_eq!(n_solids, 1, "boss fuse must merge box+cylinder into one solid");
     let ring = faces_of(&result).iter().filter(|f| wires_of(&f.0).len() == 2).count();

@@ -28,7 +28,7 @@ pub(crate) use crate::brep_tool::BRepTool;
 pub(crate) use crate::edge_split;
 pub(crate) use crate::face_face::{plane_plane_intersection, FaceIntersect, face_face_intersection};
 pub(crate) use crate::shape::{Edge, Face, TopoShape};
-pub(crate) use crate::topo_tools_full::{edge_vertices, edges_of, edges_of_wire, vertex_position, wires_of_face};
+pub(crate) use crate::topo_tools::{edge_vertices, edges_of, edges_of_wire, vertex_position, wires_of_face};
 
 }
 

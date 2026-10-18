@@ -5,7 +5,7 @@ use super::*;
 /// share an endpoint, and when deciding whether a chain of edges is closed.
 ///
 /// The value matches the endpoint-matching tolerance used throughout the
-/// topology helpers (`topo_tools_full::wire_is_closed`, `sweep` ring
+/// topology helpers (`topo_tools::wire_is_closed`, `sweep` ring
 /// reconstruction) so a wire built here also reads as closed there.
 
 pub(super) const WIRE_TOL: f64 = 1e-9;
@@ -336,7 +336,7 @@ impl BRepBuilderFace {
     ///
     /// Returns `Err` when the wire contains no edges.
     pub fn from_wire(wire: &Wire, plane: &GpPln) -> Result<Face, String> {
-        if topo_tools_full::edges_of_wire(wire).is_empty() {
+        if topo_tools::edges_of_wire(wire).is_empty() {
             return Err("BRepBuilderFace::from_wire: wire has no edges".into());
         }
         Ok(TopoBuilder::new().make_face(Arc::new(GeomPlane::new(plane.clone())), &[wire.clone()]))
@@ -367,7 +367,7 @@ impl BRepBuilderFace {
     ///
     /// Returns `Err` when the wire contains no edges.
     pub fn from_surface_and_wire(surface: Arc<dyn Surface>, wire: &Wire) -> Result<Face, String> {
-        if topo_tools_full::edges_of_wire(wire).is_empty() {
+        if topo_tools::edges_of_wire(wire).is_empty() {
             return Err("BRepBuilderFace::from_surface_and_wire: wire has no edges".into());
         }
         Ok(TopoBuilder::new().make_face(surface, &[wire.clone()]))
@@ -464,7 +464,7 @@ impl BRepBuilderSolid {
     ///
     /// Returns `Err` when the shell has no faces.
     pub fn from_shell(shell: &Shell) -> Result<Solid, String> {
-        if topo_tools_full::faces_of(&shell.0).is_empty() {
+        if topo_tools::faces_of(&shell.0).is_empty() {
             return Err("BRepBuilderSolid::from_shell: shell has no faces".into());
         }
         Ok(TopoBuilder::new().make_solid(&[shell.clone()]))

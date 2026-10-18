@@ -26,7 +26,7 @@ use crate::shhealing::{
     split_loop_wires, ShapeFixEdge, ShapeFixFace,
 };
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{edges_of, edges_of_wire, faces_of, vertices_of};
+use crate::topo_tools::{edges_of, edges_of_wire, faces_of, vertices_of};
 
 use super::iges_data_iges_model::IgesModel;
 

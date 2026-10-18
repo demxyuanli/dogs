@@ -65,7 +65,7 @@ pub(super) fn offset_convex_polyhedron(shape: &TopoShape, faces: &[Face], distan
     let edges = edges_of(shape);
     let mut emap: HashMap<usize, Edge> = HashMap::new();
     for e in &edges {
-        let (a, z) = crate::topo_tools_full::edge_vertices(e);
+        let (a, z) = crate::topo_tools::edge_vertices(e);
         let (Some(va), Some(vb)) = (a, z) else {
             return Err("offset_convex_polyhedron: edge missing endpoint vertices".into());
         };

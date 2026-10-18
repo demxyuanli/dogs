@@ -548,7 +548,7 @@ pub fn revolved_lateral_area(rev: &RevolvedSolid) -> f64 {
 mod tests {
     use super::*;
     use crate::brep_tool::BRepTool;
-    use crate::topo_tools_full;
+    use crate::topo_tools;
 
     fn approx(a: f64, b: f64) -> bool {
         (a - b).abs() < 1e-9 * b.abs().max(1.0)
@@ -561,7 +561,7 @@ mod tests {
         assert_eq!(rev.faces.len(), 3);
         assert!(approx(revolved_volume(&rev), PI * 1.0 * 1.0 * 3.0));
         assert!(approx(revolved_lateral_area(&rev), 2.0 * PI * 1.0 * 3.0 + 2.0 * PI * 1.0 * 1.0));
-        assert!(topo_tools_full::structure_is_valid(&rev.solid.0));
+        assert!(topo_tools::structure_is_valid(&rev.solid.0));
     }
 
     #[test]
@@ -606,7 +606,7 @@ mod tests {
         assert!(pend.distance(&GpPnt::new(0.0, 1.0, 0.0)) < 1e-9);
         // The profile wire's first edge is a ring arc ending at π/16; the last
         // ring arc ends at π/2.
-        let edges = topo_tools_full::edges_of_wire(&rev.profiles[0]);
+        let edges = topo_tools::edges_of_wire(&rev.profiles[0]);
         let (a0, b0) = BRepTool::edge_parameters(&edges[0]);
         let (a7, b7) = BRepTool::edge_parameters(&edges[7]);
         assert!(approx(a0, 0.0) && approx(b0, PI / 16.0));
@@ -616,7 +616,7 @@ mod tests {
     #[test]
     fn open_wire_helper_builds_panel() {
         let w = revolve_open_wire(&[GpPnt2d::new(1.0, 0.0), GpPnt2d::new(1.0, 3.0)], 8).unwrap();
-        let edges = topo_tools_full::edges_of_wire(&w);
+        let edges = topo_tools::edges_of_wire(&w);
         // 8 lower ring arcs + seam + 8 upper ring arcs + seam.
         assert_eq!(edges.len(), 18);
     }

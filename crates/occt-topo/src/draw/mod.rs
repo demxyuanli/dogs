@@ -341,7 +341,7 @@ pub(crate) use crate::shape_ops::{
     rotate_shape, scale_shape, transform_shape, translate_shape, transformed_copy, translated_copy,
 };
 pub(crate) use crate::step::write_shape_step;
-pub(crate) use crate::topo_tools_full::{edges_of, shape_counts};
+pub(crate) use crate::topo_tools::{edges_of, shape_counts};
 pub(crate) use crate::viz_scene::{render_scene_ppm_shaded, Camera, RenderSettings, SceneShape, VizScene};
 
 }

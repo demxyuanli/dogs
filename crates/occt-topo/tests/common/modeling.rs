@@ -17,7 +17,7 @@ use occt_topo::primitives::{
     BRepPrimBox, BRepPrimCone, BRepPrimCylinder, BRepPrimSphere, BRepPrimTorus,
 };
 use occt_topo::shape::TopoShape;
-use occt_topo::topo_tools_full::shape_counts;
+use occt_topo::topo_tools::shape_counts;
 
 use super::data_dir;
 

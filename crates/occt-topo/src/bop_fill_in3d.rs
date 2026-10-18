@@ -32,7 +32,7 @@ use crate::bop_occt_util::{
 };
 use crate::int_tools_full::IntToolsContext;
 use crate::shape::TopoShape;
-use crate::topo_tools_full::ShapeMapKey;
+use crate::topo_tools::ShapeMapKey;
 
 /// Output of Builder `FillIn3DParts`.
 #[derive(Debug, Clone, Default)]

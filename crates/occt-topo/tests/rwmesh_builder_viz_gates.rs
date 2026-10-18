@@ -26,7 +26,7 @@ fn rwmesh_scene_roundtrip() {
     assert!((mx.x() - 2.0).abs() < 0.1 && (mx.y() - 3.0).abs() < 0.1 && (mx.z() - 4.0).abs() < 0.1);
     // Compound from the scene has faces.
     let comp = scene_to_compound(&scene, 1e-6).expect("compound");
-    let nf = occt_topo::topo_tools_full::faces_of(&comp).len();
+    let nf = occt_topo::topo_tools::faces_of(&comp).len();
     assert!(nf > 0, "faces {nf}");
 }
 
@@ -34,9 +34,9 @@ fn rwmesh_scene_roundtrip() {
 fn brep_builder_solid_box() {
     let solid = BRepBuilderSolid::box_corners(GpPnt::new(0.0, 0.0, 0.0), GpPnt::new(2.0, 2.0, 2.0))
         .expect("box solid");
-    let nv = occt_topo::topo_tools_full::vertices_of(&solid.0).len();
+    let nv = occt_topo::topo_tools::vertices_of(&solid.0).len();
     assert_eq!(nv, 8, "box vertices {nv}");
-    let nf = occt_topo::topo_tools_full::faces_of(&solid.0).len();
+    let nf = occt_topo::topo_tools::faces_of(&solid.0).len();
     assert_eq!(nf, 6, "box faces {nf}");
 }
 

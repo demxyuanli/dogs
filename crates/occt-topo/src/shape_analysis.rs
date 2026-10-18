@@ -67,7 +67,7 @@ pub fn is_outer_bound(face: &Face) -> bool {
     let mut forward = face.clone();
     forward.0.set_orientation(crate::abs::Orientation::Forward);
     let face = &forward;
-    let wires = crate::topo_tools_full::wires_of_face(face);
+    let wires = crate::topo_tools::wires_of_face(face);
     if wires.len() == 1 {
         // `ShapeAnalysis::IsOuterBound` builds `ShapeExtend_WireData(W)`
         // (`ShapeAnalysis.cxx:217-218`). `Init` prepends every edge of a

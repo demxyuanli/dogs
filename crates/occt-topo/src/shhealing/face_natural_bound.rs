@@ -15,7 +15,7 @@ use crate::brep_tools::compare_vertices;
 use crate::builder::TopoBuilder;
 use crate::shape::Face;
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::edges_of_wire;
+use crate::topo_tools::edges_of_wire;
 
 use super::face_geom_helpers::{
     cut_interval, empty_copied_face, find_best_interval, is_surface_uv_infinite, shift_2d_wire,
@@ -59,7 +59,7 @@ impl ShapeFixFace {
             self.context.replace(&face.0, &new_face.0); // cxx:917
             // cxx:923-930: `ShapeFix_Edge::FixVertexTolerance(edg, myFace)` on
             // every edge of the new face.
-            for e in crate::topo_tools_full::edges_of(&new_face.0) {
+            for e in crate::topo_tools::edges_of(&new_face.0) {
                 crate::shhealing::fix_vertex_tolerance_edge(&e);
             }
             // cxx:932-937: `BRepTools::Update` is a no-op in the port;

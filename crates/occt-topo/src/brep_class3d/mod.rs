@@ -17,7 +17,7 @@ use crate::int_curves_face::{FaceIntersector, Transition};
 use crate::iterator::cumulated_children;
 use crate::shape::{Edge, Face, TopoShape};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{faces_of, is_same};
+use crate::topo_tools::{faces_of, is_same};
 use std::collections::HashMap;
 
 mod other_segment;
@@ -104,8 +104,8 @@ impl SolidExplorer {
             if fo == Orientation::Internal || fo == Orientation::External {
                 continue;
             }
-            for w in crate::topo_tools_full::wires_of_face(&f) {
-                for e in crate::topo_tools_full::edges_of_wire(&w) {
+            for w in crate::topo_tools::wires_of_face(&f) {
+                for e in crate::topo_tools::edges_of_wire(&w) {
                     let eo = e.0.orientation();
                     if eo == Orientation::Internal || eo == Orientation::External {
                         continue;
@@ -114,7 +114,7 @@ impl SolidExplorer {
                         continue;
                     }
                     push_unique(&mut out, &e.0);
-                    let (v1, v2) = crate::topo_tools_full::edge_vertices(&e);
+                    let (v1, v2) = crate::topo_tools::edge_vertices(&e);
                     if let Some(v) = v1 {
                         push_unique(&mut out, &v.0);
                     }
@@ -425,7 +425,7 @@ pub fn apply_orient_faces_on_shell(shell: &mut TopoShape) {
     use crate::abs::ShapeType;
     use crate::bop_split_seam::is_closed_on_face;
     use crate::tgeometry::GeometryRegistry;
-    use crate::topo_tools_full::{edges_of_wire, wires_of_face};
+    use crate::topo_tools::{edges_of_wire, wires_of_face};
 
     let faces: Vec<TopoShape> = shell
         .tshape

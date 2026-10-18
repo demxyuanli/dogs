@@ -2,7 +2,7 @@ use super::prelude::*;
 use super::*;
     use crate::builder::TopoBuilder;
     use crate::primitives::{BRepPrimBox, BRepPrimSphere};
-    use crate::topo_tools_full::faces_of;
+    use crate::topo_tools::faces_of;
 
     fn attr(kind: &str, value: &str) -> XcafAttribute {
         XcafAttribute {

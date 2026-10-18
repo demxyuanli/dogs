@@ -12,7 +12,7 @@ use crate::bop_builder2::BopBuilder;
 use crate::bop_occt_util::{explore, iter_children, shape_key, treat_compound};
 use crate::builder::TopoBuilder;
 use crate::shape::TopoShape;
-use crate::topo_tools_full::ShapeMapKey;
+use crate::topo_tools::ShapeMapKey;
 
 /// `BOPAlgo_CellsBuilder`.
 #[derive(Debug, Clone)]

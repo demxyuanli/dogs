@@ -15,7 +15,7 @@ use crate::builder::TopoBuilder;
 use crate::pave_filler::PaveFiller;
 use crate::shape::TopoShape;
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::is_same;
+use crate::topo_tools::is_same;
 
 fn shape_key(s: &TopoShape) -> usize {
     GeometryRegistry::shape_key(s)

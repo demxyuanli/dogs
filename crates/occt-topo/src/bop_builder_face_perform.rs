@@ -29,7 +29,7 @@ use crate::int_tools_full::IntToolsContext;
 use crate::iterator::ShapeIterator;
 use crate::shape::{Edge, Face, TopoShape, Vertex, Wire};
 use crate::tgeometry::{FaceGeom, GeometryRegistry};
-use crate::topo_tools_full::{edge_vertices, edges_of, is_equal, is_same, vertices_of};
+use crate::topo_tools::{edge_vertices, edges_of, is_equal, is_same, vertices_of};
 use crate::wire_splitter::{WireEdgeSet, WireSplitter};
 
 fn sk(s: &TopoShape) -> usize {

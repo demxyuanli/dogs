@@ -106,7 +106,7 @@ impl ShapeProcessMap {
         // substitutions and the resulting shape goes to the binder.
         let mut reshaper = MapReShape::new();
         let mut has_modified_edges = false;
-        for edge in crate::topo_tools_full::edges_of(original) {
+        for edge in crate::topo_tools::edges_of(original) {
             if let Some(modified) = self.find(&edge.0) {
                 has_modified_edges = true;
                 reshaper.replace(&edge.0, &modified);
@@ -161,7 +161,7 @@ fn rec_modif(
         // `if (repl->Status(r, res, true) && res != r) map.Bind(aS, res);`
         // (`cxx:288-294`).
         if let Some(res) = ctx.status_last(&r) {
-            if !crate::topo_tools_full::is_equal(&res, &r) {
+            if !crate::topo_tools::is_equal(&res, &r) {
                 map.bind(&s_val, &res);
             }
         }
@@ -172,7 +172,7 @@ fn rec_modif(
         // say), so it is rebuilt from the substitutions below it.
         else if (r.shape_type() as u8) < (s.shape_type() as u8) {
             let res = ctx.apply(&r);
-            if !crate::topo_tools_full::is_equal(&res, &r) {
+            if !crate::topo_tools::is_equal(&res, &r) {
                 map.bind(&s_val, &res);
             }
         }

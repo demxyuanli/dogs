@@ -57,7 +57,7 @@ use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::shape::{Edge, Vertex, Wire};
 use crate::tgeometry::{GeometryRegistry, VertexGeom};
-use crate::topo_tools_full::edge_vertices;
+use crate::topo_tools::edge_vertices;
 
 /// `BRepLib_WireError` (`BRepLib_MakeWire.hxx`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,7 +77,7 @@ pub enum WireError {
 fn is_same(a: Option<&Vertex>, b: Option<&Vertex>) -> bool {
     match (a, b) {
         (None, None) => true,
-        (Some(x), Some(y)) => crate::topo_tools_full::is_same(&x.0, &y.0),
+        (Some(x), Some(y)) => crate::topo_tools::is_same(&x.0, &y.0),
         _ => false,
     }
 }
@@ -362,7 +362,7 @@ impl MakeWire {
 
     /// `myVertices.Contains(VE)` (`TopTools_ShapeMapHasher` = `IsSame`).
     fn contains_vertex(&self, v: &Vertex) -> bool {
-        self.vertices.iter().any(|w| crate::topo_tools_full::is_same(&w.0, &v.0))
+        self.vertices.iter().any(|w| crate::topo_tools::is_same(&w.0, &v.0))
     }
 
     /// The copy-edge branch of `Add` (`BRepLib_MakeWire.cxx:304-368`):

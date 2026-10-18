@@ -2,7 +2,7 @@ use super::prelude::*;
 use super::*;
     use crate::brep_surface::SurfaceKind;
     use crate::primitives::{BRepPrimBox, BRepPrimSphere};
-    use crate::topo_tools_full::{faces_of, vertices_of};
+    use crate::topo_tools::{faces_of, vertices_of};
 
     #[test]
     fn box_roundtrip_counts_points_and_faces() {
@@ -398,7 +398,7 @@ ENDSEC;\nEND-ISO-10303-21;";
         let step = write_step_with_splines(&b.solid.0).unwrap();
         let m = read_step(&step).expect("read spline box step");
         assert_eq!(m.len(), 1);
-        let c = crate::topo_tools_full::shape_counts(&m.shapes[0].shape);
+        let c = crate::topo_tools::shape_counts(&m.shapes[0].shape);
         assert_eq!(c.get(&ShapeType::Vertex).copied().unwrap_or(0), 8);
         assert_eq!(c.get(&ShapeType::Edge).copied().unwrap_or(0), 12);
         assert_eq!(c.get(&ShapeType::Face).copied().unwrap_or(0), 6);
@@ -593,7 +593,7 @@ ENDSEC;\nEND-ISO-10303-21;";
 ENDSEC;\nEND-ISO-10303-21;";
         let m = read_step(s).expect("read polyline step");
         assert_eq!(m.len(), 1);
-        let e = crate::topo_tools_full::edges_of(&m.shapes[0].shape);
+        let e = crate::topo_tools::edges_of(&m.shapes[0].shape);
         assert_eq!(e.len(), 1);
     }
 

@@ -20,7 +20,7 @@ use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::shape::{Face, TopoShape, Wire};
 use crate::tgeometry::{GeometryRegistry, VertexGeom};
-use crate::topo_tools_full::edges_of_wire;
+use crate::topo_tools::edges_of_wire;
 
 /// `IsSurfaceUVInfinite(theSurf)` (`ShapeFix_Face.cxx:94-103`):
 /// `Precision::IsInfinite` on any of the four bounds.

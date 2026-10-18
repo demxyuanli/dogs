@@ -28,7 +28,7 @@ use occt_core::precision::{PCONFUSION, REAL_SMALL, RESOLUTION};
 
 use crate::abs::Orientation;
 use crate::brep_tool::BRepTool;
-use crate::topo_tools_full::{edge_vertices, is_same};
+use crate::topo_tools::{edge_vertices, is_same};
 
 use super::data_model::{MeshCurve, MeshModel, MeshStatus};
 use super::delaun_data::DelaunDataStructure;

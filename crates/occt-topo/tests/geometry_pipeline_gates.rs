@@ -17,7 +17,7 @@ use occt_topo::primitives::{BRepPrimBox, BRepPrimCylinder, BRepPrimSphere};
 use occt_topo::brep_gprop::{surface_area, volume};
 use occt_topo::shape_mesh::mesh_shape;
 use occt_topo::sweep::prism_from_polygon;
-use occt_topo::topo_tools_full::{faces_of, vertices_of, structure_is_valid};
+use occt_topo::topo_tools::{faces_of, vertices_of, structure_is_valid};
 
 fn approx(a: f64, b: f64) -> bool {
     (a - b).abs() < 1e-3 * b.abs().max(1.0)

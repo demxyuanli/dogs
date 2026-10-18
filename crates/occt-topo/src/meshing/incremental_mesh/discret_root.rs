@@ -325,7 +325,7 @@ impl IncrementalMesh {
     /// discrete model keeps no trace of the occurrence orientation. Index `i`
     /// here is the same `i` as `MeshModel::face(i)`.
     fn face_occurrence_reversed(shape: &TopoShape) -> Vec<bool> {
-        crate::topo_tools_full::faces_of(shape)
+        crate::topo_tools::faces_of(shape)
             .iter()
             .map(|f| f.0.orientation().is_reversed())
             .collect()
@@ -1149,7 +1149,7 @@ impl IncrementalMesh {
                     // (`BRepMesh_EdgeDiscret.cxx:250-270`).
                     let natural = Edge(model.edge(edge_index)?.edge().0.oriented(Orientation::Forward));
                     let (first_vertex, last_vertex) =
-                        crate::topo_tools_full::edge_vertices(&natural);
+                        crate::topo_tools::edge_vertices(&natural);
                     let first_pnt = first_vertex.as_ref().map(|v| BRepTool::vertex_point_world(v));
                     let last_pnt = last_vertex.as_ref().map(|v| BRepTool::vertex_point_world(v));
                     let edge_tol = BRepTool::edge_tolerance(&model.edge(edge_index)?.edge());
@@ -1252,7 +1252,7 @@ impl IncrementalMesh {
                         GpPnt2d::new(pr.u, pr.v),
                     ))
                 };
-                let (v1, v2) = crate::topo_tools_full::edge_vertices(&topo_edge);
+                let (v1, v2) = crate::topo_tools::edge_vertices(&topo_edge);
                 match (proj(v1), proj(v2)) {
                     (Some(u1), Some(u2)) => (u1.min(u2), u1.max(u2)),
                     _ => (a, b),

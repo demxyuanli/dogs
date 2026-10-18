@@ -20,7 +20,7 @@ use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::shape::{Edge, Face, Shell, TopoShape, Vertex, Wire};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{edge_vertices, edges_of_wire, faces_of, is_same, wires_of_face};
+use crate::topo_tools::{edge_vertices, edges_of_wire, faces_of, is_same, wires_of_face};
 
 /// `BRepFill::Face` (`BRepFill.cxx:211-422`).
 pub fn face(edge1: &Edge, edge2: &Edge) -> Result<Face, String> {

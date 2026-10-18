@@ -10,7 +10,7 @@ use occt_core::gp::{GpPnt, GpVec};
 use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, Face, Shell, TopoShape, Wire};
 use crate::shell_check::{bop_edge_key, EdgeKey};
-use crate::topo_tools_full::{edges_of, edges_of_wire, faces_of, wires_of_face};
+use crate::topo_tools::{edges_of, edges_of_wire, faces_of, wires_of_face};
 
 /// A focused check result: error/warning with a short message and the type
 /// of shape it concerns.
@@ -106,7 +106,7 @@ fn wire_geometrically_closed(wire: &Wire) -> bool {
     }
     let mut counts: HashMap<[i64; 3], usize> = HashMap::new();
     for e in &edges {
-        let (a, b) = crate::topo_tools_full::edge_vertices(e);
+        let (a, b) = crate::topo_tools::edge_vertices(e);
         for v in [a, b].into_iter().flatten() {
             let p = BRepTool::vertex_point(&v);
             let key = [
@@ -168,7 +168,7 @@ fn face_centroid(f: &Face) -> Option<GpPnt> {
         let mut n = 0usize;
         for w in wires {
             for e in edges_of_wire(&w) {
-                if let (Some(a), _) = crate::topo_tools_full::edge_vertices(&e) {
+                if let (Some(a), _) = crate::topo_tools::edge_vertices(&e) {
                     acc = acc.added(&BRepTool::vertex_point(&a).coord);
                     n += 1;
                 }
@@ -254,7 +254,7 @@ pub fn seam_edge_check(shape: &TopoShape) -> Vec<(Wire, CheckLevel)> {
 pub fn max_vertex_gap(shape: &TopoShape) -> f64 {
     let mut worst: f64 = 0.0;
     for e in edges_of(shape) {
-        let (a, b) = crate::topo_tools_full::edge_vertices(&e);
+        let (a, b) = crate::topo_tools::edge_vertices(&e);
         if let (Some(a), Some(b)) = (a, b) {
             let d = BRepTool::vertex_point(&a).distance(&BRepTool::vertex_point(&b));
             worst = worst.max(d);
@@ -304,7 +304,7 @@ mod tests {
         let issues = boundary_multiple_check(&b.solid.0);
         assert!(issues.iter().all(|(_, _, lvl)| lvl.is_ok()));
         assert!(matches!(shell_closed_check(&{
-            let shells = crate::topo_tools_full::shapes_of(&b.solid.0, ShapeType::Shell);
+            let shells = crate::topo_tools::shapes_of(&b.solid.0, ShapeType::Shell);
             crate::shape::Shell(shells[0].clone())
         }), CheckLevel::Ok));
     }

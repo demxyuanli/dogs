@@ -52,7 +52,7 @@ pub mod brep_gprop;
 pub mod sweep;
 pub mod brep_sweep;
 pub mod brep_surface;
-pub mod topo_tools_full;
+pub mod topo_tools;
 pub mod boolean_ops;
 pub mod brep_measure;
 // Phase 4 modules.

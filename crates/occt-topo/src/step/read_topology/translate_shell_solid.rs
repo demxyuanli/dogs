@@ -39,7 +39,7 @@ impl<'a> Resolver<'a> {
                 // faces here, which is how OCCT's `Context()->Apply(S)`
                 // (`ShapeFix_Shape.cxx:257`) turns 1772 imported faces into
                 // 1778 (`FromSTEP.exec.op = FixShape`).
-                let faces = crate::topo_tools_full::faces_of(&s);
+                let faces = crate::topo_tools::faces_of(&s);
                 if faces.is_empty() {
                     return Err(format!("#{it}: expected FACE in CLOSED_SHELL"));
                 }

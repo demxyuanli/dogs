@@ -13,7 +13,7 @@ use crate::brep_surface::face_plane;
 use crate::builder::TopoBuilder;
 use crate::primitives::BRepPrimBox;
 use crate::shape::{Edge, Wire};
-use crate::topo_tools_full::{edge_vertices, edges_of_wire, faces_of, vertex_position, wires_of_face};
+use crate::topo_tools::{edge_vertices, edges_of_wire, faces_of, vertex_position, wires_of_face};
 
 /// The two tangency points where a fillet of `radius` touches the corner at
 /// `p2` — the first on `p1→p2`, the second on `p2→p3`. Returns `None` when
@@ -298,7 +298,7 @@ mod tests {
 
     use super::*;
     use crate::tgeometry::GeometryRegistry;
-    use crate::topo_tools_full::wire_is_closed;
+    use crate::topo_tools::wire_is_closed;
 
     fn edge_length(e: &Edge) -> f64 {
         let curve = GeometryRegistry::global().edge_curve(&e.0).expect("edge has curve");

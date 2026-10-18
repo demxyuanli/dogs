@@ -15,7 +15,7 @@ use crate::builder::TopoBuilder;
 use crate::shape::{Face, Shell, TopoShape, Wire};
 use crate::shell_check::{shell_is_closed};
 
-use crate::topo_tools_full::{edges_of, faces_of, shapes_of, wires_of_face};
+use crate::topo_tools::{edges_of, faces_of, shapes_of, wires_of_face};
 
 use crate::bop_builder_core::{BoolOp};
 use crate::bop_builder_dispatch::expand_compound;

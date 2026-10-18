@@ -22,7 +22,7 @@ use crate::builder_solid::BuilderSolid;
 use crate::fclass2d::FaceState;
 use crate::int_tools_full::IntToolsContext;
 use crate::shape::TopoShape;
-use crate::topo_tools_full::{faces_of, ShapeMapKey};
+use crate::topo_tools::{faces_of, ShapeMapKey};
 
 fn ori_key(s: &TopoShape) -> (ShapeMapKey, u8) {
     let o = match s.orientation() {

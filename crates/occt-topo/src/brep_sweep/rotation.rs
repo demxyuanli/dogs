@@ -24,7 +24,7 @@ use crate::iterator::cumulated_children;
 use crate::shape::{Edge, Face, TopoShape, Vertex};
 use crate::tgeometry::GeometryRegistry;
 use crate::topexp::Explorer;
-use crate::topo_tools_full::is_same;
+use crate::topo_tools::is_same;
 
 use super::grid::{SweepOps, SweepTables};
 use super::quilt::Quilt;

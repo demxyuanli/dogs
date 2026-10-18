@@ -120,7 +120,7 @@ fn modeling_gprop_matches_occt() {
         let (rv, ov) = (vol.mass(), o.volume);
         let (ra, oa) = (surf.mass(), o.area);
         eprintln!("[{name}] vol ours={rv:.9} occt={ov:.9} | area ours={ra:.9} occt={oa:.9}");
-        for f in occt_topo::topo_tools_full::faces_of(&shape) {
+        for f in occt_topo::topo_tools::faces_of(&shape) {
             eprintln!(
                 "  [{name}] face contrib = {:?}",
                 occt_topo::brep_gprop_full::face_volume_contribution(&f)
@@ -140,7 +140,7 @@ fn modeling_gprop_matches_occt() {
                     .solid
                     .0;
                 let v2 = volume_properties(&s2).expect("shifted volume");
-                let per: Vec<f64> = occt_topo::topo_tools_full::faces_of(&s2)
+                let per: Vec<f64> = occt_topo::topo_tools::faces_of(&s2)
                     .iter()
                     .map(|f| occt_topo::brep_gprop_full::face_volume_contribution(f).unwrap_or(f64::NAN))
                     .collect();

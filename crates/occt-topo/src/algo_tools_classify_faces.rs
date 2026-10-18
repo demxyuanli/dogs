@@ -30,7 +30,7 @@ use crate::bbox_from_geometry::shape_bbox;
 use crate::int_tools_full::IntToolsContext;
 use crate::shape::TopoShape;
 
-use crate::topo_tools_full::ShapeMapKey;
+use crate::topo_tools::ShapeMapKey;
 
 /// A face plus its bounding box, the `BOPAlgo_ShapeBox` vector entry.
 pub type FaceBox = ShapeBox;
@@ -238,7 +238,7 @@ pub fn perform_fill_in_3d_parts_tree(
 
     let mse = solid_edge_avoid_set(solid);
     let msf = solid_face_avoid_set(solid, own_if);
-    let b_is_empty = crate::topo_tools_full::faces_of(solid).is_empty();
+    let b_is_empty = crate::topo_tools::faces_of(solid).is_empty();
 
     let mut ivec: Vec<usize> = Vec::new();
     for n_fp in lifp {

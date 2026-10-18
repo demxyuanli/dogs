@@ -27,7 +27,7 @@ use crate::fclass2d::{FClass2d, FaceState};
 use crate::int_tools_wline::{u_resolution, v_resolution};
 use crate::shape::{Edge, TopoShape};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{edge_vertices, edges_of, is_same, wires_of};
+use crate::topo_tools::{edge_vertices, edges_of, is_same, wires_of};
 
 /// `GeomAbs_C3` (`GeomAbs_Shape.hxx:33`), the continuity
 /// `BRepAdaptor_Curve::NbIntervals(GeomAbs_C3)` is asked for at

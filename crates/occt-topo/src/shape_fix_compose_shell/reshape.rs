@@ -8,7 +8,7 @@ use crate::abs::{Orientation, ShapeType};
 use crate::builder::TopoBuilder;
 use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, TopoShape, Vertex};
-use crate::topo_tools_full::ShapeMapKey;
+use crate::topo_tools::ShapeMapKey;
 use occt_core::toploc::TopLocLocation;
 
 use super::wire_segment::WireSegment;
@@ -93,7 +93,7 @@ impl MapReShape {
     /// (`ShapeFix_Shape.cxx:76-78`).
     pub fn status_last(&mut self, s: &TopoShape) -> Option<TopoShape> {
         let stored = self.recorded(s)?; // `cxx:339-348`.
-        if crate::topo_tools_full::is_equal(&stored, s) {
+        if crate::topo_tools::is_equal(&stored, s) {
             return None; // `cxx:355-358`: newsh.IsEqual(shape) -> res = 0.
         }
         let mut newsh = if stored.same_tshape(s) {
@@ -102,7 +102,7 @@ impl MapReShape {
             stored
         } else {
             let applied = self.apply(s); // `cxx:369`.
-            if crate::topo_tools_full::is_equal(&applied, s) {
+            if crate::topo_tools::is_equal(&applied, s) {
                 return None; // `cxx:374-377`: res = 0.
             }
             applied
@@ -135,7 +135,7 @@ impl MapReShape {
         if in_flight.contains(&key(s)) {
             return new_shape;
         }
-        if !crate::topo_tools_full::is_same(&new_shape, s) {
+        if !crate::topo_tools::is_same(&new_shape, s) {
             // `cxx:228-237`: the modifications apply to the replacement as well.
             in_flight.push(key(s));
             let res = self.apply_impl(&new_shape, in_flight);
@@ -157,7 +157,7 @@ impl MapReShape {
         let mut new_children: Vec<TopoShape> = Vec::with_capacity(children.len());
         for c in &children {
             let nc = self.apply_impl(c, in_flight);
-            if !crate::topo_tools_full::is_same(&nc, c) {
+            if !crate::topo_tools::is_same(&nc, c) {
                 modified = true;
             }
             new_children.push(nc);
@@ -261,7 +261,7 @@ fn copy_edge_geom(dst: &TopoShape, src: &TopoShape) {
 /// `BRep_Tool::IsClosed` boundary map (`BRep_Tool.cxx:1710`): `TShape` +
 /// `Location`, i.e. `TopoDS_Shape::IsSame`.
 fn key(s: &TopoShape) -> ShapeMapKey {
-    crate::topo_tools_full::shape_map_key(s)
+    crate::topo_tools::shape_map_key(s)
 }
 
 /// `BRep_TFace::EmptyCopy` (`BRep_TFace.cxx:37-43`) for a face: the surface and
@@ -306,7 +306,7 @@ fn brep_tool_is_closed(s: &TopoShape) -> bool {
     let mut odd: Vec<ShapeMapKey> = Vec::new();
     match s.shape_type() {
         ShapeType::Wire => {
-            for v in crate::topo_tools_full::vertices_of(s) {
+            for v in crate::topo_tools::vertices_of(s) {
                 if matches!(v.0.orientation(), Orientation::Internal | Orientation::External) {
                     continue;
                 }
@@ -315,7 +315,7 @@ fn brep_tool_is_closed(s: &TopoShape) -> bool {
             }
         }
         ShapeType::Shell => {
-            for e in crate::topo_tools_full::edges_of(s) {
+            for e in crate::topo_tools::edges_of(s) {
                 if crate::brep_tool::BRepTool::is_degenerated(&e)
                     || matches!(e.0.orientation(), Orientation::Internal | Orientation::External)
                 {
@@ -471,7 +471,7 @@ pub fn apply_context(wire: &mut WireSegment, iedge: usize, context: &mut dyn ReS
         None => return 1,
     };
     let res = context.apply(&edge.0);
-    if crate::topo_tools_full::is_same(&res, &edge.0) {
+    if crate::topo_tools::is_same(&res, &edge.0) {
         return 1;
     }
     if res.shape_type() == ShapeType::Edge {

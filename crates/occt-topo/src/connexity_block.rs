@@ -89,7 +89,7 @@ mod tests {
         let s = TopoShape::new(ShapeType::Face);
         cb.change_shapes_mut().push(s.clone());
         assert_eq!(cb.shapes().len(), 1);
-        assert!(crate::topo_tools_full::is_same(&cb.shapes()[0], &s));
+        assert!(crate::topo_tools::is_same(&cb.shapes()[0], &s));
 
         cb.set_regular(false);
         assert!(!cb.is_regular());
@@ -97,7 +97,7 @@ mod tests {
         let w = TopoShape::new(ShapeType::Wire);
         cb.change_loops_mut().push(w.clone());
         assert_eq!(cb.loops().len(), 1);
-        assert!(crate::topo_tools_full::is_same(&cb.loops()[0], &w));
+        assert!(crate::topo_tools::is_same(&cb.loops()[0], &w));
     }
 
     #[test]

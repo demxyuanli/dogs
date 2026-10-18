@@ -14,7 +14,7 @@ use occt_topo::brep_surface::classify_surface;
 use occt_topo::brep_tool::BRepTool;
 use occt_topo::primitives::{BRepPrimBox, BRepPrimCylinder};
 use occt_topo::shell_check::shell_invariants;
-use occt_topo::topo_tools_full::{edges_of, faces_of, shapes_of};
+use occt_topo::topo_tools::{edges_of, faces_of, shapes_of};
 use occt_topo::wireframe::wireframe_face_area;
 
 fn report(tag: &str, a: &occt_topo::shape::TopoShape, b: &occt_topo::shape::TopoShape, op: BoolOp) {
@@ -49,10 +49,10 @@ fn report(tag: &str, a: &occt_topo::shape::TopoShape, b: &occt_topo::shape::Topo
                         None => "?".to_string(),
                     },
                 };
-                let wires: Vec<String> = occt_topo::topo_tools_full::wires_of_face(f)
+                let wires: Vec<String> = occt_topo::topo_tools::wires_of_face(f)
                     .iter()
                     .map(|w| {
-                        let es: Vec<String> = occt_topo::topo_tools_full::edges_of_wire(w)
+                        let es: Vec<String> = occt_topo::topo_tools::edges_of_wire(w)
                             .iter()
                             .map(|e| {
                                 let r = BRepTool::edge_parameters(e);
@@ -208,8 +208,8 @@ fn dump_split_block(
     let mut le: Vec<Edge> = Vec::new();
     let face_edges: Vec<Edge> = {
         let mut v = Vec::new();
-        for w in occt_topo::topo_tools_full::wires_of_face(&face) {
-            v.extend(occt_topo::topo_tools_full::edges_of_wire(&w));
+        for w in occt_topo::topo_tools::wires_of_face(&face) {
+            v.extend(occt_topo::topo_tools::edges_of_wire(&w));
         }
         v
     };

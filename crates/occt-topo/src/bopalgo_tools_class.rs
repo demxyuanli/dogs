@@ -28,7 +28,7 @@ use crate::int_tools_full::IntToolsContext;
 use crate::iterator::ShapeIterator;
 use crate::bop_occt_util::shape_key;
 use crate::shape::{Edge, Face, TopoShape, Vertex};
-use crate::topo_tools_full::{edges_of, map_shapes_and_ancestors, vertices_of, ShapeMapKey};
+use crate::topo_tools::{edges_of, map_shapes_and_ancestors, vertices_of, ShapeMapKey};
 
 /// `BOPAlgo_ShapeBox`.
 #[derive(Clone)]

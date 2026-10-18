@@ -213,7 +213,7 @@ pub(super) fn cmd_bbox(session: &mut DrawSession, args: &[String]) -> Result<(),
 pub(super) fn cmd_verts(session: &mut DrawSession, args: &[String]) -> Result<(), String> {
     need_args(args, 1, "verts")?;
     let shape = shape_owned(session, &args[0])?;
-    let verts = crate::topo_tools_full::vertices_of(&shape);
+    let verts = crate::topo_tools::vertices_of(&shape);
     session.log.push(format!("verts {}: {} vertices", args[0], verts.len()));
     for v in verts {
         let p = crate::brep_tool::BRepTool::vertex_point(&v);

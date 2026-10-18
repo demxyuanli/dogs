@@ -74,7 +74,7 @@ pub(crate) use crate::brep_builder_api;
 pub(crate) use crate::brep_tool::BRepTool;
 pub(crate) use crate::builder::TopoBuilder;
 pub(crate) use crate::shape::{Edge, Face, Shell, Solid, Vertex, Wire};
-pub(crate) use crate::topo_tools_full;
+pub(crate) use crate::topo_tools;
 
 }
 
@@ -110,7 +110,7 @@ use prelude::*;
 //
 // * **Closedness is a flag, not a guarantee.** [`BRepBuilderWire`] sets the
 //   wire's `closed` flag based on endpoint coincidence within [`WIRE_TOL`].
-//   The flag is advisory; use `topo_tools_full::wire_is_closed` for a
+//   The flag is advisory; use `topo_tools::wire_is_closed` for a
 //   structural re-check on an arbitrary wire.
 
 #[cfg(test)]
@@ -120,7 +120,7 @@ mod tests {
     use crate::brep_surface::{classify_surface, face_is_plane_type, SurfaceKind};
     use crate::fillet_edge::classify_surface_full;
     use crate::primitives::BRepPrimBox;
-    use crate::topo_tools_full::edges_of_wire;
+    use crate::topo_tools::edges_of_wire;
     use occt_core::gp::{GpAx3, GpCylinder};
     use occt_geom::GeomCylinder;
     use std::f64::consts::PI;
@@ -170,9 +170,9 @@ mod tests {
         assert!(curve.d0(0.0).distance(&p1) < 1e-9, "arc start at p1");
         assert!(curve.d0(1.0).distance(&p3) < 1e-9, "arc end at p3");
         // Endpoint vertex children match p1/p3.
-        let (a, z) = crate::topo_tools_full::edge_vertices(&e);
-        assert!(crate::topo_tools_full::vertex_position(&a.unwrap()).distance(&p1) < 1e-9);
-        assert!(crate::topo_tools_full::vertex_position(&z.unwrap()).distance(&p3) < 1e-9);
+        let (a, z) = crate::topo_tools::edge_vertices(&e);
+        assert!(crate::topo_tools::vertex_position(&a.unwrap()).distance(&p1) < 1e-9);
+        assert!(crate::topo_tools::vertex_position(&z.unwrap()).distance(&p3) < 1e-9);
     }
 
     #[test]
@@ -214,7 +214,7 @@ mod tests {
         let closed = BRepBuilderPolygon::from_points(&pts, true).expect("closed wire");
         assert_eq!(edges_of_wire(&closed).len(), 4, "closed: n edges");
         assert!(closed.is_closed());
-        assert!(crate::topo_tools_full::wire_is_closed(&closed), "closed chains end-to-end");
+        assert!(crate::topo_tools::wire_is_closed(&closed), "closed chains end-to-end");
     }
 
     #[test]
@@ -280,7 +280,7 @@ mod tests {
     fn shell_closed_box() {
         let shell = BRepBuilderShell::closed_box(1.0, 2.0, 3.0).expect("box shell");
         assert!(crate::shell_check::shell_is_closed(&shell), "closed box shell");
-        assert_eq!(crate::topo_tools_full::faces_of(&shell.0).len(), 6);
+        assert_eq!(crate::topo_tools::faces_of(&shell.0).len(), 6);
         assert!(BRepBuilderShell::new(shell).is_closed());
         assert!(BRepBuilderShell::closed_box(0.0, 1.0, 1.0).is_err());
     }
@@ -288,11 +288,11 @@ mod tests {
     #[test]
     fn solid_from_faces() {
         let bx = BRepPrimBox::make_box(1.0, 1.0, 1.0);
-        let faces = crate::topo_tools_full::faces_of(&bx.solid.0);
+        let faces = crate::topo_tools::faces_of(&bx.solid.0);
         let solid = BRepBuilderSolid::from_faces(&faces).expect("solid");
         let shell = Shell(solid.0.tshape.read().unwrap().children[0].clone());
         assert!(crate::shell_check::shell_is_closed(&shell), "solid shell closed");
-        assert_eq!(crate::topo_tools_full::vertices_of(&solid.0).len(), 8);
+        assert_eq!(crate::topo_tools::vertices_of(&solid.0).len(), 8);
         assert!(BRepBuilderSolid::from_faces(&[]).is_err());
     }
 
@@ -324,9 +324,9 @@ mod tests {
         assert!(a.distance(&GpPnt::zero()) < 1e-9);
         assert!(z.distance(&GpPnt::new(2., 0., 0.)) < 1e-9);
         // The two input vertices are reused as the edge's boundary children.
-        let (va, vz) = crate::topo_tools_full::edge_vertices(&e);
-        assert!(crate::topo_tools_full::is_same(&va.unwrap().0, &v1.0));
-        assert!(crate::topo_tools_full::is_same(&vz.unwrap().0, &v2.0));
+        let (va, vz) = crate::topo_tools::edge_vertices(&e);
+        assert!(crate::topo_tools::is_same(&va.unwrap().0, &v1.0));
+        assert!(crate::topo_tools::is_same(&vz.unwrap().0, &v2.0));
     }
 
     #[test]
@@ -336,13 +336,13 @@ mod tests {
         let shell = Shell(solid.0.tshape.read().unwrap().children[0].clone());
         assert!(crate::shell_check::shell_is_closed(&shell), "triangle prism closed");
         // Boundary counts: 6 vertices, 9 edges, 5 faces.
-        assert_eq!(crate::topo_tools_full::vertices_of(&solid.0).len(), 6);
-        assert_eq!(crate::topo_tools_full::edges_of(&solid.0).len(), 9);
-        assert_eq!(crate::topo_tools_full::faces_of(&solid.0).len(), 5);
+        assert_eq!(crate::topo_tools::vertices_of(&solid.0).len(), 6);
+        assert_eq!(crate::topo_tools::edges_of(&solid.0).len(), 9);
+        assert_eq!(crate::topo_tools::faces_of(&solid.0).len(), 5);
         // Analytic prism volume = base area × sweep height, recovered from the
         // solid's own geometry (the mesh-based volume is unreliable on a
         // triangle base: the face grid overhangs the boundary).
-        let faces = crate::topo_tools_full::faces_of(&solid.0);
+        let faces = crate::topo_tools::faces_of(&solid.0);
         let zc = |f: &Face| crate::brep_surface::face_centroid(f, 8, 8).map(|p| p.z()).unwrap_or(f64::NAN);
         let base = faces.iter().min_by(|a, b| zc(a).partial_cmp(&zc(b)).unwrap()).unwrap();
         let top = faces.iter().max_by(|a, b| zc(a).partial_cmp(&zc(b)).unwrap()).unwrap();
@@ -350,11 +350,11 @@ mod tests {
         let top_plane = crate::brep_surface::face_plane(top).expect("top plane");
         let height = top_plane.location().z() - base_plane.location().z();
         assert!((height - 3.0).abs() < 1e-9, "sweep height {height}");
-        let wire = crate::topo_tools_full::wires_of_face(base).into_iter().next().expect("base wire");
-        let ring: Vec<GpPnt> = crate::topo_tools_full::edges_of_wire(&wire)
+        let wire = crate::topo_tools::wires_of_face(base).into_iter().next().expect("base wire");
+        let ring: Vec<GpPnt> = crate::topo_tools::edges_of_wire(&wire)
             .iter()
-            .filter_map(|e| crate::topo_tools_full::edge_vertices(e).0)
-            .map(|v| crate::topo_tools_full::vertex_position(&v))
+            .filter_map(|e| crate::topo_tools::edge_vertices(e).0)
+            .map(|v| crate::topo_tools::vertex_position(&v))
             .collect();
         let area = crate::brep_builder_api::builder_polygon_area(&ring);
         assert!((area - 0.5).abs() < 1e-9, "base area {area}");

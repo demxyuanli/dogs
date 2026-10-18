@@ -266,7 +266,7 @@ fn connect_wire(
     if connect_next {
         let mut wire = TopoBuilder::new().make_wire(next);
         crate::shhealing::fix_connected_closed(&mut wire, precision, maxtol, false);
-        *next = crate::topo_tools_full::edges_of_wire(&wire);
+        *next = crate::topo_tools::edges_of_wire(&wire);
     }
     connect_next_wire(acc, next, precision, maxtol)
 }

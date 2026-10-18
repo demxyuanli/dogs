@@ -66,7 +66,7 @@ use occt_geom::{Curve, Surface};
 use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, Face, TopoShape};
 use crate::tgeometry::{FaceGeom, GeometryRegistry};
-use crate::topo_tools_full::is_same;
+use crate::topo_tools::is_same;
 
 pub(in crate::iges_read) fn gtransform_face(face: &mut TopoShape, g: &GpGTrsf) -> Result<(), String> {
     let scale = g_scale(g);

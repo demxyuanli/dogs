@@ -15,7 +15,7 @@ use crate::abs::{Orientation, ShapeType};
 use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, Face, TopoShape};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{edges_of, faces_of};
+use crate::topo_tools::{edges_of, faces_of};
 
 /// `BRepLib::UpdateInnerTolerances` (`BRepLib.cxx:1983-2083`).
 pub fn update_inner_tolerances(shape: &TopoShape) {
@@ -188,7 +188,7 @@ fn edge_ancestors(shape: &TopoShape) -> Vec<(TopoShape, Vec<TopoShape>)> {
 
 /// `TopTools_ShapeMapHasher` / `IsSame`: same `TShape` and the same location.
 fn same_located(a: &TopoShape, b: &TopoShape) -> bool {
-    crate::topo_tools_full::is_same(a, b)
+    crate::topo_tools::is_same(a, b)
 }
 
 /// `TopExp::Vertices(E, V1, V2)` with `CumOri = false` (`TopExp.hxx:126-129`).

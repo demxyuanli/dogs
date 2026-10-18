@@ -28,7 +28,7 @@ use crate::bop_occt_util::{
 use crate::builder::TopoBuilder;
 use crate::fclass2d::FaceState;
 use crate::shape::{Solid, TopoShape};
-use crate::topo_tools_full::{edges_of, map_shapes_and_ancestors_into, shape_map_key, ShapeMapKey};
+use crate::topo_tools::{edges_of, map_shapes_and_ancestors_into, shape_map_key, ShapeMapKey};
 
 /// `BOPTools_AlgoTools::ComputeStateByOnePoint` stand-in used by
 /// FillInternalShapes (`_3.cxx:836`, tolerance `1.e-11`).
@@ -181,13 +181,13 @@ pub fn fill_internals_tools(
         if solid.shape_type() != ShapeType::Solid {
             continue;
         }
-        for v in crate::topo_tools_full::vertices_of(solid) {
+        for v in crate::topo_tools::vertices_of(solid) {
             ms_solids.insert(shape_key(&v.0));
         }
         for e in edges_of(solid) {
             ms_solids.insert(shape_key(&e.0));
         }
-        for f in crate::topo_tools_full::faces_of(solid) {
+        for f in crate::topo_tools::faces_of(solid) {
             ms_solids.insert(shape_key(&f.0));
         }
     }

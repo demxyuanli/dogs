@@ -33,7 +33,7 @@ use crate::int_face_face::FaceFaceCurve;
 use crate::inttools_data::{CurveKind, IntRange};
 use crate::shape::{Edge, Face, Vertex, Wire};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::edges_of_wire;
+use crate::topo_tools::edges_of_wire;
 use crate::topexp::Explorer;
 
 pub use crate::boptools_2d::intermediate_point as int_tools_intermediate_point;

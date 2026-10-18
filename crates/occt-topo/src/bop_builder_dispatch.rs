@@ -15,7 +15,7 @@ use crate::builder::TopoBuilder;
 use crate::shape::{Face, Shell, TopoShape};
 use crate::shell_check::{shell_is_closed};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{edges_of, faces_of, shapes_of};
+use crate::topo_tools::{edges_of, faces_of, shapes_of};
 
 
 use crate::bop_builder_core::{empty_result, single_shape_result, BooleanResult, BoolOp};

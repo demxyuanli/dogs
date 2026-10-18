@@ -44,7 +44,7 @@ fn fillet_var_linear_profile() {
 
     let b = BRepPrimBox::make_box(2.0, 2.0, 2.0);
     // Fillet the front-bottom edge (0,0,0)→(2,0,0) with variable radius.
-    let edge = occt_topo::topo_tools_full::edges_of(&b.solid.0)
+    let edge = occt_topo::topo_tools::edges_of(&b.solid.0)
         .into_iter()
         .find(|e| {
             occt_topo::brep_tool::BRepTool::edge_vertices(e)
@@ -55,7 +55,7 @@ fn fillet_var_linear_profile() {
         })
         .expect("front-bottom edge (0,0,0)→(2,0,0)");
     let f = fillet_edge_var(&b.solid.0, &edge, &spec, 1e-6).expect("var fillet");
-    let nf = occt_topo::topo_tools_full::faces_of(&f).len();
+    let nf = occt_topo::topo_tools::faces_of(&f).len();
     assert!(nf >= 7, "box (6 faces) + blend → {nf}");
 }
 
@@ -72,7 +72,7 @@ fn shhealing_removes_small_edge() {
     let wire = b.make_wire(&[e01, e12, e23]);
     let (healed, report) = heal_shape(&wire, 1e-6, 0.01);
     assert!(report.small_edges_removed >= 1, "tiny edge removed, report {report:?}");
-    let ne = occt_topo::topo_tools_full::edges_of(&healed).len();
+    let ne = occt_topo::topo_tools::edges_of(&healed).len();
     assert!(ne <= 3, "edge count {ne}");
 }
 
@@ -96,7 +96,7 @@ fn xmlcaf_roundtrip_nested() {
     assert_eq!(back.root.name, "assembly");
     assert_eq!(back.root.attributes[0].value, "1,0,0");
     assert_eq!(back.root.children.len(), 1);
-    let nf = occt_topo::topo_tools_full::faces_of(back.root.children[0].shape.as_ref().unwrap()).len();
+    let nf = occt_topo::topo_tools::faces_of(back.root.children[0].shape.as_ref().unwrap()).len();
     assert_eq!(nf, 6, "box faces after XML round-trip");
 }
 

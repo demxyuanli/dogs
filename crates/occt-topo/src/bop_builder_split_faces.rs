@@ -32,7 +32,7 @@ use crate::builder_face::FaceBuilder;
 use crate::int_tools_full::IntToolsContext;
 use crate::shape::{Edge, Face, TopoShape};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::edges_of;
+use crate::topo_tools::edges_of;
 
 /// `GeomLib::IsClosed` stand-in: a surface is U/V closed when it is periodic
 /// Whether a source edge is a seam on `face` that must be doubled on the

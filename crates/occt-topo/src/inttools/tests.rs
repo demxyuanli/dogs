@@ -11,7 +11,7 @@ use super::*;
     use crate::builder::TopoBuilder;
     use crate::shape::{Compound, TopoShape};
     use crate::tgeometry::GeometryRegistry;
-    use crate::topo_tools_full::faces_of;
+    use crate::topo_tools::faces_of;
 
     fn clear_tree(s: &TopoShape) {
         GeometryRegistry::global().clear_shape(s);

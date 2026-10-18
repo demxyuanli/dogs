@@ -3,7 +3,7 @@ use super::*;
     use crate::brep_surface::{classify_surface, surface_normal, SurfaceKind};
     use crate::brep_tool::BRepTool;
     use crate::primitives::{BRepPrimBox, BRepPrimCylinder};
-    use crate::topo_tools_full::{faces_of, vertex_position, vertices_of};
+    use crate::topo_tools::{faces_of, vertex_position, vertices_of};
     use occt_core::gp::{GpAx3, GpXyz};
 
     fn z_axis() -> GpAx1 {

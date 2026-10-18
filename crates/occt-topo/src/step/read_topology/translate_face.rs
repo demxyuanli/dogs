@@ -219,7 +219,7 @@ impl<'a> Resolver<'a> {
                 let sub_faces = if res.shape_type() == crate::abs::ShapeType::Face {
                     vec![crate::shape::Face(res.clone())]
                 } else if res.shape_type() == crate::abs::ShapeType::Shell {
-                    crate::topo_tools_full::faces_of(&res)
+                    crate::topo_tools::faces_of(&res)
                 } else {
                     Vec::new()
                 };

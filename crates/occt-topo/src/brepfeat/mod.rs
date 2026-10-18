@@ -59,7 +59,7 @@ pub(crate) use occt_geom::GeomPlane;
 pub(crate) use crate::bop_builder::BoolOp;
 pub(crate) use crate::shape::{Solid, TopoShape};
 pub(crate) use crate::tgeometry::{FaceGeom, GeometryRegistry};
-pub(crate) use crate::topo_tools_full::faces_of;
+pub(crate) use crate::topo_tools::faces_of;
 
 }
 

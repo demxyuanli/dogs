@@ -206,7 +206,7 @@ pub(super) fn collect_splits<B: BopBuildOps, F: FnMut(TopoShape)>(f: &B, sub: &T
     if let Some(im) = f.history().image(sub) {
         for ims in im {
             let mut s = ims.clone();
-            if !crate::topo_tools_full::is_equal(&s, sub) && is_split_to_reverse_ctxless(&s, sub) {
+            if !crate::topo_tools::is_equal(&s, sub) && is_split_to_reverse_ctxless(&s, sub) {
                 reverse_orientation(&mut s);
             }
             out(s);
@@ -551,14 +551,14 @@ pub(super) fn merge_ancestors(
     ancestor_type: ShapeType,
     out: &mut HashMap<ShapeMapKey, Vec<TopoShape>>,
 ) {
-    let ancestors = crate::topo_tools_full::explorer_shapes(shape, ancestor_type);
+    let ancestors = crate::topo_tools::explorer_shapes(shape, ancestor_type);
     for a in &ancestors {
         let kids: Vec<TopoShape> = match (child_type, ancestor_type) {
             (ShapeType::Vertex, ShapeType::Edge) | (ShapeType::Vertex, ShapeType::Face) => {
-                crate::topo_tools_full::explorer_shapes(a, ShapeType::Vertex)
+                crate::topo_tools::explorer_shapes(a, ShapeType::Vertex)
             }
             (ShapeType::Edge, ShapeType::Face) => {
-                crate::topo_tools_full::explorer_shapes(a, ShapeType::Edge)
+                crate::topo_tools::explorer_shapes(a, ShapeType::Edge)
             }
             _ => Vec::new(),
         };

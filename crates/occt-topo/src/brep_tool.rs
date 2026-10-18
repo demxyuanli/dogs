@@ -14,7 +14,7 @@ use occt_geom::{Curve, Surface};
 use crate::abs::{Orientation, ShapeType};
 use crate::shape::{Edge, Face, TopoShape, Vertex};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{explorer_shapes, is_same};
+use crate::topo_tools::{explorer_shapes, is_same};
 
 /// Namespace for BRep_Tool-style static queries.
 pub struct BRepTool;
@@ -65,7 +65,7 @@ impl BRepTool {
             ShapeType::Wire => Self::fold_occurrences_closed(shape, ShapeType::Vertex, |v| {
                 !matches!(v.orientation(), Orientation::Internal | Orientation::External)
             }),
-            ShapeType::Edge => match crate::topo_tools_full::edge_vertices(&Edge(shape.clone())) {
+            ShapeType::Edge => match crate::topo_tools::edge_vertices(&Edge(shape.clone())) {
                 (Some(a), Some(b)) => is_same(&a.0, &b.0),
                 _ => false,
             },

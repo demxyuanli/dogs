@@ -20,7 +20,7 @@ use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::shape::{Edge, Face, TopoShape, Vertex};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{is_equal, is_same};
+use crate::topo_tools::{is_equal, is_same};
 
 const TWO_PI: f64 = PI + PI;
 

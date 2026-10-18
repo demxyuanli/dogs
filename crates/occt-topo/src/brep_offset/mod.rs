@@ -16,7 +16,7 @@ pub(crate) use crate::brep_tool::BRepTool;
 pub(crate) use crate::builder::TopoBuilder;
 pub(crate) use crate::shape::{Edge, Face, TopoShape, Vertex, Wire};
 pub(crate) use crate::shape_ops::translated_copy;
-pub(crate) use crate::topo_tools_full::{edges_of, edges_of_wire, faces_of, vertices_of, wires_of_face};
+pub(crate) use crate::topo_tools::{edges_of, edges_of_wire, faces_of, vertices_of, wires_of_face};
 
 }
 

@@ -33,7 +33,7 @@ use crate::brep_uv_bounds::uv_box_of_face;
 use crate::geom_bnd_lib_curve3d::box_curve;
 use crate::geom_bnd_lib_surface3d::{add_surface, surface_kind, GeomAbsSurfaceType};
 use crate::shape::{Edge, Face, TopoShape, Vertex};
-use crate::topo_tools_full::{edges_of, faces_of, vertices_of};
+use crate::topo_tools::{edges_of, faces_of, vertices_of};
 
 /// `BRepTools::UVBounds(F, UMin, UMax, VMin, VMax)` (`BRepTools.cxx:110-125`):
 /// scalar form of `BRepTools::AddUVBounds`, with the void/whole fallbacks.

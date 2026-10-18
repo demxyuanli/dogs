@@ -67,11 +67,11 @@ fn dedupe_count(shapes: &[TopoShape]) -> usize {
 /// `TShape` address plus the `TopLoc_Location` value form
 /// (`TopLocLocation::key`), which is `TopoDS_Shape::IsSame`. Two occurrences of
 /// one edge `TShape` under different locations stay distinct, as in OCCT.
-pub type EdgeKey = crate::topo_tools_full::ShapeMapKey;
+pub type EdgeKey = crate::topo_tools::ShapeMapKey;
 
 /// The [`EdgeKey`] of one shape occurrence.
 pub fn bop_edge_key(s: &TopoShape) -> EdgeKey {
-    crate::topo_tools_full::shape_map_key(s)
+    crate::topo_tools::shape_map_key(s)
 }
 
 /// One entry of the edge → faces map `BRepCheck_Shell::Closed` walks: a

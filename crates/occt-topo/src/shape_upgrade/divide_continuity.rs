@@ -26,7 +26,7 @@ use occt_geom::{Curve, GeomSurfaceOfLinearExtrusion, GeomSurfaceOfRevolution, Su
 use super::split_surface::{split_bspline, split_extrusion, split_revolution, C0Basis};
 use crate::brep_tools;
 use crate::shape::Face;
-use crate::topo_tools_full::edges_of;
+use crate::topo_tools::edges_of;
 
 const CONT_C1: i32 = 1;
 

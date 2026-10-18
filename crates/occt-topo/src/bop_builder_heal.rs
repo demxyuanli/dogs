@@ -15,7 +15,7 @@ use crate::builder::TopoBuilder;
 use crate::shape::{Edge, Face, TopoShape, Wire};
 use crate::shell_check::{shell_is_closed};
 
-use crate::topo_tools_full::{
+use crate::topo_tools::{
     edge_vertices, edges_of, edges_of_wire, faces_of, shapes_of, vertex_position, vertices_of,
     wires_of_face,
 };
@@ -126,7 +126,7 @@ pub fn component_edge_reports(shape: &TopoShape, tol: f64) -> Vec<ComponentEdgeR
         for &i in &idx {
             for e in edges_of(&faces[i].0) {
                 edges.insert(Arc::as_ptr(&e.0.tshape) as usize);
-                let (a, b) = crate::topo_tools_full::edge_vertices(&e);
+                let (a, b) = crate::topo_tools::edge_vertices(&e);
                 if let Some(a) = a {
                     verts.insert(Arc::as_ptr(&a.0.tshape) as usize);
                 }

@@ -30,7 +30,7 @@ use crate::shape::{Edge, Face, TopoShape, Vertex, Wire};
 use crate::shape_fix_compose_shell::{reverse_wire_data_on_face, ReShape};
 use crate::shhealing::adjust_by_period;
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{edges_of_wire, is_same};
+use crate::topo_tools::{edges_of_wire, is_same};
 
 use super::shape_fix_face::wire_from_wire_data;
 use super::ShapeFixFace;
@@ -163,7 +163,7 @@ fn shape_ptr(s: &TopoShape) -> usize {
 /// location and same orientation (`ShapeFix_Face.cxx` compares edges/wires
 /// this way when matching the two sides of a face).
 fn same_oriented(a: &TopoShape, b: &TopoShape) -> bool {
-    crate::topo_tools_full::is_equal(a, b)
+    crate::topo_tools::is_equal(a, b)
 }
 
 fn reversed_wire(wire: &Wire, face: &Face) -> Wire {

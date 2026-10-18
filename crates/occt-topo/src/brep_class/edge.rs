@@ -6,7 +6,7 @@ use occt_core::precision::INFINITE;
 
 use crate::abs::Orientation;
 use crate::shape::{Edge, Face, Vertex};
-use crate::topo_tools_full::{edge_vertices, is_same};
+use crate::topo_tools::{edge_vertices, is_same};
 
 /// `BRepClass_Edge`.
 #[derive(Clone, Debug)]
@@ -119,7 +119,7 @@ impl BRepClassEdge {
 /// `TopExp::Vertices(E, V1, V2, CumOri = true)`: the first and last vertex of
 /// `edge` with the edge orientation composed in. A reversed edge swaps the
 /// two stored endpoints. The plain (`CumOri = false`) pair comes from
-/// `topo_tools_full::edge_vertices`.
+/// `topo_tools::edge_vertices`.
 pub(super) fn vertices_cum_ori(edge: &Edge) -> (Option<Vertex>, Option<Vertex>) {
     let (first, last) = edge_vertices(edge);
     if edge.orientation() == Orientation::Reversed {

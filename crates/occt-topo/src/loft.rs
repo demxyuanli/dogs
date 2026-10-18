@@ -11,7 +11,7 @@ use occt_geom::{GeomBSplineCurve, GeomLine, GeomPlane, Surface};
 use crate::builder::TopoBuilder;
 use crate::shape::{Edge, Face, Solid, Vertex, Wire};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{edge_vertices, edges_of_wire, vertex_position};
+use crate::topo_tools::{edge_vertices, edges_of_wire, vertex_position};
 
 // ============================ B-spline interpolation ============================
 
@@ -410,7 +410,7 @@ pub fn loft_volume(loft: &LoftedSolid) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::topo_tools_full::{faces_of, vertices_of, wire_is_closed};
+    use crate::topo_tools::{faces_of, vertices_of, wire_is_closed};
     use occt_geom::Curve;
 
     #[test]

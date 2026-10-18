@@ -5,7 +5,7 @@ use super::*;
     use crate::shape::Shell;
     use crate::shell_check::shell_is_closed;
     use crate::tgeometry::GeometryRegistry;
-    use crate::topo_tools_full::vertices_of;
+    use crate::topo_tools::vertices_of;
 
     /// Release registry entries for a shape tree so the process-wide geometry
     /// side-table (keyed by `TShape` address) does not serve stale geometry to

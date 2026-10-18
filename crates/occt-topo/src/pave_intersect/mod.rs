@@ -51,7 +51,7 @@ pub(crate) use crate::int_tools_full::IntToolsContext;
 pub(crate) use crate::inttools_data::{CommonPartType, IntRange};
 pub(crate) use crate::pave_filler::{EdgeRangeDistance, GlueEnum, PaveFiller};
 pub(crate) use crate::shape::{Edge, Face, TopoShape, Vertex};
-pub(crate) use crate::topo_tools_full::vertices_of;
+pub(crate) use crate::topo_tools::vertices_of;
 
 }
 

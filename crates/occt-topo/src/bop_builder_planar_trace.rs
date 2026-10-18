@@ -18,7 +18,7 @@ use crate::bop_builder_core::{
 
 
 
-use crate::topo_tools_full::{
+use crate::topo_tools::{
     edge_vertices, edges_of, edges_of_wire, faces_of, shapes_of, vertex_position, vertices_of,
     wires_of_face,
 };

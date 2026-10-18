@@ -44,7 +44,7 @@ pub(crate) use crate::brep_surface::{
 };
 pub(crate) use crate::brep_tool::BRepTool;
 pub(crate) use crate::shape::{Edge, Face, TopoShape};
-pub(crate) use crate::topo_tools_full::{
+pub(crate) use crate::topo_tools::{
     edge_vertices, edges_of, edges_of_wire, faces_of, vertex_position, vertices_of, wires_of_face,
 };
 

@@ -15,7 +15,7 @@ use occt_geom2d::line::Geom2dLine;
 
 use crate::bnd_lib_add2d::add_geom2d_range;
 use crate::boptools_2d::curve_on_surface_range;
-use crate::topo_tools_full::edge_vertices;
+use crate::topo_tools::edge_vertices;
 
 use super::edge::BRepClassEdge;
 use super::intersector_checks::{

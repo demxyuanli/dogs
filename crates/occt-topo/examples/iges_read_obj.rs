@@ -15,7 +15,7 @@ use occt_topo::meshing::data_model::MeshStatus;
 use occt_topo::meshing::incremental_mesh::IncrementalMesh;
 use occt_topo::meshing::range_splitter::{mesh_surface_type, MeshSurfaceType};
 use occt_topo::tgeometry::GeometryRegistry;
-use occt_topo::topo_tools_full::{edges_of_wire, faces_of, wires_of_face};
+use occt_topo::topo_tools::{edges_of_wire, faces_of, wires_of_face};
 
 fn tname(t: MeshSurfaceType) -> &'static str {
     match t {

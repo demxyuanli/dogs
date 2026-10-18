@@ -17,7 +17,7 @@ use crate::brep_surface;
 use crate::builder::TopoBuilder;
 use crate::shape::{Edge, Face, Solid, Vertex};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full;
+use crate::topo_tools;
 
 /// Result of a prism sweep: the solid plus its distinguishing faces.
 #[derive(Debug, Clone)]
@@ -62,7 +62,7 @@ fn edge_between(edges: &[Edge], va: &Vertex, vb: &Vertex) -> Option<Edge> {
     let pa = GeometryRegistry::global().vertex_point(&va.0);
     let pb = GeometryRegistry::global().vertex_point(&vb.0);
     edges.iter().find(|e| {
-        let (a, b) = topo_tools_full::edge_vertices(e);
+        let (a, b) = topo_tools::edge_vertices(e);
         let (Some(a), Some(b)) = (a, b) else { return false };
         let qa = GeometryRegistry::global().vertex_point(&a.0);
         let qb = GeometryRegistry::global().vertex_point(&b.0);
@@ -76,7 +76,7 @@ fn edge_between(edges: &[Edge], va: &Vertex, vb: &Vertex) -> Option<Edge> {
 fn edge_oriented_from_to(e: &Edge, from: &Vertex, to: &Vertex) -> Edge {
     let pa = GeometryRegistry::global().vertex_point(&from.0);
     let pb = GeometryRegistry::global().vertex_point(&to.0);
-    let (a, b) = topo_tools_full::edge_vertices(e);
+    let (a, b) = topo_tools::edge_vertices(e);
     let (Some(a), Some(b)) = (a, b) else {
         return e.clone();
     };
@@ -96,15 +96,15 @@ fn edge_oriented_from_to(e: &Edge, from: &Vertex, to: &Vertex) -> Edge {
 /// relative to the wire), and stops when it returns to the first vertex.
 fn base_ring_vertices(face: &Face) -> Vec<Vertex> {
     // ponytail: only the outer wire is swept; inner (hole) wires are ignored.
-    let Some(w) = topo_tools_full::wires_of_face(face).into_iter().next() else {
+    let Some(w) = topo_tools::wires_of_face(face).into_iter().next() else {
         return Vec::new();
     };
-    let edges = topo_tools_full::edges_of_wire(&w);
+    let edges = topo_tools::edges_of_wire(&w);
     if edges.is_empty() {
         return Vec::new();
     }
     let pos = |v: &Vertex| GeometryRegistry::global().vertex_point(&v.0);
-    let (Some(v_a), Some(v_b)) = topo_tools_full::edge_vertices(&edges[0]) else {
+    let (Some(v_a), Some(v_b)) = topo_tools::edge_vertices(&edges[0]) else {
         return Vec::new();
     };
     // Follow the first edge to its other end before searching; otherwise the
@@ -121,7 +121,7 @@ fn base_ring_vertices(face: &Face) -> Vec<Vertex> {
             if used[i] {
                 continue;
             }
-            let (a, b) = topo_tools_full::edge_vertices(e);
+            let (a, b) = topo_tools::edge_vertices(e);
             let (Some(a), Some(b)) = (a, b) else { continue };
             let next;
             if pos(&a).distance(&pos(&cur)) < 1e-12 {
@@ -173,9 +173,9 @@ pub fn prism_from_face(face: &Face, d: &GpVec) -> Prism {
     }
 
     // Base edges aligned to the vertex ring, not `edges_of_wire` child order.
-    let wire_edges: Vec<Edge> = topo_tools_full::wires_of_face(face)
+    let wire_edges: Vec<Edge> = topo_tools::wires_of_face(face)
         .first()
-        .map(|w| topo_tools_full::edges_of_wire(w))
+        .map(|w| topo_tools::edges_of_wire(w))
         .unwrap_or_default();
     let base_edges: Vec<Edge> = (0..n)
         .map(|i| {
@@ -326,7 +326,7 @@ mod tests {
     #[test]
     fn prism_from_box_face() {
         let box_ = BRepPrimBox::make_box(1.0, 1.0, 1.0);
-        let face = crate::topo_tools_full::faces_of(&box_.solid.0)
+        let face = crate::topo_tools::faces_of(&box_.solid.0)
             .into_iter()
             .find(|f| BRepTool::face_surface(f).map(|s| (s.d0(0.0, 0.0).z() - 0.0).abs() < 1e-9).unwrap_or(false))
             .expect("bottom face");

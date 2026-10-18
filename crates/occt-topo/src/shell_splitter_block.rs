@@ -15,7 +15,7 @@ use crate::connexity_block::ConnexityBlock;
 use crate::int_tools_full::IntToolsContext;
 use crate::shape::{Edge, Face, Shell, TopoShape};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{edges_of_wire, is_same, wires_of_face};
+use crate::topo_tools::{edges_of_wire, is_same, wires_of_face};
 
 fn shape_key(s: &TopoShape) -> usize {
     GeometryRegistry::shape_key(s)

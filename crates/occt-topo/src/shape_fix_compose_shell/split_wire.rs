@@ -282,7 +282,7 @@ impl ComposeShell {
                                                     continue;
                                                 }
                                             } else if BRepTool::is_degenerated(&edge)
-                                                && crate::topo_tools_full::is_same(&prev_v.0, &last_v.0)
+                                                && crate::topo_tools::is_same(&prev_v.0, &last_v.0)
                                             {
                                                 // cxx:1224-1229.
                                                 v_opt = Some(prev_v.clone());
@@ -323,7 +323,7 @@ impl ComposeShell {
                                     if !splitted {
                                         let f_v = empty_copied_vertex(&prev_v);
                                         self.context_mut().replace(&prev_v.0, &f_v.0);
-                                        let l_v = if crate::topo_tools_full::is_same(&prev_v.0, &last_v.0) {
+                                        let l_v = if crate::topo_tools::is_same(&prev_v.0, &last_v.0) {
                                             let mut tmp = f_v.clone();
                                             tmp.0.set_orientation(last_v.0.orientation());
                                             tmp
@@ -332,9 +332,9 @@ impl ComposeShell {
                                             self.context_mut().replace(&last_v.0, &nv.0);
                                             nv
                                         };
-                                        if crate::topo_tools_full::is_same(&v.0, &last_v.0) {
+                                        if crate::topo_tools::is_same(&v.0, &last_v.0) {
                                             v = l_v.clone();
-                                        } else if crate::topo_tools_full::is_same(&v.0, &prev_v.0) {
+                                        } else if crate::topo_tools::is_same(&v.0, &prev_v.0) {
                                             v = f_v.clone();
                                         }
                                         last_v = l_v;

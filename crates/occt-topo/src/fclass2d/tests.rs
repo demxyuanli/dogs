@@ -5,7 +5,7 @@ use super::*;
     use crate::builder::TopoBuilder;
     use crate::builder_face::build_face_with_holes;
     use crate::primitives::BRepPrimCylinder;
-    use crate::topo_tools_full::faces_of;
+    use crate::topo_tools::faces_of;
     use occt_core::gp::{GpAx2, GpAx3, GpCylinder, GpDir, GpPln, GpPnt, GpPnt2d};
     use occt_geom::{GeomCylinder, GeomPlane, Surface};
 

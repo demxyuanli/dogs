@@ -15,7 +15,7 @@ use occt_core::gp::GpPnt;
 use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, Face, TopoShape, Vertex};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{all_subshapes, edges_of, faces_of, vertices_of};
+use crate::topo_tools::{all_subshapes, edges_of, faces_of, vertices_of};
 
 /// Stable identity of a shape: the address of its shared `TShape`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

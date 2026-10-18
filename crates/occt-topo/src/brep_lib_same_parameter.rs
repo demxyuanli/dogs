@@ -16,7 +16,7 @@ use std::sync::Arc;
 use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, Face, TopoShape};
 use crate::tgeometry::{GeometryRegistry, VertexGeom};
-use crate::topo_tools_full::{edge_vertices, edges_of, faces_of};
+use crate::topo_tools::{edge_vertices, edges_of, faces_of};
 
 const NCONTROL: i32 = 22;
 

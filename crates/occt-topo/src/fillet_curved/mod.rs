@@ -46,7 +46,7 @@ pub(crate) use crate::brep_tool::BRepTool;
 pub(crate) use crate::builder::TopoBuilder;
 pub(crate) use crate::fillet_edge::classify_surface_full;
 pub(crate) use crate::shape::{Edge, Face, TopoShape, Wire};
-pub(crate) use crate::topo_tools_full::{
+pub(crate) use crate::topo_tools::{
     edge_vertices, edges_of, edges_of_wire, faces_of, is_same, vertex_position, vertices_of,
     wires_of_face,
 };

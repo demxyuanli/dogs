@@ -32,7 +32,7 @@ use crate::builder_area::{
     plane_from_loop,
 };
 use crate::shape::{Edge, Face, TopoShape, Wire};
-use crate::topo_tools_full::{edge_vertices, edges_of_wire, vertex_position};
+use crate::topo_tools::{edge_vertices, edges_of_wire, vertex_position};
 
 /// A face-oriented area builder (`BOPAlgo_BuilderFace`).
 ///
@@ -268,7 +268,7 @@ mod tests {
     use crate::builder::TopoBuilder;
     use crate::builder_area::build_loops;
     use crate::shape::TopoShape;
-    use crate::topo_tools_full::edges_of;
+    use crate::topo_tools::edges_of;
     use occt_core::gp::GpPnt;
 
     /// Four segment edges of a polygon; each edge carries its own vertex
@@ -289,9 +289,9 @@ mod tests {
             assert_eq!(loops.len(), 1, "face {i} edges form one loop");
             assert!(edges_form_closed_loop(&loops[0]), "face {i} loop is closed");
             // one wire with 4 edges.
-            let wires = crate::topo_tools_full::wires_of_face(&rebuilt);
+            let wires = crate::topo_tools::wires_of_face(&rebuilt);
             assert_eq!(wires.len(), 1);
-            assert_eq!(crate::topo_tools_full::edges_of_wire(&wires[0]).len(), 4);
+            assert_eq!(crate::topo_tools::edges_of_wire(&wires[0]).len(), 4);
             // area 1.0 for a unit quad.
             let area = face_area_exact(&rebuilt, 16, 16);
             assert!((area - 1.0).abs() < 1e-6, "face {i} area = {area}");
@@ -335,7 +335,7 @@ mod tests {
 
         let face = build_face_with_holes(&outer_edges, &[hole_edges.clone()])
             .expect("face with a square hole");
-        assert_eq!(crate::topo_tools_full::wires_of_face(&face).len(), 2);
+        assert_eq!(crate::topo_tools::wires_of_face(&face).len(), 2);
 
         let pln = plane_from_loop(&build_loops(&outer_edges).unwrap()[0]).unwrap();
         let outer_loop = &build_loops(&outer_edges).unwrap()[0];

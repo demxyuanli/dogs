@@ -27,7 +27,7 @@ use crate::bop_occt_util::{
 use crate::bop_split_to_reverse::orient_split_with_warn;
 use crate::int_tools_full::IntToolsContext;
 use crate::shape::{Shell, Solid, TopoShape};
-use crate::topo_tools_full::ShapeMapKey;
+use crate::topo_tools::ShapeMapKey;
 
 /// Whether `fx` is bound in the builder same-domain map (`myShapesSD.IsBound`).
 fn shapes_sd_bound<B: BopSolidHost>(f: &B, fx: &TopoShape) -> bool {
@@ -200,7 +200,7 @@ pub fn build_draft_solid_from_history(
 
 /// Diagnostics: number of faces on the draft solid.
 pub fn draft_solid_face_count(draft: &TopoShape) -> usize {
-    crate::topo_tools_full::faces_of(draft).len()
+    crate::topo_tools::faces_of(draft).len()
 }
 
 /// Diagnostics: whether the draft has any shell.

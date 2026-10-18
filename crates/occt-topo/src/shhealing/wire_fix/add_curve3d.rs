@@ -18,7 +18,7 @@
 use crate::shhealing::shape_fix_edge::ShapeFixEdge;
 use crate::shape::{Face, Wire};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::edges_of_wire;
+use crate::topo_tools::edges_of_wire;
 
 use super::degenerated::fix_degenerated;
 use super::lacking::fix_lacking_one;

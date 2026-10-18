@@ -10,7 +10,7 @@ use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::fclass2d::{FClass2d, FaceState};
 use crate::shape::{Edge, Face, TopoShape, Wire};
-use crate::topo_tools_full::{edges_of_wire, is_same};
+use crate::topo_tools::{edges_of_wire, is_same};
 
 use super::face_geom_helpers::empty_copied_face;
 use super::ShapeFixFace;
@@ -278,7 +278,7 @@ impl ShapeFixFace {
         self.result = Some(comp.clone());
         self.context.replace(&face.0, &comp); // cxx:2996-2999
         // cxx:3000-3006: `myFace` ends as the last face of the compound.
-        for f in crate::topo_tools_full::faces_of(&comp) {
+        for f in crate::topo_tools::faces_of(&comp) {
             self.face = Some(f);
         }
         true

@@ -41,7 +41,7 @@ pub(crate) use occt_math::gauss::gauss_legendre;
 pub(crate) use crate::brep_surface::classify_surface;
 pub(crate) use crate::brep_tool::BRepTool;
 pub(crate) use crate::shape::{Edge, Face, TopoShape};
-pub(crate) use crate::topo_tools_full::{edges_of, edges_of_wire, faces_of, vertices_of, wires_of_face};
+pub(crate) use crate::topo_tools::{edges_of, edges_of_wire, faces_of, vertices_of, wires_of_face};
 
 }
 

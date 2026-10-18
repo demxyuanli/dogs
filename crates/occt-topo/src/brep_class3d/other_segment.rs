@@ -22,7 +22,7 @@ use crate::fclass2d::{FaceState, FClass2d};
 use crate::int_curves_face::FaceIntersector;
 use crate::shape::{Edge, Face};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{edges_of_wire, wires_of_face};
+use crate::topo_tools::{edges_of_wire, wires_of_face};
 
 use super::{Segment, SolidExplorer};
 
@@ -66,7 +66,7 @@ fn clamp_step(step: f64) -> f64 {
 /// `TopoDS_Shape::operator==` (`cxx:127`, `TopoDS_Shape.hxx:276-280`): same
 /// TShape, same location and same orientation.
 fn is_same_edge_occurrence(a: &Edge, b: &Edge) -> bool {
-    crate::topo_tools_full::is_equal(&a.0, &b.0)
+    crate::topo_tools::is_equal(&a.0, &b.0)
 }
 
 /// `FClassifier.Compare(AEdge, Or)` followed by the `ClosestIntersection`

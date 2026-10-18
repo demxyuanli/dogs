@@ -14,7 +14,7 @@ use crate::brep_surface;
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::shape::{Face, Wire};
-use crate::topo_tools_full::{edge_vertices, edges_of_wire, vertex_position, wires_of_face};
+use crate::topo_tools::{edge_vertices, edges_of_wire, vertex_position, wires_of_face};
 
 /// Degree-1 tensor-product B-spline surface (bilinear patches), used by
 /// [`make_surface_from_face`]. Poles are stored row-major (`n_u × n_v`).
@@ -254,7 +254,7 @@ mod tests {
     use super::*;
     use crate::brep_builder_api::make_face_from_polygon;
     use crate::primitives::BRepPrimBox;
-    use crate::topo_tools_full::{edges_of_wire, faces_of};
+    use crate::topo_tools::{edges_of_wire, faces_of};
     use occt_core::gp::GpPnt;
 
     fn approx(a: f64, b: f64) -> bool {

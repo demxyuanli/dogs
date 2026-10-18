@@ -15,7 +15,7 @@ use crate::builder::TopoBuilder;
 use crate::shape::{Edge, Face, TopoShape, Vertex, Wire};
 use crate::shell_check::{shell_is_closed};
 
-use crate::topo_tools_full::{
+use crate::topo_tools::{
     edge_vertices, edges_of_wire, faces_of, shapes_of, vertex_position, vertices_of,
     wires_of_face,
 };

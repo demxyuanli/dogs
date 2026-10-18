@@ -13,7 +13,7 @@ use crate::brep_surface::SurfaceKind;
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::pcurve_full::classify_surface_kind;
-use crate::topo_tools_full::{edge_vertices, edges_of_wire, is_same};
+use crate::topo_tools::{edge_vertices, edges_of_wire, is_same};
 
 /// When the 3D range is a proper subset of the pcurve geometry domain, set
 /// the COS representation back to that domain so `FixEdgeCurves` sees

@@ -37,7 +37,7 @@ use crate::shhealing::wire_fix::{
 };
 use crate::shhealing::wire_self_inter::point_on_edge;
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{edges_of_wire, is_same, vertex_position, vertices_of};
+use crate::topo_tools::{edges_of_wire, is_same, vertex_position, vertices_of};
 
 use super::{
     create_boxes_2d, cut_edge, find_vert_and_split_edge, select_int_pnt, skey, split_edge1,

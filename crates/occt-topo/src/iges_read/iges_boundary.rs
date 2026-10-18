@@ -14,7 +14,7 @@ use crate::builder::TopoBuilder;
 use crate::shape::Edge;
 use crate::shape_fix_compose_shell::reverse_wire_data;
 use crate::shhealing::{first_vertex, last_vertex};
-use crate::topo_tools_full::is_same;
+use crate::topo_tools::is_same;
 
 const DONE1: i32 = 0x0001;
 const DONE2: i32 = 0x0002;
@@ -206,5 +206,5 @@ pub(in crate::iges_read) fn reverse_curves_3d(edges: &[Edge], precision: f64, ma
     }
     let mut wire = b.make_wire(&built);
     crate::shhealing::fix_connected_closed(&mut wire, precision, maxtol, true);
-    crate::topo_tools_full::edges_of_wire(&wire)
+    crate::topo_tools::edges_of_wire(&wire)
 }

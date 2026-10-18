@@ -57,7 +57,7 @@ use crate::fclass2d::FaceState;
 use crate::int_tools_full::IntToolsContext;
 use crate::shape::{Edge, Face, Shell, Solid, TopoShape};
 use crate::shell_splitter::{ShellSplitter, edge_key, EKey};
-use crate::topo_tools_full::{edges_of, faces_of, ShapeMapKey};
+use crate::topo_tools::{edges_of, faces_of, ShapeMapKey};
 
 /// Undirected identity keys of the boundary edges of `face`, in boundary order
 /// with the first occurrence kept.
@@ -86,8 +86,8 @@ fn face_edge_keys(face: &TopoShape) -> Vec<EKey> {
 /// the `aNbF == 2` branch (`BOPAlgo_BuilderSolid.cxx:182-209`).
 fn face_edge_occurrences(face: &TopoShape) -> Vec<Edge> {
     let mut out = Vec::new();
-    for w in crate::topo_tools_full::wires_of_face(&Face(face.clone())) {
-        out.extend(crate::topo_tools_full::edges_of_wire(&w));
+    for w in crate::topo_tools::wires_of_face(&Face(face.clone())) {
+        out.extend(crate::topo_tools::edges_of_wire(&w));
     }
     out
 }

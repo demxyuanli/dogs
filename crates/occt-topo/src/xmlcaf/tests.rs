@@ -1,7 +1,7 @@
 use super::prelude::*;
 use super::*;
     use crate::primitives::{BRepPrimBox, BRepPrimSphere};
-    use crate::topo_tools_full::faces_of;
+    use crate::topo_tools::faces_of;
 
     fn attr(kind: &str, value: &str) -> XmlAttribute {
         XmlAttribute {

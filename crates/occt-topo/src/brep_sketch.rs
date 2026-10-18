@@ -192,7 +192,7 @@ pub fn sketch_area2d(sketch: &Sketch) -> f64 {
 mod tests {
     use super::*;
     use crate::brep_surface::face_is_plane_type;
-    use crate::topo_tools_full::{edges_of_wire, vertex_position, vertices_of};
+    use crate::topo_tools::{edges_of_wire, vertex_position, vertices_of};
     use occt_core::gp::GpAx3;
 
     fn standard_plane() -> GpPln {

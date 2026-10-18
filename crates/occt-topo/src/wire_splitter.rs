@@ -6,13 +6,13 @@
 //!
 //! Edges are matched by the coordinates of their endpoints (order
 //! independent for identity, order aware for the chaining), taken from
-//! `topo_tools_full::{edge_vertices, vertex_position}`.
+//! `topo_tools::{edge_vertices, vertex_position}`.
 
 use std::collections::{HashMap, HashSet};
 
 use crate::builder::TopoBuilder;
 use crate::shape::{Edge, Face, TopoShape, Vertex};
-use crate::topo_tools_full::{edge_vertices, edges_of, vertex_position};
+use crate::topo_tools::{edge_vertices, edges_of, vertex_position};
 
 /// Vertex identity: 3D coordinates quantized onto a `1e-6` grid.
 type VKey = (i64, i64, i64);
@@ -547,7 +547,7 @@ mod tests {
     use crate::abs::Orientation;
     use crate::brep_extrema::test_box::unit_box;
     use crate::shape::Wire;
-    use crate::topo_tools_full::edges_of;
+    use crate::topo_tools::edges_of;
     use occt_core::gp::{GpAx3, GpDir, GpPln, GpPnt};
     use std::sync::Arc;
     use occt_geom::{GeomPlane, Surface};
@@ -724,7 +724,7 @@ mod tests {
             b.make_vertex(GpPnt::new(0.5, 1.0, 0.0), 0.0),
             b.make_vertex(GpPnt::new(0.0, 1.0, 0.0), 0.0),
         ];
-        let gp = |i: usize| crate::topo_tools_full::vertex_position(&p[i]);
+        let gp = |i: usize| crate::topo_tools::vertex_position(&p[i]);
         let e = |i: usize, j: usize| b.make_edge_segment_with_vertices(&gp(i), &gp(j), &p[i], &p[j]);
         let boundary = [e(0, 1), e(1, 2), e(2, 3), e(3, 4), e(4, 5), e(5, 0)];
         let face = planar_face(&[b.make_wire(&boundary)]);

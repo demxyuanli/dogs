@@ -81,7 +81,7 @@ pub fn project_edge_on_plane(e: &Edge, pln: &occt_core::gp::GpPln) -> Option<Edg
 /// projected segment; shared vertices are projected once.
 pub fn project_wire_on_plane(wire: &Wire, pln: &occt_core::gp::GpPln) -> Wire {
     let builder = TopoBuilder::new();
-    let edges = crate::topo_tools_full::edges_of_wire(wire);
+    let edges = crate::topo_tools::edges_of_wire(wire);
     let mut proj = Vec::with_capacity(edges.len());
     for e in &edges {
         if let Some(pe) = project_edge_on_plane(e, pln) {
@@ -95,9 +95,9 @@ pub fn project_wire_on_plane(wire: &Wire, pln: &occt_core::gp::GpPln) -> Wire {
 pub fn face_xy_footprint(f: &Face) -> Option<Vec<GpPnt2d>> {
     let poly = crate::brep_surface::face_plane(f)?;
     let mut out = Vec::new();
-    for w in crate::topo_tools_full::wires_of_face(f) {
-        for e in crate::topo_tools_full::edges_of_wire(&w) {
-            if let (Some(v), _) = crate::topo_tools_full::edge_vertices(&e) {
+    for w in crate::topo_tools::wires_of_face(f) {
+        for e in crate::topo_tools::edges_of_wire(&w) {
+            if let (Some(v), _) = crate::topo_tools::edge_vertices(&e) {
                 let p = BRepTool::vertex_point(&v);
                 out.push(GpPnt2d::new(p.x(), p.y()));
             }
@@ -193,7 +193,7 @@ mod tests {
         }).collect();
         let wire = b.make_wire(&edges);
         let pw = project_wire_on_plane(&wire, &z0_plane());
-        let pedges = crate::topo_tools_full::edges_of_wire(&pw);
+        let pedges = crate::topo_tools::edges_of_wire(&pw);
         assert_eq!(pedges.len(), 4);
     }
 
@@ -221,7 +221,7 @@ mod tests {
     fn face_xy_footprint_works() {
         use crate::primitives::BRepPrimBox;
         let box_ = BRepPrimBox::make_box(1.0, 1.0, 1.0);
-        let faces = crate::topo_tools_full::faces_of(&box_.solid.0);
+        let faces = crate::topo_tools::faces_of(&box_.solid.0);
         let fp = face_xy_footprint(&faces[0]).expect("footprint");
         assert!(!fp.is_empty());
     }

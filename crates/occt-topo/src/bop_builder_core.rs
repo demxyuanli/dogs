@@ -4,7 +4,7 @@
 use crate::abs::ShapeType;
 use crate::builder::TopoBuilder;
 use crate::shape::{Face, Shell, Solid, TopoShape};
-use crate::topo_tools_full::{faces_of, shapes_of};
+use crate::topo_tools::{faces_of, shapes_of};
 
 /// The boolean operation to apply.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -332,7 +332,7 @@ pub fn fill_bnd_box(
 pub fn shape_analysis_face_uv_bounds(face: &Face) -> (f64, f64, f64, f64) {
     let mut ff = face.0.clone();
     ff.set_orientation(crate::abs::Orientation::Forward);
-    let edges = crate::topo_tools_full::edges_of(&ff);
+    let edges = crate::topo_tools::edges_of(&ff);
     if edges.is_empty() {
         // cxx:279-281: `BRep_Tool::Surface(F, L)->Bounds(...)`.
         if let Some(surf) = BRepTool::face_surface(face) {
@@ -396,7 +396,7 @@ pub fn is_short_segment(
     let (Some(vf), Some(vl)) = (seg.first_vertex(), seg.last_vertex()) else {
         return 0;
     };
-    if !crate::topo_tools_full::is_same(&vf.0, &vl.0) {
+    if !crate::topo_tools::is_same(&vf.0, &vl.0) {
         return 0;
     }
     let pnt = BRepTool::vertex_point(&vf);
@@ -409,7 +409,7 @@ pub fn is_short_segment(
         let Some(last) = crate::shhealing::last_vertex(edge) else {
             return 0;
         };
-        if !crate::topo_tools_full::is_same(&vf.0, &last.0) {
+        if !crate::topo_tools::is_same(&vf.0, &last.0) {
             return 0;
         }
         // `cxx:2423`: `sae.PCurve(edge, myFace, c2d, f, l)` keeps the default

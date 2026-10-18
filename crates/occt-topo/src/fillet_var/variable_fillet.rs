@@ -692,7 +692,7 @@ pub(super) fn radius_at_endpoint(spec: &VarFilletSpec, p0: &GpPnt, p1: &GpPnt, v
 }
 
 pub(super) fn find_vertex_at(solid: &TopoShape, p: &GpPnt) -> Option<Vertex> {
-    crate::topo_tools_full::vertices_of(solid)
+    crate::topo_tools::vertices_of(solid)
         .into_iter()
         .find(|v| BRepTool::vertex_point(v).distance(p) < 1e-6)
 }

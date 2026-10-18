@@ -18,7 +18,7 @@ use crate::boptools_2d;
 use crate::pcurve_full::surface_value_of_uv;
 use crate::shape::{Edge, Vertex};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::is_same;
+use crate::topo_tools::is_same;
 
 use super::helpers::*;
 use super::reshape::{apply_context, ReShape};

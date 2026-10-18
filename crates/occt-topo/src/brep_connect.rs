@@ -8,7 +8,7 @@ use occt_core::gp::{GpPnt};
 
 use crate::builder::TopoBuilder;
 use crate::shape::{Face, Solid, TopoShape, Vertex};
-use crate::topo_tools_full::{edges_of, faces_of, vertices_of};
+use crate::topo_tools::{edges_of, faces_of, vertices_of};
 
 /// Weld vertices of a shape that lie within `tol` of each other (spatial-hash
 /// merge). Returns the welded shape with shared vertices unified.
@@ -119,9 +119,9 @@ fn face_centroid_point(f: &Face) -> GpPnt {
                 // distinct vertex counted once).
                 let mut acc = occt_core::gp::GpXyz::zero();
                 let mut used: Vec<Vertex> = Vec::new();
-                for w in crate::topo_tools_full::wires_of_face(f) {
-                    for e in crate::topo_tools_full::edges_of_wire(&w) {
-                        let (a, b) = crate::topo_tools_full::edge_vertices(&e);
+                for w in crate::topo_tools::wires_of_face(f) {
+                    for e in crate::topo_tools::edges_of_wire(&w) {
+                        let (a, b) = crate::topo_tools::edge_vertices(&e);
                         for v in [a, b].into_iter().flatten() {
                             if used.iter().any(|u| u.same_tshape(&v)) {
                                 continue;

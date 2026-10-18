@@ -9,7 +9,7 @@ use occt_core::gp::GpPnt;
 use crate::abs::ShapeType;
 use crate::brep_tool::BRepTool;
 use crate::shape::TopoShape;
-use crate::topo_tools_full::{all_subshapes, edges_of, vertices_of};
+use crate::topo_tools::{all_subshapes, edges_of, vertices_of};
 
 /// Structural signature of a shape: a string encoding the type of every
 /// sub-shape in traversal order. Two shapes with identical structure have the
@@ -79,7 +79,7 @@ pub fn vertex_valence(shape: &TopoShape, v: &TopoShape) -> usize {
     edges_of(shape)
         .iter()
         .filter(|e| {
-            let (a, b) = crate::topo_tools_full::edge_vertices(e);
+            let (a, b) = crate::topo_tools::edge_vertices(e);
             let pa = a.map(|a| std::sync::Arc::as_ptr(&a.0.tshape) as usize);
             let pb = b.map(|b| std::sync::Arc::as_ptr(&b.0.tshape) as usize);
             pa == Some(vid) || pb == Some(vid)

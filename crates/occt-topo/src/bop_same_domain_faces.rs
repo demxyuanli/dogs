@@ -35,7 +35,7 @@ use crate::brep_surface::{classify_surface, SurfaceKind};
 use crate::brep_tool::BRepTool;
 use crate::int_tools_full::IntToolsContext;
 use crate::shape::{Face, TopoShape};
-use crate::topo_tools_full::{faces_of, ShapeMapKey};
+use crate::topo_tools::{faces_of, ShapeMapKey};
 
 /// `AddEdgeSet` (`_2.cxx:562-576`): intern `theS` under its EDGE
 /// [`BopToolsSet`] and keep the connection from that set to the shape.

@@ -28,7 +28,7 @@ use crate::shhealing::{
 
 use super::iges_boundary::{closure_failed, connect_next_wire};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::is_same;
+use crate::topo_tools::is_same;
 
 use super::iges_data_iges_model::EntityData;
 use super::iges_to_brep_basic_curve::{
@@ -695,7 +695,7 @@ fn connect_wire(
     if connect_next {
         let mut wire = TopoBuilder::new().make_wire(next);
         crate::shhealing::fix_connected_closed(&mut wire, precision, maxtol, false);
-        *next = crate::topo_tools_full::edges_of_wire(&wire);
+        *next = crate::topo_tools::edges_of_wire(&wire);
     }
     connect_next_wire(acc, next, precision, maxtol)
 }
@@ -911,8 +911,8 @@ impl WireDataBoundary {
                 &face_fix,
                 self.precision,
             );
-            rebuilt3d = crate::topo_tools_full::edges_of_wire(&wire3);
-            rebuilt2d = crate::topo_tools_full::edges_of_wire(&wire2);
+            rebuilt3d = crate::topo_tools::edges_of_wire(&wire3);
+            rebuilt2d = crate::topo_tools::edges_of_wire(&wire2);
             let heal3 = rebuild_wire_max_tolerance(&rebuilt3d);
             let heal2 = rebuild_wire_max_tolerance(&rebuilt2d);
             let keep = if heal3 < heal2 {
@@ -1051,8 +1051,8 @@ fn rebuild_disconnected(
     let mut wire2 = builder.make_wire(&edges2);
     crate::shhealing::perform_wire_constructor_defaults(&mut wire3, &face_fix, precision);
     crate::shhealing::perform_wire_constructor_defaults(&mut wire2, &face_fix, precision);
-    let healed3 = crate::topo_tools_full::edges_of_wire(&wire3);
-    let healed2 = crate::topo_tools_full::edges_of_wire(&wire2);
+    let healed3 = crate::topo_tools::edges_of_wire(&wire3);
+    let healed2 = crate::topo_tools::edges_of_wire(&wire2);
     // `ShapeAnalysis_ShapeTolerance::Tolerance(wire, 1)` (`cxx:491-492`):
     // mode > 0 is the maximum of every edge and vertex tolerance.
     let keep = if wire_max_tolerance(&healed3) < wire_max_tolerance(&healed2) {

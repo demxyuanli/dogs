@@ -10,7 +10,7 @@ use crate::builder::TopoBuilder;
 use crate::iterator::cumulated_children;
 use crate::shape::TopoShape;
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::is_same;
+use crate::topo_tools::is_same;
 
 use super::num_shape::{NumShape, NumShapeIterator, NumShapeTool};
 
@@ -353,7 +353,7 @@ pub fn shape_of(host: &dyn SweepOps, gen: &TopoShape, dir: NumShape) -> Option<T
         let mut kt = NumShapeIterator::new(dir);
         eprintln!(
             "[sweep-dbg] after gen-children: shell faces={}",
-            crate::topo_tools_full::faces_of(&new_shell).len()
+            crate::topo_tools::faces_of(&new_shell).len()
         );
         while kt.more() {
             let sub_dir = kt.value();
@@ -398,7 +398,7 @@ pub fn shape_of(host: &dyn SweepOps, gen: &TopoShape, dir: NumShape) -> Option<T
                                 sub_dir.index,
                                 sub_dir.ty,
                                 or,
-                                crate::topo_tools_full::faces_of(&new_shape).len(),
+                                crate::topo_tools::faces_of(&new_shape).len(),
                                 std::sync::Arc::as_ptr(&new_shape.tshape) as usize,
                                 new_shape.location().transformation(),
                             );
@@ -432,7 +432,7 @@ pub fn shape_of(host: &dyn SweepOps, gen: &TopoShape, dir: NumShape) -> Option<T
             let kids = cumulated_children(&temp);
             eprintln!(
                 "[sweep-dbg] walls+floors shell faces={} split kids={} ori={:?}",
-                crate::topo_tools_full::faces_of(&new_shell).len(),
+                crate::topo_tools::faces_of(&new_shell).len(),
                 kids.len(),
                 shell_ori
             );
@@ -440,7 +440,7 @@ pub fn shape_of(host: &dyn SweepOps, gen: &TopoShape, dir: NumShape) -> Option<T
                 eprintln!(
                     "[sweep-dbg]   kid {:?} faces={}",
                     k.shape_type(),
-                    crate::topo_tools_full::faces_of(k).len()
+                    crate::topo_tools::faces_of(k).len()
                 );
             }
             if kids.len() > 1 {
@@ -540,7 +540,7 @@ pub fn shape_is_closed(s: &TopoShape) -> bool {
     let mut odd: Vec<usize> = Vec::new();
     match s.shape_type() {
         ShapeType::Wire => {
-            for v in crate::topo_tools_full::vertices_of(s) {
+            for v in crate::topo_tools::vertices_of(s) {
                 if matches!(v.0.orientation(), Orientation::Internal | Orientation::External) {
                     continue;
                 }
@@ -549,7 +549,7 @@ pub fn shape_is_closed(s: &TopoShape) -> bool {
             }
         }
         ShapeType::Shell => {
-            for e in crate::topo_tools_full::edges_of(s) {
+            for e in crate::topo_tools::edges_of(s) {
                 if crate::brep_tool::BRepTool::is_degenerated(&e)
                     || matches!(e.0.orientation(), Orientation::Internal | Orientation::External)
                 {

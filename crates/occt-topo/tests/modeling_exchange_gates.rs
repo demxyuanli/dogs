@@ -33,7 +33,7 @@ fn step_box_roundtrip_pipeline() {
     let model = read_step(&step_text).expect("STEP text parses back");
     assert_eq!(model.len(), 1);
     let shape = model.get(0).expect("one shape").shape.clone();
-    let counts = occt_topo::topo_tools_full::shape_counts(&shape);
+    let counts = occt_topo::topo_tools::shape_counts(&shape);
     assert_eq!(counts[&occt_topo::ShapeType::Vertex], 8);
     assert_eq!(counts[&occt_topo::ShapeType::Edge], 12);
     assert_eq!(counts[&occt_topo::ShapeType::Face], 6);
@@ -50,7 +50,7 @@ fn fillet_and_measure() {
     assert!(approx(t2.distance(&GpPnt::new(0.0, 0.5, 0.0)), 0.0));
 
     let wire = fillet_corner(&p1, &p2, &p3, 0.5).expect("fillet wire");
-    let edges = occt_topo::topo_tools_full::edges_of_wire(&wire);
+    let edges = occt_topo::topo_tools::edges_of_wire(&wire);
     assert_eq!(edges.len(), 3);
     // The arc edge is a quarter-circle of radius 0.5 centered at (0.5,0.5).
     let arc = BRepTool::edge_curve(&edges[1]).unwrap();
@@ -130,7 +130,7 @@ fn arc_edge_and_cylinder_full() {
     assert!(approx(mid.distance(&GpPnt::new(0.0, 1.0, 0.0)), 0.0));
 
     let cyl = make_cylinder_full(1.0, 2.0).expect("cylinder full");
-    assert_eq!(occt_topo::topo_tools_full::faces_of(&cyl.solid.0).len(), 3);
+    assert_eq!(occt_topo::topo_tools::faces_of(&cyl.solid.0).len(), 3);
     assert!(approx(std::f64::consts::PI * cyl.radius * cyl.radius * cyl.height, std::f64::consts::PI * 2.0));
 }
 

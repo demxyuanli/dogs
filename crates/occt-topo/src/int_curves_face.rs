@@ -28,7 +28,7 @@ use crate::intcurvesurface::{
     ThePolygonOfHInter as ThePolygon, ThePolyhedronOfHInter as ThePolyhedron,
 };
 use crate::shape::{Face, TopoShape};
-use crate::topo_tools_full::faces_of;
+use crate::topo_tools::faces_of;
 
 /// `IntCurveSurface_TransitionOnCurve`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

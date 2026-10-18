@@ -17,7 +17,7 @@ use crate::brep_lib_same_range::{check_same_range, same_range, set_rep_ranges};
 use crate::meshing::edge_discret::CurveOnSurface;
 use crate::shape::{Edge, TopoShape};
 use crate::tgeometry::{EdgeGeom, GeometryRegistry};
-use crate::topo_tools_full::edges_of;
+use crate::topo_tools::edges_of;
 
 /// `BRepLib::BuildCurves3d(S)` (`BRepLib.cxx:460-463`): tolerance `1.0e-5`,
 /// `GeomAbs_C1`, degree 14, `MaxSegment` 0 (`BRepLib.hxx:99-103`).
@@ -155,5 +155,5 @@ fn evaluate_max_segment(
 
 /// `TopTools_ShapeMapHasher` / `IsSame`: same `TShape` and the same location.
 fn same_located(a: &TopoShape, b: &TopoShape) -> bool {
-    crate::topo_tools_full::is_same(a, b)
+    crate::topo_tools::is_same(a, b)
 }

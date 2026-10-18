@@ -7,7 +7,7 @@ use occt_topo::meshing::incremental_mesh::IncrementalMesh;
 use occt_topo::meshing::range_splitter::{mesh_surface_type, MeshSurfaceType};
 use occt_topo::step::read_step_file;
 use occt_topo::tgeometry::GeometryRegistry;
-use occt_topo::topo_tools_full::{edge_vertices, edges_of, edges_of_wire, faces_of, vertices_of, wires_of_face};
+use occt_topo::topo_tools::{edge_vertices, edges_of, edges_of_wire, faces_of, vertices_of, wires_of_face};
 
 fn tname(t: MeshSurfaceType) -> &'static str {
     match t {
@@ -474,7 +474,7 @@ fn main() {
                     let fv = occt_topo::shhealing::first_vertex(&es[0]);
                     let lv = occt_topo::shhealing::last_vertex(&es[0]);
                     let closed = match (&fv, &lv) {
-                        (Some(a), Some(b)) => occt_topo::topo_tools_full::is_same(&a.0, &b.0),
+                        (Some(a), Some(b)) => occt_topo::topo_tools::is_same(&a.0, &b.0),
                         _ => false,
                     };
                     if closed {

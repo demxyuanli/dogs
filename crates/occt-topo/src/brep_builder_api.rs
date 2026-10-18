@@ -265,7 +265,7 @@ pub fn make_cylinder_full(radius: f64, height: f64) -> Result<CylinderPrim, Stri
         return Err("make_cylinder_full: radius and height must be positive".into());
     }
     let prim = crate::primitives::BRepPrimCylinder::make_cylinder(radius, height);
-    let faces = crate::topo_tools_full::faces_of(&prim.solid.0);
+    let faces = crate::topo_tools::faces_of(&prim.solid.0);
     if faces.len() != 3 {
         return Err("make_cylinder_full: expected 3 faces".into());
     }
@@ -293,7 +293,7 @@ pub fn make_cone_full(radius: f64, height: f64) -> Result<ConePrim, String> {
         return Err("make_cone_full: radius and height must be positive".into());
     }
     let prim = crate::primitives::BRepPrimCone::make_cone(radius, height);
-    let faces = crate::topo_tools_full::faces_of(&prim.solid.0);
+    let faces = crate::topo_tools::faces_of(&prim.solid.0);
     if faces.len() != 2 {
         return Err("make_cone_full: expected 2 faces".into());
     }
@@ -346,7 +346,7 @@ mod tests {
     use super::*;
     use crate::brep_tool::BRepTool;
     use crate::brep_surface::face_is_plane_type;
-    use crate::topo_tools_full::{vertex_position, wire_is_closed};
+    use crate::topo_tools::{vertex_position, wire_is_closed};
 
     fn approx(a: f64, b: f64) -> bool {
         (a - b).abs() < 1e-9 * b.abs().max(1.0)
@@ -388,7 +388,7 @@ mod tests {
         assert!(curve.d0(1.0).distance(&p3) < 1e-9, "end at p3");
         assert!(curve.d0(0.5).distance(&p2) < 1e-9, "midpoint at p2");
         // Endpoint vertex children match p1/p3.
-        let (a, z) = crate::topo_tools_full::edge_vertices(&e);
+        let (a, z) = crate::topo_tools::edge_vertices(&e);
         assert!(vertex_position(&a.unwrap()).distance(&p1) < 1e-9);
         assert!(vertex_position(&z.unwrap()).distance(&p3) < 1e-9);
     }
@@ -396,7 +396,7 @@ mod tests {
     #[test]
     fn cylinder_full_three_faces() {
         let c = make_cylinder_full(2.0, 3.0).expect("cylinder");
-        let faces = crate::topo_tools_full::faces_of(&c.solid.0);
+        let faces = crate::topo_tools::faces_of(&c.solid.0);
         assert_eq!(faces.len(), 3);
         assert!(c.bottom.is_face() && c.top.is_face() && c.lateral.is_face());
         assert!(approx(c.radius, 2.0) && approx(c.height, 3.0));
@@ -447,10 +447,10 @@ mod tests {
         ])
         .expect("open wire");
         assert!(!w.is_closed());
-        assert_eq!(crate::topo_tools_full::edges_of_wire(&w).len(), 2);
+        assert_eq!(crate::topo_tools::edges_of_wire(&w).len(), 2);
 
         // Solid from faces, compound from shapes.
-        let faces = crate::topo_tools_full::faces_of(&make_cylinder_full(1.0, 1.0).unwrap().solid.0);
+        let faces = crate::topo_tools::faces_of(&make_cylinder_full(1.0, 1.0).unwrap().solid.0);
         let solid = make_solid_from_faces(&faces).expect("solid");
         assert!(solid.is_solid());
         assert!(make_solid_from_faces(&[]).is_err());

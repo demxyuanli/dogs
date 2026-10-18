@@ -32,7 +32,7 @@ use crate::brep_tool::BRepTool;
 use crate::face_face::FaceIntersect;
 use crate::intpatch::{plane_from_surface, sphere_params};
 use crate::shape::{Edge, Face, TopoShape, Vertex, Wire};
-use crate::topo_tools_full::{edges_of, edges_of_wire, faces_of, vertices_of};
+use crate::topo_tools::{edges_of, edges_of_wire, faces_of, vertices_of};
 
 /// Default geometric tolerance for point/edge membership tests.
 const POINT_TOL: f64 = 1e-7;
@@ -321,7 +321,7 @@ mod tests {
     }
 
     fn box_face_by_normal(bx: &crate::primitives::BRepPrimBox, n: (f64, f64, f64)) -> Face {
-        crate::topo_tools_full::faces_of(&bx.solid.0)
+        crate::topo_tools::faces_of(&bx.solid.0)
             .into_iter()
             .find(|f| {
                 crate::inttools::face_plane_from_face(f).map_or(false, |pln| {

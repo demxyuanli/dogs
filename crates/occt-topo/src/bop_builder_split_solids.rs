@@ -22,7 +22,7 @@ use crate::bop_occt_util::{
 use crate::bop_tools_set::{intern_solid_sd, BopToolsSet, BopToolsSetMap};
 use crate::builder_solid::BuilderSolid;
 use crate::shape::TopoShape;
-use crate::topo_tools_full::{faces_of, ShapeMapKey};
+use crate::topo_tools::{faces_of, ShapeMapKey};
 
 /// `BOPAlgo_SplitSolid`: BuilderSolid plus the source solid it splits.
 struct SplitSolid {

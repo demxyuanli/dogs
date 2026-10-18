@@ -32,7 +32,7 @@ use crate::pave_intersect::collect_pairs;
 use crate::pcurve_full;
 use crate::shape::{Edge, Face, TopoShape, Vertex};
 
-use crate::topo_tools_full::edge_vertices;
+use crate::topo_tools::edge_vertices;
 
 /// `UpdateVertices` (`BOPAlgo_PaveFiller_7.cxx:808`).
 pub fn update_vertices_pcurve(e: &Edge, f: &Face) {

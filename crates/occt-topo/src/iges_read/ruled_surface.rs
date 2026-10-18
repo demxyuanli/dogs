@@ -20,7 +20,7 @@ use crate::builder::TopoBuilder;
 use crate::shape::{Edge, TopoShape, Wire};
 use crate::shhealing::fix_reorder_wire_3d;
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::edges_of_wire;
+use crate::topo_tools::edges_of_wire;
 
 use super::iges_data_iges_model::EntityData;
 use super::iges_to_brep_basic_curve::{convert_location, entity_location};

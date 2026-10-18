@@ -7,7 +7,7 @@ use crate::mesh::ShapeMesh;
 use crate::model::BRepModel;
 use crate::shape::TopoShape;
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::faces_of;
+use crate::topo_tools::faces_of;
 use crate::xcaf_prs::{dispatch_face_styles, XcafPrsStyle};
 use occt_core::gp::GpPnt;
 use occt_core::io::obj::{ObjFace, ObjMesh};

@@ -24,7 +24,7 @@ use crate::iterator::cumulated_children;
 use crate::pcurve_full::classify_surface_kind;
 use crate::shape::{Edge, Face, TopoShape, Vertex, Wire};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{edges_of_wire, is_same};
+use crate::topo_tools::{edges_of_wire, is_same};
 
 use super::wire_fix::{check_small, first_vertex, fix_reorder_wire_3d, is_seam_use, last_vertex};
 

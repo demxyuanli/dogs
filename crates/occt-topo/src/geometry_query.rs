@@ -11,7 +11,7 @@ use occt_core::gp::{GpPnt, GpVec};
 use crate::brep_tool::BRepTool;
 use crate::mesh::ShapeMesh;
 use crate::shape::{Face, TopoShape};
-use crate::topo_tools_full::faces_of;
+use crate::topo_tools::faces_of;
 
 /// A ray-surface hit.
 #[derive(Debug, Clone, Copy)]

@@ -20,14 +20,14 @@ use super::wire_segment::{WireSegment, MAXIND, MININD};
 /// as anything).
 fn same_v(a: &Option<Vertex>, b: &Option<Vertex>) -> bool {
     match (a, b) {
-        (Some(x), Some(y)) => crate::topo_tools_full::is_same(&x.0, &y.0),
+        (Some(x), Some(y)) => crate::topo_tools::is_same(&x.0, &y.0),
         _ => false,
     }
 }
 
 fn same_e(a: &Option<Edge>, b: &Option<Edge>) -> bool {
     match (a, b) {
-        (Some(x), Some(y)) => crate::topo_tools_full::is_same(&x.0, &y.0),
+        (Some(x), Some(y)) => crate::topo_tools::is_same(&x.0, &y.0),
         _ => false,
     }
 }

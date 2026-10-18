@@ -26,7 +26,7 @@ use crate::bop_occt_util::{iter_children, shape_key};
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::shape::{Edge, Face, Shell, TopoShape};
-use crate::topo_tools_full::{edges_of, shape_map_key, ShapeMapKey};
+use crate::topo_tools::{edges_of, shape_map_key, ShapeMapKey};
 
 /// `TopTools_ShapeMapHasher` key → (a representative edge, faces incident on
 /// that edge), the port of
@@ -228,7 +228,7 @@ pub fn solid_edge_avoid_set(solid: &TopoShape) -> HashSet<ShapeMapKey> {
 
 /// Face keys of a solid plus its own INTERNAL faces (`aMSF` in Perform).
 pub fn solid_face_avoid_set(solid: &TopoShape, own_if: &[TopoShape]) -> HashSet<ShapeMapKey> {
-    let mut s: HashSet<ShapeMapKey> = crate::topo_tools_full::faces_of(solid)
+    let mut s: HashSet<ShapeMapKey> = crate::topo_tools::faces_of(solid)
         .into_iter()
         .map(|f| shape_key(&f.0))
         .collect();
@@ -287,7 +287,7 @@ pub fn block_vertices_out_of_solid(
         return false;
     }
     for s in block {
-        for v in crate::topo_tools_full::vertices_of(s) {
+        for v in crate::topo_tools::vertices_of(s) {
             let mut bbv = occt_core::bnd::BndBox::new();
             bbv.add_point(&BRepTool::vertex_point(&v));
             bbv.enlarge(BRepTool::vertex_tolerance(&v));

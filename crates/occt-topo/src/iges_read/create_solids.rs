@@ -10,7 +10,7 @@ use crate::builder::TopoBuilder;
 use crate::fclass2d::FaceState;
 use crate::shape::{Shell, TopoShape};
 use crate::shape_fix_compose_shell::{ReShape, SharedReShape};
-use crate::topo_tools_full::{edges_of, faces_of, is_same, vertices_of, vertex_position};
+use crate::topo_tools::{edges_of, faces_of, is_same, vertices_of, vertex_position};
 
 struct ShellHoles {
     shell: TopoShape,

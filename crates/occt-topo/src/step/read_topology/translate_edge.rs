@@ -29,7 +29,7 @@ impl<'a> Resolver<'a> {
         // (STEP order, i.e. **not** the `same_sense`-swapped order).
         let mut p1 = GeometryRegistry::global().vertex_point(&v1);
         let mut p2 = GeometryRegistry::global().vertex_point(&v2);
-        if crate::topo_tools_full::is_same(&v1, &v2) {
+        if crate::topo_tools::is_same(&v1, &v2) {
             let raw1 = self.resolve_shape(start_ref)?;
             let raw2 = self.resolve_shape(end_ref)?;
             p1 = GeometryRegistry::global().vertex_point(&raw1);

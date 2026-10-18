@@ -27,7 +27,7 @@ use crate::fclass2d::FaceState;
 use crate::int_curves_face::Transition;
 use crate::shape::{Edge, Face, TopoShape, Vertex};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::{edge_vertices, edges_of_wire, wires_of_face};
+use crate::topo_tools::{edge_vertices, edges_of_wire, wires_of_face};
 
 use super::{apply_trans, Segment, SClassifier, SolidExplorer};
 
@@ -137,7 +137,7 @@ fn add_to_param(lin: &GpLin, par: f64, box_: &BndBox) -> f64 {
 /// Same shape occurrence: `TopTools_ShapeMapHasher` compares with `IsSame`,
 /// i.e. TShape and location (`TopoDS_Shape.hxx:268-271`).
 fn same_occurrence(a: &TopoShape, b: &TopoShape) -> bool {
-    crate::topo_tools_full::is_same(a, b)
+    crate::topo_tools::is_same(a, b)
 }
 
 /// `TopExp::MapShapesAndAncestors(shape, EDGE, FACE)` (`cxx:698-699`, `mapEF`):

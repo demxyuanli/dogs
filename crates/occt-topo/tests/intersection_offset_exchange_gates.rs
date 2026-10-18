@@ -84,7 +84,7 @@ fn offset_polygon_and_shell() {
     // Box spans [0,2]³; offset outward by +0.5 → max x = 2.5.
     let b = BRepPrimBox::make_box(2.0, 2.0, 2.0);
     let grown = offset_shell(&b.solid.0, 0.5).expect("offset shell");
-    let v = occt_topo::topo_tools_full::vertices_of(&grown);
+    let v = occt_topo::topo_tools::vertices_of(&grown);
     let mx = v.iter().map(|vv| occt_topo::brep_tool::BRepTool::vertex_point(vv).x()).fold(0.0, f64::max);
     assert!((mx - 2.5).abs() < 1e-9, "grown box max x {mx}");
 }
@@ -108,7 +108,7 @@ fn bincaf_roundtrip_preserves_tree() {
     assert_eq!(back.root.children.len(), 1);
     assert_eq!(back.root.children[0].attributes[0].kind, "color");
     // Solid topology preserved.
-    let nf = occt_topo::topo_tools_full::faces_of(back.root.shape.as_ref().unwrap()).len();
+    let nf = occt_topo::topo_tools::faces_of(back.root.shape.as_ref().unwrap()).len();
     assert_eq!(nf, 6, "box face count after round-trip");
 }
 

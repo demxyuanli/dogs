@@ -15,7 +15,7 @@ use crate::builder::TopoBuilder;
 use crate::shape::{Edge, Face, Solid, TopoShape};
 use crate::shell_check::{shell_is_closed};
 
-use crate::topo_tools_full::{
+use crate::topo_tools::{
     edge_vertices, edges_of, edges_of_wire, faces_of, shapes_of, vertex_position, vertices_of,
     wires_of_face,
 };
@@ -270,7 +270,7 @@ pub fn boundary_connectivity(shape: &TopoShape, tol: f64) -> Vec<Vec<usize>> {
 /// faces. An empty list means the shape passed every check.
 pub fn check_shape_validity(shape: &TopoShape, tol: f64) -> Vec<String> {
     let mut issues: Vec<String> = Vec::new();
-    if !crate::topo_tools_full::structure_is_valid(shape) {
+    if !crate::topo_tools::structure_is_valid(shape) {
         issues.push("invalid topology structure (a sub-shape has an illegal parent type)".into());
     }
     let analysis = analyze_boundary(shape, tol);

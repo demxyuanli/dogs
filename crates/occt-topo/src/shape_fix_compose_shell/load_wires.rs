@@ -16,7 +16,7 @@ use super::wire_segment::WireSegment;
 /// `wire`'s orientation exactly once). `edges_of_wire` already performs that
 /// composition (`TopoDS_Iterator` semantics), so nothing else is applied here.
 fn wire_data_edges(wire: &Wire) -> Vec<crate::shape::Edge> {
-    crate::topo_tools_full::edges_of_wire(wire)
+    crate::topo_tools::edges_of_wire(wire)
 }
 
 /// ShapeFix_ComposeShell::LoadWires (cxx:499-640).
@@ -112,7 +112,7 @@ pub fn load_wires(face: &Face, context: &SharedReShape) -> Vec<WireSegment> {
                     stat = -1; // cxx:610-613: StatusReorder(DONE3)
                 }
                 let mut edges_final: Vec<crate::shape::Edge> =
-                    crate::topo_tools_full::edges_of_wire(&wire_m);
+                    crate::topo_tools::edges_of_wire(&wire_m);
                 if stat < 0 {
                     // cxx:615-631: reverse only when IsOuterBound flips.
                     if let Some(surf) = crate::brep_tool::BRepTool::face_surface(face) {

@@ -20,7 +20,7 @@ use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::shape::{Edge, TopoShape};
 use crate::topexp::Explorer;
-use crate::topo_tools_full::is_same;
+use crate::topo_tools::is_same;
 
 use super::num_shape::NumShape;
 use super::rotation::Rotation;
@@ -184,7 +184,7 @@ fn unshare_degenerated(shape: &mut TopoShape) {
 /// `TopoDS_Shape::IsEqual` (`TopoDS_Shape.hxx:276-280`) — the comparison
 /// `BRepPrimAPI_MakeRevol.cxx:198` (`anIt.Value().IsEqual(anE)`) uses.
 fn is_equal(a: &TopoShape, b: &TopoShape) -> bool {
-    crate::topo_tools_full::is_equal(a, b)
+    crate::topo_tools::is_equal(a, b)
 }
 
 fn empty_copy_edge(src: &TopoShape) -> TopoShape {

@@ -26,7 +26,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::bop_occt_util::shape_key;
 use crate::shape::TopoShape;
-use crate::topo_tools_full::ShapeMapKey;
+use crate::topo_tools::ShapeMapKey;
 
 /// Indexed shape-to-neighbours map used as `aDMSLS` in FillSameDomainFaces.
 ///

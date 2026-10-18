@@ -1119,7 +1119,7 @@ pub(super) fn read_step_impl(content: &str) -> Result<(BRepModel, Vec<String>), 
                         })
                         .unwrap_or_else(|| composer.name(node.rep));
                     if std::env::var("ZZSTEP_DBG").is_ok() {
-                        let n = crate::topo_tools_full::faces_of(&node.shape).len();
+                        let n = crate::topo_tools::faces_of(&node.shape).len();
                         let b = crate::brep_bnd_lib::shape_bnd_box(&node.shape).get();
                         eprintln!(
                             "DBG pd={} rep={} faces={n} name={name} bbox={b:?}",
@@ -1144,7 +1144,7 @@ pub(super) fn read_step_impl(content: &str) -> Result<(BRepModel, Vec<String>), 
             // representation's own shape as it is (`cxx:842-848`).
             let Some(shape) = composer.rep_shape(rep) else { continue };
             if std::env::var("ZZSTEP_DBG").is_ok() {
-                let n = crate::topo_tools_full::faces_of(&shape).len();
+                let n = crate::topo_tools::faces_of(&shape).len();
                 eprintln!("DBG pd={pd} rep={rep} faces={n}");
             }
             let name = names
@@ -1458,7 +1458,7 @@ pub fn step_roundtrip_counts(shape: &TopoShape) -> Result<(usize, usize, usize),
     let mut ne = 0usize;
     let mut nf = 0usize;
     for ms in &model.shapes {
-        let c = crate::topo_tools_full::shape_counts(&ms.shape);
+        let c = crate::topo_tools::shape_counts(&ms.shape);
         nv += c.get(&ShapeType::Vertex).copied().unwrap_or(0);
         ne += c.get(&ShapeType::Edge).copied().unwrap_or(0);
         nf += c.get(&ShapeType::Face).copied().unwrap_or(0);

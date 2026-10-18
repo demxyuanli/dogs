@@ -49,7 +49,7 @@ use crate::image_texture::ImageTexture;
 use crate::model::BRepModel;
 use crate::shape::TopoShape;
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools_full::faces_of;
+use crate::topo_tools::faces_of;
 use crate::xcaf_doc_vis_material::XcafDocVisMaterial;
 
 /// `XCAFPrs_Style` (`XCAFPrs_Style.hxx:27-120`): a set of styling settings

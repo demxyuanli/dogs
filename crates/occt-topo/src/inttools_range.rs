@@ -35,7 +35,7 @@ use crate::abs::ShapeType;
 use crate::brep_tool::BRepTool;
 use crate::edge_edge::{geom_curve_kind, GeomCurveKind};
 use crate::shape::{Edge, Face, Vertex};
-use crate::topo_tools_full::edge_vertices;
+use crate::topo_tools::edge_vertices;
 
 // ---------------------------------------------------------------------------
 // ShrunkRange

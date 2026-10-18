@@ -26,7 +26,7 @@ use crate::boptools_2d::curve_on_surface_range;
 use crate::brep_surface::edge_pcurve_on_face;
 use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, Face, TopoShape, Vertex, Wire};
-use crate::topo_tools_full::{edge_vertices, edges_of_wire, is_same, wires_of_face};
+use crate::topo_tools::{edge_vertices, edges_of_wire, is_same, wires_of_face};
 
 use super::data_model::{MeshEdge, MeshModel, MeshStatus};
 
@@ -304,7 +304,7 @@ mod tests {
     use crate::builder::TopoBuilder;
     use crate::meshing::context::{MeshShapeExplorer, TopoShapeExplorer};
     use crate::primitives::BRepPrimBox;
-    use crate::topo_tools_full::faces_of;
+    use crate::topo_tools::faces_of;
     use occt_core::gp::{GpAx3, GpPln, GpPnt};
     use occt_geom::GeomPlane;
     use std::sync::Arc;

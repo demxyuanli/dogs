@@ -87,7 +87,7 @@ pub fn pattern_fuse(instances: &[PatternInstance], tol: f64) -> Result<TopoShape
 pub fn pattern_bbox(instances: &[PatternInstance]) -> Option<(GpPnt, GpPnt)> {
     let mut bbox: Option<(GpPnt, GpPnt)> = None;
     for inst in instances {
-        let verts = crate::topo_tools_full::vertices_of(&inst.shape);
+        let verts = crate::topo_tools::vertices_of(&inst.shape);
         if verts.is_empty() {
             continue;
         }
@@ -138,7 +138,7 @@ mod tests {
         let pat = linear_pattern(&b.solid.0, &GpVec::new(1.0, 0.0, 0.0), 2.0, 3).unwrap();
         assert_eq!(pat.len(), 3);
         // Third copy's origin vertex is at x=4.
-        let v = crate::topo_tools_full::vertices_of(&pat[2].shape);
+        let v = crate::topo_tools::vertices_of(&pat[2].shape);
         assert!(v.iter().any(|vv| crate::brep_tool::BRepTool::vertex_point(vv).distance(&GpPnt::new(4.0, 0.0, 0.0)) < 1e-9));
         let bbox = pattern_bbox(&pat).unwrap();
         assert!((bbox.1.x() - 5.0).abs() < 1e-9, "max x {}", bbox.1.x());
@@ -151,7 +151,7 @@ mod tests {
         let pat = radial_pattern(&b.solid.0, &axis, std::f64::consts::TAU, 4).unwrap();
         assert_eq!(pat.len(), 4);
         // The 4 copies: 0°, 90°, 180°, 270°.
-        let v = crate::topo_tools_full::vertices_of(&pat[1].shape);
+        let v = crate::topo_tools::vertices_of(&pat[1].shape);
         // The original box spans [0,1]³; after 90° about Z, corner (1,0,0) → (0,1,0).
         assert!(v.iter().any(|vv| crate::brep_tool::BRepTool::vertex_point(vv).distance(&GpPnt::new(0.0, 1.0, 0.0)) < 1e-9)
             || v.iter().any(|vv| crate::brep_tool::BRepTool::vertex_point(vv).distance(&GpPnt::new(0.0, 1.0, 1.0)) < 1e-9));
@@ -164,7 +164,7 @@ mod tests {
         // (make_box spans [0,1]³; a 1.5 step would be disjoint → volume 2.0.)
         let pat = linear_pattern(&b.solid.0, &GpVec::new(1.0, 0.0, 0.0), 0.5, 2).unwrap();
         let comp = pattern_to_compound(&pat);
-        assert_eq!(crate::topo_tools_full::shape_counts(&comp)[&crate::abs::ShapeType::Vertex], 16);
+        assert_eq!(crate::topo_tools::shape_counts(&comp)[&crate::abs::ShapeType::Vertex], 16);
 
         let fused = pattern_fuse(&pat, 1e-6).expect("fuse");
         let vol = crate::brep_gprop::volume(&fused, 0.05);

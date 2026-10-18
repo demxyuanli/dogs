@@ -58,7 +58,7 @@ pub(crate) use crate::builder::TopoBuilder;
 pub(crate) use crate::fclass2d::FaceState;
 pub(crate) use crate::int_tools_full::IntToolsContext;
 pub(crate) use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Vertex, Wire};
-pub(crate) use crate::topo_tools_full::{edges_of, edges_of_wire, faces_of, vertices_of, ShapeMapKey};
+pub(crate) use crate::topo_tools::{edges_of, edges_of_wire, faces_of, vertices_of, ShapeMapKey};
 
 }
 

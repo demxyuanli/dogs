@@ -76,7 +76,7 @@ pub(crate) use crate::builder::TopoBuilder;
 pub(crate) use crate::model::BRepModel;
 pub(crate) use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Vertex, Wire};
 pub(crate) use crate::tgeometry::GeometryRegistry;
-pub(crate) use crate::topo_tools_full::{edges_of_wire, edge_vertices, wires_of_face};
+pub(crate) use crate::topo_tools::{edges_of_wire, edge_vertices, wires_of_face};
 
 }
 

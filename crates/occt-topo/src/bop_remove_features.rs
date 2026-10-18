@@ -11,7 +11,7 @@ use crate::bop_occt_util::{explore, shape_key};
 use crate::builder::TopoBuilder;
 use crate::builder_solid::BuilderSolid;
 use crate::shape::TopoShape;
-use crate::topo_tools_full::{faces_of, ShapeMapKey};
+use crate::topo_tools::{faces_of, ShapeMapKey};
 
 /// `BOPAlgo_RemoveFeatures`.
 #[derive(Debug, Clone)]

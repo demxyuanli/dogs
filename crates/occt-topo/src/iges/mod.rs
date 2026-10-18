@@ -63,7 +63,7 @@ pub(crate) use crate::brep_surface::{classify_surface, SurfaceKind};
 pub(crate) use crate::brep_tool::BRepTool;
 pub(crate) use crate::model::BRepModel;
 pub(crate) use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Vertex};
-pub(crate) use crate::topo_tools_full::{edge_vertices, edges_of_wire, wires_of_face};
+pub(crate) use crate::topo_tools::{edge_vertices, edges_of_wire, wires_of_face};
 }
 
 use prelude::*;

@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 use crate::abs::Orientation;
 use crate::shape::{Edge, Face, TopoShape};
-use crate::topo_tools_full::{edges_of, faces_of};
+use crate::topo_tools::{edges_of, faces_of};
 
 use super::data_model::{MeshFace, MeshModel};
 use super::parameters::MeshParameters;
