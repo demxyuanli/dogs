@@ -35,26 +35,26 @@ pub type EdgeFaceMap = HashMap<ShapeMapKey, (TopoShape, Vec<TopoShape>)>;
 
 /// `BOPAlgo_FillIn3DParts::MapEdgesAndFaces` (`BOPAlgo_Tools.cxx:1523-1551`).
 ///
-/// Walks wires of `the_f` and, for each edge, appends `the_f` to the edge's
+/// Walks wires of `f` and, for each edge, appends `f` to the edge's
 /// face list. Degenerated edges are still mapped (MakeConnexityBlock later
 /// refuses to walk through them). The key is `TopTools_ShapeMapHasher`
 /// (`IsSame`: `TShape` + `Location`) and the face is appended once per edge
 /// occurrence, with no de-duplication (`cxx:1548`): a face whose wire holds
 /// the same edge twice lists itself twice, which is what the later
 /// `aNbF == 1 / == 2` test at `BOPTools_AlgoTools.cxx:849-869` counts.
-pub fn map_edges_and_faces(the_f: &TopoShape, the_ef_map: &mut EdgeFaceMap) {
-    for a_w in iter_children(the_f) {
-        if a_w.shape_type() != ShapeType::Wire {
+pub fn map_edges_and_faces(f: &TopoShape, ef_map: &mut EdgeFaceMap) {
+    for w in iter_children(f) {
+        if w.shape_type() != ShapeType::Wire {
             continue;
         }
-        for a_e in iter_children(&a_w) {
-            if a_e.shape_type() != ShapeType::Edge {
+        for e in iter_children(&w) {
+            if e.shape_type() != ShapeType::Edge {
                 continue;
             }
-            let entry = the_ef_map
-                .entry(shape_map_key(&a_e))
-                .or_insert_with(|| (a_e.clone(), Vec::new()));
-            entry.1.push(the_f.clone());
+            let entry = ef_map
+                .entry(shape_map_key(&e))
+                .or_insert_with(|| (e.clone(), Vec::new()));
+            entry.1.push(f.clone());
         }
     }
 }
@@ -81,58 +81,58 @@ pub struct ConnexityFaceBlock {
 
 /// `BOPAlgo_FillIn3DParts::MakeConnexityBlock` (`_cxx:1555`).
 ///
-/// Seeds `the_lcb` with `the_f_start` and grows through edges that are
-/// *not* in `the_me_avoid` and *not* degenerated. Growing faces are marked
-/// in `the_mf_done` so the outer classification loop skips them. A face that
+/// Seeds `lcb` with `f_start` and grows through edges that are
+/// *not* in `me_avoid` and *not* degenerated. Growing faces are marked
+/// in `mf_done` so the outer classification loop skips them. A face that
 /// touches an avoided or degenerated edge becomes `theFaceToClassify` (first
 /// such face wins).
 pub fn make_connexity_block(
-    the_f_start: &TopoShape,
-    the_me_avoid: &HashSet<ShapeMapKey>,
-    the_ef_map: &EdgeFaceMap,
-    the_mf_done: &mut HashSet<ShapeMapKey>,
+    f_start: &TopoShape,
+    me_avoid: &HashSet<ShapeMapKey>,
+    ef_map: &EdgeFaceMap,
+    mf_done: &mut HashSet<ShapeMapKey>,
 ) -> ConnexityFaceBlock {
-    let mut the_lcb: Vec<TopoShape> = vec![the_f_start.clone()];
+    let mut lcb: Vec<TopoShape> = vec![f_start.clone()];
     let mut face_to_classify: Option<TopoShape> = None;
-    if the_ef_map.is_empty() {
+    if ef_map.is_empty() {
         return ConnexityFaceBlock {
-            faces: the_lcb,
+            faces: lcb,
             face_to_classify,
         };
     }
 
     let mut i = 0;
-    while i < the_lcb.len() {
-        let a_f = the_lcb[i].clone();
+    while i < lcb.len() {
+        let a_f = lcb[i].clone();
         i += 1;
-        for a_w in iter_children(&a_f) {
-            if a_w.shape_type() != ShapeType::Wire {
+        for w in iter_children(&a_f) {
+            if w.shape_type() != ShapeType::Wire {
                 continue;
             }
-            for a_e_s in iter_children(&a_w) {
-                if a_e_s.shape_type() != ShapeType::Edge {
+            for e_s in iter_children(&w) {
+                if e_s.shape_type() != ShapeType::Edge {
                     continue;
                 }
-                let a_e = Edge(a_e_s);
-                if the_me_avoid.contains(&shape_key(&a_e.0)) || BRepTool::is_degenerated(&a_e) {
+                let e = Edge(e_s);
+                if me_avoid.contains(&shape_key(&e.0)) || BRepTool::is_degenerated(&e) {
                     if face_to_classify.is_none() {
                         face_to_classify = Some(a_f.clone());
                     }
                     continue;
                 }
-                let Some((_, p_lf)) = the_ef_map.get(&shape_map_key(&a_e.0)) else {
+                let Some((_, p_lf)) = ef_map.get(&shape_map_key(&e.0)) else {
                     continue;
                 };
-                for a_f_to_add in p_lf {
-                    if the_mf_done.insert(shape_key(a_f_to_add)) {
-                        the_lcb.push(a_f_to_add.clone());
+                for f_to_add in p_lf {
+                    if mf_done.insert(shape_key(f_to_add)) {
+                        lcb.push(f_to_add.clone());
                     }
                 }
             }
         }
     }
     ConnexityFaceBlock {
-        faces: the_lcb,
+        faces: lcb,
         face_to_classify,
     }
 }

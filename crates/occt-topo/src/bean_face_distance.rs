@@ -43,28 +43,28 @@ impl BeanFaceIntersector {
                 if !a_min.is_finite() || !a_max.is_finite() || !an_iso.is_finite() {
                     continue;
                 }
-                let a_mid = (a_min + a_max) * 0.5;
-                let a_point_min = if i < 2 {
+                let mid = (a_min + a_max) * 0.5;
+                let point_min = if i < 2 {
                     self.surface_d0(an_iso, a_min)
                 } else {
                     self.surface_d0(a_min, an_iso)
                 };
-                let a_point_max = if i < 2 {
+                let point_max = if i < 2 {
                     self.surface_d0(an_iso, a_max)
                 } else {
                     self.surface_d0(a_max, an_iso)
                 };
-                let a_point_mid = if i < 2 {
-                    self.surface_d0(an_iso, a_mid)
+                let point_mid = if i < 2 {
+                    self.surface_d0(an_iso, mid)
                 } else {
-                    self.surface_d0(a_mid, an_iso)
+                    self.surface_d0(mid, an_iso)
                 };
 
                 let mut use_min_max = true;
                 let mut compute_iso = true;
-                if a_point_min.distance(&a_point_max) <= self.criteria
-                    && a_point_min.distance(&a_point_mid) <= self.criteria
-                    && a_point_max.distance(&a_point_mid) <= self.criteria
+                if point_min.distance(&point_max) <= self.criteria
+                    && point_min.distance(&point_mid) <= self.criteria
+                    && point_max.distance(&point_mid) <= self.criteria
                 {
                     compute_iso = false;
                 }
@@ -83,13 +83,13 @@ impl BeanFaceIntersector {
                 }
 
                 if use_min_max {
-                    let dmin = p.distance(&a_point_min);
+                    let dmin = p.distance(&point_min);
                     if dmin < a_distance {
                         the_u = if i <= 1 { an_iso } else { a_min };
                         the_v = if i >= 2 { an_iso } else { a_min };
                         a_distance = dmin;
                     }
-                    let dmax = p.distance(&a_point_max);
+                    let dmax = p.distance(&point_max);
                     if dmax < a_distance {
                         the_u = if i <= 1 { an_iso } else { a_max };
                         the_v = if i >= 2 { an_iso } else { a_max };
@@ -140,27 +140,27 @@ impl BeanFaceIntersector {
             if !a_min.is_finite() || !a_max.is_finite() || !an_iso.is_finite() {
                 continue;
             }
-            let a_mid = (a_min + a_max) * 0.5;
-            let a_point_min = if i < 2 {
+            let mid = (a_min + a_max) * 0.5;
+            let point_min = if i < 2 {
                 self.surface_d0(an_iso, a_min)
             } else {
                 self.surface_d0(a_min, an_iso)
             };
-            let a_point_max = if i < 2 {
+            let point_max = if i < 2 {
                 self.surface_d0(an_iso, a_max)
             } else {
                 self.surface_d0(a_max, an_iso)
             };
-            let a_point_mid = if i < 2 {
-                self.surface_d0(an_iso, a_mid)
+            let point_mid = if i < 2 {
+                self.surface_d0(an_iso, mid)
             } else {
-                self.surface_d0(a_mid, an_iso)
+                self.surface_d0(mid, an_iso)
             };
             let mut use_min_max = true;
             let mut compute_iso = true;
-            if a_point_min.distance(&a_point_max) <= self.criteria
-                && a_point_min.distance(&a_point_mid) <= self.criteria
-                && a_point_max.distance(&a_point_mid) <= self.criteria
+            if point_min.distance(&point_max) <= self.criteria
+                && point_min.distance(&point_mid) <= self.criteria
+                && point_max.distance(&point_mid) <= self.criteria
             {
                 compute_iso = false;
             }
@@ -175,8 +175,8 @@ impl BeanFaceIntersector {
                 }
             }
             if use_min_max {
-                a_distance = a_distance.min(p.distance(&a_point_min));
-                a_distance = a_distance.min(p.distance(&a_point_max));
+                a_distance = a_distance.min(p.distance(&point_min));
+                a_distance = a_distance.min(p.distance(&point_max));
             }
         }
         a_distance

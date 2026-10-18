@@ -383,7 +383,7 @@ fn perform_bspline(st: &mut Pc2dState<'_>) {
     }
     let first_idx = first_u_knot_index(degree, &mults);
     let last_idx = last_u_knot_index(degree, &mults);
-    let a_tol_coeff = (st.u_sup - st.u_inf) * PCONFUSION;
+    let tol_coeff = (st.u_sup - st.u_inf) * PCONFUSION;
 
     // `hxx:196-204`.
     let mut period_jump = 0.0;
@@ -391,7 +391,7 @@ fn perform_bspline(st: &mut Pc2dState<'_>) {
         let period = adaptor_period2d(c);
         if period.abs() > 0.0 {
             let mut shift = ((st.u_inf - knots[(first_idx - 1) as usize]) / period) as i32;
-            if st.u_inf < knots[(first_idx - 1) as usize] - a_tol_coeff {
+            if st.u_inf < knots[(first_idx - 1) as usize] - tol_coeff {
                 shift -= 1;
             }
             period_jump = period * shift as f64;
@@ -402,16 +402,16 @@ fn perform_bspline(st: &mut Pc2dState<'_>) {
     let mut first_used = first_idx;
     let mut last_used = last_idx;
     for an_idx in first_idx..=last_idx {
-        let a_knot = knots[(an_idx - 1) as usize] + period_jump;
-        if st.u_inf >= a_knot - a_tol_coeff {
+        let knot = knots[(an_idx - 1) as usize] + period_jump;
+        if st.u_inf >= knot - tol_coeff {
             first_used = an_idx;
         } else {
             break;
         }
     }
     for an_idx in (first_idx..=last_idx).rev() {
-        let a_knot = knots[(an_idx - 1) as usize] + period_jump;
-        if st.u_sup <= a_knot + a_tol_coeff {
+        let knot = knots[(an_idx - 1) as usize] + period_jump;
+        if st.u_sup <= knot + tol_coeff {
             last_used = an_idx;
         } else {
             break;
@@ -430,44 +430,44 @@ fn perform_bspline(st: &mut Pc2dState<'_>) {
         let mut tmin = 0.0;
         let mut distmin = f64::MAX;
         let mut pmin = GpPnt2d::zero();
-        let mut a_min2 = 0.0;
+        let mut min2 = 0.0;
         for an_idx in first_used..last_used {
-            let mut a_f = knots[(an_idx - 1) as usize] + period_jump;
-            let mut a_l = knots[an_idx as usize] + period_jump;
+            let mut f = knots[(an_idx - 1) as usize] + period_jump;
+            let mut l = knots[an_idx as usize] + period_jump;
             if an_idx == first_used {
-                a_f = st.u_inf;
+                f = st.u_inf;
             } else if an_idx == last_used - 1 {
-                a_l = st.u_sup;
+                l = st.u_sup;
             }
-            let a_p1 = c.d0(a_f);
-            let a_p2 = c.d0(a_l);
+            let a_p1 = c.d0(f);
+            let a_p2 = c.d0(l);
             let p = st.point;
-            let a_base1 = vec_from_pnts2d(&p, &a_p1);
-            let a_base2 = vec_from_pnts2d(&p, &a_p2);
-            let a_v = vec_from_pnts2d(&a_p2, &a_p1);
-            let a_val1 = a_v.dot(&a_base1);
-            let a_val2 = a_v.dot(&a_base2);
-            let a_min1 = if an_idx == first_used {
+            let base1 = vec_from_pnts2d(&p, &a_p1);
+            let base2 = vec_from_pnts2d(&p, &a_p2);
+            let v = vec_from_pnts2d(&a_p2, &a_p1);
+            let val1 = v.dot(&base1);
+            let val2 = v.dot(&base2);
+            let min1 = if an_idx == first_used {
                 p.square_distance(&a_p1)
             } else {
-                let prev = a_min2;
+                let prev = min2;
                 if distmin > prev {
                     distmin = prev;
-                    tmin = a_f;
+                    tmin = f;
                     pmin = a_p1;
                 }
                 prev
             };
-            a_min2 = p.square_distance(&a_p2);
-            let a_min_sq = a_min1.min(a_min2);
-            let a_min_der = a_val1.abs().min(a_val2.abs());
-            if !(Precision::is_infinite(a_val1) || Precision::is_infinite(a_val2))
-                && (a_val1 * a_val2 <= 0.0
-                    || a_min_sq < 100.0 * SQUARE_CONFUSION
-                    || 2.0 * a_min_der < CONFUSION)
+            min2 = p.square_distance(&a_p2);
+            let min_sq = min1.min(min2);
+            let min_der = val1.abs().min(val2.abs());
+            if !(Precision::is_infinite(val1) || Precision::is_infinite(val2))
+                && (val1 * val2 <= 0.0
+                    || min_sq < 100.0 * SQUARE_CONFUSION
+                    || 2.0 * min_der < CONFUSION)
             {
-                st.int_u_inf = a_f;
-                st.int_u_sup = a_l;
+                st.int_u_inf = f;
+                st.int_u_sup = l;
                 st.interval_perform();
             }
         }
@@ -490,19 +490,19 @@ fn perform_bspline(st: &mut Pc2dState<'_>) {
         let mut vals = Vec::with_capacity(cap);
         let mut params = Vec::with_capacity(cap);
         for an_idx in first_used..last_used {
-            let mut a_f = knots[(an_idx - 1) as usize] + period_jump;
-            let mut a_l = knots[an_idx as usize] + period_jump;
+            let mut f = knots[(an_idx - 1) as usize] + period_jump;
+            let mut l = knots[an_idx as usize] + period_jump;
             if an_idx == first_used {
-                a_f = st.u_inf;
+                f = st.u_inf;
             }
             if an_idx == last_used - 1 {
-                a_l = st.u_sup;
+                l = st.u_sup;
             }
-            let a_step = (a_l - a_f) / st.sample as f64;
-            for a_pnt_idx in 0..st.sample {
-                let a_cur = a_f + a_step * a_pnt_idx as f64;
-                vals.push(c.d0(a_cur).square_distance(&st.point));
-                params.push(a_cur);
+            let step = (l - f) / st.sample as f64;
+            for pnt_idx in 0..st.sample {
+                let cur = f + step * pnt_idx as f64;
+                vals.push(c.d0(cur).square_distance(&st.point));
+                params.push(cur);
             }
         }
         vals.push(c.d0(st.u_sup).square_distance(&st.point));
@@ -532,14 +532,14 @@ fn perform_bspline(st: &mut Pc2dState<'_>) {
         {
             let (p1, v1) = c.d1(params[0]);
             let (p2, v2) = c.d1(params[1]);
-            let a_base1 = vec_from_pnts2d(&st.point, &p1);
-            let a_base2 = vec_from_pnts2d(&st.point, &p2);
-            let a_val1 = v1.dot(&a_base1);
-            let a_val2 = v2.dot(&a_base2);
-            if !(Precision::is_infinite(a_val1) || Precision::is_infinite(a_val2))
-                && (a_val1 * a_val2 <= 0.0
-                    || a_base1.dot(&a_base2) <= 0.0
-                    || 2.0 * a_val1.abs() < CONFUSION)
+            let base1 = vec_from_pnts2d(&st.point, &p1);
+            let base2 = vec_from_pnts2d(&st.point, &p2);
+            let val1 = v1.dot(&base1);
+            let val2 = v2.dot(&base2);
+            if !(Precision::is_infinite(val1) || Precision::is_infinite(val2))
+                && (val1 * val2 <= 0.0
+                    || base1.dot(&base2) <= 0.0
+                    || 2.0 * val1.abs() < CONFUSION)
             {
                 st.int_u_inf = params[0];
                 st.int_u_sup = params[1];
@@ -553,14 +553,14 @@ fn perform_bspline(st: &mut Pc2dState<'_>) {
             let n = params.len();
             let (p1, v1) = c.d1(params[n - 2]);
             let (p2, v2) = c.d1(params[n - 1]);
-            let a_base1 = vec_from_pnts2d(&st.point, &p1);
-            let a_base2 = vec_from_pnts2d(&st.point, &p2);
-            let a_val1 = v1.dot(&a_base1);
-            let a_val2 = v2.dot(&a_base2);
-            if !(Precision::is_infinite(a_val1) || Precision::is_infinite(a_val2))
-                && (a_val1 * a_val2 <= 0.0
-                    || a_base1.dot(&a_base2) <= 0.0
-                    || 2.0 * a_val2.abs() < CONFUSION)
+            let base1 = vec_from_pnts2d(&st.point, &p1);
+            let base2 = vec_from_pnts2d(&st.point, &p2);
+            let val1 = v1.dot(&base1);
+            let val2 = v2.dot(&base2);
+            if !(Precision::is_infinite(val1) || Precision::is_infinite(val2))
+                && (val1 * val2 <= 0.0
+                    || base1.dot(&base2) <= 0.0
+                    || 2.0 * val2.abs() < CONFUSION)
             {
                 st.int_u_inf = params[n - 2];
                 st.int_u_sup = params[n - 1];
@@ -608,12 +608,12 @@ fn defl_curv_intervals2d(c: &dyn Curve2d) -> Vec<f64> {
 
     // Chord sum from `Value(tf)`, OCCT does not advance the running point
     // (`Extrema_Curve2dTool.cxx:37-42`).
-    let a_p = c.d0(tf);
+    let p = c.d0(tf);
     let mut length = 0.0;
     let nbpnts = DEFL_LENGTH_SAMPLES;
     for i in 2..=nbpnts {
         let t = (tf * (nbpnts - i) as f64 + (i - 1) as f64 * tl) / (nbpnts - 1) as f64;
-        length += a_p.distance(&c.d0(t));
+        length += p.distance(&c.d0(t));
     }
 
     let span = tl - tf;
@@ -622,12 +622,12 @@ fn defl_curv_intervals2d(c: &dyn Curve2d) -> Vec<f64> {
         return vec![tf, tl];
     }
 
-    let a_defl = (0.01 * length / (2.0 * std::f64::consts::PI)).max(MIN_DEFL);
-    if a_defl > MAX_DEFL {
+    let defl = (0.01 * length / (2.0 * std::f64::consts::PI)).max(MIN_DEFL);
+    if defl > MAX_DEFL {
         return vec![tf, tl];
     }
-    let a_min_len = (0.00001 * length).max(CONFUSION);
-    let a_tol = (0.00001 * span).max(PCONFUSION);
+    let min_len = (0.00001 * length).max(CONFUSION);
+    let tol = (0.00001 * span).max(PCONFUSION);
 
     let mut cn = adaptor_intervals2d(c, GEOM_ABS_CN);
     if cn.len() < 2 {
@@ -642,10 +642,10 @@ fn defl_curv_intervals2d(c: &dyn Curve2d) -> Vec<f64> {
         tf,
         tl,
         std::f64::consts::PI / 6.0,
-        a_defl,
+        defl,
         2,
-        a_tol,
-        a_min_len,
+        tol,
+        min_len,
         &cn,
         degree_min_nb,
     );
@@ -691,22 +691,22 @@ fn perform_general(st: &mut Pc2dState<'_>) {
         st.sample = st.sample.max(3);
 
         let mut an_inf = int_inf;
-        let mut a_sup = int_sup;
+        let mut sup = int_sup;
         if is_periodic {
             let period = adaptor_period2d(c);
             an_inf = in_period(int_inf, st.u_inf, st.u_inf + period);
-            a_sup = int_sup + (an_inf - int_inf);
+            sup = int_sup + (an_inf - int_inf);
         }
-        if st.u_inf > a_sup || st.u_sup < an_inf {
+        if st.u_inf > sup || st.u_sup < an_inf {
             continue;
         }
         if st.u_inf >= an_inf {
             an_inf = st.u_inf;
         }
-        if st.u_sup <= a_sup {
-            a_sup = st.u_sup;
+        if st.u_sup <= sup {
+            sup = st.u_sup;
         }
-        if (a_sup - an_inf) <= st.tol_u {
+        if (sup - an_inf) <= st.tol_u {
             continue;
         }
 

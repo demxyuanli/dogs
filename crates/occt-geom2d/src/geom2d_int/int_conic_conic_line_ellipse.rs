@@ -32,15 +32,15 @@ pub(crate) fn line_ellipse_geometric_intersection(
     e_int2: &mut PeriodicInterval,
 ) -> i32 {
     let an_el_axis = ellipse.pos;
-    let mut a_tr = GpTrsf2d::identity();
-    a_tr.set_transformation_ax2d(&an_el_axis.x_axis());
-    let a_t_ellipse = ellipse.transformed(&a_tr);
-    let a_t_line = line.transformed(&a_tr);
-    let a_dy = a_t_line.pos.vdir.y;
-    let is_vert = a_dy.abs() > 1.0 - 2.0 * epsilon(1.0);
+    let mut tr = GpTrsf2d::identity();
+    tr.set_transformation_ax2d(&an_el_axis.x_axis());
+    let t_ellipse = ellipse.transformed(&tr);
+    let t_line = line.transformed(&tr);
+    let dy = t_line.pos.vdir.y;
+    let is_vert = dy.abs() > 1.0 - 2.0 * epsilon(1.0);
 
-    let a = a_t_ellipse.major_radius;
-    let b = a_t_ellipse.minor_radius;
+    let a = t_ellipse.major_radius;
+    let b = t_ellipse.minor_radius;
     let a2 = a * a;
     let b2 = b * b;
 
@@ -49,9 +49,9 @@ pub(crate) fn line_ellipse_geometric_intersection(
         eps0 = 1.0e-6;
     }
 
-    let (an_a, mut a_b, mut a_c) = a_t_line.coefficients();
+    let (an_a, mut a_b, mut a_c) = t_line.coefficients();
     if is_vert {
-        a_c += a_b * a_t_line.pos.loc.y();
+        a_c += a_b * t_line.pos.loc.y();
         a_b = 0.0;
     }
 
@@ -72,7 +72,7 @@ pub(crate) fn line_ellipse_geometric_intersection(
             // on the transformed pair gives the two stationary pairs; when the
             // closest one is within `TolTang` of the line the common point is
             // reported as a single tangent solution on the ellipse.
-            let an_ext = ExtremaExtElC2d::new_line_ellipse(&a_t_line, &a_t_ellipse);
+            let an_ext = ExtremaExtElC2d::new_line_ellipse(&t_line, &t_ellipse);
             let mut imin = 0usize;
             let mut dmin = f64::MAX;
             for i in 1..=an_ext.nb_ext() {
@@ -82,8 +82,8 @@ pub(crate) fn line_ellipse_geometric_intersection(
                 }
             }
             if imin > 0 && dmin <= tol_tang * tol_tang {
-                let (_, a_p2) = an_ext.points(imin);
-                let pe1 = a_p2.parameter();
+                let (_, p2) = an_ext.points(imin);
+                let pe1 = p2.parameter();
                 e_int1.set_values(pe1, pe1);
                 return 1;
             }
@@ -113,11 +113,11 @@ pub(crate) fn line_ellipse_geometric_intersection(
         }
     }
 
-    let a_p1 = GpPnt2d::new(x1, y1);
-    let a_p2 = GpPnt2d::new(x2, y2);
-    let mut pe1 = clib2d::parameter_elips2d(&a_t_ellipse, &a_p1);
+    let p1 = GpPnt2d::new(x1, y1);
+    let p2 = GpPnt2d::new(x2, y2);
+    let mut pe1 = clib2d::parameter_elips2d(&t_ellipse, &p1);
     if nbsol > 1 {
-        let mut pe2 = clib2d::parameter_elips2d(&a_t_ellipse, &a_p2);
+        let mut pe2 = clib2d::parameter_elips2d(&t_ellipse, &p2);
         if pe2 < pe1 {
             let t = pe1;
             pe1 = pe2;

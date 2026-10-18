@@ -3,28 +3,28 @@ use super::*;
 
 impl Delaun {
 
-    pub(super) fn mesh_polygon(&mut self, the_polygon: &mut Vec<i32>, the_poly_boxes: &mut Vec<BndB2>, skipped: &mut Option<BTreeSet<i32>>) {
+    pub(super) fn mesh_polygon(&mut self, polygon: &mut Vec<i32>, poly_boxes: &mut Vec<BndB2>, skipped: &mut Option<BTreeSet<i32>>) {
         // A full-link failure unwinds out of the mesh in OCCT
         // (`BRepMesh_BaseMeshAlgo.cxx:52-62` swallows the exception) — stop here.
         if self.failed {
-            the_polygon.clear();
-            the_poly_boxes.clear();
+            polygon.clear();
+            poly_boxes.clear();
             return;
         }
-        if self.mesh_elementary_polygon(the_polygon) {
+        if self.mesh_elementary_polygon(polygon) {
             return;
         }
 
-        let mut poly_len = the_polygon.len();
-        let poly_area = self.poly_area(the_polygon, 1, poly_len).abs();
+        let mut poly_len = polygon.len();
+        let poly_area = self.poly_area(polygon, 1, poly_len).abs();
         let small_loop_area = 0.001 * poly_area;
 
-        let mut a_poly_it: usize = 1;
-        while a_poly_it < poly_len {
-            let cur_edge_info = the_polygon[a_poly_it - 1];
+        let mut poly_it: usize = 1;
+        while poly_it < poly_len {
+            let cur_edge_info = polygon[poly_it - 1];
             let mut cur_edge_id = cur_edge_info.abs();
             if self.mesh_data.link_movability(cur_edge_id) != VertexState::Frontier {
-                a_poly_it += 1;
+                poly_it += 1;
                 continue;
             }
             let mut cur_nodes = [0i32; 2];
@@ -34,12 +34,12 @@ impl Delaun {
                 self.mesh_data.get_node(cur_nodes[1]).location,
             ];
 
-            let mut a_next_poly_it = a_poly_it + 1;
-            while a_next_poly_it <= poly_len {
-                let next_edge_info = the_polygon[a_next_poly_it - 1];
+            let mut next_poly_it = poly_it + 1;
+            while next_poly_it <= poly_len {
+                let next_edge_info = polygon[next_poly_it - 1];
                 let next_edge_id = next_edge_info.abs();
                 if self.mesh_data.link_movability(next_edge_id) != VertexState::Frontier {
-                    a_next_poly_it += 1;
+                    next_poly_it += 1;
                     continue;
                 }
                 let mut next_nodes = [0i32; 2];
@@ -52,17 +52,17 @@ impl Delaun {
                 let mut int_pnt = GpPnt2d::zero();
                 let int_flag = self.int_seg_seg(cur_edge_id, next_edge_id, false, true, &mut int_pnt);
                 if int_flag == IntFlag::NoIntersection {
-                    a_next_poly_it += 1;
+                    next_poly_it += 1;
                     continue;
                 }
 
                 let mut is_remove_from_first = false;
                 let mut is_add_replacing_edge = true;
-                let mut index_to_remove_to = a_next_poly_it;
+                let mut index_to_remove_to = next_poly_it;
 
                 match int_flag {
                     IntFlag::Cross => {
-                        let mut loop_area = self.poly_area(the_polygon, a_poly_it + 1, a_next_poly_it);
+                        let mut loop_area = self.poly_area(polygon, poly_it + 1, next_poly_it);
                         let vec1 = GpVec2d::from_xy(cur_pnts[1].coord.subtracted(&int_pnt.coord));
                         let vec2 = GpVec2d::from_xy(next_pnts[0].coord.subtracted(&int_pnt.coord));
                         loop_area += vec1.crossed(&vec2) / 2.0;
@@ -72,12 +72,12 @@ impl Delaun {
                             self.create_and_replace_polygon_link(
                                 &next_nodes2,
                                 &next_pnts2,
-                                a_next_poly_it,
+                                next_poly_it,
                                 ReplaceFlag::Replace,
-                                the_polygon,
-                                the_poly_boxes,
+                                polygon,
+                                poly_boxes,
                             );
-                            self.process_loop(a_poly_it, a_next_poly_it, the_polygon, the_poly_boxes);
+                            self.process_loop(poly_it, next_poly_it, polygon, poly_boxes);
                             return;
                         }
                         let dist1 = int_pnt.square_distance(&next_pnts[0]);
@@ -90,8 +90,8 @@ impl Delaun {
                             index_to_remove_to -= 1;
                         }
                         if let Some(s) = skipped.as_mut() {
-                            for sk in a_poly_it..=index_to_remove_to {
-                                s.insert(the_polygon[sk - 1].abs());
+                            for sk in poly_it..=index_to_remove_to {
+                                s.insert(polygon[sk - 1].abs());
                             }
                         }
                     }
@@ -118,28 +118,28 @@ impl Delaun {
                                 self.create_and_replace_polygon_link(
                                     &split_link[sli..sli + 2],
                                     &split_pnts[sli..sli + 2],
-                                    a_next_poly_it,
+                                    next_poly_it,
                                     flag,
-                                    the_polygon,
-                                    the_poly_boxes,
+                                    polygon,
+                                    poly_boxes,
                                 );
                             }
-                            self.process_loop(a_poly_it + check_point_it, index_to_remove_to, the_polygon, the_poly_boxes);
+                            self.process_loop(poly_it + check_point_it, index_to_remove_to, polygon, poly_boxes);
                         } else {
                             let split_link_nodes = [next_nodes[1], cur_nodes[1]];
                             let split_link_pnts = [next_pnts[1], cur_pnts[1]];
                             self.create_and_replace_polygon_link(
                                 &split_link_nodes,
                                 &split_link_pnts,
-                                a_poly_it,
+                                poly_it,
                                 ReplaceFlag::InsertAfter,
-                                the_polygon,
-                                the_poly_boxes,
+                                polygon,
+                                poly_boxes,
                             );
                             cur_nodes[1] = next_nodes[1];
                             cur_pnts[1] = next_pnts[1];
                             index_to_remove_to += 1;
-                            self.process_loop(a_poly_it + 1, index_to_remove_to, the_polygon, the_poly_boxes);
+                            self.process_loop(poly_it + 1, index_to_remove_to, polygon, poly_boxes);
                         }
                     }
                     IntFlag::Glued => {
@@ -149,12 +149,12 @@ impl Delaun {
                         }
                     }
                     IntFlag::Same => {
-                        self.process_loop(a_poly_it, a_next_poly_it, the_polygon, the_poly_boxes);
+                        self.process_loop(poly_it, next_poly_it, polygon, poly_boxes);
                         is_remove_from_first = true;
                         is_add_replacing_edge = false;
                     }
                     _ => {
-                        a_next_poly_it += 1;
+                        next_poly_it += 1;
                         continue;
                     }
                 }
@@ -164,31 +164,31 @@ impl Delaun {
                         .create_and_replace_polygon_link(
                             &cur_nodes,
                             &cur_pnts,
-                            a_poly_it,
+                            poly_it,
                             ReplaceFlag::Replace,
-                            the_polygon,
-                            the_poly_boxes,
+                            polygon,
+                            poly_boxes,
                         )
                         .abs();
                 }
 
-                let index_to_remove_from = if is_remove_from_first { a_poly_it } else { a_poly_it + 1 };
-                the_polygon.drain(index_to_remove_from - 1..=index_to_remove_to - 1);
-                the_poly_boxes.drain(index_to_remove_from - 1..=index_to_remove_to - 1);
-                poly_len = the_polygon.len();
+                let index_to_remove_from = if is_remove_from_first { poly_it } else { poly_it + 1 };
+                polygon.drain(index_to_remove_from - 1..=index_to_remove_to - 1);
+                poly_boxes.drain(index_to_remove_from - 1..=index_to_remove_to - 1);
+                poly_len = polygon.len();
                 if is_remove_from_first {
-                    a_poly_it -= 1;
+                    poly_it -= 1;
                     break;
                 }
                 // cxx:2035 aNextPolyIt = aPolyIt; then for ++aNextPolyIt
-                a_next_poly_it = a_poly_it + 1;
+                next_poly_it = poly_it + 1;
             }
-            a_poly_it += 1;
+            poly_it += 1;
         }
 
         // Decomposition of the (possibly corrected) polygon into triangles.
-        let mut cut_poly = std::mem::take(the_polygon);
-        let mut cut_boxes = std::mem::take(the_poly_boxes);
+        let mut cut_poly = std::mem::take(polygon);
+        let mut cut_boxes = std::mem::take(poly_boxes);
         let mut pending: Vec<(Vec<i32>, Vec<BndB2>)> = Vec::new();
         loop {
             let mut poly2: Vec<i32> = Vec::new();
@@ -212,8 +212,8 @@ impl Delaun {
         }
     }
 
-    pub(super) fn mesh_elementary_polygon(&mut self, the_polygon: &[i32]) -> bool {
-        let poly_len = the_polygon.len();
+    pub(super) fn mesh_elementary_polygon(&mut self, polygon: &[i32]) -> bool {
+        let poly_len = polygon.len();
         if poly_len < 3 {
             return true;
         } else if poly_len > 3 {
@@ -222,7 +222,7 @@ impl Delaun {
         let mut edges = [0i32; 3];
         let mut oris = [false; 3];
         for i in 0..3 {
-            let info = the_polygon[i];
+            let info = polygon[i];
             edges[i] = info.abs();
             oris[i] = info > 0;
         }
@@ -238,19 +238,19 @@ impl Delaun {
 
     pub(super) fn decompose_simple_polygon(
         &mut self,
-        the_polygon: &mut Vec<i32>,
-        the_poly_boxes: &mut Vec<BndB2>,
-        the_polygon_cut: &mut Vec<i32>,
-        the_poly_boxes_cut: &mut Vec<BndB2>,
+        polygon: &mut Vec<i32>,
+        poly_boxes: &mut Vec<BndB2>,
+        polygon_cut: &mut Vec<i32>,
+        poly_boxes_cut: &mut Vec<BndB2>,
     ) {
-        if self.mesh_elementary_polygon(the_polygon) {
-            the_polygon.clear();
-            the_poly_boxes.clear();
+        if self.mesh_elementary_polygon(polygon) {
+            polygon.clear();
+            poly_boxes.clear();
             return;
         }
 
-        let poly_len = the_polygon.len();
-        let first_edge_info = the_polygon[0];
+        let poly_len = polygon.len();
+        let first_edge_info = polygon[0];
         let _first_edge = self.mesh_data.get_link(first_edge_info.abs());
         let mut nodes = [0i32; 3];
         self.get_oriented_nodes(first_edge_info.abs(), first_edge_info > 0, &mut nodes[..2]);
@@ -263,8 +263,8 @@ impl Delaun {
         let mut ref_edge_dir = GpVec2d::from_xy(ref_vertices[1].coord.subtracted(&ref_vertices[0].coord));
         let ref_edge_len = ref_edge_dir.magnitude();
         if ref_edge_len < PREC {
-            the_polygon.clear();
-            the_poly_boxes.clear();
+            polygon.clear();
+            poly_boxes.clear();
             return;
         }
         ref_edge_dir = ref_edge_dir.divided(ref_edge_len);
@@ -275,7 +275,7 @@ impl Delaun {
         let mut pivot_node = nodes[1];
 
         for link_it in 3..=poly_len {
-            let link_info = the_polygon[link_it - 1];
+            let link_info = polygon[link_it - 1];
             let next_edge = self.mesh_data.get_link(link_info.abs());
             pivot_node = if link_info > 0 { next_edge.first_node() } else { next_edge.last_node() };
             if pivot_node == nodes[1] {
@@ -303,10 +303,10 @@ impl Delaun {
                     if check_link_it == link_it {
                         continue;
                     }
-                    if b.is_out(&the_poly_boxes[check_link_it - 1]) {
+                    if b.is_out(&poly_boxes[check_link_it - 1]) {
                         continue;
                     }
-                    let poly_link = self.mesh_data.get_link(the_polygon[check_link_it - 1].abs());
+                    let poly_link = self.mesh_data.get_link(polygon[check_link_it - 1].abs());
                     let check_same = (link_first_node == poly_link.first_node() && pivot_node == poly_link.last_node())
                         || (link_first_node == poly_link.last_node() && pivot_node == poly_link.first_node());
                     if check_same {
@@ -343,8 +343,8 @@ impl Delaun {
         }
 
         if used_link_id == 0 {
-            the_polygon.clear();
-            the_poly_boxes.clear();
+            polygon.clear();
+            poly_boxes.clear();
             return;
         }
 
@@ -360,41 +360,41 @@ impl Delaun {
         // polygon is dropped, mirroring the swallowed exception that leaves the
         // face unmeshed in OCCT.
         if !self.add_triangle_by_info(new_edges_info, nodes) {
-            the_polygon.clear();
-            the_poly_boxes.clear();
+            polygon.clear();
+            poly_boxes.clear();
             return;
         }
 
         if used_link_id == 3 {
-            the_polygon.remove(0);
-            the_poly_boxes.remove(0);
-            the_polygon[0] = -new_edges_info[2];
+            polygon.remove(0);
+            poly_boxes.remove(0);
+            polygon[0] = -new_edges_info[2];
             let mut b = BndB2::void();
             update_bnd_box(ref_vertices[0].coord, ref_vertices[2].coord, &mut b);
-            the_poly_boxes[0] = b;
+            poly_boxes[0] = b;
         } else {
             if used_link_id < poly_len {
                 // OCCT `NCollection_BaseSequence::PSplit(theIndex)` keeps
                 // 1..theIndex-1 and moves theIndex..end (1-based, inclusive).
                 let split_at = used_link_id - 1;
-                the_polygon_cut.clear();
-                the_polygon_cut.extend_from_slice(&the_polygon[split_at..]);
-                the_polygon.truncate(split_at);
-                the_polygon_cut.insert(0, -new_edges_info[2]);
-                the_poly_boxes_cut.clear();
-                the_poly_boxes_cut.extend_from_slice(&the_poly_boxes[split_at..]);
-                the_poly_boxes.truncate(split_at);
+                polygon_cut.clear();
+                polygon_cut.extend_from_slice(&polygon[split_at..]);
+                polygon.truncate(split_at);
+                polygon_cut.insert(0, -new_edges_info[2]);
+                poly_boxes_cut.clear();
+                poly_boxes_cut.extend_from_slice(&poly_boxes[split_at..]);
+                poly_boxes.truncate(split_at);
                 let mut b = BndB2::void();
                 update_bnd_box(ref_vertices[0].coord, ref_vertices[2].coord, &mut b);
-                the_poly_boxes_cut.insert(0, b);
+                poly_boxes_cut.insert(0, b);
             } else {
-                the_polygon.pop();
-                the_poly_boxes.pop();
+                polygon.pop();
+                poly_boxes.pop();
             }
-            the_polygon[0] = -new_edges_info[1];
+            polygon[0] = -new_edges_info[1];
             let mut b = BndB2::void();
             update_bnd_box(ref_vertices[1].coord, ref_vertices[2].coord, &mut b);
-            the_poly_boxes[0] = b;
+            poly_boxes[0] = b;
         }
     }
 
@@ -562,19 +562,19 @@ impl Delaun {
         flag
     }
 
-    pub(super) fn poly_area(&self, the_polygon: &[i32], start_1based: usize, end_1based: usize) -> f64 {
+    pub(super) fn poly_area(&self, polygon: &[i32], start_1based: usize, end_1based: usize) -> f64 {
         let mut area = 0.0;
-        let poly_len = the_polygon.len();
+        let poly_len = polygon.len();
         if start_1based >= end_1based || start_1based > poly_len {
             return area;
         }
-        let mut cur_edge_info = the_polygon[start_1based - 1];
+        let mut cur_edge_info = polygon[start_1based - 1];
         let mut cur_edge_id = cur_edge_info.abs();
         let mut nodes = [0i32; 2];
         self.get_oriented_nodes(cur_edge_id, cur_edge_info > 0, &mut nodes);
         let ref_pnt = self.mesh_data.get_node(nodes[0]).location;
         for poly_it in (start_1based + 1)..=end_1based {
-            cur_edge_info = the_polygon[poly_it - 1];
+            cur_edge_info = polygon[poly_it - 1];
             cur_edge_id = cur_edge_info.abs();
             self.get_oriented_nodes(cur_edge_id, cur_edge_info > 0, &mut nodes);
             let v1 = GpVec2d::from_xy(self.mesh_data.get_node(nodes[0]).location.coord.subtracted(&ref_pnt.coord));

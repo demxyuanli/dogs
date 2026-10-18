@@ -422,88 +422,88 @@ fn is_point_in_degenerated_zone(
     let (us21, us22) = s1.u_range();
     let (vs21, vs22) = s1.v_range();
     let (u1, v1, u2, v2) = p2s;
-    let a_delta = 1.0e-7;
-    let mut a_d = u_resolution(s1.as_ref(), a_delta);
-    let mut a_p2d = GpPnt2d::new(u1, v1);
-    if (u1 - us11).abs() < a_d {
-        b_flag = is_degenerated_zone(&a_p2d, s1.as_ref(), 1);
+    let delta = 1.0e-7;
+    let mut d = u_resolution(s1.as_ref(), delta);
+    let mut p2d = GpPnt2d::new(u1, v1);
+    if (u1 - us11).abs() < d {
+        b_flag = is_degenerated_zone(&p2d, s1.as_ref(), 1);
         if b_flag {
             return b_flag;
         }
     }
-    if (u1 - us12).abs() < a_d {
-        b_flag = is_degenerated_zone(&a_p2d, s1.as_ref(), 1);
+    if (u1 - us12).abs() < d {
+        b_flag = is_degenerated_zone(&p2d, s1.as_ref(), 1);
         if b_flag {
             return b_flag;
         }
     }
-    a_d = v_resolution(s1.as_ref(), a_delta);
-    if (v1 - vs11).abs() < a_delta {
-        b_flag = is_degenerated_zone(&a_p2d, s1.as_ref(), 2);
+    d = v_resolution(s1.as_ref(), delta);
+    if (v1 - vs11).abs() < delta {
+        b_flag = is_degenerated_zone(&p2d, s1.as_ref(), 2);
         if b_flag {
             return b_flag;
         }
     }
-    if (v1 - vs12).abs() < a_delta {
-        b_flag = is_degenerated_zone(&a_p2d, s1.as_ref(), 2);
+    if (v1 - vs12).abs() < delta {
+        b_flag = is_degenerated_zone(&p2d, s1.as_ref(), 2);
         if b_flag {
             return b_flag;
         }
     }
-    a_d = u_resolution(s2.as_ref(), a_delta);
-    a_p2d = GpPnt2d::new(u2, v2);
-    if (u2 - us21).abs() < a_delta {
-        b_flag = is_degenerated_zone(&a_p2d, s2.as_ref(), 1);
+    d = u_resolution(s2.as_ref(), delta);
+    p2d = GpPnt2d::new(u2, v2);
+    if (u2 - us21).abs() < delta {
+        b_flag = is_degenerated_zone(&p2d, s2.as_ref(), 1);
         if b_flag {
             return b_flag;
         }
     }
-    if (u2 - us22).abs() < a_delta {
-        b_flag = is_degenerated_zone(&a_p2d, s2.as_ref(), 1);
+    if (u2 - us22).abs() < delta {
+        b_flag = is_degenerated_zone(&p2d, s2.as_ref(), 1);
         if b_flag {
             return b_flag;
         }
     }
-    a_d = v_resolution(s2.as_ref(), a_delta);
-    if (v2 - vs21).abs() < a_delta {
-        b_flag = is_degenerated_zone(&a_p2d, s2.as_ref(), 2);
+    d = v_resolution(s2.as_ref(), delta);
+    if (v2 - vs21).abs() < delta {
+        b_flag = is_degenerated_zone(&p2d, s2.as_ref(), 2);
         if b_flag {
             return b_flag;
         }
     }
-    if (v2 - vs22).abs() < a_delta {
-        b_flag = is_degenerated_zone(&a_p2d, s2.as_ref(), 2);
+    if (v2 - vs22).abs() < delta {
+        b_flag = is_degenerated_zone(&p2d, s2.as_ref(), 2);
         if b_flag {
             return b_flag;
         }
     }
-    let _ = a_d;
+    let _ = d;
     !b_flag
 }
 
 /// `GeomInt::AdjustPeriodic` (`GeomInt.cxx:21`). Default `theEps` is 0.
 pub fn wline_adjust_periodic(
-    the_par: f64,
-    the_par_min: f64,
-    the_par_max: f64,
-    the_period: f64,
-    the_eps: f64,
+    par: f64,
+    par_min: f64,
+    par_max: f64,
+    period: f64,
+    eps: f64,
 ) -> (f64, f64) {
-    let mut the_offset = 0.0;
-    let mut the_new_par = the_par;
-    let b_min = the_par_min - the_par > the_eps;
-    let b_max = the_par - the_par_max > the_eps;
+    let mut offset = 0.0;
+    let mut new_par = par;
+    let b_min = par_min - par > eps;
+    let b_max = par - par_max > eps;
     if b_min || b_max {
         let dp = if b_min {
-            the_par_max - the_par
+            par_max - par
         } else {
-            the_par_min - the_par
+            par_min - par
         };
-        let a_nb_per = (dp / the_period).trunc();
-        the_offset = a_nb_per * the_period;
-        the_new_par += the_offset;
+        let nb_per = (dp / period).trunc();
+        offset = nb_per * period;
+        new_par += offset;
     }
-    (the_new_par, the_offset)
+    (new_par, offset)
 }
 
 /// Geometric U period, or `None` when the surface is not U-periodic.
@@ -534,21 +534,21 @@ pub fn v_period(s: &dyn Surface) -> Option<f64> {
 
 /// `IsPointOnBoundary` — static subfunction of `DecompositionOfWLine`.
 pub fn is_point_on_boundary(
-    the_parameter: f64,
-    the_first_boundary: f64,
-    the_second_boundary: f64,
-    the_resolution: f64,
+    parameter: f64,
+    first_boundary: f64,
+    second_boundary: f64,
+    resolution: f64,
     is_on_first_boundary: &mut bool,
 ) -> bool {
     let b_ret = false;
     for i in 0..2 {
         *is_on_first_boundary = i == 0;
         let adist = if *is_on_first_boundary {
-            (the_parameter - the_first_boundary).abs()
+            (parameter - first_boundary).abs()
         } else {
-            (the_parameter - the_second_boundary).abs()
+            (parameter - second_boundary).abs()
         };
-        if adist < the_resolution {
+        if adist < resolution {
             return !b_ret;
         }
     }
@@ -557,31 +557,31 @@ pub fn is_point_on_boundary(
 
 /// `AdjustByNeighbour` — pick the periodic image of `original` nearest `neighbour`.
 pub fn adjust_by_neighbour(
-    the_neighbour: &GpPnt2d,
-    the_original: &GpPnt2d,
+    neighbour: &GpPnt2d,
+    original: &GpPnt2d,
     s: &dyn Surface,
 ) -> GpPnt2d {
-    let ap1 = *the_neighbour;
-    let mut ap2 = *the_original;
+    let ap1 = *neighbour;
+    let mut ap2 = *original;
     if let Some(a_period) = u_period(s) {
-        let mut a_sq_dist_min = 1.0e100;
+        let mut sq_dist_min = 1.0e100;
         for p_it in -1..=1 {
-            let a_p_test = GpPnt2d::new(the_original.x() + a_period * p_it as f64, the_original.y());
-            let dd = ap1.square_distance(&a_p_test);
-            if dd < a_sq_dist_min {
-                ap2 = a_p_test;
-                a_sq_dist_min = dd;
+            let p_test = GpPnt2d::new(original.x() + a_period * p_it as f64, original.y());
+            let dd = ap1.square_distance(&p_test);
+            if dd < sq_dist_min {
+                ap2 = p_test;
+                sq_dist_min = dd;
             }
         }
     }
     if let Some(a_period) = v_period(s) {
-        let mut a_sq_dist_min = 1.0e100;
+        let mut sq_dist_min = 1.0e100;
         for p_it in -1..=1 {
-            let a_p_test = GpPnt2d::new(ap2.x(), the_original.y() + a_period * p_it as f64);
-            let dd = ap1.square_distance(&a_p_test);
-            if dd < a_sq_dist_min {
-                ap2 = a_p_test;
-                a_sq_dist_min = dd;
+            let p_test = GpPnt2d::new(ap2.x(), original.y() + a_period * p_it as f64);
+            let dd = ap1.square_distance(&p_test);
+            if dd < sq_dist_min {
+                ap2 = p_test;
+                sq_dist_min = dd;
             }
         }
     }
@@ -589,55 +589,55 @@ pub fn adjust_by_neighbour(
 }
 
 /// `RefineVector` — snap a 2D vector whose one component is nearly ±1.
-pub fn refine_vector(a_v2d: &mut GpVec2d) {
+pub fn refine_vector(v2d: &mut GpVec2d) {
     let a_eps = f64::EPSILON;
-    let a_r1 = 1.0 - a_eps;
-    let a_r2 = 1.0 + a_eps;
-    let mut a_c = [a_v2d.x(), a_v2d.y()];
+    let r1 = 1.0 - a_eps;
+    let r2 = 1.0 + a_eps;
+    let mut c = [v2d.x(), v2d.y()];
     for k in 0..2 {
         let m = (k + 1) % 2;
-        let a_num = a_c[k].abs();
-        if a_num > a_r1 && a_num < a_r2 {
-            a_c[k] = if a_c[k] < 0.0 { -1.0 } else { 1.0 };
-            a_c[m] = 0.0;
+        let num = c[k].abs();
+        if num > r1 && num < r2 {
+            c[k] = if c[k] < 0.0 { -1.0 } else { 1.0 };
+            c[m] = 0.0;
             break;
         }
     }
-    a_v2d.set_coord(a_c[0], a_c[1]);
+    v2d.set_coord(c[0], c[1]);
 }
 
 /// `FindPoint` — intersect the last→first walk with the UV rectangle.
 pub fn find_point(
-    the_first_point: &GpPnt2d,
-    the_last_point: &GpPnt2d,
-    the_umin: f64,
-    the_umax: f64,
-    the_vmin: f64,
-    the_vmax: f64,
+    first_point: &GpPnt2d,
+    last_point: &GpPnt2d,
+    umin: f64,
+    umax: f64,
+    vmin: f64,
+    vmax: f64,
 ) -> Option<GpPnt2d> {
-    let a_vec = GpVec2d::new(
-        the_last_point.x() - the_first_point.x(),
-        the_last_point.y() - the_first_point.y(),
+    let vec = GpVec2d::new(
+        last_point.x() - first_point.x(),
+        last_point.y() - first_point.y(),
     );
     for i in 0..4 {
         let (an_other_vec, an_other_vec_normal, aprojpoint) = if i % 2 == 0 {
-            let mut p = *the_last_point;
+            let mut p = *last_point;
             if i < 2 {
-                p.set_x(the_umin);
+                p.set_x(umin);
             } else {
-                p.set_x(the_umax);
+                p.set_x(umax);
             }
             (GpVec2d::new(0.0, 1.0), GpVec2d::new(1.0, 0.0), p)
         } else {
-            let mut p = *the_last_point;
+            let mut p = *last_point;
             if i < 2 {
-                p.set_y(the_vmin);
+                p.set_y(vmin);
             } else {
-                p.set_y(the_vmax);
+                p.set_y(vmax);
             }
             (GpVec2d::new(1.0, 0.0), GpVec2d::new(0.0, 1.0), p)
         };
-        let Ok(mut anormvec) = a_vec.normalized() else {
+        let Ok(mut anormvec) = vec.normalized() else {
             continue;
         };
         refine_vector(&mut anormvec);
@@ -648,24 +648,24 @@ pub fn find_point(
         let (adist, b_is_out) = if i % 2 == 0 {
             if i < 2 {
                 (
-                    (the_last_point.x() - the_umin).abs(),
-                    the_last_point.x() < the_umin,
+                    (last_point.x() - umin).abs(),
+                    last_point.x() < umin,
                 )
             } else {
                 (
-                    (the_last_point.x() - the_umax).abs(),
-                    the_last_point.x() > the_umax,
+                    (last_point.x() - umax).abs(),
+                    last_point.x() > umax,
                 )
             }
         } else if i < 2 {
             (
-                (the_last_point.y() - the_vmin).abs(),
-                the_last_point.y() < the_vmin,
+                (last_point.y() - vmin).abs(),
+                last_point.y() < vmin,
             )
         } else {
             (
-                (the_last_point.y() - the_vmax).abs(),
-                the_last_point.y() > the_vmax,
+                (last_point.y() - vmax).abs(),
+                last_point.y() > vmax,
             )
         };
         let mut anoffset = adist * an_other_vec.dot(&anormvec) / adot1;
@@ -674,20 +674,20 @@ pub fn find_point(
             let shift = an_other_vec.multiplied_scalar(anoffset);
             let acurpoint = GpPnt2d::new(aprojpoint.x() + shift.x(), aprojpoint.y() + shift.y());
             let mut acurvec = GpVec2d::new(
-                acurpoint.x() - the_last_point.x(),
-                acurpoint.y() - the_last_point.y(),
+                acurpoint.x() - last_point.x(),
+                acurpoint.y() - last_point.y(),
             );
             if b_is_out {
                 acurvec.reverse();
             }
-            let a_dot_x = a_vec.dot(&acurvec);
-            let an_angle_x = a_vec.angle(&acurvec);
-            if a_dot_x > 0.0 && an_angle_x.abs() < PCONFUSION {
+            let dot_x = vec.dot(&acurvec);
+            let an_angle_x = vec.angle(&acurvec);
+            if dot_x > 0.0 && an_angle_x.abs() < PCONFUSION {
                 if i % 2 == 0 {
-                    if acurpoint.y() >= the_vmin && acurpoint.y() <= the_vmax {
+                    if acurpoint.y() >= vmin && acurpoint.y() <= vmax {
                         return Some(acurpoint);
                     }
-                } else if acurpoint.x() >= the_umin && acurpoint.x() <= the_umax {
+                } else if acurpoint.x() >= umin && acurpoint.x() <= umax {
                     return Some(acurpoint);
                 }
             }

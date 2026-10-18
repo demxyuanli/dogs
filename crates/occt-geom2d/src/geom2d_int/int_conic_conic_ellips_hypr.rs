@@ -108,12 +108,12 @@ impl IntCurveIntConicConic {
         let maxtol = e.minor_radius / 10.0;
         let x_axis = h.x_axis();
         let offset = GpVec2d::new(maxtol * x_axis.vdir.x, maxtol * x_axis.vdir.y);
-        let mut the_int_ana2d = IntAna2dAnaIntersection::new();
+        let mut int_ana2d = IntAna2dAnaIntersection::new();
 
         let hp = h.translated_vec(&offset);
-        the_int_ana2d.perform_hypr_conic(&hp, &IntAna2dConic::from_elips2d(e));
+        int_ana2d.perform_hypr_conic(&hp, &IntAna2dConic::from_elips2d(e));
         set_binf_bsup_from_int_ana2d_hypr(
-            &the_int_ana2d,
+            &int_ana2d,
             &mut binf,
             &mut pntinf,
             &mut bsup,
@@ -125,9 +125,9 @@ impl IntCurveIntConicConic {
 
         let offset = offset.reversed();
         let hm = h.translated_vec(&offset);
-        the_int_ana2d.perform_hypr_conic(&hm, &IntAna2dConic::from_elips2d(e));
+        int_ana2d.perform_hypr_conic(&hm, &IntAna2dConic::from_elips2d(e));
         set_binf_bsup_from_int_ana2d_hypr(
-            &the_int_ana2d,
+            &int_ana2d,
             &mut binf,
             &mut pntinf,
             &mut bsup,
@@ -190,12 +190,12 @@ impl IntCurveIntConicConic {
         let maxtol = offset_tolerance(tol_conf, tol);
         let x_axis = h2.x_axis();
         let offset = GpVec2d::new(maxtol * x_axis.vdir.x, maxtol * x_axis.vdir.y);
-        let mut the_int_ana2d = IntAna2dAnaIntersection::new();
+        let mut int_ana2d = IntAna2dAnaIntersection::new();
 
         let hp = h2.translated_vec(&offset);
-        the_int_ana2d.perform_hypr_conic(&hp, &IntAna2dConic::from_hypr2d(h1));
+        int_ana2d.perform_hypr_conic(&hp, &IntAna2dConic::from_hypr2d(h1));
         set_binf_bsup_from_int_ana2d_hypr(
-            &the_int_ana2d,
+            &int_ana2d,
             &mut binf,
             &mut pntinf,
             &mut bsup,
@@ -207,9 +207,9 @@ impl IntCurveIntConicConic {
 
         let offset = offset.reversed();
         let hm = h2.translated_vec(&offset);
-        the_int_ana2d.perform_hypr_conic(&hm, &IntAna2dConic::from_hypr2d(h1));
+        int_ana2d.perform_hypr_conic(&hm, &IntAna2dConic::from_hypr2d(h1));
         set_binf_bsup_from_int_ana2d_hypr(
-            &the_int_ana2d,
+            &int_ana2d,
             &mut binf,
             &mut pntinf,
             &mut bsup,

@@ -506,12 +506,12 @@ impl JacobiPolynomial {
     /// `PLib_JacobiPolynomial::D0123` (`cxx:379-517`, FORTRAN `MPOJAC`).
     ///
     /// `basis_value` / `basis_d1` / `basis_d2` / `basis_d3` must each hold
-    /// `degree + 1` values; OCCT only writes the outputs up to `the_nd_eriv`,
+    /// `degree + 1` values; OCCT only writes the outputs up to `nd_eriv`,
     /// so callers of the `d0`/`d1`/`d2` wrappers leave the rest empty.
     pub fn d0123(
         &self,
-        the_nd_eriv: i32,
-        the_u: f64,
+        nd_eriv: i32,
+        u: f64,
         basis_value: &mut [f64],
         basis_d1: &mut [f64],
         basis_d2: &mut [f64],
@@ -522,11 +522,11 @@ impl JacobiPolynomial {
         let degree = self.degree;
         if degree == 0 {
             basis_value[0] = 1.0;
-            if the_nd_eriv >= 1 {
+            if nd_eriv >= 1 {
                 basis_d1[0] = 0.0;
-                if the_nd_eriv >= 2 {
+                if nd_eriv >= 2 {
                     basis_d2[0] = 0.0;
-                    if the_nd_eriv == 3 {
+                    if nd_eriv == 3 {
                         basis_d3[0] = 0.0;
                     }
                 }
@@ -534,14 +534,14 @@ impl JacobiPolynomial {
         } else {
             basis_value[0] = 1.0;
             let aux = (hermite_niv_constr + 1) as f64;
-            basis_value[1] = aux * the_u;
-            if the_nd_eriv >= 1 {
+            basis_value[1] = aux * u;
+            if nd_eriv >= 1 {
                 basis_d1[0] = 0.0;
                 basis_d1[1] = aux;
-                if the_nd_eriv >= 2 {
+                if nd_eriv >= 2 {
                     basis_d2[0] = 0.0;
                     basis_d2[1] = 0.0;
-                    if the_nd_eriv == 3 {
+                    if nd_eriv == 3 {
                         basis_d3[0] = 0.0;
                         basis_d3[1] = 0.0;
                     }
@@ -549,9 +549,9 @@ impl JacobiPolynomial {
             }
         }
         if degree > 1 {
-            if the_nd_eriv == 0 {
+            if nd_eriv == 0 {
                 for i in 2..=degree as usize {
-                    basis_value[i] = (coeffs.cof_a[i] * the_u * basis_value[i - 1]
+                    basis_value[i] = (coeffs.cof_a[i] * u * basis_value[i - 1]
                         + coeffs.cof_b[i] * basis_value[i - 2])
                         * coeffs.denom[i];
                 }
@@ -561,17 +561,17 @@ impl JacobiPolynomial {
                     let cof_b = coeffs.cof_b[i];
                     let denom = coeffs.denom[i];
                     basis_value[i] =
-                        (cof_a * the_u * basis_value[i - 1] + cof_b * basis_value[i - 2]) * denom;
-                    basis_d1[i] = (cof_a * (the_u * basis_d1[i - 1] + basis_value[i - 1])
+                        (cof_a * u * basis_value[i - 1] + cof_b * basis_value[i - 2]) * denom;
+                    basis_d1[i] = (cof_a * (u * basis_d1[i - 1] + basis_value[i - 1])
                         + cof_b * basis_d1[i - 2])
                         * denom;
-                    if the_nd_eriv >= 2 {
-                        basis_d2[i] = (cof_a * (the_u * basis_d2[i - 1] + 2.0 * basis_d1[i - 1])
+                    if nd_eriv >= 2 {
+                        basis_d2[i] = (cof_a * (u * basis_d2[i - 1] + 2.0 * basis_d1[i - 1])
                             + cof_b * basis_d2[i - 2])
                             * denom;
-                        if the_nd_eriv == 3 {
+                        if nd_eriv == 3 {
                             basis_d3[i] =
-                                (cof_a * (the_u * basis_d3[i - 1] + 3.0 * basis_d2[i - 1])
+                                (cof_a * (u * basis_d3[i - 1] + 3.0 * basis_d2[i - 1])
                                     + cof_b * basis_d3[i - 2])
                                     * denom;
                         }
@@ -579,7 +579,7 @@ impl JacobiPolynomial {
                 }
             }
         }
-        if the_nd_eriv == 0 {
+        if nd_eriv == 0 {
             for i in 0..=degree as usize {
                 basis_value[i] *= coeffs.tnorm[i];
             }
@@ -588,9 +588,9 @@ impl JacobiPolynomial {
                 let norm = coeffs.tnorm[i];
                 basis_value[i] *= norm;
                 basis_d1[i] *= norm;
-                if the_nd_eriv >= 2 {
+                if nd_eriv >= 2 {
                     basis_d2[i] *= norm;
-                    if the_nd_eriv >= 3 {
+                    if nd_eriv >= 3 {
                         basis_d3[i] *= norm;
                     }
                 }
@@ -599,41 +599,41 @@ impl JacobiPolynomial {
     }
 
     /// `PLib_JacobiPolynomial::D0` (`cxx:519-522`).
-    pub fn d0(&self, the_u: f64, basis_value: &mut [f64]) {
+    pub fn d0(&self, u: f64, basis_value: &mut [f64]) {
         let mut e1: [f64; 0] = [];
         let mut e2: [f64; 0] = [];
         let mut e3: [f64; 0] = [];
-        self.d0123(0, the_u, basis_value, &mut e1, &mut e2, &mut e3);
+        self.d0123(0, u, basis_value, &mut e1, &mut e2, &mut e3);
     }
 
     /// `PLib_JacobiPolynomial::D1` (`cxx:526-532`).
-    pub fn d1(&self, the_u: f64, basis_value: &mut [f64], basis_d1: &mut [f64]) {
+    pub fn d1(&self, u: f64, basis_value: &mut [f64], basis_d1: &mut [f64]) {
         let mut e2: [f64; 0] = [];
         let mut e3: [f64; 0] = [];
-        self.d0123(1, the_u, basis_value, basis_d1, &mut e2, &mut e3);
+        self.d0123(1, u, basis_value, basis_d1, &mut e2, &mut e3);
     }
 
     /// `PLib_JacobiPolynomial::D2` (`cxx:535-541`).
     pub fn d2(
         &self,
-        the_u: f64,
+        u: f64,
         basis_value: &mut [f64],
         basis_d1: &mut [f64],
         basis_d2: &mut [f64],
     ) {
         let mut e3: [f64; 0] = [];
-        self.d0123(2, the_u, basis_value, basis_d1, basis_d2, &mut e3);
+        self.d0123(2, u, basis_value, basis_d1, basis_d2, &mut e3);
     }
 
     /// `PLib_JacobiPolynomial::D3` (`cxx:545-551`).
     pub fn d3(
         &self,
-        the_u: f64,
+        u: f64,
         basis_value: &mut [f64],
         basis_d1: &mut [f64],
         basis_d2: &mut [f64],
         basis_d3: &mut [f64],
     ) {
-        self.d0123(3, the_u, basis_value, basis_d1, basis_d2, basis_d3);
+        self.d0123(3, u, basis_value, basis_d1, basis_d2, basis_d3);
     }
 }

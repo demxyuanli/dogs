@@ -32,13 +32,13 @@ pub struct NewVertexCpb {
 
 /// `BOPAlgo_PaveFiller::TreatNewVertices`.
 pub fn treat_new_vertices_cpb(
-    the_mvcpb: &[NewVertexCpb],
+    mvcpb: &[NewVertexCpb],
     fuzzy: f64,
 ) -> Result<Vec<(TopoShape, Vec<usize>)>, String> {
-    if the_mvcpb.is_empty() {
+    if mvcpb.is_empty() {
         return Ok(Vec::new());
     }
-    let verts: Vec<VertexTol> = the_mvcpb
+    let verts: Vec<VertexTol> = mvcpb
         .iter()
         .map(|c| VertexTol {
             shape: c.shape.clone(),
@@ -54,7 +54,7 @@ pub fn treat_new_vertices_cpb(
         let fused = make_vertex_from_list(&chain)?;
         let mut members: Vec<usize> = Vec::new();
         for s in &chain {
-            if let Some(i) = the_mvcpb.iter().position(|c| c.shape.same_tshape(s)) {
+            if let Some(i) = mvcpb.iter().position(|c| c.shape.same_tshape(s)) {
                 members.push(i);
             }
         }
@@ -68,16 +68,16 @@ pub fn treat_new_vertices_cpb(
 /// `b_is_ee_intersection` selects EE vs EF `SetIndexNew` (`_3.cxx:650`).
 pub fn perform_new_vertices(
     f: &mut PaveFiller,
-    the_mvcpb: &[NewVertexCpb],
+    mvcpb: &[NewVertexCpb],
     b_is_ee_intersection: bool,
 ) -> Result<(), String> {
-    if the_mvcpb.is_empty() {
+    if mvcpb.is_empty() {
         return Ok(());
     }
     let fuzzy = f.fuzzy_value();
-    let images = treat_new_vertices_cpb(the_mvcpb, fuzzy)?;
+    let images = treat_new_vertices_cpb(mvcpb, fuzzy)?;
     let mut created: Vec<usize> = Vec::new();
-    let mut member_to_nv: Vec<Option<usize>> = vec![None; the_mvcpb.len()];
+    let mut member_to_nv: Vec<Option<usize>> = vec![None; mvcpb.len()];
     for (fused, members) in images {
         let n_v = f.ds_mut().append(fused)?;
         created.push(n_v);
@@ -86,7 +86,7 @@ pub fn perform_new_vertices(
         }
     }
     let mut modified: Vec<usize> = Vec::new();
-    for (i, cpb) in the_mvcpb.iter().enumerate() {
+    for (i, cpb) in mvcpb.iter().enumerate() {
         let Some(n_v) = member_to_nv[i] else {
             continue;
         };

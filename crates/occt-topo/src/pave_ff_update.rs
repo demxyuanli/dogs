@@ -53,106 +53,106 @@ fn replace_vert(list: &mut Vec<usize>, old: usize, new: usize) {
 /// `BOPAlgo_PaveFiller::UpdateExistingPaveBlocks` (`_6.cxx:3278`).
 pub(crate) fn update_existing_pave_blocks(
     f: &mut PaveFiller,
-    a_pbf: &BopdsPaveBlock,
-    a_lpb: &mut Vec<BopdsPaveBlock>,
+    pbf: &BopdsPaveBlock,
+    lpb: &mut Vec<BopdsPaveBlock>,
     pb_faces: &PbFacesMap,
 ) {
-    if a_lpb.is_empty() {
+    if lpb.is_empty() {
         return;
     }
-    let b_cb = f.ds().is_common_block(a_pbf);
-    let mut a_lpb1: Vec<BopdsPaveBlock> = Vec::new();
+    let b_cb = f.ds().is_common_block(pbf);
+    let mut lpb1: Vec<BopdsPaveBlock> = Vec::new();
     let mut a_faces: Vec<usize> = Vec::new();
     if b_cb {
-        if let Some(cb) = f.ds().common_block(a_pbf) {
+        if let Some(cb) = f.ds().common_block(pbf) {
             a_faces = cb.faces().to_vec();
             if !cb.pave_blocks().is_empty() {
-                a_lpb1 = cb.pave_blocks().to_vec();
+                lpb1 = cb.pave_blocks().to_vec();
             } else {
-                a_lpb1.push(a_pbf.clone());
+                lpb1.push(pbf.clone());
             }
         }
     } else {
-        a_lpb1.push(a_pbf.clone());
+        lpb1.push(pbf.clone());
     }
 
-    for a_pb1 in &a_lpb1 {
-        let n_e = a_pb1.original_edge();
+    for pb1 in &lpb1 {
+        let n_e = pb1.original_edge();
         if n_e == 0 {
             continue;
         }
         let list = f.ds_mut().change_pave_blocks_mut(n_e);
-        list.retain(|a_pb2| !pb_eq(a_pb1, a_pb2));
+        list.retain(|pb2| !pb_eq(pb1, pb2));
     }
 
     if b_cb {
-        let mut a_lpb_new: Vec<BopdsPaveBlock> = Vec::new();
+        let mut lpb_new: Vec<BopdsPaveBlock> = Vec::new();
         let fuzzy = f.fuzzy_value();
-        for a_pb_value in a_lpb.iter() {
-            let a_pb_value_paves = [a_pb_value.pave1(), a_pb_value.pave2()];
+        for pb_value in lpb.iter() {
+            let pb_value_paves = [pb_value.pave1(), pb_value.pave2()];
             let mut a_cb = BopdsCommonBlock::new();
-            for a_pb2 in &a_lpb1 {
-                let n_e = a_pb2.original_edge();
-                let mut a_pb2n = BopdsPaveBlock::new();
-                if a_pb_value.original_edge() == n_e {
-                    a_pb2n.set_pave1(a_pb_value_paves[0]);
-                    a_pb2n.set_pave2(a_pb_value_paves[1]);
+            for pb2 in &lpb1 {
+                let n_e = pb2.original_edge();
+                let mut pb2n = BopdsPaveBlock::new();
+                if pb_value.original_edge() == n_e {
+                    pb2n.set_pave1(pb_value_paves[0]);
+                    pb2n.set_pave2(pb_value_paves[1]);
                 } else {
-                    let mut a_pave = [BopdsPave::new(0, 0.0), BopdsPave::new(0, 0.0)];
-                    if a_pb_value_paves[0].index() == a_pb_value_paves[1].index()
-                        && a_pb2.pave1().index() == a_pb2.pave2().index()
+                    let mut pave = [BopdsPave::new(0, 0.0), BopdsPave::new(0, 0.0)];
+                    if pb_value_paves[0].index() == pb_value_paves[1].index()
+                        && pb2.pave1().index() == pb2.pave2().index()
                     {
-                        a_pave[0] = BopdsPave::new(
-                            a_pb_value_paves[0].index(),
-                            a_pb2.pave1().parameter(),
+                        pave[0] = BopdsPave::new(
+                            pb_value_paves[0].index(),
+                            pb2.pave1().parameter(),
                         );
-                        a_pave[1] = BopdsPave::new(
-                            a_pb_value_paves[1].index(),
-                            a_pb2.pave2().parameter(),
+                        pave[1] = BopdsPave::new(
+                            pb_value_paves[1].index(),
+                            pb2.pave2().parameter(),
                         );
                     } else {
                         for i in 0..2 {
-                            let n_v = a_pb_value_paves[i].index();
-                            a_pave[i].set_index(n_v);
-                            if n_v == a_pb2.pave1().index() {
-                                a_pave[i].set_parameter(a_pb2.pave1().parameter());
-                            } else if n_v == a_pb2.pave2().index() {
-                                a_pave[i].set_parameter(a_pb2.pave2().parameter());
+                            let n_v = pb_value_paves[i].index();
+                            pave[i].set_index(n_v);
+                            if n_v == pb2.pave1().index() {
+                                pave[i].set_parameter(pb2.pave1().parameter());
+                            } else if n_v == pb2.pave2().index() {
+                                pave[i].set_parameter(pb2.pave2().parameter());
                             } else {
-                                let param = project_vertex_on_original(f, n_v, n_e, a_pb2, fuzzy);
-                                a_pave[i].set_parameter(param);
+                                let param = project_vertex_on_original(f, n_v, n_e, pb2, fuzzy);
+                                pave[i].set_parameter(param);
                             }
                         }
                     }
-                    if a_pave[1].parameter() < a_pave[0].parameter() {
-                        a_pave.swap(0, 1);
+                    if pave[1].parameter() < pave[0].parameter() {
+                        pave.swap(0, 1);
                     }
-                    a_pb2n.set_pave1(a_pave[0]);
-                    a_pb2n.set_pave2(a_pave[1]);
+                    pb2n.set_pave1(pave[0]);
+                    pb2n.set_pave2(pave[1]);
                 }
-                a_pb2n.set_edge(a_pb_value.edge());
-                a_pb2n.set_original_edge(n_e);
-                a_cb.add_pave_block(a_pb2n.clone());
-                f.ds_mut().change_pave_blocks_mut(n_e).push(a_pb2n.clone());
-                f.ds_mut().set_common_block(&a_pb2n, a_cb.clone());
+                pb2n.set_edge(pb_value.edge());
+                pb2n.set_original_edge(n_e);
+                a_cb.add_pave_block(pb2n.clone());
+                f.ds_mut().change_pave_blocks_mut(n_e).push(pb2n.clone());
+                f.ds_mut().set_common_block(&pb2n, a_cb.clone());
             }
             a_cb.set_faces(a_faces.clone());
-            if let Some(a_pb_new) = a_cb.pave_block1().cloned() {
-                a_lpb_new.push(a_pb_new);
+            if let Some(pb_new) = a_cb.pave_block1().cloned() {
+                lpb_new.push(pb_new);
             }
             f.ds_mut().push_common_block(a_cb);
         }
-        *a_lpb = a_lpb_new;
+        *lpb = lpb_new;
     } else {
-        let n_e = a_pbf.original_edge();
+        let n_e = pbf.original_edge();
         if n_e != 0 {
-            for a_pb in a_lpb.iter() {
+            for a_pb in lpb.iter() {
                 f.ds_mut().change_pave_blocks_mut(n_e).push(a_pb.clone());
             }
         }
     }
 
-    let Some(l_faces) = pb_faces.get(&pb_key(a_pbf)).cloned() else {
+    let Some(l_faces) = pb_faces.get(&pb_key(pbf)).cloned() else {
         return;
     };
     let fuzzy = f.fuzzy_value();
@@ -162,7 +162,7 @@ pub(crate) fn update_existing_pave_blocks(
             continue;
         };
         let a_f = Face(f_shape);
-        for a_pb in a_lpb.iter() {
+        for a_pb in lpb.iter() {
             let on_or_in = f
                 .ds()
                 .face_info(n_f)
@@ -213,32 +213,32 @@ fn project_vertex_on_original(
     f: &PaveFiller,
     n_v: usize,
     n_e: usize,
-    a_pb2: &BopdsPaveBlock,
+    pb2: &BopdsPaveBlock,
     fuzzy: f64,
 ) -> f64 {
     let Some(v_shape) = f.ds().shape(n_v).cloned() else {
-        return a_pb2.pave1().parameter();
+        return pb2.pave1().parameter();
     };
     let Some(e_shape) = f.ds().shape(n_e).cloned() else {
-        return a_pb2.pave1().parameter();
+        return pb2.pave1().parameter();
     };
     if let Ok(Some((t, _))) = vertex_on_edge(&f.context(), &Vertex(v_shape.clone()), &Edge(e_shape), fuzzy)
     {
         return t;
     }
-    let Some(v1s) = f.ds().shape(a_pb2.pave1().index()) else {
-        return a_pb2.pave1().parameter();
+    let Some(v1s) = f.ds().shape(pb2.pave1().index()) else {
+        return pb2.pave1().parameter();
     };
-    let Some(v2s) = f.ds().shape(a_pb2.pave2().index()) else {
-        return a_pb2.pave2().parameter();
+    let Some(v2s) = f.ds().shape(pb2.pave2().index()) else {
+        return pb2.pave2().parameter();
     };
-    let a_p = BRepTool::vertex_point(&Vertex(v_shape));
-    let a_p1 = BRepTool::vertex_point(&Vertex(v1s.clone()));
-    let a_p2 = BRepTool::vertex_point(&Vertex(v2s.clone()));
-    if a_p.square_distance(&a_p1) < a_p.square_distance(&a_p2) {
-        a_pb2.pave1().parameter()
+    let p = BRepTool::vertex_point(&Vertex(v_shape));
+    let p1 = BRepTool::vertex_point(&Vertex(v1s.clone()));
+    let p2 = BRepTool::vertex_point(&Vertex(v2s.clone()));
+    if p.square_distance(&p1) < p.square_distance(&p2) {
+        pb2.pave1().parameter()
     } else {
-        a_pb2.pave2().parameter()
+        pb2.pave2().parameter()
     }
 }
 
@@ -250,7 +250,7 @@ pub(crate) fn update_face_info_ff(
     pb_faces: &PbFacesMap,
 ) {
     let nb_ff = f.ds().interf_ff().len();
-    let mut a_mf: HashSet<usize> = HashSet::new();
+    let mut mf: HashSet<usize> = HashSet::new();
     let mut an_edge_lpb: HashMap<usize, Vec<BopdsPaveBlock>> = HashMap::new();
 
     for i in 0..nb_ff {
@@ -262,10 +262,10 @@ pub(crate) fn update_face_info_ff(
             let mut k = 0;
             while k < f.ds().interf_ff()[i].curves()[j].pave_blocks().len() {
                 let a_pb = f.ds().interf_ff()[i].curves()[j].pave_blocks()[k].clone();
-                if let Some(a_lpb) = dm_ex.get(&pb_key(&a_pb)).cloned() {
-                    let mut a_lpb = a_lpb;
-                    update_existing_pave_blocks(f, &a_pb, &mut a_lpb, pb_faces);
-                    for it in &a_lpb {
+                if let Some(lpb) = dm_ex.get(&pb_key(&a_pb)).cloned() {
+                    let mut lpb = lpb;
+                    update_existing_pave_blocks(f, &a_pb, &mut lpb, pb_faces);
+                    for it in &lpb {
                         let n_e = it.edge();
                         an_edge_lpb.entry(n_e).or_default().push(it.clone());
                     }
@@ -305,33 +305,33 @@ pub(crate) fn update_face_info_ff(
                 fi.add_vert(n_v1, 0.0, 0.0);
             }
         }
-        a_mf.insert(n_f1);
-        a_mf.insert(n_f2);
+        mf.insert(n_f1);
+        mf.insert(n_f2);
     }
 
     let mut b_new_cb = false;
     let edge_keys: Vec<usize> = an_edge_lpb.keys().copied().collect();
     for n_e in edge_keys {
-        let a_lpb = match an_edge_lpb.get(&n_e).cloned() {
+        let lpb = match an_edge_lpb.get(&n_e).cloned() {
             Some(l) if l.len() > 1 => l,
             _ => continue,
         };
         b_new_cb = true;
-        let mut a_m_faces: HashSet<usize> = HashSet::new();
-        let mut a_m_pbs: Vec<BopdsPaveBlock> = Vec::new();
+        let mut m_faces: HashSet<usize> = HashSet::new();
+        let mut m_pbs: Vec<BopdsPaveBlock> = Vec::new();
         let mut a_cb: Option<BopdsCommonBlock> = None;
-        for a_pb in &a_lpb {
-            if !a_m_pbs.iter().any(|p| pb_eq(p, a_pb)) {
-                a_m_pbs.push(a_pb.clone());
+        for a_pb in &lpb {
+            if !m_pbs.iter().any(|p| pb_eq(p, a_pb)) {
+                m_pbs.push(a_pb.clone());
             }
             if let Some(cb) = f.ds().common_block(a_pb) {
                 for p in cb.pave_blocks() {
-                    if !a_m_pbs.iter().any(|x| pb_eq(x, p)) {
-                        a_m_pbs.push(p.clone());
+                    if !m_pbs.iter().any(|x| pb_eq(x, p)) {
+                        m_pbs.push(p.clone());
                     }
                 }
                 for &face in cb.faces() {
-                    a_m_faces.insert(face);
+                    m_faces.insert(face);
                 }
                 if a_cb.is_none() {
                     a_cb = Some(cb.clone());
@@ -340,20 +340,20 @@ pub(crate) fn update_face_info_ff(
         }
         if a_cb.is_none() {
             let mut cb = BopdsCommonBlock::new();
-            cb.set_pave_blocks(a_lpb.clone());
-            for a_pb in &a_lpb {
+            cb.set_pave_blocks(lpb.clone());
+            for a_pb in &lpb {
                 f.ds_mut().set_common_block(a_pb, cb.clone());
             }
             f.ds_mut().push_common_block(cb);
         } else if let Some(mut cb) = a_cb {
-            let mut a_lpb_new = Vec::new();
-            for a_pb in &a_m_pbs {
+            let mut lpb_new = Vec::new();
+            for a_pb in &m_pbs {
                 f.ds_mut().set_common_block(a_pb, cb.clone());
-                a_lpb_new.push(a_pb.clone());
+                lpb_new.push(a_pb.clone());
             }
-            cb.set_pave_blocks(a_lpb_new);
-            cb.set_faces(a_m_faces.into_iter().collect());
-            f.ds_mut().set_common_block(&a_lpb[0], cb);
+            cb.set_pave_blocks(lpb_new);
+            cb.set_faces(m_faces.into_iter().collect());
+            f.ds_mut().set_common_block(&lpb[0], cb);
         }
     }
 
@@ -363,7 +363,7 @@ pub(crate) fn update_face_info_ff(
         return;
     }
 
-    let faces: Vec<usize> = a_mf.iter().copied().collect();
+    let faces: Vec<usize> = mf.iter().copied().collect();
     for n_f1 in faces {
         if b_verts {
             if let Some(fi) = f.ds_mut().face_info_mut(n_f1) {
@@ -442,8 +442,8 @@ pub(crate) fn update_pave_blocks_ff(
         an_all.extend(list.iter().cloned());
     }
 
-    let mut a_mpb: HashSet<PbKey> = HashSet::new();
-    let mut a_micro: HashSet<usize> = HashSet::new();
+    let mut mpb: HashSet<PbKey> = HashSet::new();
+    let mut micro: HashSet<usize> = HashSet::new();
     for mut a_pb in an_all {
         if f.ds().is_common_block(&a_pb) {
             if let Some(cb) = f.ds().common_block(&a_pb) {
@@ -452,21 +452,21 @@ pub(crate) fn update_pave_blocks_ff(
                 }
             }
         }
-        if !a_mpb.insert(pb_key(&a_pb)) {
+        if !mpb.insert(pb_key(&a_pb)) {
             continue;
         }
         let (mut n_v1, mut n_v2) = a_pb.indices();
-        let (a_t1, a_t2) = a_pb.range();
+        let (t1, t2) = a_pb.range();
         let was_regular = n_v1 != n_v2;
         let mut b_rebuild = false;
         if let Some(&n) = dm_new_sd.get(&n_v1) {
             n_v1 = n;
-            a_pb.set_pave1(BopdsPave::new(n_v1, a_t1));
+            a_pb.set_pave1(BopdsPave::new(n_v1, t1));
             b_rebuild = true;
         }
         if let Some(&n) = dm_new_sd.get(&n_v2) {
             n_v2 = n;
-            a_pb.set_pave2(BopdsPave::new(n_v2, a_t2));
+            a_pb.set_pave2(BopdsPave::new(n_v2, t2));
             b_rebuild = true;
         }
         if !b_rebuild {
@@ -499,11 +499,11 @@ pub(crate) fn update_pave_blocks_ff(
                 fill_shrunk_data_for_block(f, &edge, tol, &mut a_pb);
             }
             if !a_pb.has_shrunk_data() {
-                a_micro.insert(n_e);
+                micro.insert(n_e);
                 continue;
             }
         }
-        let n_sp = make_split_edge(f, n_e, n_v1, a_t1, n_v2, a_t2)?;
+        let n_sp = make_split_edge(f, n_e, n_v1, t1, n_v2, t2)?;
         if f.ds().is_common_block(&a_pb) {
             if let Some(mut cb) = f.ds().common_block(&a_pb).cloned() {
                 cb.set_edge(n_sp);
@@ -516,25 +516,25 @@ pub(crate) fn update_pave_blocks_ff(
                 let list = f.ds_mut().change_pave_blocks_mut(orig);
                 if let Some(slot) = list.iter_mut().find(|p| pb_eq(p, &a_pb) || p.edge() == n_e) {
                     slot.set_edge(n_sp);
-                    slot.set_pave1(BopdsPave::new(n_v1, a_t1));
-                    slot.set_pave2(BopdsPave::new(n_v2, a_t2));
+                    slot.set_pave1(BopdsPave::new(n_v1, t1));
+                    slot.set_pave2(BopdsPave::new(n_v2, t2));
                 }
             }
             for ff in f.ds_mut().interf_ff_mut() {
                 for nc in ff.change_curves() {
                     for pb in nc.change_pave_blocks() {
-                        if pb_eq(pb, &a_pb) || (pb.edge() == n_e && (pb.first - a_t1).abs() <= 1e-7) {
+                        if pb_eq(pb, &a_pb) || (pb.edge() == n_e && (pb.first - t1).abs() <= 1e-7) {
                             pb.set_edge(n_sp);
-                            pb.set_pave1(BopdsPave::new(n_v1, a_t1));
-                            pb.set_pave2(BopdsPave::new(n_v2, a_t2));
+                            pb.set_pave1(BopdsPave::new(n_v1, t1));
+                            pb.set_pave2(BopdsPave::new(n_v2, t2));
                         }
                     }
                 }
             }
         }
     }
-    if !a_micro.is_empty() {
-        f.ds_mut().remove_pave_blocks(&a_micro);
+    if !micro.is_empty() {
+        f.ds_mut().remove_pave_blocks(&micro);
     }
     Ok(())
 }

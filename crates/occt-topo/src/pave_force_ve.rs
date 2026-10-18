@@ -23,37 +23,37 @@ use crate::shape::{Edge, Vertex};
 /// plus `Precision::Confusion`. Port of `BndLib_Add3dCurve::Add` in
 /// `GetPBBox` (`_3.cxx:948-951`).
 fn pb_range_box(edge: &Edge, first: f64, last: f64) -> BndBox {
-    let a_tol = BRepTool::edge_tolerance(edge) + CONFUSION;
+    let tol = BRepTool::edge_tolerance(edge) + CONFUSION;
     if let Some(c) = BRepTool::edge_curve_world(edge) {
         let mut box_ = BndBox::new();
-        add_curve_to_box(c.as_ref(), first, last, a_tol, &mut box_);
+        add_curve_to_box(c.as_ref(), first, last, tol, &mut box_);
         box_
     } else {
         let mut box_ = shape_bbox(&edge.0);
-        box_.enlarge(a_tol);
+        box_.enlarge(tol);
         box_
     }
 }
 
 /// `BOPAlgo_PaveFiller::GetPBBox`.
 pub fn get_pb_box(
-    the_e: &Edge,
-    the_pb: &BopdsPaveBlock,
+    e: &Edge,
+    pb: &BopdsPaveBlock,
     pb_box: &mut HashMap<(usize, u64, u64), BndBox>,
 ) -> Option<(f64, f64, f64, f64, BndBox)> {
-    let (first, last) = the_pb.range();
+    let (first, last) = pb.range();
     if last - first <= PCONFUSION {
         return None;
     }
-    if the_pb.has_shrunk_data() {
-        let (sf, sl, _) = the_pb.shrunk_data();
-        return Some((first, last, sf, sl, pb_range_box(the_e, sf, sl)));
+    if pb.has_shrunk_data() {
+        let (sf, sl, _) = pb.shrunk_data();
+        return Some((first, last, sf, sl, pb_range_box(e, sf, sl)));
     }
-    let key = pb_key(the_pb);
+    let key = pb_key(pb);
     if let Some(b) = pb_box.get(&key) {
         return Some((first, last, first, last, b.clone()));
     }
-    let box_ = pb_range_box(the_e, first, last);
+    let box_ = pb_range_box(e, first, last);
     pb_box.insert(key, box_.clone());
     Some((first, last, first, last, box_))
 }
@@ -63,7 +63,7 @@ pub fn force_interf_ve(
     f: &mut PaveFiller,
     n_v: usize,
     a_pb: &mut BopdsPaveBlock,
-    the_m_edges: &mut Vec<usize>,
+    m_edges: &mut Vec<usize>,
 ) -> Result<bool, String> {
     let n_e = a_pb.original_edge();
     let Some(si_e) = f.ds().shape_info(n_e).cloned() else {
@@ -116,8 +116,8 @@ pub fn force_interf_ve(
         }
     }
     a_pb.append_ext_pave(BopdsPave::new(n_vx, t));
-    if !the_m_edges.contains(&n_e) {
-        the_m_edges.push(n_e);
+    if !m_edges.contains(&n_e) {
+        m_edges.push(n_e);
     }
     let i_rv = f.ds().rank(n_v);
     let i_re = f.ds().rank(n_e);

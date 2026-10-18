@@ -34,7 +34,7 @@ const MAJORATION_DEFLECTION: f64 = 1.5;
 #[derive(Clone, Debug)]
 pub struct Geom2dIntPolygon2d {
     /// `ThePnts` (`gxx:45`).
-    the_pnts: Vec<GpPnt2d>,
+    pnts: Vec<GpPnt2d>,
     /// `TheParams` (`gxx:46`).
     the_params: Vec<f64>,
     /// `TheIndex` (`gxx:47`).
@@ -42,11 +42,11 @@ pub struct Geom2dIntPolygon2d {
     /// `NbPntIn` (`hxx`).
     nb_pnt_in: usize,
     /// `TheMaxNbPoints` (`hxx`).
-    the_max_nb_points: usize,
+    max_nb_points: usize,
     /// `myBox` (inherited from `Intf_Polygon2d`).
-    my_box: BndBox2d,
+    bnd_box: BndBox2d,
     /// `TheDeflection` (`hxx`).
-    the_deflection: f64,
+    deflection: f64,
     /// `ClosedPolygon` (`hxx`).
     closed_polygon: bool,
     /// `Binf` (`hxx`).
@@ -61,13 +61,13 @@ impl Geom2dIntPolygon2d {
         let nb_pts = if t_nb_pts < 3 { 3 } else { t_nb_pts };
         let alloc = if t_nb_pts < 3 { 6 } else { t_nb_pts + t_nb_pts };
         let mut p = Self {
-            the_pnts: vec![GpPnt2d::zero(); alloc],
+            pnts: vec![GpPnt2d::zero(); alloc],
             the_params: vec![0.0; alloc],
             the_index: vec![0; alloc],
             nb_pnt_in: nb_pts,
-            the_max_nb_points: nb_pts + nb_pts,
-            my_box: BndBox2d::new(),
-            the_deflection: 0.0,
+            max_nb_points: nb_pts + nb_pts,
+            bnd_box: BndBox2d::new(),
+            deflection: 0.0,
             closed_polygon: false,
             binf: 0.0,
             bsup: 0.0,
@@ -84,7 +84,7 @@ impl Geom2dIntPolygon2d {
         let mut i = 1usize;
         loop {
             let pnt = curve_tool::geom2d_value(c, u);
-            p.my_box.add_point(&pnt);
+            p.bnd_box.add_point(&pnt);
             p.set_ti(i, i);
             p.set_tp(i, pnt);
             p.set_tpar(i, u);
@@ -98,7 +98,7 @@ impl Geom2dIntPolygon2d {
         //-----------------------------------------------------
         //--- Calculate a maximal deflection
         //---
-        p.the_deflection = 0.000000001_f64.min(tol / 100.);
+        p.deflection = 0.000000001_f64.min(tol / 100.);
         i = 1;
         u = d.first_parameter();
         u += du * 0.5;
@@ -123,8 +123,8 @@ impl Geom2dIntPolygon2d {
                     let l = GpLin2d::from_pnt_dir(p1, dir);
                     t = l.distance(&pm);
                 }
-                if t > p.the_deflection {
-                    p.the_deflection = t;
+                if t > p.deflection {
+                    p.deflection = t;
                 }
             }
             if i >= nb_pts {
@@ -132,7 +132,7 @@ impl Geom2dIntPolygon2d {
             }
         }
 
-        p.my_box.enlarge(p.the_deflection * MAJORATION_DEFLECTION);
+        p.bnd_box.enlarge(p.deflection * MAJORATION_DEFLECTION);
         p.closed_polygon = false;
         p
     }
@@ -143,11 +143,11 @@ impl Geom2dIntPolygon2d {
 
     #[inline]
     fn tp(&self, i: usize) -> GpPnt2d {
-        self.the_pnts[i - 1]
+        self.pnts[i - 1]
     }
     #[inline]
     fn set_tp(&mut self, i: usize, v: GpPnt2d) {
-        self.the_pnts[i - 1] = v;
+        self.pnts[i - 1] = v;
     }
     #[inline]
     fn tpar(&self, i: usize) -> f64 {
@@ -174,8 +174,8 @@ impl Geom2dIntPolygon2d {
 
     /// `SetDeflectionOverEstimation(x)` (`lxx:25-29`).
     pub fn set_deflection_over_estimation(&mut self, x: f64) {
-        self.the_deflection = x;
-        self.my_box.enlarge(self.the_deflection);
+        self.deflection = x;
+        self.bnd_box.enlarge(self.deflection);
     }
 
     /// `Closed(flag)` (`lxx:32-35`).
@@ -213,16 +213,16 @@ impl Geom2dIntPolygon2d {
 
     /// `ComputeWithBox(C, BoxOtherPolygon)` (`gxx:122-266`).
     pub fn compute_with_box(&mut self, c: &dyn Curve2d, box_other_polygon: &BndBox2d) {
-        if self.my_box.is_out_box(box_other_polygon) {
+        if self.bnd_box.is_out_box(box_other_polygon) {
             self.nb_pnt_in = 2;
-            self.my_box.set_void();
+            self.bnd_box.set_void();
         } else {
             let (mut bx0, mut by0, mut bx1, mut by1) =
                 box_other_polygon.get().expect("ComputeWithBox: void box");
-            bx0 -= self.the_deflection;
-            by0 -= self.the_deflection;
-            bx1 += self.the_deflection;
-            by1 += self.the_deflection;
+            bx0 -= self.deflection;
+            by0 -= self.deflection;
+            bx1 += self.deflection;
+            by1 += self.deflection;
 
             let mut max_index_used = 1usize;
             let mut nbp = 0usize;
@@ -258,17 +258,17 @@ impl Geom2dIntPolygon2d {
 
             if nbp == 1 {
                 self.nb_pnt_in = 2;
-                self.my_box.set_void();
+                self.bnd_box.set_void();
             } else {
-                self.my_box.set_void();
+                self.bnd_box.set_void();
                 if nbp != 0 {
                     let v = self.tp(self.ti(1));
-                    self.my_box.add_point(&v);
+                    self.bnd_box.add_point(&v);
                 }
                 let mut nb_passage_deflection = 0;
                 loop {
                     nb_passage_deflection += 1;
-                    let mut new_deflection = self.the_deflection;
+                    let mut new_deflection = self.deflection;
                     // `for (i = 2; i <= nbp; i++)` (`gxx:198`) with the `i--`
                     // at `gxx:239`; expressed as a `while` so the rewind is
                     // observable.
@@ -278,7 +278,7 @@ impl Geom2dIntPolygon2d {
                         let iim1 = self.ti(i - 1);
                         let pi = self.tp(ii);
                         let pim1 = self.tp(iim1);
-                        self.my_box.add_point(&pi);
+                        self.bnd_box.add_point(&pi);
                         let regi = Self::calcul_region(pi.x(), pi.y(), bx0, bx1, by0, by1);
                         let regim1 = Self::calcul_region(pim1.x(), pim1.y(), bx0, bx1, by0, by1);
                         if (regi & regim1) == 0 {
@@ -307,8 +307,8 @@ impl Geom2dIntPolygon2d {
                                     let l = GpLin2d::from_pnt_dir(pim1, dir);
                                     t = l.distance(&pm);
                                 }
-                                if (max_index_used < (self.the_max_nb_points - 1))
-                                    && (t > (self.the_deflection * 0.5))
+                                if (max_index_used < (self.max_nb_points - 1))
+                                    && (t > (self.deflection * 0.5))
                                 {
                                     nbp += 1;
                                     let mut j = nbp;
@@ -342,23 +342,23 @@ impl Geom2dIntPolygon2d {
                         i += 1;
                     }
                     let ratio_deflection = if new_deflection != 0.0 {
-                        self.the_deflection / new_deflection
+                        self.deflection / new_deflection
                     } else {
                         10.0
                     };
-                    self.the_deflection = new_deflection;
+                    self.deflection = new_deflection;
                     self.nb_pnt_in = nbp;
                     if !((ratio_deflection < 3.0)
                         && (nb_passage_deflection < 3)
-                        && (max_index_used < (self.the_max_nb_points - 2)))
+                        && (max_index_used < (self.max_nb_points - 2)))
                     {
                         break;
                     }
                 }
             }
 
-            self.the_deflection *= MAJORATION_DEFLECTION;
-            self.my_box.enlarge(self.the_deflection);
+            self.deflection *= MAJORATION_DEFLECTION;
+            self.bnd_box.enlarge(self.deflection);
         }
         self.closed_polygon = false;
     }
@@ -407,7 +407,7 @@ impl Geom2dIntPolygon2d {
 impl IntfPolygon2d for Geom2dIntPolygon2d {
     /// `Bounding()` (`Intf_Polygon2d.lxx:19-22`).
     fn bounding(&self) -> &BndBox2d {
-        &self.my_box
+        &self.bnd_box
     }
 
     /// `Closed()` (`lxx:32-35` / `Intf_Polygon2d.cxx:20-23`).
@@ -417,7 +417,7 @@ impl IntfPolygon2d for Geom2dIntPolygon2d {
 
     /// `DeflectionOverEstimation()` (`lxx:20-23`).
     fn deflection_over_estimation(&self) -> f64 {
-        self.the_deflection
+        self.deflection
     }
 
     /// `NbSegments()` (`lxx:38-41`).
@@ -436,15 +436,15 @@ impl IntfPolygon2d for Geom2dIntPolygon2d {
     }
 
     /// `Segment(theIndex, theBegin, theEnd)` (`gxx:370-381`).
-    fn segment(&self, index: usize, the_begin: &mut GpPnt2d, the_end: &mut GpPnt2d) {
+    fn segment(&self, index: usize, begin: &mut GpPnt2d, end: &mut GpPnt2d) {
         let mut ind = index;
-        *the_begin = self.the_pnts[self.ti(index) - 1];
+        *begin = self.pnts[self.ti(index) - 1];
         if index >= self.nb_pnt_in {
             if !self.closed_polygon {
                 panic!("Geom2dIntPolygon2d::Segment: out of range");
             }
             ind = 0;
         }
-        *the_end = self.the_pnts[self.ti(ind + 1) - 1];
+        *end = self.pnts[self.ti(ind + 1) - 1];
     }
 }

@@ -57,7 +57,7 @@ impl<'a> PWalking<'a> {
         self.previous_d = self.inter.direction();
         self.previous_d1 = self.inter.direction_on_s1();
         self.previous_d2 = self.inter.direction_on_s2();
-        self.my_tangent_idx = 1;
+        self.tangent_idx = 1;
         self.tgdir = self.previous_d;
         self.first_d1 = self.previous_d1;
         self.first_d2 = self.previous_d2;
@@ -81,13 +81,13 @@ impl<'a> PWalking<'a> {
         let (v_first1, v_last1) = self.s1.v_range();
         let (u_first2, u_last2) = self.s2.u_range();
         let (v_first2, v_last2) = self.s2.v_range();
-        let a_tol = [
+        let tol = [
             eps_of(self.um_1 - self.um1),
             eps_of(self.vm_1 - self.vm1),
             eps_of(self.um_2 - self.um2),
             eps_of(self.vm_2 - self.vm2),
         ];
-        let mut a_status = StatusDeflection::Ok;
+        let mut status = StatusDeflection::Ok;
         let mut prev_status = StatusDeflection::Ok;
         let mut no_test = false;
         let mut empty_level = 0i32;
@@ -98,7 +98,7 @@ impl<'a> PWalking<'a> {
         let mut arrive = false;
 
         while !arrive {
-            prev_status = a_status;
+            prev_status = status;
             without_append += 1;
             if without_append > 20 {
                 arrive = true;
@@ -158,9 +158,9 @@ impl<'a> PWalking<'a> {
                     let pmin = [self.um1, self.vm1, self.um2, self.vm2];
                     let pmax = [self.um_1, self.vm_1, self.um_2, self.vm_2];
                     for i in 0..4 {
-                        if pmin[i].is_finite() && (np[i] - pmin[i]).abs() < a_tol[i] {
+                        if pmin[i].is_finite() && (np[i] - pmin[i]).abs() < tol[i] {
                             np[i] = pmin[i];
-                        } else if pmax[i].is_finite() && (np[i] - pmax[i]).abs() < a_tol[i] {
+                        } else if pmax[i].is_finite() && (np[i] - pmax[i]).abs() < tol[i] {
                             np[i] = pmax[i];
                         }
                     }
@@ -181,7 +181,7 @@ impl<'a> PWalking<'a> {
                         && dist[1] < self.reso_v1
                         && dist[2] < self.reso_u2
                         && dist[3] < self.reso_v2
-                        && a_status != StatusDeflection::PasTropGrand
+                        && status != StatusDeflection::PasTropGrand
                     {
                         bad = true;
                         best_iso = best_iso.next();
@@ -220,18 +220,18 @@ impl<'a> PWalking<'a> {
             } {
                 empty_level = 0;
                 if without_append < 10 {
-                    a_status = self.test_deflection(choix, a_status);
-                } else if a_status != StatusDeflection::StepTooSmall {
+                    status = self.test_deflection(choix, status);
+                } else if status != StatusDeflection::StepTooSmall {
                     for p in &mut self.pasuv {
                         *p *= 0.5;
                     }
                 }
             }
             if confondu_level > 5 {
-                a_status = StatusDeflection::ArretSurPoint;
+                status = StatusDeflection::ArretSurPoint;
                 confondu_level = 0;
             }
-            if a_status == StatusDeflection::Ok {
+            if status == StatusDeflection::Ok {
                 nb_ok += 1;
                 if nb_ok >= 5 {
                     nb_ok = 0;
@@ -240,7 +240,7 @@ impl<'a> PWalking<'a> {
             } else {
                 nb_ok = 0;
             }
-            match a_status {
+            match status {
                 StatusDeflection::ArretSurPointPrecedent => {
                     arrive = false;
                     self.repartir_ou_diviser(&mut deja, &mut choix, &mut arrive);
@@ -286,7 +286,7 @@ impl<'a> PWalking<'a> {
                             &mut deja,
                             &mut choix,
                             &mut param,
-                            a_status,
+                            status,
                             prev_status,
                             &mut without_append,
                             &mut nb_ok,
@@ -305,7 +305,7 @@ impl<'a> PWalking<'a> {
                         &mut deja,
                         &mut choix,
                         &mut param,
-                        a_status,
+                        status,
                         prev_status,
                         &mut without_append,
                         &mut nb_ok,
@@ -328,7 +328,7 @@ impl<'a> PWalking<'a> {
         deja: &mut bool,
         choix: &mut ConstIso,
         param: &mut [f64; 4],
-        a_status: StatusDeflection,
+        status: StatusDeflection,
         prev_status: StatusDeflection,
         without_append: &mut i32,
         nb_ok: &mut i32,
@@ -340,7 +340,7 @@ impl<'a> PWalking<'a> {
         reject_max: i32,
     ) {
         *arrive = self.test_arret(*deja, param, choix);
-        if !*arrive && a_status == StatusDeflection::ArretSurPoint {
+        if !*arrive && status == StatusDeflection::ArretSurPoint {
             *arrive = true;
         }
         if *arrive {
@@ -395,7 +395,7 @@ impl<'a> PWalking<'a> {
                     *without_append = 0;
                 }
             }
-            if a_status == StatusDeflection::ArretSurPoint {
+            if status == StatusDeflection::ArretSurPoint {
                 self.repartir_ou_diviser(deja, choix, arrive);
             } else if self.line.len() == 2 {
                 self.pas_sav = self.pasuv;

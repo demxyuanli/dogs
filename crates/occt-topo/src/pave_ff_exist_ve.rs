@@ -37,7 +37,7 @@ fn edge_box_out_vertex(ds: &crate::bopds::BopdsDS, n_e: usize, n_v: usize) -> bo
 /// Bound-vertex overload of `ProcessExistingPaveBlocks` (`_6.cxx:3171`).
 pub fn process_existing_pave_blocks_bound_ve(
     f: &mut PaveFiller,
-    the_int: usize,
+    int: usize,
     n_f1: usize,
     n_f2: usize,
     on_in: &[BopdsPaveBlock],
@@ -56,28 +56,28 @@ pub fn process_existing_pave_blocks_bound_ve(
     let fuzzy = f.fuzzy_value();
     let ctx = IntToolsContext::new();
     let keys: Vec<(usize, Vec<usize>)> = dmbv.iter().map(|(&k, v)| (k, v.clone())).collect();
-    for (i_c, a_lbv) in keys {
+    for (i_c, lbv) in keys {
         let mut kept_extra: Vec<BopdsPaveBlock> = Vec::new();
-        for n_v in a_lbv {
+        for n_v in lbv {
             let Some(v_shape) = f.ds().shape(n_v).cloned() else {
                 continue;
             };
             let vertex = Vertex(v_shape);
-            for a_pb in on_in {
-                if a_pb.edge() == 0 {
+            for pb in on_in {
+                if pb.edge() == 0 {
                     continue;
                 }
-                let (n1, n2) = a_pb.indices();
+                let (n1, n2) = pb.indices();
                 if n1 == n_v || n2 == n_v {
                     continue;
                 }
-                if mpb_add.contains(&pb_key(a_pb)) {
+                if mpb_add.contains(&pb_key(pb)) {
                     continue;
                 }
-                if edge_box_out_vertex(f.ds(), a_pb.edge(), n_v) {
+                if edge_box_out_vertex(f.ds(), pb.edge(), n_v) {
                     continue;
                 }
-                let Some(e_shape) = f.ds().shape(a_pb.edge()).cloned() else {
+                let Some(e_shape) = f.ds().shape(pb.edge()).cloned() else {
                     continue;
                 };
                 let edge = Edge(e_shape);
@@ -85,13 +85,13 @@ pub fn process_existing_pave_blocks_bound_ve(
                 if flag != 0 {
                     continue;
                 }
-                mpb_add.insert(pb_key(a_pb));
-                prepare_post_treat_ff(f.ds(), the_int, i_c, a_pb, mscpb, &mut kept_extra);
-                let b_in_f1 = pb_in_face(on1, in1, a_pb);
-                let b_in_f2 = pb_in_face(on2, in2, a_pb);
+                mpb_add.insert(pb_key(pb));
+                prepare_post_treat_ff(f.ds(), int, i_c, pb, mscpb, &mut kept_extra);
+                let b_in_f1 = pb_in_face(on1, in1, pb);
+                let b_in_f2 = pb_in_face(on2, in2, pb);
                 if !b_in_f1 || !b_in_f2 {
                     let n_f = if b_in_f1 { n_f2 } else { n_f1 };
-                    let faces = pb_faces.entry(pb_key(a_pb)).or_default();
+                    let faces = pb_faces.entry(pb_key(pb)).or_default();
                     if !faces.contains(&n_f) {
                         faces.push(n_f);
                     }
@@ -99,7 +99,7 @@ pub fn process_existing_pave_blocks_bound_ve(
             }
         }
         if !kept_extra.is_empty() {
-            let lpbc = f.ds_mut().interf_ff_mut()[the_int]
+            let lpbc = f.ds_mut().interf_ff_mut()[int]
                 .change_curves()
                 .get_mut(i_c);
             if let Some(list) = lpbc {

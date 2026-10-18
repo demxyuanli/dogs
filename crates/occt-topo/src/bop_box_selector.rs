@@ -72,20 +72,20 @@ impl Box2dSelector {
     }
 
     /// `RejectElement` — `myBox.IsOut(myBVHSet->Box(theIndex))`.
-    pub fn reject_element(&self, the_index: i32) -> bool {
-        let i = the_index as usize;
+    pub fn reject_element(&self, index: i32) -> bool {
+        let i = index as usize;
         if i >= self.boxes.len() {
             return true;
         }
         self.box_.is_out_box(&self.boxes[i])
     }
 
-    fn element(&self, the_index: i32) -> i32 {
-        let i = the_index as usize;
+    fn element(&self, index: i32) -> i32 {
+        let i = index as usize;
         if i < self.elements.len() {
             self.elements[i]
         } else {
-            the_index
+            index
         }
     }
 }
@@ -99,24 +99,24 @@ impl Default for Box2dSelector {
 impl BoxTraverse2d for Box2dSelector {
     /// `AcceptMetric(theIsInside)` — accept the whole branch when the query
     /// box fully contains the node.
-    fn accept_metric(&self, the_is_inside: bool) -> bool {
-        the_is_inside
+    fn accept_metric(&self, is_inside: bool) -> bool {
+        is_inside
     }
 
     /// `RejectNode(theCMin, theCMax, theIsInside)`.
     ///
     /// `theIsInside = myBox.Contains(theCMin, theCMax, hasOverlap)`;
     /// return `!hasOverlap`.
-    fn reject_node(&self, the_c_min: BvhVec2d, the_c_max: BvhVec2d, the_is_inside: &mut bool) -> bool {
-        let (inside, has_overlap) = self.box_.contains_corners(the_c_min, the_c_max);
-        *the_is_inside = inside;
+    fn reject_node(&self, c_min: BvhVec2d, c_max: BvhVec2d, is_inside: &mut bool) -> bool {
+        let (inside, has_overlap) = self.box_.contains_corners(c_min, c_max);
+        *is_inside = inside;
         !has_overlap
     }
 
     /// `Accept(theIndex, theIsInside)`.
-    fn accept(&mut self, the_index: i32, the_is_inside: bool) -> bool {
-        if the_is_inside || !self.reject_element(the_index) {
-            self.indices.push(self.element(the_index));
+    fn accept(&mut self, index: i32, is_inside: bool) -> bool {
+        if is_inside || !self.reject_element(index) {
+            self.indices.push(self.element(index));
             true
         } else {
             false

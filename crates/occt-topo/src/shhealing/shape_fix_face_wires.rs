@@ -180,21 +180,21 @@ fn reversed_wire(wire: &Wire, face: &Face) -> Wire {
 }
 
 fn wire_uv_box(wire: &Wire, face: &Face) -> BndBox2d {
-    let mut a_box = BndBox2d::new();
+    let mut bnd_box = BndBox2d::new();
     for edge in edges_of_wire(wire) {
         let Some((cw, cf, cl)) = curve_on_surface_range(&edge, face) else {
             continue;
         };
-        let a_first = cw.first_parameter();
-        let a_last = cw.last_parameter();
+        let first = cw.first_parameter();
+        let last = cw.last_parameter();
         // cxx:1324-1331.
-        if cw.is_bspline2d() && (cf < a_first || cl > a_last) {
-            add_adaptor(cw.as_ref(), CONFUSION, &mut a_box);
+        if cw.is_bspline2d() && (cf < first || cl > last) {
+            add_adaptor(cw.as_ref(), CONFUSION, &mut bnd_box);
         } else {
-            add_adaptor_range(cw.as_ref(), cf, cl, CONFUSION, &mut a_box);
+            add_adaptor_range(cw.as_ref(), cf, cl, CONFUSION, &mut bnd_box);
         }
     }
-    a_box
+    bnd_box
 }
 
 /// `FClass2d` of `wire` alone on a FORWARD copy of `face` (`cxx:1364-1371`).
@@ -244,8 +244,8 @@ pub(super) fn orient_several_wires(
     let mut v_middle = 0.0;
     let mut is_first = true;
     for wire in ws.iter() {
-        let mut a_box = wire_uv_box(wire, face);
-        if let Some((xmin, ymin, xmax, ymax)) = a_box.get() {
+        let mut bnd_box = wire_uv_box(wire, face);
+        if let Some((xmin, ymin, xmax, ymax)) = bnd_box.get() {
             if is_first {
                 is_first = false;
                 u_middle = (xmin + xmax) * 0.5;
@@ -261,10 +261,10 @@ pub(super) fn orient_several_wires(
                 } else {
                     0.0
                 };
-                a_box.update(xmin + x_shift, ymin + y_shift, xmax + x_shift, ymax + y_shift);
+                bnd_box.update(xmin + x_shift, ymin + y_shift, xmax + x_shift, ymax + y_shift);
             }
         }
-        boxes.push(a_box);
+        boxes.push(bnd_box);
     }
 
     let mut si = vec![0i32; nb];
@@ -274,7 +274,7 @@ pub(super) fn orient_several_wires(
 
     for i in 0..nb {
         let aw = ws[i].clone();
-        let a_box1 = boxes[i];
+        let box1 = boxes[i];
         let Ok(clas) = class_one_wire(face, &aw) else {
             continue;
         };
@@ -282,18 +282,18 @@ pub(super) fn orient_several_wires(
         let staout = clas.perform_infinite_point_tab_orien();
         let mut sta = FaceState::Out;
         let mut int_wires: Vec<Wire> = Vec::new();
-        let mut a_wire_it = 0i32;
+        let mut wire_it = 0i32;
         let mut stop_j = false;
 
-        for a_sh2 in all_sub {
-            a_wire_it += 1;
-            if same_oriented(&aw.0, a_sh2) {
+        for sh2 in all_sub {
+            wire_it += 1;
+            if same_oriented(&aw.0, sh2) {
                 continue;
             }
             let mut stb = FaceState::Unknown;
-            if a_sh2.shape_type() == ShapeType::Vertex {
-                a_wire_it -= 1;
-                let p = BRepTool::vertex_point(&Vertex(a_sh2.clone()));
+            if sh2.shape_type() == ShapeType::Vertex {
+                wire_it -= 1;
+                let p = BRepTool::vertex_point(&Vertex(sh2.clone()));
                 let p2d = surface_value_of_uv(surf, &p, CONFUSION);
                 stb = clas.perform_tab_orien(p2d);
                 if stb == staout && (uclosed || vclosed) {
@@ -304,13 +304,13 @@ pub(super) fn orient_several_wires(
                         stb = clas.perform_tab_orien(GpPnt2d::new(p2d.x(), p2d.y() + v_range));
                     }
                 }
-            } else if a_sh2.shape_type() == ShapeType::Wire {
+            } else if sh2.shape_type() == ShapeType::Wire {
                 check_shift = true;
-                let idx = (a_wire_it - 1) as usize;
-                if idx >= boxes.len() || boxes[idx].is_out_box(&a_box1) {
+                let idx = (wire_it - 1) as usize;
+                if idx >= boxes.len() || boxes[idx].is_out_box(&box1) {
                     continue;
                 }
-                let bw = Wire(a_sh2.clone());
+                let bw = Wire(sh2.clone());
                 for ed in edges_of_wire(&bw) {
                     let Some((cw, cf, cl)) = curve_on_surface_range(&ed, face) else {
                         continue;
@@ -375,11 +375,11 @@ pub(super) fn orient_several_wires(
             }
             if stb == staout {
                 sta = FaceState::In;
-            } else if a_sh2.shape_type() == ShapeType::Wire {
-                int_wires.push(Wire(a_sh2.clone()));
-                map_int.insert(shape_ptr(a_sh2));
+            } else if sh2.shape_type() == ShapeType::Wire {
+                int_wires.push(Wire(sh2.clone()));
+                map_int.insert(shape_ptr(sh2));
             } else {
-                map_int.insert(shape_ptr(a_sh2));
+                map_int.insert(shape_ptr(sh2));
             }
             if stop_j {
                 break;

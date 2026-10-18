@@ -98,15 +98,15 @@ pub fn perform_ee(f: &mut PaveFiller) -> Result<(), String> {
         let Some(e2s) = f.ds().shape(n_e2).cloned() else {
             continue;
         };
-        let a_e1 = Edge(e1s);
-        let a_e2 = Edge(e2s);
+        let e1 = Edge(e1s);
+        let e2 = Edge(e2s);
         for pb1 in &pbs1 {
-            let Some((t11, t12, _ts11, _ts12, bb1)) = get_pb_box(&a_e1, pb1, &mut pb_box) else {
+            let Some((t11, t12, _ts11, _ts12, bb1)) = get_pb_box(&e1, pb1, &mut pb_box) else {
                 continue;
             };
             let (n_v11, n_v12) = pb1.indices();
             for pb2 in &pbs2 {
-                let Some((t21, t22, _ts21, _ts22, bb2)) = get_pb_box(&a_e2, pb2, &mut pb_box)
+                let Some((t21, t22, _ts21, _ts22, bb2)) = get_pb_box(&e2, pb2, &mut pb_box)
                 else {
                     continue;
                 };
@@ -133,7 +133,7 @@ pub fn perform_ee(f: &mut PaveFiller) -> Result<(), String> {
 
     let mut mpblpb: PbPbListMap = HashMap::new();
     let mut mvcpb: Vec<NewVertexCpb> = Vec::new();
-    let mut a_m_edges: Vec<usize> = Vec::new();
+    let mut m_edges: Vec<usize> = Vec::new();
 
     for task in tasks {
         let Some(e1s) = f.ds().shape(task.n_e1).cloned() else {
@@ -152,14 +152,14 @@ pub fn perform_ee(f: &mut PaveFiller) -> Result<(), String> {
             .box_of(task.n_e2)
             .copied()
             .unwrap_or_else(|| shape_bbox(&e2s));
-        let mut a_e1 = Edge(e1s);
-        let mut a_e2 = Edge(e2s);
+        let mut e1 = Edge(e1s);
+        let mut e2 = Edge(e2s);
         if let Some(trsf) = trsf_to_point(&box1, &box2, None, None) {
             let loc = TopLocLocation::composed(&trsf, TopLocLocation::identity());
-            a_e1.0.move_location(&loc);
-            a_e2.0.move_location(&loc);
+            e1.0.move_location(&loc);
+            e2.0.move_location(&loc);
         }
-        let mut ee = EdgeEdge::with_edges(a_e1.clone(), a_e2.clone());
+        let mut ee = EdgeEdge::with_edges(e1.clone(), e2.clone());
         ee.set_range1(IntRange::new_unchecked(task.t11, task.t12));
         ee.set_range2(IntRange::new_unchecked(task.t21, task.t22));
         ee.set_fuzzy_value(f.fuzzy_value());
@@ -175,28 +175,28 @@ pub fn perform_ee(f: &mut PaveFiller) -> Result<(), String> {
         let mut pb2 = task.pb2.clone();
         let (a_t11, a_t12) = pb1.range();
         let (a_t21, a_t22) = pb2.range();
-        let (a_ts11, a_ts12, b_split1) = if pb1.has_shrunk_data() {
+        let (ts11, ts12, b_split1) = if pb1.has_shrunk_data() {
             pb1.shrunk_data()
         } else {
             (a_t11, a_t12, false)
         };
-        let (a_ts21, a_ts22, b_split2) = if pb2.has_shrunk_data() {
+        let (ts21, ts22, b_split2) = if pb2.has_shrunk_data() {
             pb2.shrunk_data()
         } else {
             (a_t21, a_t22, false)
         };
-        let a_r11 = IntRange::new_unchecked(a_t11, a_ts11);
-        let a_r12 = IntRange::new_unchecked(a_ts12, a_t12);
-        let a_r21 = IntRange::new_unchecked(a_t21, a_ts21);
-        let a_r22 = IntRange::new_unchecked(a_ts22, a_t22);
-        let (line1, circ1) = curve_kind_line_or_circle(&a_e1);
-        let (line2, circ2) = curve_kind_line_or_circle(&a_e2);
+        let r11 = IntRange::new_unchecked(a_t11, ts11);
+        let r12 = IntRange::new_unchecked(ts12, a_t12);
+        let r21 = IntRange::new_unchecked(a_t21, ts21);
+        let r22 = IntRange::new_unchecked(ts22, a_t22);
+        let (line1, circ1) = curve_kind_line_or_circle(&e1);
+        let (line2, circ2) = curve_kind_line_or_circle(&e2);
         let b_analytical = (line1 && circ2) || (circ1 && line2);
 
         let points = ee.points().to_vec();
         let cps = ee.common_parts().to_vec();
-        let a_nb = points.len() + cps.len();
-        if a_nb == 0 {
+        let nb = points.len() + cps.len();
+        if nb == 0 {
             continue;
         }
 
@@ -207,17 +207,17 @@ pub fn perform_ee(f: &mut PaveFiller) -> Result<(), String> {
             let a_t1 = pt.uv1().0;
             let a_t2 = pt.uv2().0;
             let a_tol = CONFUSION;
-            let a_cr1 = IntRange::new_unchecked(a_t1, a_t1);
-            let a_cr2 = IntRange::new_unchecked(a_t2, a_t2);
+            let cr1 = IntRange::new_unchecked(a_t1, a_t1);
+            let cr2 = IntRange::new_unchecked(a_t2, a_t2);
             let mut b_is_on_pave = [
-                algo_tools_is_on_pave1(a_t1, a_r11.first, a_r11.last, a_tol)
-                    || algo_tools_is_on_pave1(a_r11.first, a_cr1.first, a_cr1.last, a_tol),
-                algo_tools_is_on_pave1(a_t1, a_r12.first, a_r12.last, a_tol)
-                    || algo_tools_is_on_pave1(a_r12.last, a_cr1.first, a_cr1.last, a_tol),
-                algo_tools_is_on_pave1(a_t2, a_r21.first, a_r21.last, a_tol)
-                    || algo_tools_is_on_pave1(a_r21.first, a_cr2.first, a_cr2.last, a_tol),
-                algo_tools_is_on_pave1(a_t2, a_r22.first, a_r22.last, a_tol)
-                    || algo_tools_is_on_pave1(a_r22.last, a_cr2.first, a_cr2.last, a_tol),
+                algo_tools_is_on_pave1(a_t1, r11.first, r11.last, a_tol)
+                    || algo_tools_is_on_pave1(r11.first, cr1.first, cr1.last, a_tol),
+                algo_tools_is_on_pave1(a_t1, r12.first, r12.last, a_tol)
+                    || algo_tools_is_on_pave1(r12.last, cr1.first, cr1.last, a_tol),
+                algo_tools_is_on_pave1(a_t2, r21.first, r21.last, a_tol)
+                    || algo_tools_is_on_pave1(r21.first, cr2.first, cr2.last, a_tol),
+                algo_tools_is_on_pave1(a_t2, r22.first, r22.last, a_tol)
+                    || algo_tools_is_on_pave1(r22.last, cr2.first, cr2.last, a_tol),
             ];
             let mut n_v = [0usize; 4];
             let (a, b) = pb1.indices();
@@ -237,7 +237,7 @@ pub fn perform_ee(f: &mut PaveFiller) -> Result<(), String> {
             for j in 0..4 {
                 if b_is_on_pave[j] {
                     let pb = if j < 2 { &mut pb2 } else { &mut pb1 };
-                    b_is_on_pave[j] = force_interf_ve(f, n_v[j], pb, &mut a_m_edges)?;
+                    b_is_on_pave[j] = force_interf_ve(f, n_v[j], pb, &mut m_edges)?;
                     if b_is_on_pave[j] {
                         is_v_exists = true;
                     }
@@ -245,14 +245,14 @@ pub fn perform_ee(f: &mut PaveFiller) -> Result<(), String> {
             }
             crate::pave_force_ve::write_pave_block(f, &pb1);
             crate::pave_force_ve::write_pave_block(f, &pb2);
-            let Ok(a_vnew) = make_new_vertex_ee(&a_e1, a_t1, &a_e2, a_t2) else {
+            let Ok(vnew) = make_new_vertex_ee(&e1, a_t1, &e2, a_t2) else {
                 continue;
             };
-            let a_pnew = BRepTool::vertex_point(&Vertex(a_vnew.clone()));
+            let pnew = BRepTool::vertex_point(&Vertex(vnew.clone()));
             if is_v_exists {
-                let a_p_on_e1 = point_on_edge(&a_e1, a_t1).unwrap_or(a_pnew);
-                let a_p_on_e2 = point_on_edge(&a_e2, a_t2).unwrap_or(a_pnew);
-                if a_p_on_e1.distance(&a_p_on_e2) > INTERSECTION {
+                let p_on_e1 = point_on_edge(&e1, a_t1).unwrap_or(pnew);
+                let p_on_e2 = point_on_edge(&e2, a_t2).unwrap_or(pnew);
+                if p_on_e1.distance(&p_on_e2) > INTERSECTION {
                     continue;
                 }
                 for j in 0..4 {
@@ -262,42 +262,42 @@ pub fn perform_ee(f: &mut PaveFiller) -> Result<(), String> {
                     let Some(vs) = f.ds().shape(n_v[j]).cloned() else {
                         continue;
                     };
-                    let a_v = Vertex(vs);
-                    let a_dist_pp = BRepTool::vertex_point(&a_v).distance(&a_pnew);
-                    update_vertex_sd(f, n_v[j], a_dist_pp)?;
+                    let v = Vertex(vs);
+                    let dist_pp = BRepTool::vertex_point(&v).distance(&pnew);
+                    update_vertex_sd(f, n_v[j], dist_pp)?;
                     f.verts_to_avoid_extension_mut().insert(n_v[j]);
                 }
             }
-            let mut a_tol_vnew = BRepTool::vertex_tolerance(&Vertex(a_vnew.clone()));
+            let mut tol_vnew = BRepTool::vertex_tolerance(&Vertex(vnew.clone()));
             if b_analytical {
-                let a_tol_min = if line1 {
+                let tol_min = if line1 {
                     0.0
                 } else {
                     0.0
                 };
-                a_tol_vnew = a_tol_vnew.max(a_tol_min);
+                tol_vnew = tol_vnew.max(tol_min);
             }
             let mut i_found = false;
-            let mut a_mv = HashSet::new();
-            a_mv.insert(n_v[0]);
-            a_mv.insert(n_v[1]);
+            let mut mv = HashSet::new();
+            mv.insert(n_v[0]);
+            mv.insert(n_v[1]);
             let mut n_vs: Vec<usize> = Vec::new();
-            if a_mv.contains(&n_v[2]) {
+            if mv.contains(&n_v[2]) {
                 n_vs.push(n_v[2]);
             }
-            if a_mv.contains(&n_v[3]) {
+            if mv.contains(&n_v[3]) {
                 n_vs.push(n_v[3]);
             }
             for &n_vx in &n_vs {
                 let Some(vs) = f.ds().shape(n_vx).cloned() else {
                     continue;
                 };
-                let a_vx = Vertex(vs);
-                let a_tol_vx = BRepTool::vertex_tolerance(&a_vx);
-                let a_px = BRepTool::vertex_point(&a_vx);
-                let a_d2 = a_pnew.square_distance(&a_px);
-                let a_dt = 100.0 * (a_tol_vnew + a_tol_vx) * (a_tol_vnew + a_tol_vx);
-                if a_d2 < a_dt {
+                let vx = Vertex(vs);
+                let tol_vx = BRepTool::vertex_tolerance(&vx);
+                let px = BRepTool::vertex_point(&vx);
+                let d2 = pnew.square_distance(&px);
+                let dt = 100.0 * (tol_vnew + tol_vx) * (tol_vnew + tol_vx);
+                if d2 < dt {
                     i_found = true;
                     break;
                 }
@@ -307,8 +307,8 @@ pub fn perform_ee(f: &mut PaveFiller) -> Result<(), String> {
             }
             f.ds_mut().add_interf_ee(task.n_e1, task.n_e2, None);
             mvcpb.push(NewVertexCpb {
-                shape: a_vnew,
-                tol: a_tol_vnew,
+                shape: vnew,
+                tol: tol_vnew,
                 pb1: pb1.clone(),
                 pb2: pb2.clone(),
                 n_e1: task.n_e1,
@@ -351,12 +351,12 @@ pub fn perform_ee(f: &mut PaveFiller) -> Result<(), String> {
             .cloned()
             .unwrap_or_else(|| "perform_ee: errors".into()));
     }
-    if !a_m_edges.is_empty() {
+    if !m_edges.is_empty() {
         for cpb in &mvcpb {
-            a_m_edges.retain(|e| *e != cpb.pb1.original_edge() && *e != cpb.pb2.original_edge());
+            m_edges.retain(|e| *e != cpb.pb1.original_edge() && *e != cpb.pb2.original_edge());
         }
-        if !a_m_edges.is_empty() {
-            pave_split_blocks::split_pave_blocks(f, &a_m_edges, false)?;
+        if !m_edges.is_empty() {
+            pave_split_blocks::split_pave_blocks(f, &m_edges, false)?;
         }
     }
     Ok(())

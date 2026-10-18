@@ -77,13 +77,13 @@ impl IntToolsContext {
     /// `IntTools_Context::IsInfiniteFace` — true when the 3D box of the face
     /// is open on any side.
     pub fn is_infinite_face(&self, face: &Face) -> bool {
-        let a_box = crate::bbox_from_geometry::shape_bbox(&face.0);
-        a_box.is_open_xmin()
-            || a_box.is_open_xmax()
-            || a_box.is_open_ymin()
-            || a_box.is_open_ymax()
-            || a_box.is_open_zmin()
-            || a_box.is_open_zmax()
+        let bnd_box = crate::bbox_from_geometry::shape_bbox(&face.0);
+        bnd_box.is_open_xmin()
+            || bnd_box.is_open_xmax()
+            || bnd_box.is_open_ymin()
+            || bnd_box.is_open_ymax()
+            || bnd_box.is_open_zmin()
+            || bnd_box.is_open_zmax()
     }
 
     /// Drop all cached tools (`IntTools_Context::~IntTools_Context` release of

@@ -76,22 +76,22 @@ pub trait IntfPolygon3dTool {
     type Polygon3d;
 
     /// `Bounding` (`IntCurveSurface_ThePolygonToolOfHInter.hxx:33-36`).
-    fn bounding(the_polyg: &Self::Polygon3d) -> &BndBox;
+    fn bounding(polyg: &Self::Polygon3d) -> &BndBox;
 
     /// `DeflectionOverEstimation` (`...hxx:38-41`).
-    fn deflection_over_estimation(the_polyg: &Self::Polygon3d) -> f64;
+    fn deflection_over_estimation(polyg: &Self::Polygon3d) -> f64;
 
     /// `Closed` (`...hxx:43-46`).
-    fn closed(the_polyg: &Self::Polygon3d) -> bool;
+    fn closed(polyg: &Self::Polygon3d) -> bool;
 
     /// `NbSegments` (`...hxx:48-51`).
-    fn nb_segments(the_polyg: &Self::Polygon3d) -> usize;
+    fn nb_segments(polyg: &Self::Polygon3d) -> usize;
 
     /// `BeginOfSeg(index)` (`...hxx:54-58`), 1-based.
-    fn begin_of_seg(the_polyg: &Self::Polygon3d, index: usize) -> GpPnt;
+    fn begin_of_seg(polyg: &Self::Polygon3d, index: usize) -> GpPnt;
 
     /// `EndOfSeg(index)` (`...hxx:61-65`), 1-based.
-    fn end_of_seg(the_polyg: &Self::Polygon3d, index: usize) -> GpPnt;
+    fn end_of_seg(polyg: &Self::Polygon3d, index: usize) -> GpPnt;
 }
 
 /// `ToolPolyh` - the static polyhedron services the gxx calls.
@@ -101,38 +101,38 @@ pub trait IntfPolyhedronTool {
     type Polyhedron;
 
     /// `Bounding` (`...hxx:36-39`).
-    fn bounding(the_polyh: &Self::Polyhedron) -> &BndBox;
+    fn bounding(polyh: &Self::Polyhedron) -> &BndBox;
 
     /// `ComponentsBounding` (`...hxx:43-47`): one box per triangle.
-    fn components_bounding(the_polyh: &Self::Polyhedron) -> &[BndBox];
+    fn components_bounding(polyh: &Self::Polyhedron) -> &[BndBox];
 
     /// `DeflectionOverEstimation` (`...hxx:50-53`).
-    fn deflection_over_estimation(the_polyh: &Self::Polyhedron) -> f64;
+    fn deflection_over_estimation(polyh: &Self::Polyhedron) -> f64;
 
     /// `NbTriangles` (`...hxx:56-59`).
-    fn nb_triangles(the_polyh: &Self::Polyhedron) -> usize;
+    fn nb_triangles(polyh: &Self::Polyhedron) -> usize;
 
     /// `Triangle(Index, P1, P2, P3)` (`...hxx:63-70`).
-    fn triangle(the_polyh: &Self::Polyhedron, index: i32) -> (i32, i32, i32);
+    fn triangle(polyh: &Self::Polyhedron, index: i32) -> (i32, i32, i32);
 
     /// `Point(Index)` (`...hxx:73-76`).
-    fn point(the_polyh: &Self::Polyhedron, index: i32) -> GpPnt;
+    fn point(polyh: &Self::Polyhedron, index: i32) -> GpPnt;
 
     /// `TriConnex` (`...hxx:84-92`). Returns
     /// `(return_value, TriCon, OtherP)`; the gxx discards all three
     /// (`gxx:915, 1230`).
     fn tri_connex(
-        the_polyh: &Self::Polyhedron,
+        polyh: &Self::Polyhedron,
         triang: i32,
         pivot: i32,
         pedge: i32,
     ) -> (i32, i32, i32);
 
     /// `IsOnBound(Index1, Index2)` (`...hxx:98-103`).
-    fn is_on_bound(the_polyh: &Self::Polyhedron, index1: i32, index2: i32) -> bool;
+    fn is_on_bound(polyh: &Self::Polyhedron, index1: i32, index2: i32) -> bool;
 
     /// `GetBorderDeflection` (`...hxx:106-109`).
-    fn get_border_deflection(the_polyh: &Self::Polyhedron) -> f64;
+    fn get_border_deflection(polyh: &Self::Polyhedron) -> f64;
 }
 
 /// The `Bnd_BoundSortBox` the gxx builds
@@ -156,13 +156,13 @@ pub struct IntfPolyhGrid {
 impl IntfPolyhGrid {
     /// `Bnd_BoundSortBox::Initialize(enclosing, setOfBoxes)`
     /// (`Bnd_BoundSortBox.cxx:352-368`).
-    pub fn initialize<TH: IntfPolyhedronTool>(the_polyh: &TH::Polyhedron) -> Self {
+    pub fn initialize<TH: IntfPolyhedronTool>(polyh: &TH::Polyhedron) -> Self {
         Self {
             grid: {
                 let mut g = crate::bnd::BoundSortBox::new();
                 g.initialize_with_enclosing(
-                    TH::bounding(the_polyh),
-                    &TH::components_bounding(the_polyh).to_vec(),
+                    TH::bounding(polyh),
+                    &TH::components_bounding(polyh).to_vec(),
                 );
                 std::cell::RefCell::new(g)
             },
@@ -170,11 +170,11 @@ impl IntfPolyhGrid {
     }
 
     /// `Bnd_BoundSortBox::Compare(const Bnd_Box&)`
-    /// (`Bnd_BoundSortBox.cxx:410-504`): the boxes touched by `the_box`.
+    /// (`Bnd_BoundSortBox.cxx:410-504`): the boxes touched by `bnd_box`.
     /// OCCT's indices are 1-based; `BoundSortBox` already returns them that
     /// way, so only the width is narrowed here.
-    pub fn compare(&self, the_box: &BndBox) -> Vec<i32> {
-        self.grid.borrow_mut().compare(the_box).iter().map(|i| *i as i32).collect()
+    pub fn compare(&self, bnd_box: &BndBox) -> Vec<i32> {
+        self.grid.borrow_mut().compare(bnd_box).iter().map(|i| *i as i32).collect()
     }
 }
 
@@ -222,63 +222,63 @@ impl<TP: IntfPolygon3dTool, TH: IntfPolyhedronTool>
     /// `Intf_InterferencePolygonPolyhedron(thePolyg, thePolyh)`
     /// (`gxx:73-88`).
     pub fn with_polygon_polyhedron(
-        the_polyg: &TP::Polygon3d,
-        the_polyh: &TH::Polyhedron,
+        polyg: &TP::Polygon3d,
+        polyh: &TH::Polyhedron,
     ) -> Self {
         let mut me = Self::new();
-        me.perform_polygon_polyhedron(the_polyg, the_polyh);
+        me.perform_polygon_polyhedron(polyg, polyh);
         me
     }
 
     /// `Intf_InterferencePolygonPolyhedron(thePolyg, thePolyh, PolyhGrid)`
     /// (`gxx:90-106`).
     pub fn with_polygon_polyhedron_grid(
-        the_polyg: &TP::Polygon3d,
-        the_polyh: &TH::Polyhedron,
+        polyg: &TP::Polygon3d,
+        polyh: &TH::Polyhedron,
         polyh_grid: &IntfPolyhGrid,
     ) -> Self {
         let mut me = Self::new();
-        me.perform_polygon_polyhedron_grid(the_polyg, the_polyh, polyh_grid);
+        me.perform_polygon_polyhedron_grid(polyg, polyh, polyh_grid);
         me
     }
 
     /// `Intf_InterferencePolygonPolyhedron(theLin, thePolyh)`
     /// (`gxx:114-147`).
-    pub fn with_lin_polyhedron(the_lin: &GpLin, the_polyh: &TH::Polyhedron) -> Self {
+    pub fn with_lin_polyhedron(lin: &GpLin, polyh: &TH::Polyhedron) -> Self {
         let mut me = Self::new();
-        me.perform_lin_polyhedron(the_lin, the_polyh);
+        me.perform_lin_polyhedron(lin, polyh);
         me
     }
 
     /// `Intf_InterferencePolygonPolyhedron(theLin, thePolyh, PolyhGrid)`
     /// (`gxx:358-388`).
     pub fn with_lin_polyhedron_grid(
-        the_lin: &GpLin,
-        the_polyh: &TH::Polyhedron,
+        lin: &GpLin,
+        polyh: &TH::Polyhedron,
         polyh_grid: &IntfPolyhGrid,
     ) -> Self {
         let mut me = Self::new();
-        me.perform_lin_polyhedron_grid(the_lin, the_polyh, polyh_grid);
+        me.perform_lin_polyhedron_grid(lin, polyh, polyh_grid);
         me
     }
 
     /// `Intf_InterferencePolygonPolyhedron(theLins, thePolyh)`
     /// (`gxx:155-193`).
-    pub fn with_lins_polyhedron(the_lins: &[GpLin], the_polyh: &TH::Polyhedron) -> Self {
+    pub fn with_lins_polyhedron(lins: &[GpLin], polyh: &TH::Polyhedron) -> Self {
         let mut me = Self::new();
-        me.perform_lins_polyhedron(the_lins, the_polyh);
+        me.perform_lins_polyhedron(lins, polyh);
         me
     }
 
     /// `Intf_InterferencePolygonPolyhedron(theLins, thePolyh, PolyhGrid)`
     /// (`gxx:396-430`).
     pub fn with_lins_polyhedron_grid(
-        the_lins: &[GpLin],
-        the_polyh: &TH::Polyhedron,
+        lins: &[GpLin],
+        polyh: &TH::Polyhedron,
         polyh_grid: &IntfPolyhGrid,
     ) -> Self {
         let mut me = Self::new();
-        me.perform_lins_polyhedron_grid(the_lins, the_polyh, polyh_grid);
+        me.perform_lins_polyhedron_grid(lins, polyh, polyh_grid);
         me
     }
 
@@ -289,51 +289,51 @@ impl<TP: IntfPolygon3dTool, TH: IntfPolyhedronTool>
     /// `Perform(thePolyg, thePolyh)` (`gxx:197-210`).
     pub fn perform_polygon_polyhedron(
         &mut self,
-        the_polyg: &TP::Polygon3d,
-        the_polyh: &TH::Polyhedron,
+        polyg: &TP::Polygon3d,
+        polyh: &TH::Polyhedron,
     ) {
         self.base.self_interference(false);
-        self.base.tolerance = TP::deflection_over_estimation(the_polyg)
-            + TH::deflection_over_estimation(the_polyh);
+        self.base.tolerance = TP::deflection_over_estimation(polyg)
+            + TH::deflection_over_estimation(polyh);
         if self.base.tolerance == 0.0 {
             self.base.tolerance = epsilon(1000.0);
         }
 
-        if !TP::bounding(the_polyg).is_out_box(TH::bounding(the_polyh)) {
-            self.interference_polygon_polyhedron(the_polyg, the_polyh);
+        if !TP::bounding(polyg).is_out_box(TH::bounding(polyh)) {
+            self.interference_polygon_polyhedron(polyg, polyh);
         }
     }
 
     /// `Perform(theLin, thePolyh)` (`gxx:214-245`).
-    pub fn perform_lin_polyhedron(&mut self, the_lin: &GpLin, the_polyh: &TH::Polyhedron) {
+    pub fn perform_lin_polyhedron(&mut self, lin: &GpLin, polyh: &TH::Polyhedron) {
         self.base.self_interference(false);
-        self.base.tolerance = TH::deflection_over_estimation(the_polyh);
+        self.base.tolerance = TH::deflection_over_estimation(polyh);
         if self.base.tolerance == 0.0 {
             self.base.tolerance = epsilon(1000.0);
         }
 
         self.begin_of_closed_polygon = false;
 
-        let polyh_grid = IntfPolyhGrid::initialize::<TH>(the_polyh);
+        let polyh_grid = IntfPolyhGrid::initialize::<TH>(polyh);
 
         self.i_lin = 0;
 
         let mut bof_lin = BndBox::new();
         let mut btoo = IntfTool::new();
-        btoo.lin_box(the_lin, TH::bounding(the_polyh), &mut bof_lin);
+        btoo.lin_box(lin, TH::bounding(polyh), &mut bof_lin);
 
         for ind_tri in polyh_grid.compare(&bof_lin) {
-            let p0 = the_lin.location();
-            let dir = the_lin.direction();
+            let p0 = lin.location();
+            let dir = lin.direction();
             let p1 = p0.translated_vec(&GpVec::new(dir.x(), dir.y(), dir.z()));
-            self.intersect(&p0, &p1, true, ind_tri as i32, the_polyh);
+            self.intersect(&p0, &p1, true, ind_tri as i32, polyh);
         }
     }
 
     /// `Perform(theLins, thePolyh)` (`gxx:253-288`).
-    pub fn perform_lins_polyhedron(&mut self, the_lins: &[GpLin], the_polyh: &TH::Polyhedron) {
+    pub fn perform_lins_polyhedron(&mut self, lins: &[GpLin], polyh: &TH::Polyhedron) {
         self.base.self_interference(false);
-        self.base.tolerance = TH::deflection_over_estimation(the_polyh);
+        self.base.tolerance = TH::deflection_over_estimation(polyh);
         if self.base.tolerance == 0.0 {
             self.base.tolerance = epsilon(1000.0);
         }
@@ -342,18 +342,18 @@ impl<TP: IntfPolygon3dTool, TH: IntfPolyhedronTool>
         let mut btoo = IntfTool::new();
         self.begin_of_closed_polygon = false;
 
-        let polyh_grid = IntfPolyhGrid::initialize::<TH>(the_polyh);
+        let polyh_grid = IntfPolyhGrid::initialize::<TH>(polyh);
 
-        for i_lin in 1..=the_lins.len() {
+        for i_lin in 1..=lins.len() {
             self.i_lin = i_lin as i32;
 
-            btoo.lin_box(&the_lins[i_lin - 1], TH::bounding(the_polyh), &mut bof_lin);
+            btoo.lin_box(&lins[i_lin - 1], TH::bounding(polyh), &mut bof_lin);
 
             for ind_tri in polyh_grid.compare(&bof_lin) {
-                let p0 = the_lins[i_lin - 1].location();
-                let dir = the_lins[i_lin - 1].direction();
+                let p0 = lins[i_lin - 1].location();
+                let dir = lins[i_lin - 1].direction();
                 let p1 = p0.translated_vec(&GpVec::new(dir.x(), dir.y(), dir.z()));
-                self.intersect(&p0, &p1, true, ind_tri as i32, the_polyh);
+                self.intersect(&p0, &p1, true, ind_tri as i32, polyh);
             }
         }
     }
@@ -361,31 +361,31 @@ impl<TP: IntfPolygon3dTool, TH: IntfPolyhedronTool>
     /// `Perform(thePolyg, thePolyh, PolyhGrid)` (`gxx:434-448`).
     pub fn perform_polygon_polyhedron_grid(
         &mut self,
-        the_polyg: &TP::Polygon3d,
-        the_polyh: &TH::Polyhedron,
+        polyg: &TP::Polygon3d,
+        polyh: &TH::Polyhedron,
         polyh_grid: &IntfPolyhGrid,
     ) {
         self.base.self_interference(false);
-        self.base.tolerance = TP::deflection_over_estimation(the_polyg)
-            + TH::deflection_over_estimation(the_polyh);
+        self.base.tolerance = TP::deflection_over_estimation(polyg)
+            + TH::deflection_over_estimation(polyh);
         if self.base.tolerance == 0.0 {
             self.base.tolerance = epsilon(1000.0);
         }
 
-        if !TP::bounding(the_polyg).is_out_box(TH::bounding(the_polyh)) {
-            self.interference_polygon_polyhedron_grid(the_polyg, the_polyh, polyh_grid);
+        if !TP::bounding(polyg).is_out_box(TH::bounding(polyh)) {
+            self.interference_polygon_polyhedron_grid(polyg, polyh, polyh_grid);
         }
     }
 
     /// `Perform(theLin, thePolyh, PolyhGrid)` (`gxx:452-482`).
     pub fn perform_lin_polyhedron_grid(
         &mut self,
-        the_lin: &GpLin,
-        the_polyh: &TH::Polyhedron,
+        lin: &GpLin,
+        polyh: &TH::Polyhedron,
         polyh_grid: &IntfPolyhGrid,
     ) {
         self.base.self_interference(false);
-        self.base.tolerance = TH::deflection_over_estimation(the_polyh);
+        self.base.tolerance = TH::deflection_over_estimation(polyh);
         if self.base.tolerance == 0.0 {
             self.base.tolerance = epsilon(1000.0);
         }
@@ -396,25 +396,25 @@ impl<TP: IntfPolygon3dTool, TH: IntfPolyhedronTool>
 
         let mut bof_lin = BndBox::new();
         let mut btoo = IntfTool::new();
-        btoo.lin_box(the_lin, TH::bounding(the_polyh), &mut bof_lin);
+        btoo.lin_box(lin, TH::bounding(polyh), &mut bof_lin);
 
         for ind_tri in polyh_grid.compare(&bof_lin) {
-            let p0 = the_lin.location();
-            let dir = the_lin.direction();
+            let p0 = lin.location();
+            let dir = lin.direction();
             let p1 = p0.translated_vec(&GpVec::new(dir.x(), dir.y(), dir.z()));
-            self.intersect(&p0, &p1, true, ind_tri as i32, the_polyh);
+            self.intersect(&p0, &p1, true, ind_tri as i32, polyh);
         }
     }
 
     /// `Perform(theLins, thePolyh, PolyhGrid)` (`gxx:490-523`).
     pub fn perform_lins_polyhedron_grid(
         &mut self,
-        the_lins: &[GpLin],
-        the_polyh: &TH::Polyhedron,
+        lins: &[GpLin],
+        polyh: &TH::Polyhedron,
         polyh_grid: &IntfPolyhGrid,
     ) {
         self.base.self_interference(false);
-        self.base.tolerance = TH::deflection_over_estimation(the_polyh);
+        self.base.tolerance = TH::deflection_over_estimation(polyh);
         if self.base.tolerance == 0.0 {
             self.base.tolerance = epsilon(1000.0);
         }
@@ -423,16 +423,16 @@ impl<TP: IntfPolygon3dTool, TH: IntfPolyhedronTool>
         let mut btoo = IntfTool::new();
         self.begin_of_closed_polygon = false;
 
-        for i_lin in 1..=the_lins.len() {
+        for i_lin in 1..=lins.len() {
             self.i_lin = i_lin as i32;
 
-            btoo.lin_box(&the_lins[i_lin - 1], TH::bounding(the_polyh), &mut bof_lin);
+            btoo.lin_box(&lins[i_lin - 1], TH::bounding(polyh), &mut bof_lin);
 
             for ind_tri in polyh_grid.compare(&bof_lin) {
-                let p0 = the_lins[i_lin - 1].location();
-                let dir = the_lins[i_lin - 1].direction();
+                let p0 = lins[i_lin - 1].location();
+                let dir = lins[i_lin - 1].direction();
                 let p1 = p0.translated_vec(&GpVec::new(dir.x(), dir.y(), dir.z()));
-                self.intersect(&p0, &p1, true, ind_tri as i32, the_polyh);
+                self.intersect(&p0, &p1, true, ind_tri as i32, polyh);
             }
         }
     }
@@ -444,32 +444,32 @@ impl<TP: IntfPolygon3dTool, TH: IntfPolyhedronTool>
     /// `Interference(thePolyg, thePolyh)` (`gxx:296-350`).
     fn interference_polygon_polyhedron(
         &mut self,
-        the_polyg: &TP::Polygon3d,
-        the_polyh: &TH::Polyhedron,
+        polyg: &TP::Polygon3d,
+        polyh: &TH::Polyhedron,
     ) {
-        let polyh_grid = IntfPolyhGrid::initialize::<TH>(the_polyh);
+        let polyh_grid = IntfPolyhGrid::initialize::<TH>(polyh);
 
-        self.begin_of_closed_polygon = TP::closed(the_polyg);
+        self.begin_of_closed_polygon = TP::closed(polyg);
 
-        let def_ph = TH::deflection_over_estimation(the_polyh);
+        let def_ph = TH::deflection_over_estimation(polyh);
 
-        for i_lin in 1..=TP::nb_segments(the_polyg) {
+        for i_lin in 1..=TP::nb_segments(polyg) {
             self.i_lin = i_lin as i32;
 
             let mut bof_seg = BndBox::new();
             bof_seg.set_void();
-            bof_seg.add_point(&TP::begin_of_seg(the_polyg, i_lin));
-            bof_seg.add_point(&TP::end_of_seg(the_polyg, i_lin));
-            bof_seg.enlarge(TP::deflection_over_estimation(the_polyg));
+            bof_seg.add_point(&TP::begin_of_seg(polyg, i_lin));
+            bof_seg.add_point(&TP::end_of_seg(polyg, i_lin));
+            bof_seg.enlarge(TP::deflection_over_estimation(polyg));
 
             let maliste = polyh_grid.compare(&bof_seg);
             for ind_tri in maliste {
-                let p1 = TP::begin_of_seg(the_polyg, i_lin);
-                let p2 = TP::end_of_seg(the_polyg, i_lin);
-                let (t0, t1, t2) = TH::triangle(the_polyh, ind_tri as i32);
-                let pa = TH::point(the_polyh, t0);
-                let pb = TH::point(the_polyh, t1);
-                let pc = TH::point(the_polyh, t2);
+                let p1 = TP::begin_of_seg(polyg, i_lin);
+                let p2 = TP::end_of_seg(polyg, i_lin);
+                let (t0, t1, t2) = TH::triangle(polyh, ind_tri as i32);
+                let pa = TH::point(polyh, t0);
+                let pb = TH::point(polyh, t1);
+                let pc = TH::point(polyh, t2);
                 let pa_pb = GpVec::from_pnts(&pa, &pb);
                 let pa_pc = GpVec::from_pnts(&pa, &pc);
                 let mut normale = pa_pb.crossed(&pa_pc);
@@ -482,8 +482,8 @@ impl<TP: IntfPolygon3dTool, TH: IntfPolyhedronTool>
                 let p1p = p1.translated_vec(&normale);
                 let p2m = p2.translated_vec(&normale.reversed());
                 let p2p = p2.translated_vec(&normale);
-                self.intersect(&p1m, &p2p, false, ind_tri as i32, the_polyh);
-                self.intersect(&p1p, &p2m, false, ind_tri as i32, the_polyh);
+                self.intersect(&p1m, &p2p, false, ind_tri as i32, polyh);
+                self.intersect(&p1p, &p2m, false, ind_tri as i32, polyh);
             }
             self.begin_of_closed_polygon = false;
         }
@@ -493,22 +493,22 @@ impl<TP: IntfPolygon3dTool, TH: IntfPolyhedronTool>
     /// the "Modified by MKK - Thu Oct 25 12:40:11 2007" branch).
     fn interference_polygon_polyhedron_grid(
         &mut self,
-        the_polyg: &TP::Polygon3d,
-        the_polyh: &TH::Polyhedron,
+        polyg: &TP::Polygon3d,
+        polyh: &TH::Polyhedron,
         polyh_grid: &IntfPolyhGrid,
     ) {
-        self.begin_of_closed_polygon = TP::closed(the_polyg);
+        self.begin_of_closed_polygon = TP::closed(polyg);
 
-        for i_lin in 1..=TP::nb_segments(the_polyg) {
+        for i_lin in 1..=TP::nb_segments(polyg) {
             self.i_lin = i_lin as i32;
 
             let mut bof_seg = BndBox::new();
             bof_seg.set_void();
-            bof_seg.add_point(&TP::begin_of_seg(the_polyg, i_lin));
-            bof_seg.add_point(&TP::end_of_seg(the_polyg, i_lin));
-            bof_seg.enlarge(TP::deflection_over_estimation(the_polyg));
+            bof_seg.add_point(&TP::begin_of_seg(polyg, i_lin));
+            bof_seg.add_point(&TP::end_of_seg(polyg, i_lin));
+            bof_seg.enlarge(TP::deflection_over_estimation(polyg));
 
-            let def_ph = TH::deflection_over_estimation(the_polyh);
+            let def_ph = TH::deflection_over_estimation(polyh);
             let maliste = polyh_grid.compare(&bof_seg);
 
             let mut p1 = GpPnt::new(0.0, 0.0, 0.0);
@@ -516,18 +516,18 @@ impl<TP: IntfPolygon3dTool, TH: IntfPolyhedronTool>
             let mut beg0 = GpPnt::new(0.0, 0.0, 0.0);
             let mut end0 = GpPnt::new(0.0, 0.0, 0.0);
             if !maliste.is_empty() {
-                p1 = TP::begin_of_seg(the_polyg, i_lin);
-                p2 = TP::end_of_seg(the_polyg, i_lin);
+                p1 = TP::begin_of_seg(polyg, i_lin);
+                p2 = TP::end_of_seg(polyg, i_lin);
                 beg0 = p1;
                 end0 = p2;
             }
 
             for ind_tri in maliste {
-                let (t0, t1, t2) = TH::triangle(the_polyh, ind_tri as i32);
+                let (t0, t1, t2) = TH::triangle(polyh, ind_tri as i32);
                 let p_tri = [t0, t1, t2];
-                let pa = TH::point(the_polyh, p_tri[0]);
-                let pb = TH::point(the_polyh, p_tri[1]);
-                let pc = TH::point(the_polyh, p_tri[2]);
+                let pa = TH::point(polyh, p_tri[0]);
+                let pb = TH::point(polyh, p_tri[1]);
+                let pc = TH::point(polyh, p_tri[2]);
                 let (tri_nor, tri_dp) = plane_equation(&pa, &pb, &pc);
 
                 // enlarge boundary segment
@@ -536,20 +536,20 @@ impl<TP: IntfPolygon3dTool, TH: IntfPolyhedronTool>
                     let dist = dif.modulus();
                     if dist > REAL_SMALL {
                         let dif = dif.divided(dist);
-                        let a_cos = dif.dot(&tri_nor).abs();
-                        if a_cos > REAL_SMALL {
-                            let shift = def_ph / a_cos;
+                        let cos = dif.dot(&tri_nor).abs();
+                        if cos > REAL_SMALL {
+                            let shift = def_ph / cos;
                             beg0 = GpPnt::from_xyz(&p1.xyz().added(&dif.multiplied(shift)));
                         }
                     }
-                } else if i_lin == TP::nb_segments(the_polyg) {
+                } else if i_lin == TP::nb_segments(polyg) {
                     let dif = p2.xyz().subtracted(p1.xyz());
                     let dist = dif.modulus();
                     if dist > REAL_SMALL {
                         let dif = dif.divided(dist);
-                        let a_cos = dif.dot(&tri_nor).abs();
-                        if a_cos > REAL_SMALL {
-                            let shift = def_ph / a_cos;
+                        let cos = dif.dot(&tri_nor).abs();
+                        if cos > REAL_SMALL {
+                            let shift = def_ph / cos;
                             end0 = GpPnt::from_xyz(&p2.xyz().added(&dif.multiplied(shift)));
                         }
                     }
@@ -558,7 +558,7 @@ impl<TP: IntfPolygon3dTool, TH: IntfPolyhedronTool>
                 let d_end_tri = tri_nor.dot(end0.xyz()) - tri_dp;
 
                 self.intersect_with_plane(
-                    &beg0, &end0, false, ind_tri as i32, the_polyh, &tri_nor, tri_dp, d_beg_tri,
+                    &beg0, &end0, false, ind_tri as i32, polyh, &tri_nor, tri_dp, d_beg_tri,
                     d_end_tri,
                 );
             }
@@ -584,17 +584,17 @@ impl<TP: IntfPolygon3dTool, TH: IntfPolyhedronTool>
         end_o: &GpPnt,
         infinite: bool,
         t_tri: i32,
-        the_polyh: &TH::Polyhedron,
+        polyh: &TH::Polyhedron,
     ) {
-        let (t0, t1, t2) = TH::triangle(the_polyh, t_tri);
-        let pa = TH::point(the_polyh, t0);
-        let pb = TH::point(the_polyh, t1);
-        let pc = TH::point(the_polyh, t2);
+        let (t0, t1, t2) = TH::triangle(polyh, t_tri);
+        let pa = TH::point(polyh, t0);
+        let pb = TH::point(polyh, t1);
+        let pc = TH::point(polyh, t2);
         let (tri_nor, tri_dp) = plane_equation(&pa, &pb, &pc);
         let d_beg_tri = tri_nor.dot(beg_o.xyz()) - tri_dp;
         let d_end_tri = tri_nor.dot(end_o.xyz()) - tri_dp;
         self.intersect_with_plane(
-            beg_o, end_o, infinite, t_tri, the_polyh, &tri_nor, tri_dp, d_beg_tri, d_end_tri,
+            beg_o, end_o, infinite, t_tri, polyh, &tri_nor, tri_dp, d_beg_tri, d_end_tri,
         );
     }
 
@@ -610,14 +610,14 @@ impl<TP: IntfPolygon3dTool, TH: IntfPolyhedronTool>
         end_o: &GpPnt,
         infinite: bool,
         t_tri: i32,
-        the_polyh: &TH::Polyhedron,
+        polyh: &TH::Polyhedron,
         tri_normal: &GpXyz,
         _tri_dp: f64,
         d_beg_tri: f64,
         d_end_tri: f64,
     ) {
         let mut typ_on_g = IntfPIType::Edge;
-        let (t0, t1, t2) = TH::triangle(the_polyh, t_tri);
+        let (t0, t1, t2) = TH::triangle(polyh, t_tri);
         let p_tri = [t0, t1, t2];
         let tri_nor = *tri_normal;
         let mut no_intersection_with_triangle = false;
@@ -659,8 +659,8 @@ impl<TP: IntfPolygon3dTool, TH: IntfPolyhedronTool>
             let mut tbreak = 0i32;
 
             { // is = 0
-                let pt0 = TH::point(the_polyh, p_tri[0]);
-                let pt1 = TH::point(the_polyh, p_tri[1]);
+                let pt0 = TH::point(polyh, p_tri[0]);
+                let pt1 = TH::point(polyh, p_tri[1]);
                 let seg_t = pt1.xyz().subtracted(pt0.xyz());
                 let vec_p = sp_lieu.subtracted(pt0.xyz());
                 d_pt_pi[0] = vec_p.modulus();
@@ -689,8 +689,8 @@ impl<TP: IntfPolygon3dTool, TH: IntfPolyhedronTool>
             }
 
             if tbreak == 0 { // is = 1
-                let pt1 = TH::point(the_polyh, p_tri[1]);
-                let pt2 = TH::point(the_polyh, p_tri[2]);
+                let pt1 = TH::point(polyh, p_tri[1]);
+                let pt2 = TH::point(polyh, p_tri[2]);
                 let seg_t = pt2.xyz().subtracted(pt1.xyz());
                 let vec_p = sp_lieu.subtracted(pt1.xyz());
                 d_pt_pi[1] = vec_p.modulus();
@@ -718,8 +718,8 @@ impl<TP: IntfPolygon3dTool, TH: IntfPolyhedronTool>
                 }
             }
             if tbreak == 0 { // is = 2
-                let pt2 = TH::point(the_polyh, p_tri[2]);
-                let pt0 = TH::point(the_polyh, p_tri[0]);
+                let pt2 = TH::point(polyh, p_tri[2]);
+                let pt0 = TH::point(polyh, p_tri[0]);
                 let seg_t = pt0.xyz().subtracted(pt2.xyz());
                 let vec_p = sp_lieu.subtracted(pt2.xyz());
                 d_pt_pi[2] = vec_p.modulus();
@@ -763,13 +763,13 @@ impl<TP: IntfPolygon3dTool, TH: IntfPolyhedronTool>
                     0.0,
                     1.0,
                 );
-                self.base.my_s_poins.push(sp);
+                self.base.s_poins.push(sp);
             } else if s_edge > -1 {
                 let pivot = p_tri[s_edge as usize];
                 let pedge = p_tri[POURCENT3[(s_edge + 1) as usize]];
                 // gxx:915 / 1230 discard the return value and both out-params
                 // (triCon, pedg), so none of them is bound here.
-                let _ = TH::tri_connex(the_polyh, t_tri, pivot, pedge);
+                let _ = TH::tri_connex(polyh, t_tri, pivot, pedge);
                 let sp = IntfSectionPoint::with_3d(
                     &GpPnt::from_xyz(&sp_lieu),
                     typ_on_g,
@@ -782,7 +782,7 @@ impl<TP: IntfPolygon3dTool, TH: IntfPolyhedronTool>
                     0.0,
                     1.0,
                 );
-                self.base.my_s_poins.push(sp);
+                self.base.s_poins.push(sp);
             } else if d_pi_e[0] > 0.0 && d_pi_e[1] > 0.0 && d_pi_e[2] > 0.0 {
                 let sp = IntfSectionPoint::with_3d(
                     &GpPnt::from_xyz(&sp_lieu),
@@ -796,33 +796,33 @@ impl<TP: IntfPolygon3dTool, TH: IntfPolyhedronTool>
                     0.0,
                     1.0,
                 );
-                self.base.my_s_poins.push(sp);
+                self.base.s_poins.push(sp);
             } else {
                 // Modified by Sergey KHROMOV - Fri Dec 7 14:40:11 2001
                 for i in 1..=3usize {
                     let ind_p1 = if i == 3 { p_tri[0] } else { p_tri[i] };
                     let ind_p2 = p_tri[i - 1];
 
-                    if TH::is_on_bound(the_polyh, ind_p1, ind_p2) {
-                        let deflection = TH::get_border_deflection(the_polyh);
-                        let beg_p = TH::point(the_polyh, ind_p1);
-                        let end_p = TH::point(the_polyh, ind_p2);
+                    if TH::is_on_bound(polyh, ind_p1, ind_p2) {
+                        let deflection = TH::get_border_deflection(polyh);
+                        let beg_p = TH::point(polyh, ind_p1);
+                        let end_p = TH::point(polyh, ind_p2);
                         let vec_tri = GpVec::from_pnts(&beg_p, &end_p);
                         // gp_Dir DirTri(VecTri) raises on a null vector in OCCT;
                         // the port skips the degenerate boundary edge.
                         if let Ok(dir_tri) = GpDir::from_vec(&vec_tri) {
                             let lin_tri = GpLin::from_pnt_dir(beg_p, dir_tri);
-                            let a_p_on_e = GpPnt::from_xyz(&sp_lieu);
-                            let a_dist = lin_tri.distance(&a_p_on_e);
+                            let p_on_e = GpPnt::from_xyz(&sp_lieu);
+                            let dist = lin_tri.distance(&p_on_e);
 
-                            if a_dist <= deflection {
-                                let a_v_loc_p_on_e = GpVec::from_pnts(&beg_p, &a_p_on_e);
-                                let a_vec_dir_tri =
+                            if dist <= deflection {
+                                let v_loc_p_on_e = GpVec::from_pnts(&beg_p, &p_on_e);
+                                let vec_dir_tri =
                                     GpVec::new(dir_tri.x(), dir_tri.y(), dir_tri.z());
-                                let a_par = a_v_loc_p_on_e.dot(&a_vec_dir_tri);
-                                let a_max_par = vec_tri.magnitude();
+                                let par = v_loc_p_on_e.dot(&vec_dir_tri);
+                                let max_par = vec_tri.magnitude();
 
-                                if a_par >= 0.0 && a_par <= a_max_par {
+                                if par >= 0.0 && par <= max_par {
                                     let sp = IntfSectionPoint::with_3d(
                                         &GpPnt::from_xyz(&sp_lieu),
                                         typ_on_g,
@@ -835,7 +835,7 @@ impl<TP: IntfPolygon3dTool, TH: IntfPolyhedronTool>
                                         0.0,
                                         1.0,
                                     );
-                                    self.base.my_s_poins.push(sp);
+                                    self.base.s_poins.push(sp);
                                 }
                             }
                         }

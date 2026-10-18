@@ -7,11 +7,11 @@ use crate::abs::ShapeType;
 use crate::bopds::BopdsDS;
 use crate::bopds_tools;
 
-/// Extended interference pairs for the vertices of `the_indices` whose
+/// Extended interference pairs for the vertices of `indices` whose
 /// tolerance was increased.
 ///
 /// Port of `BOPDS_Iterator::IntersectExt` (`BOPDS_Iterator.cxx`): every vertex
-/// of `the_indices` (using its same-domain representative's box) is tested
+/// of `indices` (using its same-domain representative's box) is tested
 /// against *every* interfering shape of the DS (using the representative box
 /// for map members, the own box otherwise). The resulting pairs are returned
 /// bucketed by interference type (VV..ZZ) — `BOPDS_Iterator::Initialize` then
@@ -19,13 +19,13 @@ use crate::bopds_tools;
 /// V/V, V/E and V/F stages process only the pairs involving the increased
 /// vertices.
 ///
-/// `the_indices` holds *source* vertex indices (as built by
+/// `indices` holds *source* vertex indices (as built by
 /// `BOPAlgo_PaveFiller::RepeatIntersection`). The box-overlap test is done
 /// brute-force (mirroring [`BopdsIterator::prepare`]) rather than with the
 /// OCCT BVH tree — the semantics are identical.
-pub fn intersect_ext_pairs(ds: &BopdsDS, the_indices: &HashSet<usize>) -> Vec<Vec<(usize, usize)>> {
+pub fn intersect_ext_pairs(ds: &BopdsDS, indices: &HashSet<usize>) -> Vec<Vec<(usize, usize)>> {
     let mut buckets: Vec<Vec<(usize, usize)>> = vec![Vec::new(); NB_INTERF_TYPES];
-    if the_indices.is_empty() {
+    if indices.is_empty() {
         return buckets;
     }
     let n = ds.nb_source_shapes();
@@ -47,7 +47,7 @@ pub fn intersect_ext_pairs(ds: &BopdsDS, the_indices: &HashSet<usize>) -> Vec<Ve
         if !si.is_interfering() || si.kind == ShapeType::Solid {
             continue;
         }
-        if !the_indices.contains(&i) {
+        if !indices.contains(&i) {
             // Only map members are queries (every shape still lives in the tree).
             continue;
         }
@@ -63,7 +63,7 @@ pub fn intersect_ext_pairs(ds: &BopdsDS, the_indices: &HashSet<usize>) -> Vec<Ve
             if ds.rank(i) == ds.rank(j) {
                 continue;
             }
-            let box_j = box_of(j, the_indices.contains(&j));
+            let box_j = box_of(j, indices.contains(&j));
             if box_i.is_out_box(&box_j) {
                 continue;
             }

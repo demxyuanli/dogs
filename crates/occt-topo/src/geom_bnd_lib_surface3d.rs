@@ -309,7 +309,7 @@ pub fn box_bspline_surface(s: &dyn Surface, u1: f64, u2: f64, v1: f64, v2: f64, 
             v_max_idx = mx;
         }
 
-        let mut a_box = BndBox::new();
+        let mut bnd_box = BndBox::new();
         for i in u_min_idx..=u_max_idx {
             let mut ip = i;
             if is_u_periodic && ip > nb_u_poles {
@@ -325,12 +325,12 @@ pub fn box_bspline_surface(s: &dyn Surface, u1: f64, u2: f64, v1: f64, v2: f64, 
                     && jp >= 1
                     && jp <= nb_v_poles
                 {
-                    a_box.add_point(&b.poles[(ip - 1) as usize][(jp - 1) as usize]);
+                    bnd_box.add_point(&b.poles[(ip - 1) as usize][(jp - 1) as usize]);
                 }
             }
         }
-        a_box.enlarge(tol);
-        return a_box;
+        bnd_box.enlarge(tol);
+        return bnd_box;
     }
 
     let nu = nb_u_samples_full(s);
@@ -348,16 +348,16 @@ pub fn box_bezier_surface(s: &dyn Surface, u1: f64, u2: f64, v1: f64, v2: f64, t
         && (v2 - a_v2).abs() <= PARAMETRIC_CONFUSION
     {
         // Full surface: convex hull of every pole (`BezierSurface.cxx:26-40`).
-        let mut a_box = BndBox::new();
+        let mut bnd_box = BndBox::new();
         if let Some(b) = spline_of(s) {
             for row in &b.poles {
                 for p in row {
-                    a_box.add_point(p);
+                    bnd_box.add_point(p);
                 }
             }
         }
-        a_box.enlarge(tol);
-        return a_box;
+        bnd_box.enlarge(tol);
+        return bnd_box;
     }
     let nu = nb_u_samples_full(s);
     let nv = nb_v_samples_full(s);
@@ -408,11 +408,11 @@ fn build_revolution_box(
     u2: f64,
     tol: f64,
 ) -> BndBox {
-    let mut a_box = BndBox::new();
+    let mut bnd_box = BndBox::new();
 
     if curve_box.is_void() {
-        a_box.enlarge(tol);
-        return a_box;
+        bnd_box.enlarge(tol);
+        return bnd_box;
     }
 
     if curve_box.is_open() {
@@ -421,45 +421,45 @@ fn build_revolution_box(
                 for x in [x_min, x_max] {
                     for y in [y_min, y_max] {
                         for z in [z_min, z_max] {
-                            add_revolution_circle(origin, axis_dir, &GpPnt::new(x, y, z), u1, u2, &mut a_box);
+                            add_revolution_circle(origin, axis_dir, &GpPnt::new(x, y, z), u1, u2, &mut bnd_box);
                         }
                     }
                 }
             }
         }
         if curve_box.is_open_xmin() {
-            a_box.open_xmin();
+            bnd_box.open_xmin();
         }
         if curve_box.is_open_xmax() {
-            a_box.open_xmax();
+            bnd_box.open_xmax();
         }
         if curve_box.is_open_ymin() {
-            a_box.open_ymin();
+            bnd_box.open_ymin();
         }
         if curve_box.is_open_ymax() {
-            a_box.open_ymax();
+            bnd_box.open_ymax();
         }
         if curve_box.is_open_zmin() {
-            a_box.open_zmin();
+            bnd_box.open_zmin();
         }
         if curve_box.is_open_zmax() {
-            a_box.open_zmax();
+            bnd_box.open_zmax();
         }
-        a_box.enlarge(tol);
-        return a_box;
+        bnd_box.enlarge(tol);
+        return bnd_box;
     }
 
     if let Some((x_min, x_max, y_min, y_max, z_min, z_max)) = curve_box.get() {
         for x in [x_min, x_max] {
             for y in [y_min, y_max] {
                 for z in [z_min, z_max] {
-                    add_revolution_circle(origin, axis_dir, &GpPnt::new(x, y, z), u1, u2, &mut a_box);
+                    add_revolution_circle(origin, axis_dir, &GpPnt::new(x, y, z), u1, u2, &mut bnd_box);
                 }
             }
         }
     }
-    a_box.enlarge(tol);
-    a_box
+    bnd_box.enlarge(tol);
+    bnd_box
 }
 
 /// `GeomBndLib_SurfaceOfRevolution::Box` (`SurfaceOfRevolution.cxx:176-233`).
@@ -470,31 +470,31 @@ pub fn box_revolution(s: &dyn Surface, u1: f64, u2: f64, v1: f64, v2: f64, tol: 
     let origin = *axis.location();
     let axis_dir = *axis.direction();
 
-    let a_v_first = basis_curve.first_parameter();
-    let a_v_last = basis_curve.last_parameter();
-    let mut a_v_min = if Precision::is_negative_infinite(v1) { a_v_first } else { v1 };
-    let mut a_v_max = if Precision::is_positive_infinite(v2) { a_v_last } else { v2 };
+    let v_first = basis_curve.first_parameter();
+    let v_last = basis_curve.last_parameter();
+    let mut v_min = if Precision::is_negative_infinite(v1) { v_first } else { v1 };
+    let mut v_max = if Precision::is_positive_infinite(v2) { v_last } else { v2 };
     if !basis_curve.is_periodic() {
-        if a_v_min < a_v_first {
-            a_v_min = a_v_first;
-        } else if a_v_min > a_v_last {
-            a_v_min = a_v_last;
+        if v_min < v_first {
+            v_min = v_first;
+        } else if v_min > v_last {
+            v_min = v_last;
         }
-        if a_v_max < a_v_first {
-            a_v_max = a_v_first;
-        } else if a_v_max > a_v_last {
-            a_v_max = a_v_last;
+        if v_max < v_first {
+            v_max = v_first;
+        } else if v_max > v_last {
+            v_max = v_last;
         }
-        if a_v_min > a_v_max {
-            std::mem::swap(&mut a_v_min, &mut a_v_max);
+        if v_min > v_max {
+            std::mem::swap(&mut v_min, &mut v_max);
         }
     }
 
-    let a_curve_box = box_curve(basis_curve.as_ref(), a_v_min, a_v_max, 0.0);
-    if a_curve_box.is_void() {
+    let curve_box = box_curve(basis_curve.as_ref(), v_min, v_max, 0.0);
+    if curve_box.is_void() {
         return box_other_surface(s, u1, u2, v1, v2, tol);
     }
-    build_revolution_box(&a_curve_box, &origin, &axis_dir, u1, u2, tol)
+    build_revolution_box(&curve_box, &origin, &axis_dir, u1, u2, tol)
 }
 
 // ---------------------------------------------------------------------------
@@ -510,11 +510,11 @@ fn build_extrusion_box(
     v_max: f64,
     tol: f64,
 ) -> BndBox {
-    let mut a_box = BndBox::new();
+    let mut bnd_box = BndBox::new();
 
     if curve_box.is_void() {
-        a_box.enlarge(tol);
-        return a_box;
+        bnd_box.enlarge(tol);
+        return bnd_box;
     }
 
     let dir_xyz = dir.xyz();
@@ -525,40 +525,40 @@ fn build_extrusion_box(
         // Propagate curve openness through the extrusion rather than returning
         // whole space (`cxx:49-73`).
         if curve_box.is_open_xmin() {
-            a_box.open_xmin();
+            bnd_box.open_xmin();
         }
         if curve_box.is_open_xmax() {
-            a_box.open_xmax();
+            bnd_box.open_xmax();
         }
         if curve_box.is_open_ymin() {
-            a_box.open_ymin();
+            bnd_box.open_ymin();
         }
         if curve_box.is_open_ymax() {
-            a_box.open_ymax();
+            bnd_box.open_ymax();
         }
         if curve_box.is_open_zmin() {
-            a_box.open_zmin();
+            bnd_box.open_zmin();
         }
         if curve_box.is_open_zmax() {
-            a_box.open_zmax();
+            bnd_box.open_zmax();
         }
         if is_v_min_inf && is_v_max_inf {
-            open_min_max(dir, &mut a_box);
+            open_min_max(dir, &mut bnd_box);
         } else if is_v_min_inf {
-            open_min(dir, &mut a_box);
+            open_min(dir, &mut bnd_box);
         } else if is_v_max_inf {
-            open_max(dir, &mut a_box);
+            open_max(dir, &mut bnd_box);
         }
         if curve_box.has_finite_part() {
             if let Some((x_min, x_max, y_min, y_max, z_min, z_max)) = curve_box.finite_part().get() {
                 if !is_v_min_inf {
                     let shift = dir_xyz.multiplied(v_min);
-                    a_box.add_point(&GpPnt::new(
+                    bnd_box.add_point(&GpPnt::new(
                         x_min + shift.x(),
                         y_min + shift.y(),
                         z_min + shift.z(),
                     ));
-                    a_box.add_point(&GpPnt::new(
+                    bnd_box.add_point(&GpPnt::new(
                         x_max + shift.x(),
                         y_max + shift.y(),
                         z_max + shift.z(),
@@ -566,12 +566,12 @@ fn build_extrusion_box(
                 }
                 if !is_v_max_inf {
                     let shift = dir_xyz.multiplied(v_max);
-                    a_box.add_point(&GpPnt::new(
+                    bnd_box.add_point(&GpPnt::new(
                         x_min + shift.x(),
                         y_min + shift.y(),
                         z_min + shift.z(),
                     ));
-                    a_box.add_point(&GpPnt::new(
+                    bnd_box.add_point(&GpPnt::new(
                         x_max + shift.x(),
                         y_max + shift.y(),
                         z_max + shift.z(),
@@ -579,66 +579,66 @@ fn build_extrusion_box(
                 }
             }
         }
-        a_box.enlarge(tol);
-        return a_box;
+        bnd_box.enlarge(tol);
+        return bnd_box;
     }
 
     if is_v_min_inf && is_v_max_inf {
-        a_box.add_box(curve_box);
-        open_min_max(dir, &mut a_box);
-        a_box.enlarge(tol);
-        return a_box;
+        bnd_box.add_box(curve_box);
+        open_min_max(dir, &mut bnd_box);
+        bnd_box.enlarge(tol);
+        return bnd_box;
     }
 
     // The box is not void and not open here (both arms returned above), so
     // `Get()` (`cxx:115`) has a finite part.
     if let Some((x_min, x_max, y_min, y_max, z_min, z_max)) = curve_box.get() {
         if is_v_min_inf {
-            open_min(dir, &mut a_box);
+            open_min(dir, &mut bnd_box);
             let shift = dir_xyz.multiplied(v_max);
-            a_box.add_point(&GpPnt::new(
+            bnd_box.add_point(&GpPnt::new(
                 x_min + shift.x(),
                 y_min + shift.y(),
                 z_min + shift.z(),
             ));
-            a_box.add_point(&GpPnt::new(
+            bnd_box.add_point(&GpPnt::new(
                 x_max + shift.x(),
                 y_max + shift.y(),
                 z_max + shift.z(),
             ));
         } else if is_v_max_inf {
-            open_max(dir, &mut a_box);
+            open_max(dir, &mut bnd_box);
             let shift = dir_xyz.multiplied(v_min);
-            a_box.add_point(&GpPnt::new(
+            bnd_box.add_point(&GpPnt::new(
                 x_min + shift.x(),
                 y_min + shift.y(),
                 z_min + shift.z(),
             ));
-            a_box.add_point(&GpPnt::new(
+            bnd_box.add_point(&GpPnt::new(
                 x_max + shift.x(),
                 y_max + shift.y(),
                 z_max + shift.z(),
             ));
         } else {
             let shift_min = dir_xyz.multiplied(v_min);
-            a_box.add_point(&GpPnt::new(
+            bnd_box.add_point(&GpPnt::new(
                 x_min + shift_min.x(),
                 y_min + shift_min.y(),
                 z_min + shift_min.z(),
             ));
-            a_box.add_point(&GpPnt::new(
+            bnd_box.add_point(&GpPnt::new(
                 x_max + shift_min.x(),
                 y_max + shift_min.y(),
                 z_max + shift_min.z(),
             ));
 
             let shift_max = dir_xyz.multiplied(v_max);
-            a_box.add_point(&GpPnt::new(
+            bnd_box.add_point(&GpPnt::new(
                 x_min + shift_max.x(),
                 y_min + shift_max.y(),
                 z_min + shift_max.z(),
             ));
-            a_box.add_point(&GpPnt::new(
+            bnd_box.add_point(&GpPnt::new(
                 x_max + shift_max.x(),
                 y_max + shift_max.y(),
                 z_max + shift_max.z(),
@@ -646,8 +646,8 @@ fn build_extrusion_box(
         }
     }
 
-    a_box.enlarge(tol);
-    a_box
+    bnd_box.enlarge(tol);
+    bnd_box
 }
 
 /// `GeomBndLib_SurfaceOfExtrusion::Box` (`SurfaceOfExtrusion.cxx:159-219`):
@@ -660,31 +660,31 @@ pub fn box_extrusion(s: &dyn Surface, u1: f64, u2: f64, v1: f64, v2: f64, tol: f
 
     // `cxx:172-199`: clamp the U window onto the basis curve range unless the
     // basis is periodic.
-    let mut a_curve_u1 = u1;
-    let mut a_curve_u2 = u2;
+    let mut curve_u1 = u1;
+    let mut curve_u2 = u2;
     if !basis_curve.is_periodic() {
-        let a_first = basis_curve.first_parameter();
-        let a_last = basis_curve.last_parameter();
-        if a_curve_u1 < a_first {
-            a_curve_u1 = a_first;
-        } else if a_curve_u1 > a_last {
-            a_curve_u1 = a_last;
+        let first = basis_curve.first_parameter();
+        let last = basis_curve.last_parameter();
+        if curve_u1 < first {
+            curve_u1 = first;
+        } else if curve_u1 > last {
+            curve_u1 = last;
         }
-        if a_curve_u2 < a_first {
-            a_curve_u2 = a_first;
-        } else if a_curve_u2 > a_last {
-            a_curve_u2 = a_last;
+        if curve_u2 < first {
+            curve_u2 = first;
+        } else if curve_u2 > last {
+            curve_u2 = last;
         }
-        if a_curve_u1 > a_curve_u2 {
-            std::mem::swap(&mut a_curve_u1, &mut a_curve_u2);
+        if curve_u1 > curve_u2 {
+            std::mem::swap(&mut curve_u1, &mut curve_u2);
         }
     }
 
-    let a_curve_box = box_curve(basis_curve.as_ref(), a_curve_u1, a_curve_u2, 0.0);
-    if a_curve_box.is_void() {
+    let curve_box = box_curve(basis_curve.as_ref(), curve_u1, curve_u2, 0.0);
+    if curve_box.is_void() {
         return box_other_surface(s, u1, u2, v1, v2, tol);
     }
-    build_extrusion_box(&a_curve_box, &dir, v1, v2, tol)
+    build_extrusion_box(&curve_box, &dir, v1, v2, tol)
 }
 
 // ---------------------------------------------------------------------------
@@ -699,10 +699,10 @@ pub fn box_offset_surface(s: &dyn Surface, u1: f64, u2: f64, v1: f64, v2: f64, t
     let (Some(basis), Some(offset)) = (s.offset_basis_surface(), s.offset_distance()) else {
         return box_other_surface(s, u1, u2, v1, v2, tol);
     };
-    let mut a_local = box_surface(basis.as_ref(), u1, u2, v1, v2, 0.0);
-    a_local.enlarge(offset.abs());
-    a_local.enlarge(tol);
-    a_local
+    let mut local = box_surface(basis.as_ref(), u1, u2, v1, v2, 0.0);
+    local.enlarge(offset.abs());
+    local.enlarge(tol);
+    local
 }
 
 // ---------------------------------------------------------------------------

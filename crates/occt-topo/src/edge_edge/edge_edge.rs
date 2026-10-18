@@ -282,14 +282,14 @@ impl EdgeEdge {
             self.res1 = resolution_of(&**cu1, self.kind1, self.res_coeff1, self.tol1);
             self.res2 = resolution_of(&**cu2, self.kind2, self.res_coeff2, self.tol2);
             self.ptol1 = 5.0e-13;
-            let a_tm1 = rr1.first.abs().max(rr1.last.abs());
-            if a_tm1 > 999.0 {
-                self.ptol1 = 5.0e-16 * a_tm1;
+            let tm1 = rr1.first.abs().max(rr1.last.abs());
+            if tm1 > 999.0 {
+                self.ptol1 = 5.0e-16 * tm1;
             }
             self.ptol2 = 5.0e-13;
-            let a_tm2 = rr2.first.abs().max(rr2.last.abs());
-            if a_tm2 > 999.0 {
-                self.ptol2 = 5.0e-16 * a_tm2;
+            let tm2 = rr2.first.abs().max(rr2.last.abs());
+            if tm2 > 999.0 {
+                self.ptol2 = 5.0e-16 * tm2;
             }
         } else {
             self.res_coeff1 = 0.0;
@@ -355,18 +355,18 @@ impl EdgeEdge {
             return LineLineKind::Crossing;
         };
         let a_tol = self.tol * self.tol;
-        let a_d1 = l1.direction();
+        let d1 = l1.direction();
         let a_d2 = l2.direction();
-        let mut is_coincide = a_d1.angle(&a_d2) < ANGULAR;
+        let mut is_coincide = d1.angle(&a_d2) < ANGULAR;
         if is_coincide && l1.square_distance(&l2.location()) > a_tol {
             return LineLineKind::Empty;
         }
         let r1 = self.r1();
         let r2 = self.r2();
-        let (a_t11, a_t12) = (r1.first, r1.last);
+        let (t11, t12) = (r1.first, r1.last);
         let (a_t21, a_t22) = (r2.first, r2.last);
-        let a_p11 = c1.d0(a_t11);
-        let a_p12 = c1.d0(a_t12);
+        let p11 = c1.d0(t11);
+        let p12 = c1.d0(t12);
         if !is_coincide {
             let o2 = if a_t21.is_finite() && a_t22.is_finite() {
                 c2.d0(0.5 * (a_t21 + a_t22))
@@ -374,11 +374,11 @@ impl EdgeEdge {
                 l2.location()
             };
             let d2 = GpVec::from_xyz(a_d2.xyz());
-            let a_vec1 = GpVec::from_pnts(&o2, &a_p11).crossed(&d2);
-            let a_vec2 = GpVec::from_pnts(&o2, &a_p12).crossed(&d2);
+            let vec1 = GpVec::from_pnts(&o2, &p11).crossed(&d2);
+            let vec2 = GpVec::from_pnts(&o2, &p12).crossed(&d2);
             is_coincide =
-                a_vec1.square_magnitude() <= a_tol && a_vec2.square_magnitude() <= a_tol;
-            if !is_coincide && a_vec1.dot(&a_vec2) > 0.0 {
+                vec1.square_magnitude() <= a_tol && vec2.square_magnitude() <= a_tol;
+            if !is_coincide && vec1.dot(&vec2) > 0.0 {
                 return LineLineKind::Empty;
             }
         }
@@ -386,10 +386,10 @@ impl EdgeEdge {
             return LineLineKind::Crossing;
         }
         let proj_tol = self.tol.max(1e-9);
-        let Some(qa) = geom_api::project_point_on_curve(&**c2, &a_p11, proj_tol) else {
+        let Some(qa) = geom_api::project_point_on_curve(&**c2, &p11, proj_tol) else {
             return LineLineKind::Empty;
         };
-        let Some(qb) = geom_api::project_point_on_curve(&**c2, &a_p12, proj_tol) else {
+        let Some(qb) = geom_api::project_point_on_curve(&**c2, &p12, proj_tol) else {
             return LineLineKind::Empty;
         };
         let (t21, t22) = (qa.parameter, qb.parameter);

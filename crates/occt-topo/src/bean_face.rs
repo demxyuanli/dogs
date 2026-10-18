@@ -304,8 +304,8 @@ impl BeanFaceIntersector {
         let mut is_valid_index = true;
 
         while delta >= min_delta && loop_counter <= 10 {
-            let a_point = self.curve_d0(cur_par);
-            let (su, sv, sd) = self.closest_params_dist(&a_point);
+            let point = self.curve_d0(cur_par);
+            let (su, sv, sd) = self.closest_params_dist(&point);
             let point_found = if sd < self.criteria {
                 true
             } else {

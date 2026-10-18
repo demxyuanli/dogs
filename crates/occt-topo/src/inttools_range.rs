@@ -137,26 +137,26 @@ impl ShrunkRange {
         // intersection precision, and floors them at the edge tolerance.
         let p1 = v1.map(BRepTool::vertex_point).unwrap_or_else(|| curve.d0(first));
         let p2 = v2.map(BRepTool::vertex_point).unwrap_or_else(|| curve.d0(last));
-        let a_tol_e = BRepTool::edge_tolerance(edge).max(tol).max(0.0);
-        let mut a_tol_v1 = v1.map(BRepTool::vertex_tolerance).unwrap_or(0.0);
-        let mut a_tol_v2 = v2.map(BRepTool::vertex_tolerance).unwrap_or(0.0);
-        if a_tol_v1 < a_tol_e {
-            a_tol_v1 = a_tol_e;
+        let tol_e = BRepTool::edge_tolerance(edge).max(tol).max(0.0);
+        let mut tol_v1 = v1.map(BRepTool::vertex_tolerance).unwrap_or(0.0);
+        let mut tol_v2 = v2.map(BRepTool::vertex_tolerance).unwrap_or(0.0);
+        if tol_v1 < tol_e {
+            tol_v1 = tol_e;
         }
-        if a_tol_v2 < a_tol_e {
-            a_tol_v2 = a_tol_e;
+        if tol_v2 < tol_e {
+            tol_v2 = tol_e;
         }
-        a_tol_v1 += CONFUSION;
-        a_tol_v2 += CONFUSION;
+        tol_v1 += CONFUSION;
+        tol_v2 += CONFUSION;
 
         let Some((s1, s2)) = find_valid_range(
             curve.as_ref(),
             first,
             last,
             &p1,
-            a_tol_v1,
+            tol_v1,
             &p2,
-            a_tol_v2,
+            tol_v2,
         ) else {
             return self.fail("no valid range: vertex spheres cover the whole edge");
         };
@@ -168,14 +168,14 @@ impl ShrunkRange {
         // `aPTolE = aBAC.Resolution(aTolE)` (`IntTools_ShrunkRange.cxx:162`),
         // capped at 1% of the edge range so large-tolerance edges do not
         // over-refine (`cxx:165-169`).
-        let mut a_ptol_e = curve.resolution(a_tol_e);
-        let a_ptol_e_min = (last - first) / 100.0;
-        if a_ptol_e > a_ptol_e_min {
-            a_ptol_e = a_ptol_e_min;
+        let mut ptol_e = curve.resolution(tol_e);
+        let ptol_e_min = (last - first) / 100.0;
+        if ptol_e > ptol_e_min {
+            ptol_e = ptol_e_min;
         }
         // `GCPnts_AbscissaPoint::Length(aBAC, myTS1, myTS2, aPTolE)`
         // (`IntTools_ShrunkRange.cxx:170`).
-        let length = gcpnts::curve_length_between(curve.as_ref(), s1, s2, Some(a_ptol_e));
+        let length = gcpnts::curve_length_between(curve.as_ref(), s1, s2, Some(ptol_e));
         if length < CONFUSION {
             return self.fail("shrunk length is too short (micro edge)");
         }
@@ -186,7 +186,7 @@ impl ShrunkRange {
         self.is_done = true;
         // The range is splittable if its length leaves room for a splitting
         // vertex (2*TolE) plus two new micro-edges (2*Confusion).
-        self.is_splittable = length > 2.0 * a_tol_e + 2.0 * CONFUSION;
+        self.is_splittable = length > 2.0 * tol_e + 2.0 * CONFUSION;
         Ok(())
     }
 
@@ -350,8 +350,8 @@ fn find_nearest_valid_point(
             let mut step_local = step;
             loop {
                 // Cycle to escape a local singularity (`BRepLib_1.cxx:111-135`).
-                let (a_p, a_d1) = curve.d1(u_out);
-                is_out = a_p.square_distance(vert_pnt) > sq_tol;
+                let (p, a_d1) = curve.d1(u_out);
+                is_out = p.square_distance(vert_pnt) > sq_tol;
                 if !is_out && a_d1.square_magnitude() < d1_mag {
                     step_local *= 2.0;
                     u_out += step_local;

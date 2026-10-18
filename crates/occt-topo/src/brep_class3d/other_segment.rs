@@ -378,8 +378,8 @@ impl SolidExplorer {
         let mut v_: f64;
         let mut index_point: i32 = 0;
         let mut nb_points_ok: i32 = 0;
-        let mut a_restr = true;
-        let mut a_test_invert = false;
+        let mut restr = true;
+        let mut test_invert = false;
         let mut out_lin = GpLin::from_pnt_dir(*p, GpDir::default_dir());
 
         loop {
@@ -393,27 +393,27 @@ impl SolidExplorer {
                 }
                 let mut face = self.faces[k].clone();
 
-                if a_test_invert {
+                if test_invert {
                     // `BRepTopAdaptor_FClass2d aClass(face, Confusion)` (`cxx:533-534`).
                     let inf_in = FClass2d::new(&face, CONFUSION)
                         .map(|c| c.perform_infinite_point_tab_orien() == FaceState::In)
                         .unwrap_or(false);
                     if inf_in {
-                        a_restr = false;
+                        restr = false;
                         // `myMapOfInter` rebind (`cxx:537-542`).
                         self.inters.insert(
                             GeometryRegistry::shape_key(&face.0),
                             FaceIntersector::new(face.clone(), CONFUSION, false, false),
                         );
                     } else {
-                        a_restr = true;
+                        restr = true;
                     }
                 }
                 let Some(surf) = BRepTool::face_surface(&face) else {
                     continue;
                 };
                 // `BRepAdaptor_Surface::Initialize(face, aRestr)` (`cxx:550-555`).
-                let (u1, u2, v1, v2) = if a_restr {
+                let (u1, u2, v1, v2) = if restr {
                     face_uv_bounds(&face)
                 } else {
                     let (a, b) = surf.u_range();
@@ -613,7 +613,7 @@ impl SolidExplorer {
                     }
                 }
             }
-            a_test_invert = true;
+            test_invert = true;
         }
     }
 }

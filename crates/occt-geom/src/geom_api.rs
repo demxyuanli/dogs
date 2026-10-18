@@ -131,7 +131,7 @@ pub struct ExtremaSurfaceSurface {
     is_done: bool,
     /// `myIndex`: the index of the smallest `SquareDistance` (`cxx:79-88`);
     /// `0` while `!myIsDone`, as in the cxx default constructor (`cxx:29-30`).
-    my_index: i32,
+    index: i32,
 }
 
 impl ExtremaSurfaceSurface {
@@ -144,23 +144,23 @@ impl ExtremaSurfaceSurface {
             occt_core::precision::PCONFUSION,
         );
         let is_done = ext_ss.is_done() && (ext_ss.nb_ext() > 0);
-        let mut my_index = 0;
+        let mut index = 0;
         if is_done {
             // evaluate the lower distance and its index (cxx:75-89)
             let mut dist2_min = ext_ss.square_distance(1);
-            my_index = 1;
+            index = 1;
             for i in 2..=ext_ss.nb_ext() as i32 {
                 let dist2 = ext_ss.square_distance(i);
                 if dist2 < dist2_min {
                     dist2_min = dist2;
-                    my_index = i;
+                    index = i;
                 }
             }
         }
         ExtremaSurfaceSurface {
             ext_ss,
             is_done,
-            my_index,
+            index,
         }
     }
 
@@ -220,7 +220,7 @@ impl ExtremaSurfaceSurface {
             self.is_done,
             "GeomAPI_ExtremaSurfaceSurface::NearestPoints: StdFail_NotDone"
         );
-        self.points(self.my_index)
+        self.points(self.index)
     }
 
     /// `LowerDistanceParameters(U1, V1, U2, V2)` (`cxx:210-221`):
@@ -230,7 +230,7 @@ impl ExtremaSurfaceSurface {
             self.is_done,
             "GeomAPI_ExtremaSurfaceSurface::LowerDistanceParameters: StdFail_NotDone"
         );
-        self.parameters(self.my_index)
+        self.parameters(self.index)
     }
 
     /// `LowerDistance()` (`cxx:223-231`):
@@ -240,7 +240,7 @@ impl ExtremaSurfaceSurface {
             self.is_done,
             "GeomAPI_ExtremaSurfaceSurface::LowerDistance: StdFail_NotDone"
         );
-        self.ext_ss.square_distance(self.my_index).sqrt()
+        self.ext_ss.square_distance(self.index).sqrt()
     }
 
     /// `Extrema()` (`hxx:176`): the algorithmic object from `Extrema`.

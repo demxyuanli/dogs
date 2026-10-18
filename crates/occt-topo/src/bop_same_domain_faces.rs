@@ -39,10 +39,10 @@ use crate::topo_tools_full::{faces_of, ShapeMapKey};
 
 /// `AddEdgeSet` (`_2.cxx:562-576`): intern `theS` under its EDGE
 /// [`BopToolsSet`] and keep the connection from that set to the shape.
-fn add_edge_set(the_s: &TopoShape, the_map: &mut HashMap<BopToolsSet, Vec<TopoShape>>) {
-    let mut a_se = BopToolsSet::new();
-    a_se.add(the_s, ShapeType::Edge);
-    the_map.entry(a_se).or_default().push(the_s.clone());
+fn add_edge_set(s: &TopoShape, map: &mut HashMap<BopToolsSet, Vec<TopoShape>>) {
+    let mut se = BopToolsSet::new();
+    se.add(s, ShapeType::Edge);
+    map.entry(se).or_default().push(s.clone());
 }
 
 /// Parent solid of a face, keyed by TShape (`aFaceToParent`).
@@ -53,56 +53,56 @@ fn add_edge_set(the_s: &TopoShape, the_map: &mut HashMap<BopToolsSet, Vec<TopoSh
 fn face_to_parent_map<B: BopBuilderLike>(f: &B) -> HashMap<ShapeMapKey, TopoShape> {
     let ds = f.ds();
     let n_src = nb_source(ds);
-    let mut a_face_to_parent: HashMap<ShapeMapKey, TopoShape> = HashMap::new();
+    let mut face_to_parent: HashMap<ShapeMapKey, TopoShape> = HashMap::new();
     for i_src in 0..n_src {
-        let Some(a_si) = ds.shape_info(i_src) else { continue };
-        if a_si.shape_type() != ShapeType::Solid {
+        let Some(si) = ds.shape_info(i_src) else { continue };
+        if si.shape_type() != ShapeType::Solid {
             continue;
         }
-        let a_solid = a_si.shape().clone();
-        for a_f in faces_of(&a_solid) {
-            a_face_to_parent
+        let solid = si.shape().clone();
+        for a_f in faces_of(&solid) {
+            face_to_parent
                 .entry(shape_key(&a_f.0))
-                .or_insert_with(|| a_solid.clone());
+                .or_insert_with(|| solid.clone());
         }
     }
     // `_2.cxx:619-648`: propagate the parent onto images that are not yet keys.
-    let mut a_propagation: HashMap<ShapeMapKey, TopoShape> = HashMap::new();
+    let mut propagation: HashMap<ShapeMapKey, TopoShape> = HashMap::new();
     for i_src in 0..n_src {
-        let Some(a_si) = ds.shape_info(i_src) else { continue };
-        if a_si.shape_type() != ShapeType::Face {
+        let Some(si) = ds.shape_info(i_src) else { continue };
+        if si.shape_type() != ShapeType::Face {
             continue;
         }
-        let a_f = a_si.shape();
-        let Some(parent) = a_face_to_parent.get(&shape_key(a_f)).cloned() else {
+        let a_f = si.shape();
+        let Some(parent) = face_to_parent.get(&shape_key(a_f)).cloned() else {
             continue;
         };
         let Some(imgs) = f.history().image(a_f) else { continue };
         for piece in imgs {
-            if !a_face_to_parent.contains_key(&shape_key(piece)) {
-                a_propagation.insert(shape_key(piece), parent.clone());
+            if !face_to_parent.contains_key(&shape_key(piece)) {
+                propagation.insert(shape_key(piece), parent.clone());
             }
         }
     }
-    for (k, v) in a_propagation {
-        a_face_to_parent.insert(k, v);
+    for (k, v) in propagation {
+        face_to_parent.insert(k, v);
     }
-    a_face_to_parent
+    face_to_parent
 }
 
 /// Whether the DS box of face `n_f` is closed on every side
 /// (`_2.cxx:713-716`). A missing box is treated as open: the planar
 /// shortcut is then not taken and `AreFacesSameDomain` decides.
 fn box_is_bounded(ds: &crate::bopds::BopdsDS, n_f: usize) -> bool {
-    let Some(a_box) = ds.box_of(n_f) else {
+    let Some(bnd_box) = ds.box_of(n_f) else {
         return false;
     };
-    !(a_box.is_open_xmin()
-        || a_box.is_open_xmax()
-        || a_box.is_open_ymin()
-        || a_box.is_open_ymax()
-        || a_box.is_open_zmin()
-        || a_box.is_open_zmax())
+    !(bnd_box.is_open_xmin()
+        || bnd_box.is_open_xmax()
+        || bnd_box.is_open_ymin()
+        || bnd_box.is_open_ymax()
+        || bnd_box.is_open_zmin()
+        || bnd_box.is_open_zmax())
 }
 
 /// `myContext->SurfaceAdaptor(TopoDS::Face(aF)).GetType() == GeomAbs_Plane`.
@@ -117,55 +117,55 @@ fn face_is_plane(a_f: &TopoShape) -> bool {
 /// record and have FaceInfo (`_2.cxx:658-687`).
 fn face_indices_from_ff<B: BopBuilderLike>(f: &B) -> Vec<usize> {
     let ds = f.ds();
-    let mut a_m_fence: HashSet<usize> = HashSet::new();
-    let mut a_fi_vec: Vec<usize> = Vec::new();
-    for a_ff in ds.interf_ff() {
-        let (n0, n1) = a_ff.indices();
+    let mut m_fence: HashSet<usize> = HashSet::new();
+    let mut fi_vec: Vec<usize> = Vec::new();
+    for ff in ds.interf_ff() {
+        let (n0, n1) = ff.indices();
         for n_f in [n0, n1] {
             if !has_face_info(ds, n_f) {
                 continue;
             }
-            if !a_m_fence.insert(n_f) {
+            if !m_fence.insert(n_f) {
                 continue;
             }
-            a_fi_vec.push(n_f);
+            fi_vec.push(n_f);
         }
     }
-    a_fi_vec.sort_unstable();
-    a_fi_vec
+    fi_vec.sort_unstable();
+    fi_vec
 }
 
 /// Group each participating face (or its images) by EDGE set
-/// (`_2.cxx:696-741`). Planar bounded faces are remembered in `a_mf_planar`.
+/// (`_2.cxx:696-741`). Planar bounded faces are remembered in `mf_planar`.
 fn collect_edge_set_faces<B: BopBuilderLike>(
     f: &B,
-    a_fi_vec: &[usize],
+    fi_vec: &[usize],
 ) -> (HashMap<BopToolsSet, Vec<TopoShape>>, HashSet<ShapeMapKey>) {
     let ds = f.ds();
     let mut an_e_set_faces: HashMap<BopToolsSet, Vec<TopoShape>> = HashMap::new();
-    let mut a_mf_planar: HashSet<ShapeMapKey> = HashSet::new();
-    for &n_f in a_fi_vec {
-        let Some(a_si) = ds.shape_info(n_f) else { continue };
-        let a_f = a_si.shape();
+    let mut mf_planar: HashSet<ShapeMapKey> = HashSet::new();
+    for &n_f in fi_vec {
+        let Some(si) = ds.shape_info(n_f) else { continue };
+        let a_f = si.shape();
         let mut b_check_planar = false;
         if face_is_plane(a_f) {
             b_check_planar = box_is_bounded(ds, n_f);
         }
         if let Some(p_lf_sp) = f.history().image(a_f) {
-            for a_it_lf in p_lf_sp {
-                add_edge_set(a_it_lf, &mut an_e_set_faces);
+            for it_lf in p_lf_sp {
+                add_edge_set(it_lf, &mut an_e_set_faces);
                 if b_check_planar {
-                    a_mf_planar.insert(shape_key(a_it_lf));
+                    mf_planar.insert(shape_key(it_lf));
                 }
             }
         } else {
             add_edge_set(a_f, &mut an_e_set_faces);
             if b_check_planar {
-                a_mf_planar.insert(shape_key(a_f));
+                mf_planar.insert(shape_key(a_f));
             }
         }
     }
-    (an_e_set_faces, a_mf_planar)
+    (an_e_set_faces, mf_planar)
 }
 
 /// Pair every two faces that share an EDGE set (`_2.cxx:750-793`).
@@ -174,22 +174,22 @@ fn collect_edge_set_faces<B: BopBuilderLike>(
 /// immediately. Remaining pairs are queued for `AreFacesSameDomain`.
 fn collect_sd_pairs(
     an_e_set_faces: &HashMap<BopToolsSet, Vec<TopoShape>>,
-    a_mf_planar: &HashSet<ShapeMapKey>,
-    a_face_to_parent: &HashMap<ShapeMapKey, TopoShape>,
+    mf_planar: &HashSet<ShapeMapKey>,
+    face_to_parent: &HashMap<ShapeMapKey, TopoShape>,
     fuzzy: f64,
-    a_dmsls: &mut IndexedShapeAdj,
+    dmsls: &mut IndexedShapeAdj,
 ) -> Vec<PairOfShapeBoolean> {
-    let mut a_vpsb: Vec<PairOfShapeBoolean> = Vec::new();
-    for a_lf in an_e_set_faces.values() {
-        if a_lf.len() < 2 {
+    let mut vpsb: Vec<PairOfShapeBoolean> = Vec::new();
+    for lf in an_e_set_faces.values() {
+        if lf.len() < 2 {
             continue;
         }
-        for i1 in 0..a_lf.len() {
-            let a_f1 = &a_lf[i1];
-            let b_check_planar = a_mf_planar.contains(&shape_key(a_f1));
-            let p_parent1 = a_face_to_parent.get(&shape_key(a_f1));
-            for a_f2 in a_lf.iter().skip(i1 + 1) {
-                let p_parent2 = a_face_to_parent.get(&shape_key(a_f2));
+        for i1 in 0..lf.len() {
+            let f1 = &lf[i1];
+            let b_check_planar = mf_planar.contains(&shape_key(f1));
+            let p_parent1 = face_to_parent.get(&shape_key(f1));
+            for f2 in lf.iter().skip(i1 + 1) {
+                let p_parent2 = face_to_parent.get(&shape_key(f2));
                 if let (Some(p1), Some(p2)) = (p_parent1, p_parent2) {
                     // `pParent1->IsSame(*pParent2)`
                     // (`BOPAlgo_Builder_2.cxx:776`).
@@ -197,27 +197,27 @@ fn collect_sd_pairs(
                         continue;
                     }
                 }
-                if b_check_planar && a_mf_planar.contains(&shape_key(a_f2)) {
-                    fill_map_shapes(a_f1, a_f2, a_dmsls);
+                if b_check_planar && mf_planar.contains(&shape_key(f2)) {
+                    fill_map_shapes(f1, f2, dmsls);
                     continue;
                 }
-                a_vpsb.push(PairOfShapeBoolean::from_faces(
-                    a_f1.clone(),
-                    a_f2.clone(),
+                vpsb.push(PairOfShapeBoolean::from_faces(
+                    f1.clone(),
+                    f2.clone(),
                     fuzzy,
                 ));
             }
         }
     }
-    a_vpsb
+    vpsb
 }
 
 /// Representative of an SD group (`_2.cxx:837-873`): the original DS face
 /// with the smallest index, else the first member.
-fn group_representative<B: BopBuilderLike>(f: &B, a_lsd: &[TopoShape]) -> TopoShape {
+fn group_representative<B: BopBuilderLike>(f: &B, lsd: &[TopoShape]) -> TopoShape {
     let mut p_fsd: Option<TopoShape> = None;
     let mut n_f_min = usize::MAX;
-    for a_f in a_lsd {
+    for a_f in lsd {
         if let Some(n_f) = f.ds().index(a_f) {
             if n_f < n_f_min {
                 n_f_min = n_f;
@@ -225,24 +225,24 @@ fn group_representative<B: BopBuilderLike>(f: &B, a_lsd: &[TopoShape]) -> TopoSh
             }
         }
     }
-    p_fsd.unwrap_or_else(|| a_lsd[0].clone())
+    p_fsd.unwrap_or_else(|| lsd[0].clone())
 }
 
 /// Bind SD connections and mark original faces as split into themselves
 /// (`_2.cxx:829-882`).
-fn bind_sd_groups<B: BopBuilderLike>(f: &mut B, a_m_blocks: &[Vec<TopoShape>]) {
-    for a_lsd in a_m_blocks {
-        if a_lsd.is_empty() {
+fn bind_sd_groups<B: BopBuilderLike>(f: &mut B, m_blocks: &[Vec<TopoShape>]) {
+    for lsd in m_blocks {
+        if lsd.is_empty() {
             continue;
         }
-        let p_fsd = group_representative(f, a_lsd);
-        for a_f in a_lsd {
+        let p_fsd = group_representative(f, lsd);
+        for a_f in lsd {
             if f.ds().index(a_f).is_some() {
                 // `_2.cxx:858`: Bound + Append the original onto its image list.
                 f.history_mut().add_image(a_f, a_f.clone());
             }
         }
-        for a_f in a_lsd {
+        for a_f in lsd {
             f.bind_shapes_sd(a_f.clone(), p_fsd.clone());
         }
     }
@@ -254,22 +254,22 @@ fn update_images_and_origins<B: BopBuilderLike>(f: &mut B) {
     let n = nb_source(f.ds());
     let mut jobs: Vec<(TopoShape, Vec<TopoShape>)> = Vec::new();
     for i in 0..n {
-        let Some(a_si) = f.ds().shape_info(i) else { continue };
-        if a_si.shape_type() != ShapeType::Face {
+        let Some(si) = f.ds().shape_info(i) else { continue };
+        if si.shape_type() != ShapeType::Face {
             continue;
         }
-        let a_f = a_si.shape().clone();
+        let a_f = si.shape().clone();
         let Some(p_lf_im) = f.history().image(&a_f) else { continue };
         let mut updated: Vec<TopoShape> = Vec::new();
-        for a_f_im in p_lf_im {
-            let resolved = f.seek_shapes_sd(a_f_im).unwrap_or_else(|| a_f_im.clone());
+        for f_im in p_lf_im {
+            let resolved = f.seek_shapes_sd(f_im).unwrap_or_else(|| f_im.clone());
             updated.push(resolved);
         }
         jobs.push((a_f, updated));
     }
     for (a_f, updated) in jobs {
-        for a_f_im in &updated {
-            origins_append(f.origins_mut(), a_f_im, a_f.clone());
+        for f_im in &updated {
+            origins_append(f.origins_mut(), f_im, a_f.clone());
         }
         if let Some(list) = f.history_mut().image_list_mut(&a_f) {
             *list = updated;
@@ -282,26 +282,26 @@ pub fn fill_same_domain_faces_occt<B: BopBuilderLike>(f: &mut B) -> Result<(), S
     if f.ds().interf_ff().is_empty() {
         return Ok(());
     }
-    let a_face_to_parent = face_to_parent_map(f);
-    let a_fi_vec = face_indices_from_ff(f);
-    let (an_e_set_faces, a_mf_planar) = collect_edge_set_faces(f, &a_fi_vec);
-    let mut a_dmsls = IndexedShapeAdj::new();
-    let mut a_vpsb = collect_sd_pairs(
+    let face_to_parent = face_to_parent_map(f);
+    let fi_vec = face_indices_from_ff(f);
+    let (an_e_set_faces, mf_planar) = collect_edge_set_faces(f, &fi_vec);
+    let mut dmsls = IndexedShapeAdj::new();
+    let mut vpsb = collect_sd_pairs(
         &an_e_set_faces,
-        &a_mf_planar,
-        &a_face_to_parent,
+        &mf_planar,
+        &face_to_parent,
         f.fuzzy_value(),
-        &mut a_dmsls,
+        &mut dmsls,
     );
     let mut ctx = IntToolsContext::new();
-    perform_pair_vector(&mut a_vpsb, &mut ctx);
-    for a_psb in &a_vpsb {
-        if a_psb.flag() {
-            fill_map_shapes(a_psb.shape1(), a_psb.shape2(), &mut a_dmsls);
+    perform_pair_vector(&mut vpsb, &mut ctx);
+    for psb in &vpsb {
+        if psb.flag() {
+            fill_map_shapes(psb.shape1(), psb.shape2(), &mut dmsls);
         }
     }
-    let a_m_blocks = make_blocks_shapes(&a_dmsls);
-    bind_sd_groups(f, &a_m_blocks);
+    let m_blocks = make_blocks_shapes(&dmsls);
+    bind_sd_groups(f, &m_blocks);
     update_images_and_origins(f);
     Ok(())
 }

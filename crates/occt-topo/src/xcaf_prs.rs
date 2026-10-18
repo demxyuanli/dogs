@@ -136,8 +136,8 @@ impl XcafPrsStyle {
     /// overload. `Color` carries sRGB in this port, so the stored triple is
     /// sRGB, the same value `Quantity_Color::Values(..., Quantity_TOC_sRGB)`
     /// returns for OCCT's internally-linear colour.
-    pub fn set_color_surf(&mut self, the_color: ColorRGBA) {
-        self.color_surf = Some(the_color);
+    pub fn set_color_surf(&mut self, color: ColorRGBA) {
+        self.color_surf = Some(color);
     }
 
     /// `XCAFPrs_Style::UnSetColorSurf` (`hxx:68`).
@@ -172,8 +172,8 @@ impl XcafPrsStyle {
     }
 
     /// `XCAFPrs_Style::SetVisibility` (`hxx:80`).
-    pub fn set_visibility(&mut self, the_visibility: bool) {
-        self.is_visible = the_visibility;
+    pub fn set_visibility(&mut self, visibility: bool) {
+        self.is_visible = visibility;
     }
 
     /// `XCAFPrs_Style::IsVisible` (`hxx:83`).

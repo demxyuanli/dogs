@@ -144,7 +144,7 @@ pub(super) fn find_vert_and_split_edge(
     wire: &mut Wire,
     face: &Face,
     boxes: &mut Boxes,
-    a_tmp_key: bool,
+    tmp_key: bool,
     ctx: &mut dyn ReShape,
 ) -> bool {
     // `cxx:981-983`.
@@ -183,7 +183,7 @@ pub(super) fn find_vert_and_split_edge(
     };
 
     // `cxx:1013-1024`. OCCT passes `tolV` in the `preci` slot of `SplitEdge1`.
-    if (need_split || a_tmp_key) && split_edge1(wire, ctx, face, *num1, param1, &v, tol_v, boxes) {
+    if (need_split || tmp_key) && split_edge1(wire, ctx, face, *num1, param1, &v, tol_v, boxes) {
         update_vertex_tolerance(&v, tol_v);
         *max_tol_vert = max_tol_vert.max(tol_v);
         *num1 -= 1;

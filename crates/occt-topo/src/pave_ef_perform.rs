@@ -115,11 +115,11 @@ pub fn perform_ef(f: &mut PaveFiller) -> Result<(), String> {
             if pb_on_face(f.ds(), n_f, &pbr) {
                 continue;
             }
-            let Some((a_t1, a_t2, a_ts1, a_ts2, a_bbe)) = get_pb_box(&a_e, &pb, &mut pb_box) else {
+            let Some((a_t1, a_t2, a_ts1, a_ts2, bbe)) = get_pb_box(&a_e, &pb, &mut pb_box) else {
                 continue;
             };
-            if let Some(a_bbf) = f.ds().box_of(n_f) {
-                if a_bbf.is_out_box(&a_bbe) {
+            if let Some(bbf) = f.ds().box_of(n_f) {
+                if bbf.is_out_box(&bbe) {
                     continue;
                 }
             }
@@ -127,10 +127,10 @@ pub fn perform_ef(f: &mut PaveFiller) -> Result<(), String> {
             let b_v1 = on.contains(&n_v1) || inn.contains(&n_v1);
             let b_v2 = on.contains(&n_v2) || inn.contains(&n_v2);
             let b_express = b_v1 && b_v2;
-            let a_sr = IntRange::new_unchecked(a_ts1, a_ts2);
-            let anew_sr = correct_range_ef(&a_e, &a_f, a_sr);
-            let a_pb_range0 = IntRange::new_unchecked(a_t1, a_t2);
-            let a_pb_range = correct_range_ef(&a_e, &a_f, a_pb_range0);
+            let sr = IntRange::new_unchecked(a_ts1, a_ts2);
+            let anew_sr = correct_range_ef(&a_e, &a_f, sr);
+            let pb_range0 = IntRange::new_unchecked(a_t1, a_t2);
+            let a_pb_range = correct_range_ef(&a_e, &a_f, pb_range0);
             f.fpb_done_mut()
                 .entry(n_f)
                 .or_default()
@@ -180,8 +180,8 @@ pub fn perform_ef(f: &mut PaveFiller) -> Result<(), String> {
             a_e.0.move_location(&loc);
             a_f.0.move_location(&loc);
         }
-        let a_tol_e = BRepTool::edge_tolerance(&a_e);
-        let a_tol_f = BRepTool::face_tolerance(&a_f);
+        let tol_e = BRepTool::edge_tolerance(&a_e);
+        let tol_f = BRepTool::face_tolerance(&a_f);
         let mut ef = EdgeFace::new();
         ef.set_edge(a_e.clone());
         ef.set_face(a_f.clone());
@@ -204,8 +204,8 @@ pub fn perform_ef(f: &mut PaveFiller) -> Result<(), String> {
                 task.n_f,
                 &task.pb,
                 ef.minimal_distance(),
-                a_tol_e,
-                a_tol_f,
+                tol_e,
+                tol_f,
             );
             continue;
         }
@@ -223,30 +223,30 @@ pub fn perform_ef(f: &mut PaveFiller) -> Result<(), String> {
                 &mut a_ts2,
             );
         }
-        let a_r1 = IntRange::new_unchecked(task.t1, a_ts1);
-        let a_r2 = IntRange::new_unchecked(a_ts2, task.t2);
-        let (a_mif_on, a_mif_in) = face_paves_on_in(f.ds(), task.n_f);
+        let r1 = IntRange::new_unchecked(task.t1, a_ts1);
+        let r2 = IntRange::new_unchecked(a_ts2, task.t2);
+        let (mif_on, mif_in) = face_paves_on_in(f.ds(), task.n_f);
         let b_line_plane = curve_is_line_edge(&a_e) && face_is_plane_type(&a_f);
         let b_splittable = task.pb.is_splittable();
 
         for cp in cps.iter() {
             match cp.part_type() {
                 CommonPartType::Vertex => {
-                    let a_t = algo_tools_vertex_parameter(cp, cp.vertex_parameter1());
-                let Ok(a_vnew) = make_new_vertex_ef(&a_e, a_t, &a_f) else {
+                    let t = algo_tools_vertex_parameter(cp, cp.vertex_parameter1());
+                let Ok(vnew) = make_new_vertex_ef(&a_e, t, &a_f) else {
                     continue;
                 };
-                let a_r = cp.range;
-                let a_tol_to_decide = 5.0e-8;
+                let r = cp.range;
+                let tol_to_decide = 5.0e-8;
                 let mut b_is_on_pave = [
-                    algo_tools_is_in_range(a_r1, a_r, a_tol_to_decide),
-                    algo_tools_is_in_range(a_r2, a_r, a_tol_to_decide),
+                    algo_tools_is_in_range(r1, r, tol_to_decide),
+                    algo_tools_is_in_range(r2, r, tol_to_decide),
                 ];
                 if (b_is_on_pave[0] && b_is_on_pave[1])
                     || (b_line_plane && (b_is_on_pave[0] || b_is_on_pave[1]))
                 {
-                    let b_v0 = check_face_paves_index(n_v.0, &a_mif_on, &a_mif_in);
-                    let b_v1 = check_face_paves_index(n_v.1, &a_mif_on, &a_mif_in);
+                    let b_v0 = check_face_paves_index(n_v.0, &mif_on, &mif_in);
+                    let b_v1 = check_face_paves_index(n_v.1, &mif_on, &mif_in);
                     if b_v0 && b_v1 {
                         // `_5.cxx:427-438`: Appended InterfEF, type promoted to
                         // EDGE, FillMap. A later VERTEX record of the same pair
@@ -268,27 +268,27 @@ pub fn perform_ef(f: &mut PaveFiller) -> Result<(), String> {
                 for j in 0..2 {
                     if b_is_on_pave[j] {
                         let n_vj = if j == 0 { n_v.0 } else { n_v.1 };
-                        if !check_face_paves_index(n_vj, &a_mif_on, &a_mif_in)
+                        if !check_face_paves_index(n_vj, &mif_on, &mif_in)
                             && force_interf_vf(f, n_vj, task.n_f)?
                         {
                             b_is_on_pave[j] = true;
-                        } else if !check_face_paves_index(n_vj, &a_mif_on, &a_mif_in) {
+                        } else if !check_face_paves_index(n_vj, &mif_on, &mif_in) {
                             b_is_on_pave[j] = false;
                         }
                     }
                 }
                 if b_is_on_pave[0] || b_is_on_pave[1] {
-                    let a_pnew = BRepTool::vertex_point(&Vertex(a_vnew.clone()));
-                    let a_min_dist = {
+                    let pnew = BRepTool::vertex_point(&Vertex(vnew.clone()));
+                    let min_dist = {
                         let ctx = f.context();
-                        match ctx.project_point_on_face(&a_f, &a_pnew) {
+                        match ctx.project_point_on_face(&a_f, &pnew) {
                             Ok((u, v)) => BRepTool::face_surface(&a_f)
-                                .map(|s| s.d0(u, v).distance(&a_pnew))
+                                .map(|s| s.d0(u, v).distance(&pnew))
                                 .unwrap_or(f64::MAX),
                             Err(_) => f64::MAX,
                         }
                     };
-                    if a_min_dist >= INTERSECTION {
+                    if min_dist >= INTERSECTION {
                         continue;
                     }
                     for j in 0..2 {
@@ -300,33 +300,33 @@ pub fn perform_ef(f: &mut PaveFiller) -> Result<(), String> {
                             continue;
                         };
                         let a_v = Vertex(vs);
-                        let a_p = BRepTool::vertex_point(&a_v);
-                        let a_dist_pp = a_p.distance(&a_pnew);
+                        let p = BRepTool::vertex_point(&a_v);
+                        let dist_pp = p.distance(&pnew);
                         let a_tol = BRepTool::vertex_tolerance(&a_v);
-                        let mut a_max_dist = 1.0e4 * a_tol;
+                        let mut max_dist = 1.0e4 * a_tol;
                         if a_tol < 0.01 {
-                            a_max_dist = a_max_dist.min(0.1);
+                            max_dist = max_dist.min(0.1);
                         }
-                        if a_dist_pp < a_max_dist {
-                            update_vertex_sd(f, n_vj, a_dist_pp)?;
+                        if dist_pp < max_dist {
+                            update_vertex_sd(f, n_vj, dist_pp)?;
                             f.verts_to_avoid_extension_mut().insert(n_vj);
                         }
                     }
                     continue;
                 }
-                if check_face_paves_vertex(f.ds(), &Vertex(a_vnew.clone()), &a_mif_on) {
+                if check_face_paves_vertex(f.ds(), &Vertex(vnew.clone()), &mif_on) {
                     continue;
                 }
-                let mut a_tol_vnew = BRepTool::vertex_tolerance(&Vertex(a_vnew.clone()));
-                a_tol_vnew = a_tol_vnew.max(a_tol_e.max(a_tol_f));
-                Vertex(a_vnew.clone()).set_tolerance(a_tol_vnew);
+                let mut tol_vnew = BRepTool::vertex_tolerance(&Vertex(vnew.clone()));
+                tol_vnew = tol_vnew.max(tol_e.max(tol_f));
+                Vertex(vnew.clone()).set_tolerance(tol_vnew);
                 if b_line_plane {
-                    a_tol_vnew = a_tol_vnew.max((cp.range.last - cp.range.first) / 2.0);
+                    tol_vnew = tol_vnew.max((cp.range.last - cp.range.first) / 2.0);
                 }
-                let a_pnew = BRepTool::vertex_point(&Vertex(a_vnew.clone()));
+                let pnew = BRepTool::vertex_point(&Vertex(vnew.clone()));
                 let in_face = f
                     .context_mut()
-                    .is_point_in_face(&a_f, &a_pnew, None, a_tol_vnew)
+                    .is_point_in_face(&a_f, &pnew, None, tol_vnew)
                     .unwrap_or(false);
                 if !in_face {
                     continue;
@@ -340,14 +340,14 @@ pub fn perform_ef(f: &mut PaveFiller) -> Result<(), String> {
                     cp.range.last,
                 );
                 mvcpb.push(NewVertexCpb {
-                    shape: a_vnew,
-                    tol: a_tol_vnew,
+                    shape: vnew,
+                    tol: tol_vnew,
                     pb1: task.pb.clone(),
                     pb2: task.pb.clone(),
                     n_e1: task.n_e,
                     n_e2: task.n_f,
-                    t1: a_t,
-                    t2: a_t,
+                    t1: t,
+                    t2: t,
                     range1_first: cp.range.first,
                     range1_last: cp.range.last,
                     is_ee: false,
@@ -360,8 +360,8 @@ pub fn perform_ef(f: &mut PaveFiller) -> Result<(), String> {
                     // bounding vertex is missing; FillMap only when both vertices
                     // are already On or In.
                     let ix = f.ds_mut().add_interf_ef(task.n_e, task.n_f, None);
-                    let b_v0 = check_face_paves_index(n_v.0, &a_mif_on, &a_mif_in);
-                    let b_v1 = check_face_paves_index(n_v.1, &a_mif_on, &a_mif_in);
+                    let b_v0 = check_face_paves_index(n_v.0, &mif_on, &mif_in);
+                    let b_v1 = check_face_paves_index(n_v.1, &mif_on, &mif_in);
                     if !b_v0 || !b_v1 {
                         break;
                     }

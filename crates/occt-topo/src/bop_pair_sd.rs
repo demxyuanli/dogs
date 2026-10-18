@@ -37,10 +37,10 @@ impl PairOfShapeBoolean {
     }
 
     /// Pair ready for `Perform`, with the builder fuzzy value.
-    pub fn from_faces(a_f1: TopoShape, a_f2: TopoShape, fuzzy: f64) -> Self {
+    pub fn from_faces(f1: TopoShape, f2: TopoShape, fuzzy: f64) -> Self {
         Self {
-            shape1: a_f1,
-            shape2: a_f2,
+            shape1: f1,
+            shape2: f2,
             flag: false,
             fuzzy,
         }
@@ -86,9 +86,9 @@ impl PairOfShapeBoolean {
     /// Progress-scope / UserBreak is omitted; the geometric test is the
     /// whole body.
     pub fn perform(&mut self, ctx: &mut IntToolsContext) {
-        let a_fj = Face(self.shape1.clone());
-        let a_fk = Face(self.shape2.clone());
-        self.flag = are_faces_same_domain(&a_fj, &a_fk, ctx, self.fuzzy);
+        let fj = Face(self.shape1.clone());
+        let fk = Face(self.shape2.clone());
+        self.flag = are_faces_same_domain(&fj, &fk, ctx, self.fuzzy);
     }
 }
 

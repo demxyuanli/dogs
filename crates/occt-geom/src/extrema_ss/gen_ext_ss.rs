@@ -244,16 +244,16 @@ impl<'a> ExtremaGenExtSS<'a> {
                 for no_u2 in 1..=usample {
                     for no_v2 in 1..=vsample {
                         let p2 = self.points2.get(no_u2, no_v2);
-                        let the_dist = p1.square_distance(&p2);
-                        if the_dist < distmin {
-                            distmin = the_dist;
+                        let dist = p1.square_distance(&p2);
+                        if dist < distmin {
+                            distmin = dist;
                             n1u_min = no_u1;
                             n1v_min = no_v1;
                             n2u_min = no_u2;
                             n2v_min = no_v2;
                         }
-                        if the_dist > distmax {
-                            distmax = the_dist;
+                        if dist > distmax {
+                            distmax = dist;
                             n1u_max = no_u1;
                             n1v_max = no_v1;
                             n2u_max = no_u2;

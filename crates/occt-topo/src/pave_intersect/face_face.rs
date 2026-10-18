@@ -314,7 +314,7 @@ pub(super) fn force_interf_ee_impl(ds: &mut BopdsDS, ctx: &mut FillCtx) -> Resul
         // Use the max tolerance of the bounding vertices as the fuzzy addition
         // (the `bSICheckMode` branch — myFuzzyValue — is skipped: the
         // self-interference check pipeline is not ported).
-        let a_tol_add = 2.0 * vertex_tolerance_of(ds, n_v1).max(vertex_tolerance_of(ds, n_v2));
+        let tol_add = 2.0 * vertex_tolerance_of(ds, n_v1).max(vertex_tolerance_of(ds, n_v2));
 
         // Check every pair combined from the group.
         for (k1, pb1) in group.iter().enumerate() {
@@ -368,7 +368,7 @@ pub(super) fn force_interf_ee_impl(ds: &mut BopdsDS, ctx: &mut FillCtx) -> Resul
                 let mut ee = EdgeEdge::with_edges(e1.clone(), e2.clone());
                 ee.set_range1(IntRange::new_unchecked(t11, t12));
                 ee.set_range2(IntRange::new_unchecked(t21, t22));
-                ee.set_fuzzy_value(if use_add_tol { ctx.fuzzy + a_tol_add } else { ctx.fuzzy });
+                ee.set_fuzzy_value(if use_add_tol { ctx.fuzzy + tol_add } else { ctx.fuzzy });
                 if let Err(msg) = ee.perform() {
                     ctx.add_error(format!("intersect_force_interf_ee: edge/edge intersection failed: {msg}"));
                     continue;
@@ -494,18 +494,18 @@ pub(super) fn collect_source_edge_pbs(ds: &BopdsDS) -> Vec<BopdsPaveBlock> {
 pub(super) fn force_interf_ef_impl(
     ds: &mut BopdsDS,
     ctx: &mut FillCtx,
-    mut the_mpb: Vec<BopdsPaveBlock>,
+    mut mpb: Vec<BopdsPaveBlock>,
     add_interf: bool,
     si_check: bool,
 ) -> Result<(), String> {
-    if the_mpb.is_empty() {
+    if mpb.is_empty() {
         return Ok(());
     }
-    for pb in &mut the_mpb {
+    for pb in &mut mpb {
         ensure_shrunk_data(ds, pb);
     }
-    the_mpb.retain(|pb| pb.has_shrunk_data());
-    if the_mpb.is_empty() {
+    mpb.retain(|pb| pb.has_shrunk_data());
+    if mpb.is_empty() {
         return Ok(());
     }
 
@@ -525,7 +525,7 @@ pub(super) fn force_interf_ef_impl(
         let surf_plane = crate::brep_surface::classify_surface(surf.as_ref())
             == crate::brep_surface::SurfaceKind::Plane;
 
-        for pb in &the_mpb {
+        for pb in &mpb {
             if pb_already_on_face(&fi, pb) {
                 continue;
             }
@@ -564,7 +564,7 @@ pub(super) fn force_interf_ef_impl(
             }
             let vtg = vtg.normalized();
 
-            let a_tol_check = if si_check {
+            let tol_check = if si_check {
                 ctx.fuzzy
             } else {
                 2.0 * vertex_tolerance_of(ds, n_v1).max(vertex_tolerance_of(ds, n_v2))
@@ -573,7 +573,7 @@ pub(super) fn force_interf_ef_impl(
                 Ok(uv) => uv,
                 Err(_) => continue,
             };
-            if surf.d0(u, v).distance(&pm) > a_tol_check + ctx.fuzzy {
+            if surf.d0(u, v).distance(&pm) > tol_check + ctx.fuzzy {
                 continue;
             }
             if !tools.is_point_in_face(&face, &pm, Some((u, v)), ctx.fuzzy)? {
@@ -592,37 +592,37 @@ pub(super) fn force_interf_ef_impl(
                 }
             }
 
-            let mut a_tol_add = 0.0;
+            let mut tol_add = 0.0;
             if use_add_tol {
                 for t in [ts1, ts2] {
                     let p = curve.d0(t);
                     if let Ok((u2, v2)) = tools.project_point_on_face(&face, &p) {
                         let d = surf.d0(u2, v2).distance(&p);
-                        if d < a_tol_check && d > a_tol_add {
-                            a_tol_add = d;
+                        if d < tol_check && d > tol_add {
+                            tol_add = d;
                         }
                     }
                 }
-                if a_tol_add > 0.0 {
-                    a_tol_add -= BRepTool::edge_tolerance(&edge) + BRepTool::face_tolerance(&face);
-                    if a_tol_add < 0.0 {
-                        a_tol_add = 0.0;
+                if tol_add > 0.0 {
+                    tol_add -= BRepTool::edge_tolerance(&edge) + BRepTool::face_tolerance(&face);
+                    if tol_add < 0.0 {
+                        tol_add = 0.0;
                     }
                 }
             }
 
             // `myFPBDone` is not stored; `has_interf_pair` stands in for the
             // OCCT Seek miss (`!pMPB || !Contains`).
-            let b_intersect = a_tol_add > 0.0 || !ds.has_interf_pair(n_e, n_f);
+            let b_intersect = tol_add > 0.0 || !ds.has_interf_pair(n_e, n_f);
             if b_intersect {
-                hits.push((n_e, n_f, pb.clone(), a_tol_add));
+                hits.push((n_e, n_f, pb.clone(), tol_add));
             }
         }
     }
 
     let mut interfered: Vec<(usize, usize)> = Vec::new();
     let mut new_in: Vec<(usize, usize, f64, f64, bool, BopdsPaveBlock)> = Vec::new();
-    for (n_e, n_f, pb, a_tol_add) in hits {
+    for (n_e, n_f, pb, tol_add) in hits {
         let (t1, t2) = pb.range();
         let Some(edge_shape) = ds.shape(n_e).cloned() else { continue };
         let Some(face_shape) = ds.shape(n_f).cloned() else { continue };
@@ -630,7 +630,7 @@ pub(super) fn force_interf_ef_impl(
         ef.set_edge(Edge(edge_shape));
         ef.set_face(Face(face_shape));
         ef.set_range(t1, t2);
-        ef.set_fuzzy_value(ctx.fuzzy + a_tol_add);
+        ef.set_fuzzy_value(ctx.fuzzy + tol_add);
         ef.set_quick_coincidence_check(true);
         if let Err(msg) = ef.perform() {
             ctx.add_error(format!("intersect_force_interf_ef: edge/face intersection failed: {msg}"));

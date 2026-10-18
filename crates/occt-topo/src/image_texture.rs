@@ -179,8 +179,8 @@ impl ImageTexture {
     /// (`Image_Texture.cxx:306-330`): create/truncate the file, then delegate to
     /// the stream overload. Returns `false` when the file cannot be created, when
     /// the copy fails, or when the final flush is not good (`cxx:322-327`).
-    pub fn write_image(&self, the_file: &str) -> bool {
-        let mut out = match std::fs::File::create(the_file) {
+    pub fn write_image(&self, file: &str) -> bool {
+        let mut out = match std::fs::File::create(file) {
             Ok(f) => f,
             Err(_) => return false,
         };
@@ -195,20 +195,20 @@ impl ImageTexture {
     /// `Image_Texture::MimeType` (`Image_Texture.cxx:202-222`): the MIME type
     /// derived from the probed format, `""` when the format is unknown.
     pub fn mime_type(&self) -> String {
-        let a_type = self.probe_image_file_format();
-        if a_type == "jpg" {
+        let kind = self.probe_image_file_format();
+        if kind == "jpg" {
             "image/jpeg".to_string()
-        } else if a_type == "png"
-            || a_type == "bmp"
-            || a_type == "webp"
-            || a_type == "gif"
-            || a_type == "tiff"
+        } else if kind == "png"
+            || kind == "bmp"
+            || kind == "webp"
+            || kind == "gif"
+            || kind == "tiff"
         {
-            format!("image/{a_type}")
-        } else if a_type == "dds" {
+            format!("image/{kind}")
+        } else if kind == "dds" {
             "image/vnd-ms.dds".to_string()
-        } else if !a_type.is_empty() {
-            format!("image/x-{a_type}")
+        } else if !kind.is_empty() {
+            format!("image/x-{kind}")
         } else {
             String::new()
         }

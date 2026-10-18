@@ -101,23 +101,23 @@ pub fn reduce_spline_box2d_range(
 /// `knots` / `mults` are the unique-knot tables (`Geom_BSplineCurve::Knots` /
 /// `Multiplicities`). `hunt_occt` is the exact `BSplCLib::Hunt` port, 1-based
 /// with `Lower() == 1`; the previous 0-based `bspl::knots::hunt` (last knot
-/// `<= x`) plus `+ 1` was off by one whenever `the_min` / `the_max` sat exactly
+/// `<= x`) plus `+ 1` was off by one whenever `min` / `the_max` sat exactly
 /// on a knot, which widened or dropped a pole row.
 pub fn compute_pole_index_range(
     knots: &[f64],
     mults: &[i32],
-    the_degree: i32,
-    the_min: f64,
+    degree: i32,
+    min: f64,
     the_max: f64,
-    the_max_pole_idx: i32,
-    the_is_periodic: bool,
+    max_pole_idx: i32,
+    is_periodic: bool,
 ) -> (i32, i32) {
     if knots.is_empty() || mults.is_empty() {
-        return (1, the_max_pole_idx.max(1));
+        return (1, max_pole_idx.max(1));
     }
     let lower = 1i32;
     let upper = knots.len() as i32;
-    let mut out_min = hunt_occt(knots, the_min);
+    let mut out_min = hunt_occt(knots, min);
     if out_min < lower {
         out_min = lower;
     }
@@ -132,7 +132,7 @@ pub fn compute_pole_index_range(
     if out_max > upper {
         out_max = upper;
     }
-    let a_multiplier = {
+    let multiplier = {
         let i = (out_max - 1) as usize;
         if i < mults.len() {
             mults[i]
@@ -140,14 +140,14 @@ pub fn compute_pole_index_range(
             0
         }
     };
-    out_min = bspl_knots::pole_index(the_degree, out_min, the_is_periodic, mults) + 1;
+    out_min = bspl_knots::pole_index(degree, out_min, is_periodic, mults) + 1;
     if out_min < 1 {
         out_min = 1;
     }
-    out_max = bspl_knots::pole_index(the_degree, out_max, the_is_periodic, mults) + 1;
-    out_max += the_degree - a_multiplier;
-    if !the_is_periodic && out_max > the_max_pole_idx {
-        out_max = the_max_pole_idx;
+    out_max = bspl_knots::pole_index(degree, out_max, is_periodic, mults) + 1;
+    out_max += degree - multiplier;
+    if !is_periodic && out_max > max_pole_idx {
+        out_max = max_pole_idx;
     }
     (out_min, out_max)
 }
@@ -159,21 +159,21 @@ pub fn compute_pole_index_range(
 /// then `ReduceSplineBox`.
 pub fn bezier_curve_box2d(
     geom: &Geom2dBezierCurve,
-    the_u1: f64,
-    the_u2: f64,
-    the_tol: f64,
+    u1: f64,
+    u2: f64,
+    tol: f64,
 ) -> BndBox2d {
     let first = 0.0;
     let last = 1.0;
-    if the_u1 - first > PCONFUSION || last - the_u2 > PCONFUSION {
-        return box_other_2d(geom, the_u1.max(first), the_u2.min(last), the_tol);
+    if u1 - first > PCONFUSION || last - u2 > PCONFUSION {
+        return box_other_2d(geom, u1.max(first), u2.min(last), tol);
     }
     let mut b1 = BndBox2d::new();
     let n = geom.degree().max(1) as i32;
-    let a_tol = fill_box2d(&mut b1, geom, the_u1, the_u2, n);
+    let a_tol = fill_box2d(&mut b1, geom, u1, u2, n);
     b1.enlarge(WEAKNESS * a_tol);
     let mut box_ = reduce_spline_box2d(&geom.poles, &b1);
-    box_.enlarge(the_tol);
+    box_.enlarge(tol);
     box_
 }
 
@@ -192,12 +192,12 @@ fn bspline_poles(geom: &Geom2dBSplineCurve) -> Vec<GpPnt2d> {
 /// (the same sampling `BndLib_Add2dCurve` uses for a non-adaptor curve).
 pub fn bspline_curve_box2d_periodic(
     geom: &Geom2dBSplineCurve,
-    the_u1: f64,
-    the_u2: f64,
-    the_tol: f64,
+    u1: f64,
+    u2: f64,
+    tol: f64,
 ) -> BndBox2d {
-    let mut a_u1 = the_u1;
-    let mut a_u2 = the_u2;
+    let mut a_u1 = u1;
+    let mut a_u2 = u2;
     adjust_periodic(
         geom.first_parameter(),
         geom.last_parameter(),
@@ -205,63 +205,63 @@ pub fn bspline_curve_box2d_periodic(
         &mut a_u1,
         &mut a_u2,
     );
-    box_other_2d(geom, a_u1, a_u2, the_tol)
+    box_other_2d(geom, a_u1, a_u2, tol)
 }
 
 /// Non-periodic `BSplineCurveBox` (`SplineHelpers.pxx:332-398`).
 pub fn bspline_curve_box2d(
     geom: &Geom2dBSplineCurve,
-    the_u1: f64,
-    the_u2: f64,
-    the_tol: f64,
+    u1: f64,
+    u2: f64,
+    tol: f64,
 ) -> BndBox2d {
     let a_degree = geom.degree() as i32;
-    let a_u1 = the_u1.max(geom.first_parameter());
-    let a_u2 = the_u2.min(geom.last_parameter());
+    let a_u1 = u1.max(geom.first_parameter());
+    let a_u2 = u2.min(geom.last_parameter());
     if a_u1 - geom.first_parameter() > PCONFUSION || geom.last_parameter() - a_u2 > PCONFUSION {
-        return box_other_2d(geom, a_u1, a_u2, the_tol);
+        return box_other_2d(geom, a_u1, a_u2, tol);
     }
     let (uknots, umults) = bspl_knots::unique_knots_mults(&geom.knots);
     if uknots.len() < 2 {
         let mut box_ = BndBox2d::new();
         box_.add_point(&geom.d0(a_u1));
         box_.add_point(&geom.d0(a_u2));
-        box_.enlarge(the_tol);
+        box_.enlarge(tol);
         return box_;
     }
     let lower = 0usize;
     let upper = uknots.len() - 1;
-    let mut a_k_min = bspl_knots::hunt(&uknots, a_u1);
-    a_k_min = a_k_min.clamp(lower, upper.saturating_sub(1));
-    let mut a_k_max = bspl_knots::hunt(&uknots, a_u2);
-    a_k_max = (a_k_max + 1).clamp(lower, upper);
+    let mut k_min = bspl_knots::hunt(&uknots, a_u1);
+    k_min = k_min.clamp(lower, upper.saturating_sub(1));
+    let mut k_max = bspl_knots::hunt(&uknots, a_u2);
+    k_max = (k_max + 1).clamp(lower, upper);
 
-    let mut a_b1 = BndBox2d::new();
+    let mut b1 = BndBox2d::new();
     let mut a_tol = 0.0_f64;
-    let mut a_first = a_u1;
+    let mut first = a_u1;
     let n = a_degree.max(1);
-    for a_k in (a_k_min + 1)..=a_k_max {
-        let a_last = if a_k < a_k_max {
-            a_u2.min(uknots[a_k])
+    for k in (k_min + 1)..=k_max {
+        let last = if k < k_max {
+            a_u2.min(uknots[k])
         } else {
             a_u2
         };
-        if a_last > a_first + PCONFUSION {
-            a_tol = a_tol.max(fill_box2d(&mut a_b1, geom, a_first, a_last, n));
+        if last > first + PCONFUSION {
+            a_tol = a_tol.max(fill_box2d(&mut b1, geom, first, last, n));
         }
-        a_first = a_last;
-        if a_first >= a_u2 - PCONFUSION {
+        first = last;
+        if first >= a_u2 - PCONFUSION {
             break;
         }
     }
-    if a_b1.is_void() {
+    if b1.is_void() {
         let mut box_ = BndBox2d::new();
         box_.add_point(&geom.d0(a_u1));
         box_.add_point(&geom.d0(a_u2));
-        box_.enlarge(the_tol);
+        box_.enlarge(tol);
         return box_;
     }
-    a_b1.enlarge(WEAKNESS * a_tol);
+    b1.enlarge(WEAKNESS * a_tol);
     let poles = bspline_poles(geom);
     let (pmin, pmax) = compute_pole_index_range(
         &uknots,
@@ -272,8 +272,8 @@ pub fn bspline_curve_box2d(
         poles.len() as i32,
         false,
     );
-    let mut box_ = reduce_spline_box2d_range(&poles, pmin, pmax, &a_b1);
-    box_.enlarge(the_tol);
+    let mut box_ = reduce_spline_box2d_range(&poles, pmin, pmax, &b1);
+    box_.enlarge(tol);
     box_
 }
 
@@ -283,40 +283,40 @@ pub fn bspline_curve_box2d(
 /// `GeomBndLib_SamplingHelpers::ComputeNbSamplesT` fed from the real curve
 /// quantities (`CurveBoxOptimal`, `GeomBndLib_SplineHelpers.pxx:410-412`;
 /// `ComputeNbSamples2d`, `GeomBndLib_SamplingHelpers.pxx:73-105`).
-pub fn curve_box_sample2d(curve: &dyn Curve2d, the_u1: f64, the_u2: f64, the_tol: f64) -> BndBox2d {
-    let a_nb = compute_nb_samples2d(
+pub fn curve_box_sample2d(curve: &dyn Curve2d, u1: f64, u2: f64, tol: f64) -> BndBox2d {
+    let nb = compute_nb_samples2d(
         sample_kind_of(curve),
         curve.bezier_nb_poles().unwrap_or(0),
         curve.bspline_degree().unwrap_or(0),
         curve.bspline_nb_knots().unwrap_or(0),
         curve.first_parameter(),
         curve.last_parameter(),
-        the_u1,
-        the_u2,
+        u1,
+        u2,
     )
     .max(2);
-    let a_du = (the_u2 - the_u1) / (a_nb - 1) as f64;
-    let a_du2 = a_du / 2.0;
+    let du = (u2 - u1) / (nb - 1) as f64;
+    let du2 = du / 2.0;
     let mut coord_min = [f64::MAX; 2];
     let mut coord_max = [f64::MIN; 2];
-    for j in 0..a_nb {
-        let a_u = the_u1 + j as f64 * a_du;
-        let a_p = curve.d0(a_u);
-        coord_min[0] = coord_min[0].min(a_p.x());
-        coord_min[1] = coord_min[1].min(a_p.y());
-        coord_max[0] = coord_max[0].max(a_p.x());
-        coord_max[1] = coord_max[1].max(a_p.y());
+    for j in 0..nb {
+        let u = u1 + j as f64 * du;
+        let p = curve.d0(u);
+        coord_min[0] = coord_min[0].min(p.x());
+        coord_min[1] = coord_min[1].min(p.y());
+        coord_max[0] = coord_max[0].max(p.x());
+        coord_max[1] = coord_max[1].max(p.y());
         if j > 0 {
-            let a_p_mid = curve.d0(a_u - a_du2);
-            coord_min[0] = coord_min[0].min(a_p_mid.x());
-            coord_min[1] = coord_min[1].min(a_p_mid.y());
-            coord_max[0] = coord_max[0].max(a_p_mid.x());
-            coord_max[1] = coord_max[1].max(a_p_mid.y());
+            let p_mid = curve.d0(u - du2);
+            coord_min[0] = coord_min[0].min(p_mid.x());
+            coord_min[1] = coord_min[1].min(p_mid.y());
+            coord_max[0] = coord_max[0].max(p_mid.x());
+            coord_max[1] = coord_max[1].max(p_mid.y());
         }
     }
-    let mut a_box = BndBox2d::new();
-    a_box.add_point(&GpPnt2d::new(coord_min[0], coord_min[1]));
-    a_box.add_point(&GpPnt2d::new(coord_max[0], coord_max[1]));
-    a_box.enlarge(the_tol.max(CONFUSION));
-    a_box
+    let mut bnd_box = BndBox2d::new();
+    bnd_box.add_point(&GpPnt2d::new(coord_min[0], coord_min[1]));
+    bnd_box.add_point(&GpPnt2d::new(coord_max[0], coord_max[1]));
+    bnd_box.enlarge(tol.max(CONFUSION));
+    bnd_box
 }

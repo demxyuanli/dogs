@@ -268,8 +268,8 @@ enum GapStatus {
 }
 
 /// `ShapeAnalysis_Wire::CheckGap2d(num)` (`ShapeAnalysis_Wire.cxx:1156-1192`).
-/// `my_precision` is the analyzer precision (`SetPrecision`).
-fn check_gap_2d(face: &Face, wire: &Wire, my_precision: f64, num: usize) -> GapStatus {
+/// `precision` is the analyzer precision (`SetPrecision`).
+fn check_gap_2d(face: &Face, wire: &Wire, precision: f64, num: usize) -> GapStatus {
     let Some(surf) = BRepTool::face_surface(face) else {
         return GapStatus::Fail1; // cxx:1158-1162
     };
@@ -290,8 +290,8 @@ fn check_gap_2d(face: &Face, wire: &Wire, my_precision: f64, num: usize) -> GapS
     let p1 = c1.d0(l1);
     let p2 = c2.d0(f2);
     // `cxx:1184-1190`: `SA.UResolution(myPrecision)` / `VResolution`.
-    let res = occt_geom::approx_same_parameter::u_resolution(surf.as_ref(), my_precision)
-        .max(occt_geom::approx_same_parameter::v_resolution(surf.as_ref(), my_precision));
+    let res = occt_geom::approx_same_parameter::u_resolution(surf.as_ref(), precision)
+        .max(occt_geom::approx_same_parameter::v_resolution(surf.as_ref(), precision));
     if p1.distance(&p2) > res + PCONFUSION {
         GapStatus::Done1
     } else {

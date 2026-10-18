@@ -72,17 +72,17 @@ pub(super) fn resolve_closed_surface_period_jump(
         // `cxx:1521-1536`: with a cached anchor the period window is placed
         // around it and the first sample is folded into that window.
         if surf.is_u_periodic() && is_from_cache {
-            let mut a_min_param = uf;
-            let mut a_max_param = ul;
-            while a_min_param > saved_point.x() {
-                a_min_param -= up;
-                a_max_param -= up;
+            let mut min_param = uf;
+            let mut max_param = ul;
+            while min_param > saved_point.x() {
+                min_param -= up;
+                max_param -= up;
             }
-            while a_max_param < saved_point.x() {
-                a_min_param += up;
-                a_max_param += up;
+            while max_param < saved_point.x() {
+                min_param += up;
+                max_param += up;
             }
-            first_x += super::super::projection_cache::adjust_to_period(first_x, a_min_param, a_max_param);
+            first_x += super::super::projection_cache::adjust_to_period(first_x, min_param, max_param);
             pts2d[0].set_x(first_x);
         }
         let mut prev_x = first_x;
@@ -156,17 +156,17 @@ pub(super) fn resolve_closed_surface_period_jump(
         }
         // `cxx:1613-1628`
         if surf.is_v_periodic() && is_from_cache {
-            let mut a_min_param = vf;
-            let mut a_max_param = vl;
-            while a_min_param > saved_point.y() {
-                a_min_param -= vp;
-                a_max_param -= vp;
+            let mut min_param = vf;
+            let mut max_param = vl;
+            while min_param > saved_point.y() {
+                min_param -= vp;
+                max_param -= vp;
             }
-            while a_max_param < saved_point.y() {
-                a_min_param += vp;
-                a_max_param += vp;
+            while max_param < saved_point.y() {
+                min_param += vp;
+                max_param += vp;
             }
-            first_y += super::super::projection_cache::adjust_to_period(first_y, a_min_param, a_max_param);
+            first_y += super::super::projection_cache::adjust_to_period(first_y, min_param, max_param);
             pts2d[0].set_y(first_y);
         }
         let mut prev_y = first_y;
@@ -240,19 +240,19 @@ pub(super) fn resolve_closed_surface_period_jump(
                 let mut prev_on_last = false;
                 let mut curr_on_first = false;
                 let mut curr_on_last = false;
-                let mut the_min = dist_prev_vf;
-                if dist_prev_vl < the_min {
-                    the_min = dist_prev_vl;
+                let mut min = dist_prev_vf;
+                if dist_prev_vl < min {
+                    min = dist_prev_vl;
                     prev_on_first = false;
                     prev_on_last = true;
                 }
-                if dist_curr_vf < the_min {
-                    the_min = dist_curr_vf;
+                if dist_curr_vf < min {
+                    min = dist_curr_vf;
                     prev_on_first = false;
                     prev_on_last = false;
                     curr_on_first = true;
                 }
-                if dist_curr_vl < the_min {
+                if dist_curr_vl < min {
                     prev_on_first = false;
                     prev_on_last = false;
                     curr_on_first = false;

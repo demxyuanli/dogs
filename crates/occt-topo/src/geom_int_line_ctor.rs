@@ -193,12 +193,12 @@ impl LineConstructor {
                 let pl = wline.point(lastp as i32);
                 let (mut u1, mut v1, mut u2, mut v2) = pf.parameters();
                 adjust_periodic_uv(s1, s2, &mut u1, &mut v1, &mut u2, &mut v2);
-                let (mut a_u21, mut a_v21, mut a_u22, mut a_v22) = pl.parameters();
-                adjust_periodic_uv(s1, s2, &mut a_u21, &mut a_v21, &mut a_u22, &mut a_v22);
-                u1 = 0.5 * (u1 + a_u21);
-                v1 = 0.5 * (v1 + a_v21);
-                u2 = 0.5 * (u2 + a_u22);
-                v2 = 0.5 * (v2 + a_v22);
+                let (mut u21, mut v21, mut u22, mut v22) = pl.parameters();
+                adjust_periodic_uv(s1, s2, &mut u21, &mut v21, &mut u22, &mut v22);
+                u1 = 0.5 * (u1 + u21);
+                v1 = 0.5 * (v1 + v21);
+                u2 = 0.5 * (u2 + u22);
+                v2 = 0.5 * (v2 + v22);
                 if d1.classify(GpPnt2d::new(u1, v1), tol) != FaceState::Out
                     && d2.classify(GpPnt2d::new(u2, v2), tol) != FaceState::Out
                 {
@@ -224,16 +224,16 @@ impl LineConstructor {
                 }
             }
         }
-        let a_nb_parts = self.seqp.len() / 2;
-        if a_nb_parts > 1 {
-            let a_st1 = classify_surface(s1);
-            let a_st2 = classify_surface(s2);
+        let nb_parts = self.seqp.len() / 2;
+        if nb_parts > 1 {
+            let st1 = classify_surface(s1);
+            let st2 = classify_surface(s2);
             let mut b_cond = false;
-            if a_st1 == SurfaceKind::Plane
-                && matches!(a_st2, SurfaceKind::Other)
+            if st1 == SurfaceKind::Plane
+                && matches!(st2, SurfaceKind::Other)
             {
                 b_cond = true;
-            } else if a_st2 == SurfaceKind::Plane && matches!(a_st1, SurfaceKind::Other) {
+            } else if st2 == SurfaceKind::Plane && matches!(st1, SurfaceKind::Other) {
                 b_cond = true;
             }
             if b_cond {
@@ -253,22 +253,22 @@ impl Default for LineConstructor {
 
 /// PKV 22.Apr.2002 block: collapse duplicate indices in `seqp`.
 fn merge_connected_walking_parts(seqp: &mut Vec<f64>) {
-    let mut a_map: Vec<i32> = Vec::new();
-    let mut a_seq_tmp: Vec<f64> = Vec::new();
+    let mut map: Vec<i32> = Vec::new();
+    let mut seq_tmp: Vec<f64> = Vec::new();
     for &lastp in seqp.iter() {
         let an_index = lastp as i32;
-        if !a_map.contains(&an_index) {
-            a_map.push(an_index);
-            a_seq_tmp.push(lastp);
-        } else if !a_seq_tmp.is_empty() {
-            a_seq_tmp.pop();
+        if !map.contains(&an_index) {
+            map.push(an_index);
+            seq_tmp.push(lastp);
+        } else if !seq_tmp.is_empty() {
+            seq_tmp.pop();
         }
     }
     seqp.clear();
-    let a_nb = a_seq_tmp.len() / 2;
-    for i in 1..=a_nb {
+    let nb = seq_tmp.len() / 2;
+    for i in 1..=nb {
         let jx = 2 * i;
-        seqp.push(a_seq_tmp[jx - 2]);
-        seqp.push(a_seq_tmp[jx - 1]);
+        seqp.push(seq_tmp[jx - 2]);
+        seqp.push(seq_tmp[jx - 1]);
     }
 }

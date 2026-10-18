@@ -186,16 +186,16 @@ pub fn voxel_boolean(
     let mut grid = VoxelGrid::new(&bb, resolution);
     // Classify both solids on the same grid.
     grid.fill(a);
-    let a_occ = grid.occupied.clone();
-    grid.occupied = vec![false; a_occ.len()];
+    let occ = grid.occupied.clone();
+    grid.occupied = vec![false; occ.len()];
     grid.fill(b);
     let b_occ = grid.occupied.clone();
     // Combine per the operation.
-    for i in 0..a_occ.len() {
+    for i in 0..occ.len() {
         grid.occupied[i] = match op {
-            VoxelBoolOp::Union => a_occ[i] || b_occ[i],
-            VoxelBoolOp::Intersection => a_occ[i] && b_occ[i],
-            VoxelBoolOp::Subtraction => a_occ[i] && !b_occ[i],
+            VoxelBoolOp::Union => occ[i] || b_occ[i],
+            VoxelBoolOp::Intersection => occ[i] && b_occ[i],
+            VoxelBoolOp::Subtraction => occ[i] && !b_occ[i],
         };
     }
     Ok(grid.to_mesh())

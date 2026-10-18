@@ -76,13 +76,13 @@ pub fn put_stick_paves_on_curve(
         let Some(v_shape) = f.ds().shape(n_v).cloned() else {
             continue;
         };
-        let a_pv = BRepTool::vertex_point(&Vertex(v_shape));
+        let pv = BRepTool::vertex_point(&Vertex(v_shape));
         for m in 0..2 {
             if bnd[m].is_some() {
                 continue;
             }
-            let a_d2 = ps[m].square_distance(&a_pv);
-            if a_d2 > STICK_DT2 {
+            let d2 = ps[m].square_distance(&pv);
+            if d2 > STICK_DT2 {
                 continue;
             }
             let mut nrm = [None, None];
@@ -103,8 +103,8 @@ pub fn put_stick_paves_on_curve(
             if sc > STICK_DSCPR {
                 continue;
             }
-            let a_d = a_d2.sqrt();
-            put_pave_on_curve(f, i, j, n_v, a_d, mi, mv_tol, dmvlv, 0);
+            let d = d2.sqrt();
+            put_pave_on_curve(f, i, j, n_v, d, mi, mv_tol, dmvlv, 0);
         }
     }
 }
@@ -137,13 +137,13 @@ pub fn put_ef_paves_on_curve(
         let Some(v_shape) = f.ds().shape(n_v).cloned() else {
             continue;
         };
-        let a_pv = BRepTool::vertex_point(&Vertex(v_shape));
-        let Some((_, a_dist)) =
-            int_tools_vertex_line::project_point_on_curve_dist(curve.as_ref(), &a_pv)
+        let pv = BRepTool::vertex_point(&Vertex(v_shape));
+        let Some((_, dist)) =
+            int_tools_vertex_line::project_point_on_curve_dist(curve.as_ref(), &pv)
         else {
             continue;
         };
-        put_pave_on_curve(f, i, j, n_v, a_dist, mi, mv_tol, dmvlv, 2);
+        put_pave_on_curve(f, i, j, n_v, dist, mi, mv_tol, dmvlv, 2);
     }
 }
 

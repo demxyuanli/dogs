@@ -104,8 +104,8 @@ pub(super) fn plane_plane_line(p1: &GpPln, p2: &GpPln, tol_ang: f64, tol: f64) -
     let loc2 = p2.location();
     let dist1 = a2 * loc1.x() + b2 * loc1.y() + c2 * loc1.z() + d2;
     let dist2 = a1 * loc2.x() + b1 * loc2.y() + c1 * loc2.z() + d1;
-    let a_mvd = vd.magnitude();
-    if a_mvd <= tol_ang {
+    let mvd = vd.magnitude();
+    if mvd <= tol_ang {
         // `cxx:415-418`: normals are collinear, the planes are same or parallel.
         return None;
     }
@@ -126,23 +126,23 @@ pub(super) fn plane_plane_line(p1: &GpPln, p2: &GpPln, tol_ang: f64, tol: f64) -
     let z2 = loc2.z() + par2 * inter2.z();
     let mut pt1 = GpPnt::new((x1 + x2) * 0.5, (y1 + y2) * 0.5, (z1 + z2) * 0.5);
     let dir1 = GpDir::from_xyz(&vd.xyz()).ok()?;
-    if a_mvd < A_TRESH_ANG {
+    if mvd < A_TRESH_ANG {
         // `cxx:449-508`: with a near-zero angle between the planes the origin
         // above carries ~1e-4 of error, so OCCT re-derives it from two
         // line/plane solves (`IntAna_IntConicQuad`).
         let a_dist1 = a1 * pt1.x() + b1 * pt1.y() + c1 * pt1.z() + d1;
         let a_dist2 = a2 * pt1.x() + b2 * pt1.y() + c2 * pt1.z() + d2;
         if a_dist1.abs() > A_TRESH_DIST || a_dist2.abs() > A_TRESH_DIST {
-            let a_dn1 = GpDir::from_xyz(&n1.xyz()).ok()?;
-            let a_l1 = GpLin::from_pnt_dir(pt1, a_dn1);
-            let icq = IntAnaIntConicQuad::line_plane(&a_l1, p1, tol_ang, tol, 0.0);
+            let dn1 = GpDir::from_xyz(&n1.xyz()).ok()?;
+            let l1 = GpLin::from_pnt_dir(pt1, dn1);
+            let icq = IntAnaIntConicQuad::line_plane(&l1, p1, tol_ang, tol, 0.0);
             if !icq.is_done() {
                 return None;
             }
-            let a_pnt1 = *icq.point(1);
-            let a_dl2 = dir1.crossed(&a_dn1).ok()?;
-            let a_l2 = GpLin::from_pnt_dir(a_pnt1, a_dl2);
-            let icq = IntAnaIntConicQuad::line_plane(&a_l2, p2, tol_ang, tol, 0.0);
+            let pnt1 = *icq.point(1);
+            let dl2 = dir1.crossed(&dn1).ok()?;
+            let l2 = GpLin::from_pnt_dir(pnt1, dl2);
+            let icq = IntAnaIntConicQuad::line_plane(&l2, p2, tol_ang, tol, 0.0);
             if !icq.is_done() || icq.is_parallel() {
                 return None;
             }

@@ -174,8 +174,8 @@ impl GlobOptMin {
     /// `math_GlobOptMin::SetFunctionalMinimalValue(theMinimalValue)`
     /// (`math_GlobOptMin.hxx:107-110`): the value the stop criterion
     /// `CheckFunctionalStopCriteria` (`cxx:600-604`) compares against.
-    pub fn set_functional_minimal_value(&mut self, the_minimal_value: f64) {
-        self.functional_minimal_value = the_minimal_value;
+    pub fn set_functional_minimal_value(&mut self, minimal_value: f64) {
+        self.functional_minimal_value = minimal_value;
     }
 
     /// `math_GlobOptMin::GetFunctionalMinimalValue()` (`math_GlobOptMin.hxx:112`).
@@ -194,8 +194,8 @@ impl GlobOptMin {
     /// The port's [`GlobOptMin::perform`] applies this pending sub-box at the
     /// same point of the sequence (after the global `compute_init_sol`, before
     /// the `e1/e2/e3` setup of `Perform`).
-    pub fn set_local_params(&mut self, the_local_a: &MathVector, the_local_b: &MathVector) {
-        self.local_params = Some((the_local_a.clone(), the_local_b.clone()));
+    pub fn set_local_params(&mut self, local_a: &MathVector, local_b: &MathVector) {
+        self.local_params = Some((local_a.clone(), local_b.clone()));
     }
 
     /// The pending `SetLocalParams` box, if any.
@@ -242,7 +242,7 @@ impl GlobOptMin {
     }
 
     /// `math_GlobOptMin::SetGlobalParams` (`cxx:112-148`): install the objective,
-    /// the Lipschitz estimate `the_c`, the global box and the working box,
+    /// the Lipschitz estimate `c`, the global box and the working box,
     /// `myMaxV = (b-a)/3`, then `initCellSize()` + `ComputeInitSol()` and
     /// `myDone = false`.
     pub fn set_global_params(
@@ -250,7 +250,7 @@ impl GlobOptMin {
         f: &dyn MathMultipleVarFunction,
         lower: &MathVector,
         upper: &MathVector,
-        the_c: f64,
+        c: f64,
     ) -> Result<(), String> {
         if lower.len() == 0 || lower.len() != upper.len() {
             return Err("dimension mismatch".into());
@@ -277,8 +277,8 @@ impl GlobOptMin {
             self.b.set_value(i, hi);
             self.max_v.set_value(i, (hi - lo) / 3.0);
         }
-        self.lip_const = the_c;
-        self.init_lip_const = the_c;
+        self.lip_const = c;
+        self.init_lip_const = c;
         self.z = -1.0;
         self.f = INF;
         self.y.clear();
@@ -431,7 +431,7 @@ impl GlobOptMin {
         eval_into(f, &self.a, &mut prev_val_diag);
         let mut prev_val_proj = prev_val_diag;
         let mut lip_const: f64 = 0.0;
-        let a_step = self.b.subtracted(&self.a).norm() / A_PNT_NB as f64;
+        let step = self.b.subtracted(&self.a).norm() / A_PNT_NB as f64;
         param_step = self.b.subtracted(&self.a).divided_scalar(A_PNT_NB as f64);
         for i in 1..=A_PNT_NB {
             curr_pnt = self.a.added(&param_step.multiplied_scalar(i as f64));
@@ -447,7 +447,7 @@ impl GlobOptMin {
             prev_val_proj = val;
         }
         self.lip_const = self.init_lip_const;
-        lip_const *= (self.n as f64).sqrt() / a_step;
+        lip_const *= (self.n as f64).sqrt() / step;
         if lip_const < self.lip_const * A_MIN_EPS {
             self.lip_const = (lip_const * A_MIN_EPS).max(A_MIN_LC);
         } else if lip_const > self.lip_const * A_MAX_EPS {
@@ -476,10 +476,10 @@ impl GlobOptMin {
 
     fn compute_global_extremum(&mut self, f: &dyn MathMultipleVarFunction, j: usize) {
         let mut d = f64::MAX;
-        let mut a_prev_val = f64::MAX;
+        let mut prev_val = f64::MAX;
         let mut val = f64::MAX;
-        let mut a_step_best_value = f64::MAX;
-        let mut a_step_best_point = MathVector::new(1, self.n);
+        let mut step_best_value = f64::MAX;
+        let mut step_best_point = MathVector::new(1, self.n);
         let mut is_inside = false;
         let mut is_reached = false;
 
@@ -494,29 +494,29 @@ impl GlobOptMin {
             }
             if j == 1 {
                 is_inside = false;
-                a_prev_val = d;
+                prev_val = d;
                 // cxx:419-420: `aPrevVal = d; myFunc->Value(myX, d);`
                 eval_into(f, &self.x, &mut d);
                 // Evtushenko estimate.
                 let r1 = (d + self.z * self.lip_const * self.last_step - self.f) * self.z;
                 // Shubert / Piyavsky estimate.
-                let r2 = ((d + a_prev_val - self.lip_const * self.last_step) * 0.5 - self.f) * self.z;
+                let r2 = ((d + prev_val - self.lip_const * self.last_step) * 0.5 - self.f) * self.z;
                 let r = r1.min(r2);
                 if r > self.e3 {
                     let save_param = self.x.value(1);
                     // Piyavsky midpoint estimate.
-                    let mut a_param = (2.0 * self.x.value(1) - self.v.value(1)) * 0.5
-                        + (a_prev_val - d) * 0.5 / self.lip_const;
-                    if a_prev_val.is_infinite() {
-                        a_param = self.x.value(1) - self.v.value(1) * 0.5;
+                    let mut param = (2.0 * self.x.value(1) - self.v.value(1)) * 0.5
+                        + (prev_val - d) * 0.5 / self.lip_const;
+                    if prev_val.is_infinite() {
+                        param = self.x.value(1) - self.v.value(1) * 0.5;
                     }
-                    self.x.set_value(1, a_param);
+                    self.x.set_value(1, param);
                     // cxx:438-439: `double aVal = 0; myFunc->Value(myX, aVal);`
                     let mut a_val = 0.0;
                     eval_into(f, &self.x, &mut a_val);
                     self.x.set_value(1, save_param);
 
-                    if (a_val < d && a_val < a_prev_val)
+                    if (a_val < d && a_val < prev_val)
                         || distance_to_border(&self.x, &self.a, &self.b) < self.e1
                     {
                         if let Some((out_pnt, out_val)) = self.compute_local_extremum(f, &self.x) {
@@ -526,13 +526,13 @@ impl GlobOptMin {
                         }
                     }
                 }
-                a_step_best_value = if is_inside && val < d { val } else { d };
-                a_step_best_point = if is_inside && val < d {
+                step_best_value = if is_inside && val < d { val } else { d };
+                step_best_point = if is_inside && val < d {
                     self.tmp.clone()
                 } else {
                     self.x.clone()
                 };
-                self.check_add_candidate(&a_step_best_point, a_step_best_value);
+                self.check_add_candidate(&step_best_point, step_best_value);
                 if self.check_functional_stop_criteria() {
                     return;
                 }
@@ -594,10 +594,10 @@ impl GlobOptMin {
     ) -> Option<(MathVector, f64)> {
         // Newton method — cxx:272-291.
         if self.cont >= 2 {
-            if let Some(a_tmp) = f.as_hessian() {
-                let mut newton = NewtonMinimum::with_defaults(a_tmp.nb_variables());
+            if let Some(tmp) = f.as_hessian() {
+                let mut newton = NewtonMinimum::with_defaults(tmp.nb_variables());
                 newton.set_boundary(self.glob_a.clone(), self.glob_b.clone());
-                newton.perform(a_tmp, pnt);
+                newton.perform(tmp, pnt);
 
                 if newton.is_done() {
                     let out_pnt = newton.location().clone();
@@ -611,18 +611,18 @@ impl GlobOptMin {
 
         // BFGS method used — cxx:293-312.
         if self.cont >= 1 {
-            if let Some(a_tmp) = f.as_gradient() {
+            if let Some(tmp) = f.as_gradient() {
                 let mut bfgs = BFGS::new();
                 bfgs.set_boundary(&self.glob_a, &self.glob_b); // cxx:299
-                let n = a_tmp.nb_variables();
+                let n = tmp.nb_variables();
                 let value = |x: &MathVector| {
                     let mut v = 0.0;
-                    a_tmp.value(x, &mut v);
+                    tmp.value(x, &mut v);
                     v
                 };
                 let grad = |x: &MathVector| {
                     let mut g = MathVector::new(1, n);
-                    a_tmp.gradient(x, &mut g);
+                    tmp.gradient(x, &mut g);
                     g
                 };
                 if let Ok(x) = bfgs.minimize(value, grad, pnt) {
@@ -657,14 +657,14 @@ impl GlobOptMin {
     }
 
     fn is_stored(&self, pnt: &MathVector) -> bool {
-        let mut a_tol = MathVector::new(1, self.n);
+        let mut tol = MathVector::new(1, self.n);
         for i in 1..=self.n {
-            a_tol.set_value(i, (self.b.value(i) - self.a.value(i)) * self.same_tol);
+            tol.set_value(i, (self.b.value(i) - self.a.value(i)) * self.same_tol);
         }
         for i in 0..self.sol_count {
             let mut is_same = true;
             for j in 1..=self.n {
-                if (pnt.value(j) - self.y[i * self.n + (j - 1)]).abs() > a_tol.value(j) {
+                if (pnt.value(j) - self.y[i * self.n + (j - 1)]).abs() > tol.value(j) {
                     is_same = false;
                     break;
                 }

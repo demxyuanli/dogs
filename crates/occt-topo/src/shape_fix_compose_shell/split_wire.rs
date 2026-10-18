@@ -116,7 +116,7 @@ impl ComposeShell {
                         }
                     } else {
                         // cxx:1006-1015: non-manifold vertices of the edge.
-                        let a_nm_vertices: Vec<Vertex> = {
+                        let nm_vertices: Vec<Vertex> = {
                             let ts = edge.0.tshape.read().expect("poisoned TShape lock");
                             ts.children
                                 .iter()
@@ -153,10 +153,10 @@ impl ComposeShell {
                                 let last_v_pnt = BRepTool::vertex_point(&last_v);
                                 let tol_edge = BRepTool::edge_tolerance(&edge);
                                 // cxx:1046-1087: sequence of non-manifold parameters.
-                                let mut a_nm_vertices = a_nm_vertices;
-                                let mut a_nm_params: Vec<f64> = Vec::new();
-                                if !a_nm_vertices.is_empty() {
-                                    for v in &a_nm_vertices {
+                                let mut nm_vertices = nm_vertices;
+                                let mut nm_params: Vec<f64> = Vec::new();
+                                if !nm_vertices.is_empty() {
+                                    for v in &nm_vertices {
                                         let ap_v = BRepTool::vertex_point(v);
                                         let apar = if let Some(c) = &c3d {
                                             crate::shhealing::shape_analysis_curve::project_adaptor(
@@ -165,7 +165,7 @@ impl ComposeShell {
                                         } else {
                                             let surf = BRepTool::face_surface(&face)
                                                 .expect("face without surface");
-                                            let a_p2d = crate::pcurve_full::surface_value_of_uv(
+                                            let p2d = crate::pcurve_full::surface_value_of_uv(
                                                 surf.as_ref(), &ap_v, CONFUSION,
                                             );
                                             // cxx:1060-1087: `apar` defaults to `firstPar`
@@ -173,13 +173,13 @@ impl ComposeShell {
                                             // is done and has at least one solution.
                                             let mut apar = first_par;
                                             if let Some(e) = occt_geom2d::extrema2d::point_curve_extrema2d(
-                                                c2d.as_ref(), &a_p2d,
+                                                c2d.as_ref(), &p2d,
                                             ) {
                                                 apar = e.u1;
                                             }
                                             apar
                                         };
-                                        a_nm_params.push(apar);
+                                        nm_params.push(apar);
                                     }
                                 }
                                 // cxx:1089-1102.
@@ -357,26 +357,26 @@ impl ComposeShell {
                                     );
                                     // cxx:1309-1337: internal vertices of the edge.
                                     let mut n = 0usize;
-                                    while n < a_nm_params.len() {
-                                        let apar = a_nm_params[n];
-                                        let atmp_v = self.context_mut().apply(&a_nm_vertices[n].0);
+                                    while n < nm_params.len() {
+                                        let apar = nm_params[n];
+                                        let atmp_v = self.context_mut().apply(&nm_vertices[n].0);
                                         let mut removed = false;
                                         if (apar - prev_par).abs() <= PCONFUSION {
                                             self.context_mut().replace(&atmp_v, &prev_v.0);
-                                            a_nm_params.remove(n);
-                                            a_nm_vertices.remove(n);
+                                            nm_params.remove(n);
+                                            nm_vertices.remove(n);
                                             removed = true;
                                         } else if (apar - curr_par).abs() <= PCONFUSION {
                                             self.context_mut().replace(&atmp_v, &v.0);
-                                            a_nm_params.remove(n);
-                                            a_nm_vertices.remove(n);
+                                            nm_params.remove(n);
+                                            nm_vertices.remove(n);
                                             removed = true;
                                         }
                                         if apar > prev_par && apar < curr_par {
                                             builder.add(&mut new_edge.0, &atmp_v);
-                                            if n < a_nm_params.len() {
-                                                a_nm_params.remove(n);
-                                                a_nm_vertices.remove(n);
+                                            if n < nm_params.len() {
+                                                nm_params.remove(n);
+                                                nm_vertices.remove(n);
                                                 removed = true;
                                             }
                                         }

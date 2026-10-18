@@ -406,9 +406,9 @@ impl SurfaceRangeLocalizeData {
             if self.u_ind_min == 0 && u_min < self.u_param(i) {
                 self.u_ind_min = i;
             }
-            let a_lmi = a_len - i + 1;
-            if self.u_ind_max == 0 && u_max > self.u_param(a_lmi) {
-                self.u_ind_max = a_lmi;
+            let lmi = a_len - i + 1;
+            if self.u_ind_max == 0 && u_max > self.u_param(lmi) {
+                self.u_ind_max = lmi;
             }
         }
         if self.u_ind_min == 0 {
@@ -419,9 +419,9 @@ impl SurfaceRangeLocalizeData {
             if self.v_ind_min == 0 && v_min < self.v_param(i) {
                 self.v_ind_min = i;
             }
-            let a_lmi = a_len - i + 1;
-            if self.v_ind_max == 0 && v_max > self.v_param(a_lmi) {
-                self.v_ind_max = a_lmi;
+            let lmi = a_len - i + 1;
+            if self.v_ind_max == 0 && v_max > self.v_param(lmi) {
+                self.v_ind_max = lmi;
             }
         }
         if self.v_ind_min == 0 {
@@ -438,28 +438,28 @@ impl SurfaceRangeLocalizeData {
     }
 
     pub(crate) fn point_in_frame(&self, u_index: i32, v_index: i32) -> GpPnt {
-        let a_frm_u = u_index + self.u_ind_min - 1;
-        let a_frm_v = v_index + self.v_ind_min - 1;
-        if self.grid_points.is_empty() || a_frm_u > self.u_ind_max || a_frm_v > self.v_ind_max {
+        let frm_u = u_index + self.u_ind_min - 1;
+        let frm_v = v_index + self.v_ind_min - 1;
+        if self.grid_points.is_empty() || frm_u > self.u_ind_max || frm_v > self.v_ind_max {
             return GpPnt::zero();
         }
-        self.grid_point(a_frm_u, a_frm_v)
+        self.grid_point(frm_u, frm_v)
     }
 
     pub(crate) fn u_param_in_frame(&self, index: i32) -> f64 {
-        let a_frm = index + self.u_ind_min - 1;
-        if self.u_params.is_empty() || a_frm > self.u_ind_max {
+        let frm = index + self.u_ind_min - 1;
+        if self.u_params.is_empty() || frm > self.u_ind_max {
             return f64::INFINITY;
         }
-        self.u_param(a_frm)
+        self.u_param(frm)
     }
 
     pub(crate) fn v_param_in_frame(&self, index: i32) -> f64 {
-        let a_frm = index + self.v_ind_min - 1;
-        if self.v_params.is_empty() || a_frm > self.v_ind_max {
+        let frm = index + self.v_ind_min - 1;
+        if self.v_params.is_empty() || frm > self.v_ind_max {
             return f64::INFINITY;
         }
-        self.v_param(a_frm)
+        self.v_param(frm)
     }
 
     pub(crate) fn clear_grid(&mut self) {

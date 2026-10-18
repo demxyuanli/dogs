@@ -341,14 +341,14 @@ impl ApproxAFunction3d {
             // `cxx:561-566`.
             err_max[(num_curves - 1) as usize] = approx.max_error(0);
             err_avg[(num_curves - 1) as usize] = approx.average_error(0);
-            let mut the_deg = approx.degree();
-            if is_cut && the_deg < 2 * continuity_order + 1 {
-                the_deg = 2 * continuity_order + 1;
+            let mut deg = approx.degree();
+            if is_cut && deg < 2 * continuity_order + 1 {
+                deg = 2 * continuity_order + 1;
             }
             // `cxx:577-584`.
-            num_coeff[(num_curves - 1) as usize] = the_deg + 1;
-            let canon = jac.to_coefficients(3, the_deg, approx.coefficients());
-            let f = ((the_deg + 1) * 3) as usize;
+            num_coeff[(num_curves - 1) as usize] = deg + 1;
+            let canon = jac.to_coefficients(3, deg, approx.coefficients());
+            let f = ((deg + 1) * 3) as usize;
             let dest = ((num_curves - 1) * 3 * num_max_coeffs) as usize;
             for i in 0..f.min(canon.len()) {
                 if dest + i < coeff.len() {
@@ -526,14 +526,14 @@ impl ApproxAFunction2d {
             // `cxx:561-566`.
             err_max[(num_curves - 1) as usize] = approx.max_error(0);
             err_avg[(num_curves - 1) as usize] = approx.average_error(0);
-            let mut the_deg = approx.degree();
-            if is_cut && the_deg < 2 * continuity_order + 1 {
-                the_deg = 2 * continuity_order + 1;
+            let mut deg = approx.degree();
+            if is_cut && deg < 2 * continuity_order + 1 {
+                deg = 2 * continuity_order + 1;
             }
             // `cxx:577-584`.
-            num_coeff[(num_curves - 1) as usize] = the_deg + 1;
-            let canon = jac.to_coefficients(2, the_deg, approx.coefficients());
-            let f = ((the_deg + 1) * 2) as usize;
+            num_coeff[(num_curves - 1) as usize] = deg + 1;
+            let canon = jac.to_coefficients(2, deg, approx.coefficients());
+            let f = ((deg + 1) * 2) as usize;
             let dest = ((num_curves - 1) * 2 * num_max_coeffs) as usize;
             for i in 0..f.min(canon.len()) {
                 if dest + i < coeff.len() {
@@ -698,13 +698,13 @@ impl ApproxAFunction1dPair {
             err_max[((num_curves - 1) * 2 + 1) as usize] = approx.max_error(1);
             err_avg[((num_curves - 1) * 2) as usize] = approx.average_error(0);
             err_avg[((num_curves - 1) * 2 + 1) as usize] = approx.average_error(1);
-            let mut the_deg = approx.degree();
-            if is_cut && the_deg < 2 * continuity_order + 1 {
-                the_deg = 2 * continuity_order + 1;
+            let mut deg = approx.degree();
+            if is_cut && deg < 2 * continuity_order + 1 {
+                deg = 2 * continuity_order + 1;
             }
-            num_coeff[(num_curves - 1) as usize] = the_deg + 1;
-            let canon = jac.to_coefficients(2, the_deg, approx.coefficients());
-            let f = ((the_deg + 1) * 2) as usize;
+            num_coeff[(num_curves - 1) as usize] = deg + 1;
+            let canon = jac.to_coefficients(2, deg, approx.coefficients());
+            let f = ((deg + 1) * 2) as usize;
             let dest = ((num_curves - 1) * 2 * num_max_coeffs) as usize;
             for i in 0..f.min(canon.len()) {
                 if dest + i < coeff.len() {
@@ -880,13 +880,13 @@ impl ApproxAFunction1d3d {
             err_avg[base] = approx.average_error(0);
             err_avg[base + 1] = approx.average_error(1);
             err_avg[base + 2] = approx.average_error(2);
-            let mut the_deg = approx.degree();
-            if is_cut && the_deg < 2 * continuity_order + 1 {
-                the_deg = 2 * continuity_order + 1;
+            let mut deg = approx.degree();
+            if is_cut && deg < 2 * continuity_order + 1 {
+                deg = 2 * continuity_order + 1;
             }
-            num_coeff[(num_curves - 1) as usize] = the_deg + 1;
-            let canon = jac.to_coefficients(5, the_deg, approx.coefficients());
-            let f = ((the_deg + 1) * 5) as usize;
+            num_coeff[(num_curves - 1) as usize] = deg + 1;
+            let canon = jac.to_coefficients(5, deg, approx.coefficients());
+            let f = ((deg + 1) * 5) as usize;
             let dest = ((num_curves - 1) * 5 * num_max_coeffs) as usize;
             for i in 0..f.min(canon.len()) {
                 if dest + i < coeff.len() {

@@ -317,17 +317,17 @@ fn rediscr_extrema<F: MathFunctionWithDerivative>(
     if x3 > xn_dom {
         x3 = xn_dom;
     }
-    let mut a_sol_x1 = 0.0;
-    let mut a_sol_x2 = 0.0;
-    let mut a_val1 = 0.0;
-    let mut a_val2 = 0.0;
-    let mut a_der1 = 0.0;
-    let mut a_der2 = 0.0;
+    let mut sol_x1 = 0.0;
+    let mut sol_x2 = 0.0;
+    let mut val1 = 0.0;
+    let mut val2 = 0.0;
+    let mut der1 = 0.0;
+    let mut der2 = 0.0;
     let mut is_sol1 = false;
     let mut is_sol2 = false;
     {
         let mut der_f = DerivFunction { inner: f };
-        let a_br = bracketed_root(
+        let br = bracketed_root(
             &mut der_f,
             x0,
             x3,
@@ -335,14 +335,14 @@ fn rediscr_extrema<F: MathFunctionWithDerivative>(
             BRACKETED_ROOT_NB_ITERATIONS,
             BRACKETED_ROOT_ZEPS,
         );
-        if a_br.done {
-            a_sol_x1 = a_br.root;
+        if br.done {
+            sol_x1 = br.root;
             let mut val = 0.0;
-            f.value(a_sol_x1, &mut val);
-            a_val1 = val.abs();
-            if a_val1 < eps_f {
+            f.value(sol_x1, &mut val);
+            val1 = val.abs();
+            if val1 < eps_f {
                 is_sol1 = true;
-                a_der1 = a_br.value;
+                der1 = br.value;
             }
         }
     }
@@ -410,33 +410,33 @@ fn rediscr_extrema<F: MathFunctionWithDerivative>(
     if (recherche_minimum && f1 < f2) || (!recherche_minimum && f1 > f2) {
         if f1.abs() < eps_f {
             is_sol2 = true;
-            a_sol_x2 = x1;
-            a_val2 = f1.abs();
+            sol_x2 = x1;
+            val2 = f1.abs();
         }
     } else if f2.abs() < eps_f {
         is_sol2 = true;
-        a_sol_x2 = x2;
-        a_val2 = f2.abs();
+        sol_x2 = x2;
+        val2 = f2.abs();
     }
     if is_sol1 && is_sol2 {
-        if a_val2 - a_val1 > eps_f {
-            append_root(sol, nb_state_sol, a_sol_x1, f, k, n_eps_x);
-        } else if a_val1 - a_val2 > eps_f {
-            append_root(sol, nb_state_sol, a_sol_x2, f, k, n_eps_x);
+        if val2 - val1 > eps_f {
+            append_root(sol, nb_state_sol, sol_x1, f, k, n_eps_x);
+        } else if val1 - val2 > eps_f {
+            append_root(sol, nb_state_sol, sol_x2, f, k, n_eps_x);
         } else {
-            a_der1 = a_der1.abs();
-            f.derivative(a_sol_x2, &mut a_der2);
-            a_der2 = a_der2.abs();
-            if a_der1 < a_der2 {
-                append_root(sol, nb_state_sol, a_sol_x1, f, k, n_eps_x);
+            der1 = der1.abs();
+            f.derivative(sol_x2, &mut der2);
+            der2 = der2.abs();
+            if der1 < der2 {
+                append_root(sol, nb_state_sol, sol_x1, f, k, n_eps_x);
             } else {
-                append_root(sol, nb_state_sol, a_sol_x2, f, k, n_eps_x);
+                append_root(sol, nb_state_sol, sol_x2, f, k, n_eps_x);
             }
         }
     } else if is_sol1 {
-        append_root(sol, nb_state_sol, a_sol_x1, f, k, n_eps_x);
+        append_root(sol, nb_state_sol, sol_x1, f, k, n_eps_x);
     } else if is_sol2 {
-        append_root(sol, nb_state_sol, a_sol_x2, f, k, n_eps_x);
+        append_root(sol, nb_state_sol, sol_x2, f, k, n_eps_x);
     }
 }
 

@@ -376,7 +376,7 @@ impl NewtonMinimum {
                 for an_idx in 1..=n {
                     point2.set_value(an_idx, point1.value(an_idx) - self.step.value(an_idx));
                 }
-                let mut a_mult = REAL_LAST;
+                let mut mult = REAL_LAST;
                 for an_idx in 1..=n {
                     let an_abs_step = self.step.value(an_idx).abs();
                     if an_abs_step < RESOLUTION {
@@ -385,19 +385,19 @@ impl NewtonMinimum {
                     if point2.value(an_idx) < self.left.value(an_idx) {
                         let a_value = (point1.value(an_idx) - self.left.value(an_idx)).abs()
                             / an_abs_step;
-                        a_mult = a_mult.min(a_value);
+                        mult = mult.min(a_value);
                     }
                     if point2.value(an_idx) > self.right.value(an_idx) {
                         let a_value = (point1.value(an_idx) - self.right.value(an_idx)).abs()
                             / an_abs_step;
-                        a_mult = a_mult.min(a_value);
+                        mult = mult.min(a_value);
                     }
                 }
 
-                if a_mult != REAL_LAST {
-                    if a_mult > PCONFUSION {
+                if mult != REAL_LAST {
+                    if mult > PCONFUSION {
                         // Project point into param space.
-                        self.step = self.step.multiplied_scalar(a_mult);
+                        self.step = self.step.multiplied_scalar(mult);
                     } else {
                         // Old point on border and new point out of border:
                         // nullify corresponding TheStep indexes.

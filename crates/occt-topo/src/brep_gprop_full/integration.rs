@@ -632,13 +632,13 @@ pub(super) fn compute_adaptive(
         return Ok((inert, an_eps));
     }
 
-    let a_nb_gauss = ((ERROR_ALGEBR_RATIO * GPM as f64).ceil() as usize).max(1);
+    let nb_gauss = ((ERROR_ALGEBR_RATIO * GPM as f64).ceil() as usize).max(1);
     let nb_u_gauss_0 = fa.s_int_order(an_eps).clamp(1, GPM);
     let nb_u_gauss_1 = ((ERROR_ALGEBR_RATIO * nb_u_gauss_0 as f64).ceil() as usize).max(1);
     let (ugp0, ugw0) = gauss_legendre(-1.0, 1.0, nb_u_gauss_0);
     let (ugp1, ugw1) = gauss_legendre(-1.0, 1.0, nb_u_gauss_1);
-    let (lgp0, lgw0) = gauss_legendre(-1.0, 1.0, a_nb_gauss);
-    let (lgp1, lgw1) = gauss_legendre(-1.0, 1.0, a_nb_gauss);
+    let (lgp0, lgw0) = gauss_legendre(-1.0, 1.0, nb_gauss);
+    let (lgp1, lgw1) = gauss_legendre(-1.0, 1.0, nb_gauss);
 
     let u_knots = fa.u_knots();
     let v_knots = fa.v_knots();

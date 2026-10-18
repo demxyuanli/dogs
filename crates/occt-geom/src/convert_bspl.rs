@@ -683,9 +683,9 @@ pub fn curve_to_bspline_curve(
 /// concatenates several curves into one B-spline
 /// (`GeomConvert_CompCurveToBSplineCurve.cxx:32-273`).
 pub struct CompCurveToBSplineCurve {
-    my_curve: Option<GeomBSplineCurve>,
-    my_tol: f64,
-    my_type: ParameterisationType,
+    curve: Option<GeomBSplineCurve>,
+    tol: f64,
+    kind: ParameterisationType,
 }
 
 impl CompCurveToBSplineCurve {
@@ -693,9 +693,9 @@ impl CompCurveToBSplineCurve {
     /// (`cxx:32-37`): `myTol = Precision::Confusion()`.
     pub fn new(parameterisation: ParameterisationType) -> Self {
         Self {
-            my_curve: None,
-            my_tol: occt_core::precision::CONFUSION,
-            my_type: parameterisation,
+            curve: None,
+            tol: occt_core::precision::CONFUSION,
+            kind: parameterisation,
         }
     }
 
@@ -707,7 +707,7 @@ impl CompCurveToBSplineCurve {
         parameterisation: ParameterisationType,
     ) -> Result<Self, ConvertError> {
         let mut s = Self::new(parameterisation);
-        s.my_curve = Some(if is_bspline(basis) {
+        s.curve = Some(if is_bspline(basis) {
             bspline_copy(basis)?
         } else {
             curve_to_bspline_curve(basis, parameterisation)?
@@ -719,25 +719,25 @@ impl CompCurveToBSplineCurve {
     /// already owns a `GeomBSplineCurve`; equivalent to `Copy()`.
     pub fn from_bspline(curve: GeomBSplineCurve, parameterisation: ParameterisationType) -> Self {
         Self {
-            my_curve: Some(curve),
-            my_tol: occt_core::precision::CONFUSION,
-            my_type: parameterisation,
+            curve: Some(curve),
+            tol: occt_core::precision::CONFUSION,
+            kind: parameterisation,
         }
     }
 
     /// `BSplineCurve()` (`cxx:264-267`).
     pub fn bspline_curve(&self) -> Option<&GeomBSplineCurve> {
-        self.my_curve.as_ref()
+        self.curve.as_ref()
     }
 
     /// `Clear()` (`cxx:271-274`).
     pub fn clear(&mut self) {
-        self.my_curve = None;
+        self.curve = None;
     }
 
     /// `BSplineCurve()` by value.
     pub fn into_curve(self) -> Option<GeomBSplineCurve> {
-        self.my_curve
+        self.curve
     }
 
     /// `Add(NewCurve, Tolerance, After, WithRatio, MinM)` (`cxx:60-131`).
@@ -757,27 +757,27 @@ impl CompCurveToBSplineCurve {
         let mut bs = if is_bspline(new_curve) {
             bspline_copy(new_curve)?
         } else {
-            curve_to_bspline_curve(new_curve, self.my_type)?
+            curve_to_bspline_curve(new_curve, self.kind)?
         };
-        if self.my_curve.is_none() {
-            self.my_curve = Some(bs);
+        if self.curve.is_none() {
+            self.curve = Some(bs);
             return Ok(true);
         }
-        self.my_tol = tolerance;
+        self.tol = tolerance;
 
         // Use actual curve endpoints instead of poles for the G0 continuity
         // check (`cxx:85-94`).
-        let (a_curve_start, a_curve_end) = {
-            let cur = self.my_curve.as_ref().unwrap();
+        let (curve_start, curve_end) = {
+            let cur = self.curve.as_ref().unwrap();
             (cur.d0(cur.first_parameter()), cur.d0(cur.last_parameter()))
         };
-        let a_bs_start = bs.d0(bs.first_parameter());
-        let a_bs_end = bs.d0(bs.last_parameter());
+        let bs_start = bs.d0(bs.first_parameter());
+        let bs_end = bs.d0(bs.last_parameter());
 
-        let mut avant = a_curve_start.distance(&a_bs_start) < self.my_tol
-            || a_curve_start.distance(&a_bs_end) < self.my_tol;
-        let mut apres = a_curve_end.distance(&a_bs_start) < self.my_tol
-            || a_curve_end.distance(&a_bs_end) < self.my_tol;
+        let mut avant = curve_start.distance(&bs_start) < self.tol
+            || curve_start.distance(&bs_end) < self.tol;
+        let mut apres = curve_end.distance(&bs_start) < self.tol
+            || curve_end.distance(&bs_end) < self.tol;
 
         // Will myCurve be (or become) closed? Resolve the ambiguity
         // (`cxx:96-107`).
@@ -791,19 +791,19 @@ impl CompCurveToBSplineCurve {
 
         if apres {
             // Append after? (`cxx:109-118`).
-            if a_curve_end.distance(&a_bs_end) < self.my_tol {
+            if curve_end.distance(&bs_end) < self.tol {
                 bs.reverse();
             }
-            let mut first = self.my_curve.take().unwrap();
+            let mut first = self.curve.take().unwrap();
             self.add_pair(&mut first, &mut bs, true, with_ratio, min_m)?;
             Ok(true)
         } else if avant {
             // Prepend before? (`cxx:119-128`).
-            if a_curve_start.distance(&a_bs_start) < self.my_tol {
+            if curve_start.distance(&bs_start) < self.tol {
                 bs.reverse();
             }
             let mut first = bs;
-            let mut second = self.my_curve.take().unwrap();
+            let mut second = self.curve.take().unwrap();
             self.add_pair(&mut first, &mut second, false, with_ratio, min_m)?;
             Ok(true)
         } else {
@@ -937,11 +937,11 @@ impl CompCurveToBSplineCurve {
         while m > min_m && ok {
             m -= 1;
             ok = curve
-                .remove_knot(nb_k1 as i32, m, self.my_tol)
+                .remove_knot(nb_k1 as i32, m, self.tol)
                 .map_err(|_| ConvertError::ConstructionError)?;
         }
 
-        self.my_curve = Some(curve);
+        self.curve = Some(curve);
         Ok(())
     }
 }

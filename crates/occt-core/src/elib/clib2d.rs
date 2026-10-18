@@ -512,8 +512,8 @@ pub fn parameter_parab2d(prb: &GpParab2d, p: &GpPnt2d) -> f64 {
 /// `Standard_ConstructionError`; the degenerate case yields `0.0` here, which
 /// the caller then normalizes in exactly the same way.
 fn dir2d_angle_vec(a: &GpXY, b: &GpXY) -> f64 {
-    let (Ok(a_dir), Ok(b_dir)) = (GpDir2d::new(a.x, a.y), GpDir2d::new(b.x, b.y)) else {
+    let (Ok(dir), Ok(b_dir)) = (GpDir2d::new(a.x, a.y), GpDir2d::new(b.x, b.y)) else {
         return 0.0;
     };
-    dir2d_angle(&a_dir, &b_dir)
+    dir2d_angle(&dir, &b_dir)
 }

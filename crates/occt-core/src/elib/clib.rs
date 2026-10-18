@@ -430,30 +430,30 @@ pub fn circle2d_parameter(pos: &GpAx22d, p: &GpPnt2d) -> f64 {
 
 /// `ElCLib::normalizeAngle` (`ElCLib.cxx:56-72`): wrap into `[0, 2*PI]`, keep
 /// the closing seam at exactly `2*PI`.
-pub(super) fn normalize_angle(the_angle: &mut f64) {
-    while *the_angle < NEGATIVE_RESOLUTION {
-        *the_angle += PIPI;
+pub(super) fn normalize_angle(angle: &mut f64) {
+    while *angle < NEGATIVE_RESOLUTION {
+        *angle += PIPI;
     }
-    while *the_angle > PIPI * (1.0 + REAL_SMALL) {
-        *the_angle -= PIPI;
+    while *angle > PIPI * (1.0 + REAL_SMALL) {
+        *angle -= PIPI;
     }
-    if *the_angle < 0.0 {
-        *the_angle = 0.0;
+    if *angle < 0.0 {
+        *angle = 0.0;
     }
 }
 
 /// `ElCLib::CircleParameter(gp_Ax2, gp_Pnt)` (`ElCLib.cxx:1199-1222`).
 pub fn circle_parameter(pos: &GpAx2, p: &GpPnt) -> f64 {
-    let a_vec = GpVec::from_pnts(&pos.location(), p);
-    if a_vec.square_magnitude() < REAL_SMALL {
+    let vec = GpVec::from_pnts(&pos.location(), p);
+    if vec.square_magnitude() < REAL_SMALL {
         return 0.0;
     }
     let dir = pos.direction();
-    let a_v_proj = dir.xyz().cross_crossed(a_vec.xyz(), dir.xyz());
-    if a_v_proj.square_modulus() < REAL_SMALL {
+    let v_proj = dir.xyz().cross_crossed(vec.xyz(), dir.xyz());
+    if v_proj.square_modulus() < REAL_SMALL {
         return 0.0;
     }
-    let Ok(proj_dir) = GpDir::from_xyz(&a_v_proj) else {
+    let Ok(proj_dir) = GpDir::from_xyz(&v_proj) else {
         return 0.0;
     };
     let mut teta = pos.x_direction().angle_with_ref(&proj_dir, &dir);
@@ -514,18 +514,18 @@ pub fn parabola_parameter(pos: &GpAx2, p: &GpPnt) -> f64 {
 /// vanishing period, then shifts by a whole number of periods using
 /// `ceil((UFirst - U) / period)` — note `Epsilon(ULast)`, the relative
 /// float epsilon of the upper bound, not `PConfusion`.
-pub fn in_period(the_u: f64, the_u_first: f64, the_u_last: f64) -> f64 {
-    if crate::precision::Precision::is_infinite(the_u)
-        || crate::precision::Precision::is_infinite(the_u_first)
-        || crate::precision::Precision::is_infinite(the_u_last)
+pub fn in_period(u: f64, u_first: f64, u_last: f64) -> f64 {
+    if crate::precision::Precision::is_infinite(u)
+        || crate::precision::Precision::is_infinite(u_first)
+        || crate::precision::Precision::is_infinite(u_last)
     {
-        return the_u;
+        return u;
     }
-    let a_period = the_u_last - the_u_first;
-    if a_period < crate::precision::epsilon(the_u_last) {
-        return the_u;
+    let period = u_last - u_first;
+    if period < crate::precision::epsilon(u_last) {
+        return u;
     }
-    the_u_first.max(the_u + a_period * ((the_u_first - the_u) / a_period).ceil())
+    u_first.max(u + period * ((u_first - u) / period).ceil())
 }
 
 /// `ElCLib::AdjustPeriodic(UFirst, ULast, Preci, U1, U2)` (`ElCLib.cxx:115-148`).
@@ -544,19 +544,19 @@ pub fn adjust_periodic(u_first: f64, u_last: f64, preci: f64, u1: &mut f64, u2: 
         *u2 = u_last;
         return;
     }
-    let a_period = u_last - u_first;
-    if a_period < crate::precision::epsilon(u_last) {
+    let period = u_last - u_first;
+    if period < crate::precision::epsilon(u_last) {
         *u1 = u_first;
         *u2 = u_last;
         return;
     }
-    *u1 -= ((*u1 - u_first) / a_period).floor() * a_period;
+    *u1 -= ((*u1 - u_first) / period).floor() * period;
     if u_last - *u1 < preci {
-        *u1 -= a_period;
+        *u1 -= period;
     }
-    *u2 -= ((*u2 - *u1) / a_period).floor() * a_period;
+    *u2 -= ((*u2 - *u1) / period).floor() * period;
     if *u2 - *u1 < preci {
-        *u2 += a_period;
+        *u2 += period;
     }
 }
 

@@ -375,7 +375,7 @@ mod tests {
 
     #[test]
     fn overdetermined_linear_matches_ls() {
-        let a_data = vec![
+        let data = vec![
             vec![1.0, 2.0, 3.0],
             vec![4.0, 5.0, 6.0],
             vec![7.0, 8.0, 10.0],
@@ -383,7 +383,7 @@ mod tests {
             vec![2.0, 0.0, 1.0],
         ];
         let b_data = vec![6.0, 15.0, 25.0, 3.0, 3.0]; // A·[1,1,1]
-        let a = build_matrix(&a_data);
+        let a = build_matrix(&data);
         let b = crate::MathVector::from_slice(&b_data);
         let ls = qr_least_squares(&a, &b);
 
@@ -391,13 +391,13 @@ mod tests {
             for i in 0..5 {
                 let mut s = 0.0;
                 for j in 0..3 {
-                    s += a_data[i][j] * p[j];
+                    s += data[i][j] * p[j];
                 }
                 r[i] = s - b_data[i];
             }
         };
         let jac = |_p: &[f64], j: &mut Vec<Vec<f64>>| {
-            *j = a_data.clone();
+            *j = data.clone();
         };
         let gn = GaussNewton { residual: &residual, jacobian: &jac, max_iter: 50, tol: 1e-12 };
         let (sol, cost, _) = gauss_newton_solve(&gn, &[0.0, 0.0, 0.0], 5, 3).unwrap();

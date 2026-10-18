@@ -53,11 +53,11 @@ use crate::int_tools_wline::wline_adjust_periodic;
 
 /// `GeomInt::AdjustPeriodic` (`GeomInt.cxx:21`). Default `theEps` is 0.
 pub fn geom_int_adjust_periodic(
-    the_par: f64,
-    the_par_min: f64,
-    the_par_max: f64,
-    the_period: f64,
-    the_eps: f64,
+    par: f64,
+    par_min: f64,
+    par_max: f64,
+    period: f64,
+    eps: f64,
 ) -> (f64, f64) {
-    wline_adjust_periodic(the_par, the_par_min, the_par_max, the_period, the_eps)
+    wline_adjust_periodic(par, par_min, par_max, period, eps)
 }

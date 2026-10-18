@@ -69,17 +69,17 @@ impl GpDir {
     /// `Precision::Resolution()` (1e-12) and kept any vector within 1e-12 of
     /// unit length unnormalized.
     pub fn new(x: f64, y: f64, z: f64) -> Result<Self, &'static str> {
-        let a_sq_mod = x * x + y * y + z * z;
+        let sq_mod = x * x + y * y + z * z;
         // Fast path: already normalized (`gp_Dir.hxx:357-361`).
-        if a_sq_mod >= 1.0 - REAL_SMALL && a_sq_mod <= 1.0 + REAL_SMALL {
+        if sq_mod >= 1.0 - REAL_SMALL && sq_mod <= 1.0 + REAL_SMALL {
             return Ok(Self {
                 coord: GpXyz::new(x, y, z),
             });
         }
-        if a_sq_mod <= REAL_SMALL * REAL_SMALL {
+        if sq_mod <= REAL_SMALL * REAL_SMALL {
             return Err("GpDir: zero vector");
         }
-        let inv = 1.0 / a_sq_mod.sqrt();
+        let inv = 1.0 / sq_mod.sqrt();
         Ok(Self {
             coord: GpXyz::new(x * inv, y * inv, z * inv),
         })

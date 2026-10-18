@@ -87,11 +87,11 @@ pub fn copy_nm_vertex_face(v: &Vertex, to_face: &Face, _from_face: &Face) -> Opt
     if let Some(s) = BRepTool::face_surface(to_face) {
         let apv = BRepTool::vertex_point(v);
         let (_p2d, gap) = surface_value_of_uv_with_gap(s.as_ref(), &apv, CONFUSION);
-        let mut a_tol = BRepTool::vertex_tolerance(&anew);
-        if a_tol < gap {
-            a_tol = gap + 0.1 * CONFUSION; // cxx:791-794
+        let mut tol = BRepTool::vertex_tolerance(&anew);
+        if tol < gap {
+            tol = gap + 0.1 * CONFUSION; // cxx:791-794
         }
-        anew.set_tolerance(a_tol);
+        anew.set_tolerance(tol);
     }
     Some(anew)
 }

@@ -154,21 +154,21 @@ impl ComposeShell {
         self.v_closed = grid.is_v_closed();
         self.u_period = grid.u_joint_value(grid.nb_u_patches() + 1) - grid.u_joint_value(1);
         self.v_period = grid.v_joint_value(grid.nb_v_patches() + 1) - grid.v_joint_value(1);
-        if let Some(the_surface) = BRepTool::face_surface(face) {
-            let elementary = the_surface.gp_pln().is_some()
-                || the_surface.gp_cylinder().is_some()
-                || the_surface.gp_cone().is_some()
-                || the_surface.gp_sphere().is_some()
-                || the_surface.gp_torus().is_some();
+        if let Some(surface) = BRepTool::face_surface(face) {
+            let elementary = surface.gp_pln().is_some()
+                || surface.gp_cylinder().is_some()
+                || surface.gp_cone().is_some()
+                || surface.gp_sphere().is_some()
+                || surface.gp_torus().is_some();
             if elementary {
-                self.u_closed = self.u_closed && the_surface.is_u_closed();
-                self.v_closed = self.v_closed && the_surface.is_v_closed();
+                self.u_closed = self.u_closed && surface.is_u_closed();
+                self.v_closed = self.v_closed && surface.is_v_closed();
             } else {
                 let (mut u0, mut u1, mut v0, mut v1) = (
-                    the_surface.u_range().0,
-                    the_surface.u_range().1,
-                    the_surface.v_range().0,
-                    the_surface.v_range().1,
+                    surface.u_range().0,
+                    surface.u_range().1,
+                    surface.v_range().0,
+                    surface.v_range().1,
                 );
                 // cxx:120-124: BRepTools::UVBounds(Face) supplies the bounds
                 // used below whenever a surface range is infinite.
@@ -198,15 +198,15 @@ impl ComposeShell {
                     }
                 }
                 if self.u_closed {
-                    let p0 = the_surface.value(u0, 0.5 * (v0 + v1));
-                    let p1 = the_surface.value(u1, 0.5 * (v0 + v1));
+                    let p0 = surface.value(u0, 0.5 * (v0 + v1));
+                    let p1 = surface.value(u1, 0.5 * (v0 + v1));
                     if p0.distance(&p1) > CONFUSION * 10.0 {
                         self.u_closed = false;
                     }
                 }
                 if self.v_closed {
-                    let p0 = the_surface.value(0.5 * (u0 + u1), v0);
-                    let p1 = the_surface.value(0.5 * (u0 + u1), v1);
+                    let p0 = surface.value(0.5 * (u0 + u1), v0);
+                    let p1 = surface.value(0.5 * (u0 + u1), v1);
                     if p0.distance(&p1) > CONFUSION * 10.0 {
                         self.v_closed = false;
                     }

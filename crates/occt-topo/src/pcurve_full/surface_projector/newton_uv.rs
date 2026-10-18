@@ -365,8 +365,8 @@ pub(crate) fn surface_newton(
             break;
         }
         // `cxx:1126-1130`.
-        let a_resolution = 1e-12f64.max((u + v) * 10e-16);
-        if step_u.abs() + step_v.abs() > a_resolution {
+        let resolution = 1e-12f64.max((u + v) * 10e-16);
+        if step_u.abs() + step_v.abs() > resolution {
             continue;
         }
         // `cxx:1133-1137` PRO10109 4517.

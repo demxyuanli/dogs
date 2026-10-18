@@ -114,21 +114,21 @@ impl IntCurveIntConicConic {
         if tol < PCONFUSION {
             tol = PCONFUSION;
         }
-        let (mut u1, mut u2, a_half_sin, nbsol0) = line_line_geometric_intersection(l1, l2, tol);
+        let (mut u1, mut u2, half_sin, nbsol0) = line_line_geometric_intersection(l1, l2, tol);
         let mut nbsol = nbsol0;
         let mut pt_seg1 = IntRes2dIntersectionPoint::new();
         let mut pt_seg2 = IntRes2dIntersectionPoint::new();
         let tan1 = GpVec2d::new(l1.position().vdir.x, l1.position().vdir.y);
         let tan2 = GpVec2d::new(l2.position().vdir.x, l2.position().vdir.y);
-        let a_cos_t1t2 = tan1.dot(&tan2);
-        let is_opposite = a_cos_t1t2 < 0.0;
+        let cos_t1t2 = tan1.dot(&tan2);
+        let is_opposite = cos_t1t2 < 0.0;
         self.result.done = true;
         if nbsol == 1 && check_ll_coincidence(l1, l2, domain1, domain2, tol) {
             nbsol = 2;
         }
 
         if nbsol == 1 {
-            let d = 0.5 * tol / a_half_sin;
+            let d = 0.5 * tol / half_sin;
             let u1m_u2 = u1 - u2;
             let u1p_u2 = u1 + u2;
             let mut u1inf = u1 - d;
@@ -162,7 +162,7 @@ impl IntCurveIntConicConic {
                 if ((res1sup - res1inf) <= long_mini_seg)
                     || ((pos1a == pos1b) && (pos1a != IntRes2dPosition::Middle))
                 {
-                    let a_cur_trans = if prod_vect_tan >= TOLERANCE_ANGULAIRE {
+                    let cur_trans = if prod_vect_tan >= TOLERANCE_ANGULAIRE {
                         IntRes2dTypeTrans::Out
                     } else if prod_vect_tan <= -TOLERANCE_ANGULAIRE {
                         IntRes2dTypeTrans::In
@@ -171,7 +171,7 @@ impl IntCurveIntConicConic {
                     };
                     let mut res_sup = res1sup;
                     if let Some(np) = compute_int_point(
-                        domain1, domain2, l1, l2, a_cos_t1t2, u1, u2, res1inf, &mut res_sup, 1, a_cur_trans,
+                        domain1, domain2, l1, l2, cos_t1t2, u1, u2, res1inf, &mut res_sup, 1, cur_trans,
                     ) {
                         self.append_pt(np);
                     }
@@ -404,7 +404,7 @@ impl IntCurveIntConicConic {
                             }
                         }
                     } else {
-                        let a_cur_trans = if prod_vect_tan >= TOLERANCE_ANGULAIRE {
+                        let cur_trans = if prod_vect_tan >= TOLERANCE_ANGULAIRE {
                             IntRes2dTypeTrans::In
                         } else if prod_vect_tan <= -TOLERANCE_ANGULAIRE {
                             IntRes2dTypeTrans::Out
@@ -413,8 +413,8 @@ impl IntCurveIntConicConic {
                         };
                         let mut res2sup_mut = res2sup;
                         if let Some(np) = compute_int_point(
-                            domain2, domain1, l2, l1, a_cos_t1t2, u2, u1, res2inf, &mut res2sup_mut, 2,
-                            a_cur_trans,
+                            domain2, domain1, l2, l1, cos_t1t2, u2, u1, res2inf, &mut res2sup_mut, 2,
+                            cur_trans,
                         ) {
                             self.append_pt(np);
                         }

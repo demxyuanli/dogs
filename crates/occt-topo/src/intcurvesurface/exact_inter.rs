@@ -45,7 +45,7 @@ fn surface_uv_resolution(surface: &dyn Surface, u: f64, v: f64, tol: f64) -> (f6
 pub struct TheExactHInter<'a> {
     done: bool,
     empty: bool,
-    my_function: TheCSFunctionOfHInter<'a>,
+    function: TheCSFunctionOfHInter<'a>,
     w: f64,
     u: f64,
     v: f64,
@@ -62,7 +62,7 @@ impl<'a> TheExactHInter<'a> {
         Self {
             done: true,
             empty: true,
-            my_function: function,
+            function: function,
             w: 0.0,
             u: 0.0,
             v: 0.0,
@@ -81,8 +81,8 @@ impl<'a> TheExactHInter<'a> {
         margin_coef: f64,
     ) -> Self {
         let mut me = Self::new(function, tol_tangency);
-        let s = me.my_function.auxillar_surface();
-        let c = me.my_function.auxillar_curve();
+        let s = me.function.auxillar_surface();
+        let c = me.function.auxillar_curve();
 
         let w0 = c.first_parameter();
         let w1 = c.last_parameter();
@@ -109,7 +109,7 @@ impl<'a> TheExactHInter<'a> {
             }
         }
 
-        let mut rsnld = MathFunctionSetRoot::with_iterations(&me.my_function, 100);
+        let mut rsnld = MathFunctionSetRoot::with_iterations(&me.function, 100);
         me.perform(u, v, w, &mut rsnld, u0, u1, v0, v1, w0, w1);
         me
     }
@@ -145,8 +145,8 @@ impl<'a> TheExactHInter<'a> {
         born_inf.set_value(3, w0);
         born_sup.set_value(3, w1);
 
-        let s = self.my_function.auxillar_surface();
-        let c = self.my_function.auxillar_curve();
+        let s = self.function.auxillar_surface();
+        let c = self.function.auxillar_curve();
         let (ru, rv) = surface_uv_resolution(s, u, v, occt_core::precision::CONFUSION);
         let mut tolerance = MathVector::new(1, 3);
         tolerance.set_value(1, ru);
@@ -163,9 +163,9 @@ impl<'a> TheExactHInter<'a> {
                 uvap.set_value(3, w1);
             }
             autretentative += 1;
-            rsnld.perform_with_bounds(&mut self.my_function, &uvap, &born_inf, &born_sup, false);
+            rsnld.perform_with_bounds(&mut self.function, &uvap, &born_inf, &born_sup, false);
             if rsnld.is_done() {
-                if self.my_function.root().abs() <= self.tol {
+                if self.function.root().abs() <= self.tol {
                     let root = rsnld.root();
                     self.u = root.value(1);
                     self.v = root.value(2);
@@ -192,7 +192,7 @@ impl<'a> TheExactHInter<'a> {
     pub fn point(&self) -> &GpPnt {
         assert!(self.done, "IntCurveSurface_TheExactHInter: NotDone");
         assert!(!self.empty, "IntCurveSurface_TheExactHInter: DomainError");
-        self.my_function.point()
+        self.function.point()
     }
 
     /// `IntImp_IntCS::ParameterOnSurface` (`...gxx:177-185`).
@@ -211,6 +211,6 @@ impl<'a> TheExactHInter<'a> {
 
     /// `IntImp_IntCS::Function` (`...gxx:195-198`).
     pub fn function(&self) -> &TheCSFunctionOfHInter<'a> {
-        &self.my_function
+        &self.function
     }
 }

@@ -155,20 +155,20 @@ pub(super) fn resolution_coeff(c: &dyn Curve, kind: GeomCurveKind, range: IntRan
 /// steps over the range, the smallest `dt / chord` ratio (or the initial `10.`
 /// when every step is degenerate).
 fn sample_resolution_coeff(c: &dyn Curve, range: IntRange) -> f64 {
-    let a_nb_p = 30;
-    let (a_t1, a_t2) = (range.first, range.last);
-    let a_dt = (a_t2 - a_t1) / a_nb_p as f64;
-    let mut a_t = a_t1;
+    let nb_p = 30;
+    let (t1, a_t2) = (range.first, range.last);
+    let dt = (a_t2 - t1) / nb_p as f64;
+    let mut t = t1;
     let mut k_min = 10.0;
-    let mut a_p1 = c.d0(a_t1);
-    for _ in 1..=a_nb_p {
-        a_t += a_dt;
-        let a_p2 = c.d0(a_t);
-        let k = a_dt / a_p1.distance(&a_p2);
+    let mut p1 = c.d0(t1);
+    for _ in 1..=nb_p {
+        t += dt;
+        let p2 = c.d0(t);
+        let k = dt / p1.distance(&p2);
         if k < k_min {
             k_min = k;
         }
-        a_p1 = a_p2;
+        p1 = p2;
     }
     k_min
 }
@@ -178,9 +178,9 @@ pub(super) fn resolution_of(c: &dyn Curve, kind: GeomCurveKind, res_coeff: f64, 
     match kind {
         GeomCurveKind::Line => r3d,
         GeomCurveKind::Circle => {
-            let a_dt = res_coeff * r3d;
-            if a_dt <= 1.0 {
-                2.0 * a_dt.asin()
+            let dt = res_coeff * r3d;
+            if dt <= 1.0 {
+                2.0 * dt.asin()
             } else {
                 2.0 * std::f64::consts::PI
             }
@@ -195,9 +195,9 @@ pub(super) fn resolution_of(c: &dyn Curve, kind: GeomCurveKind, res_coeff: f64, 
             match geom_curve_kind(&*basis) {
                 GeomCurveKind::Line => r3d,
                 GeomCurveKind::Circle => {
-                    let a_dt = res_coeff * r3d;
-                    if a_dt <= 1.0 {
-                        2.0 * a_dt.asin()
+                    let dt = res_coeff * r3d;
+                    if dt <= 1.0 {
+                        2.0 * dt.asin()
                     } else {
                         2.0 * std::f64::consts::PI
                     }
@@ -212,31 +212,31 @@ pub(super) fn resolution_of(c: &dyn Curve, kind: GeomCurveKind, res_coeff: f64, 
 /// `CurveDeflection` (`IntTools_EdgeEdge.cxx:1611-1638`): the total turn of the
 /// tangent over 10 equal steps, skipping steps with a degenerate derivative.
 pub(super) fn curve_deflection(c: &dyn Curve, range: IntRange) -> f64 {
-    let a_nb_p = 10;
-    let (a_t1, a_t2) = (range.first, range.last);
-    let a_dt = (a_t2 - a_t1) / a_nb_p as f64;
-    let mut a_t = a_t1;
-    let mut a_defl = 0.0;
-    let mut a_v1 = c.d1(a_t1).1;
-    for _ in 1..=a_nb_p {
-        a_t += a_dt;
-        let a_v2 = c.d1(a_t).1;
-        if a_v1.magnitude() > RESOLUTION && a_v2.magnitude() > RESOLUTION {
-            a_defl += a_v1.angle(&a_v2);
+    let nb_p = 10;
+    let (t1, a_t2) = (range.first, range.last);
+    let dt = (a_t2 - t1) / nb_p as f64;
+    let mut t = t1;
+    let mut defl = 0.0;
+    let mut v1 = c.d1(t1).1;
+    for _ in 1..=nb_p {
+        t += dt;
+        let v2 = c.d1(t).1;
+        if v1.magnitude() > RESOLUTION && v2.magnitude() > RESOLUTION {
+            defl += v1.angle(&v2);
         }
-        a_v1 = a_v2;
+        v1 = v2;
     }
-    a_defl
+    defl
 }
 
 /// `IsClosed` (`IntTools_EdgeEdge.cxx:1642-1659`).
-pub(super) fn is_closed(c: &dyn Curve, a_t1: f64, a_t2: f64, tol: f64, res: f64) -> bool {
-    if (a_t1 - a_t2).abs() < res {
+pub(super) fn is_closed(c: &dyn Curve, t1: f64, a_t2: f64, tol: f64, res: f64) -> bool {
+    if (t1 - a_t2).abs() < res {
         return false;
     }
-    let a_p1 = c.d0(a_t1);
-    let a_p2 = c.d0(a_t2);
-    a_p1.distance(&a_p2) < tol
+    let p1 = c.d0(t1);
+    let p2 = c.d0(a_t2);
+    p1.distance(&p2) < tol
 }
 
 // ---------------------------------------------------------------------------
@@ -245,39 +245,39 @@ pub(super) fn is_closed(c: &dyn Curve, a_t1: f64, a_t2: f64, tol: f64, res: f64)
 
 /// `SplitRangeOnSegments` (`IntTools_EdgeEdge.cxx:1366-1406`).
 pub(super) fn split_range_on_segments(
-    a_t1: f64,
+    t1: f64,
     a_t2: f64,
-    the_resolution: f64,
-    the_nb_seg: i32,
+    resolution: f64,
+    nb_seg: i32,
 ) -> Vec<IntRange> {
-    let a_diff = a_t2 - a_t1;
-    if a_diff < the_resolution || the_nb_seg == 1 {
-        return vec![IntRange::new_unchecked(a_t1, a_t2)];
+    let diff = a_t2 - t1;
+    if diff < resolution || nb_seg == 1 {
+        return vec![IntRange::new_unchecked(t1, a_t2)];
     }
-    let mut a_nb_segments = the_nb_seg;
-    let mut a_dt = a_diff / a_nb_segments as f64;
-    if a_dt < the_resolution {
-        let a_seg = a_diff / the_resolution;
-        a_nb_segments = a_seg as i32 + 1;
-        a_dt = a_diff / a_nb_segments as f64;
+    let mut nb_segments = nb_seg;
+    let mut dt = diff / nb_segments as f64;
+    if dt < resolution {
+        let seg = diff / resolution;
+        nb_segments = seg as i32 + 1;
+        dt = diff / nb_segments as f64;
     }
     let mut out = Vec::new();
-    let mut a_t1x = a_t1;
-    for _ in 1..a_nb_segments {
-        let a_t2x = a_t1x + a_dt;
-        out.push(IntRange::new_unchecked(a_t1x, a_t2x));
-        a_t1x = a_t2x;
+    let mut t1x = t1;
+    for _ in 1..nb_segments {
+        let t2x = t1x + dt;
+        out.push(IntRange::new_unchecked(t1x, t2x));
+        t1x = t2x;
     }
-    out.push(IntRange::new_unchecked(a_t1x, a_t2));
+    out.push(IntRange::new_unchecked(t1x, a_t2));
     out
 }
 
 /// `BndBuildBox` (`IntTools_EdgeEdge.cxx:1410-1419`) — the OCCT call is
 /// `BndLib_Add3dCurve::Add(theBAC, aT1, aT2, theTol, aB)`.
-pub(super) fn bnd_build_box(c: &dyn Curve, a_t1: f64, a_t2: f64, the_tol: f64) -> BndBox {
-    let mut a_b = BndBox::new();
-    add_curve_to_box(c, a_t1, a_t2, the_tol, &mut a_b);
-    a_b
+pub(super) fn bnd_build_box(c: &dyn Curve, t1: f64, a_t2: f64, tol: f64) -> BndBox {
+    let mut b = BndBox::new();
+    add_curve_to_box(c, t1, a_t2, tol, &mut b);
+    b
 }
 
 /// `PointBoxDistance` (`IntTools_EdgeEdge.cxx:1423-1452`).
@@ -331,21 +331,21 @@ struct DistState {
 fn dist_pc(
     proj: &ProjPc<'_>,
     c1: &dyn Curve,
-    a_t1: f64,
-    the_criteria: f64,
+    t1: f64,
+    criteria: f64,
     i_c: i32,
 ) -> (i32, f64, f64) {
-    let a_p1 = c1.d0(a_t1);
-    let Some((a_d, a_t2)) = proj.project(&a_p1) else {
+    let p1 = c1.d0(t1);
+    let Some((d, a_t2)) = proj.project(&p1) else {
         // `iErr = 1`: the point of C1 cannot be projected on C2.
         return (1, 0.0, 0.0);
     };
-    let i_err = if (i_c as f64) * (a_d - the_criteria) > 0.0 {
+    let i_err = if (i_c as f64) * (d - criteria) > 0.0 {
         2 // the distance is too big or too small
     } else {
         0
     };
-    (i_err, a_d, a_t2)
+    (i_err, d, a_t2)
 }
 
 /// The 9-argument `DistPC` (`IntTools_EdgeEdge.cxx:1301-1328`): as above plus
@@ -353,90 +353,90 @@ fn dist_pc(
 fn dist_pc_max(
     proj: &ProjPc<'_>,
     c1: &dyn Curve,
-    a_t1: f64,
-    the_criteria: f64,
+    t1: f64,
+    criteria: f64,
     i_c: i32,
     st: &mut DistState,
 ) -> (i32, f64) {
-    let (i_err, a_d, a_t2) = dist_pc(proj, c1, a_t1, the_criteria, i_c);
+    let (i_err, d, a_t2) = dist_pc(proj, c1, t1, criteria, i_c);
     if i_err == 1 {
-        return (i_err, a_d);
+        return (i_err, d);
     }
-    if (i_c as f64) * (a_d - st.d_max) > 0.0 {
-        st.d_max = a_d;
-        st.t1_max = a_t1;
+    if (i_c as f64) * (d - st.d_max) > 0.0 {
+        st.d_max = d;
+        st.t1_max = t1;
         st.t2_max = a_t2;
     }
-    (i_err, a_d)
+    (i_err, d)
 }
 
 /// `FindDistPC` (`IntTools_EdgeEdge.cxx:1210-1297`) — golden-section search of
-/// the extremal distance of C1 on `[a_t1a, a_t1b]` against the projector.
+/// the extremal distance of C1 on `[t1a, t1b]` against the projector.
 fn find_dist_pc(
     proj: &ProjPc<'_>,
     c1: &dyn Curve,
-    a_t1a: f64,
-    a_t1b: f64,
-    the_criteria: f64,
-    the_eps: f64,
+    t1a: f64,
+    t1b: f64,
+    criteria: f64,
+    eps: f64,
     st: &mut DistState,
     b_max_dist: bool,
 ) -> i32 {
     let i_c = if b_max_dist { 1 } else { -1 };
-    let a_gs = 0.618_033_988_749_894_8; // = 0.5*(1+sqrt(5))-1
-    let mut a_a = a_t1a;
-    let mut a_b = a_t1b;
+    let gs = 0.618_033_988_749_894_8; // = 0.5*(1+sqrt(5))-1
+    let mut a = t1a;
+    let mut b = t1b;
     st.t1_max = 0.0;
     st.t2_max = 0.0;
 
     // check bounds
-    let (i_err, _) = dist_pc_max(proj, c1, a_a, the_criteria, i_c, st);
+    let (i_err, _) = dist_pc_max(proj, c1, a, criteria, i_c, st);
     if i_err == 2 {
         return i_err;
     }
-    let (i_err, _) = dist_pc_max(proj, c1, a_b, the_criteria, i_c, st);
+    let (i_err, _) = dist_pc_max(proj, c1, b, criteria, i_c, st);
     if i_err == 2 {
         return i_err;
     }
-    let mut a_xp = a_a + (a_b - a_a) * a_gs;
-    let mut a_xl = a_b - (a_b - a_a) * a_gs;
-    let (i_err, mut a_yp) = dist_pc_max(proj, c1, a_xp, the_criteria, i_c, st);
+    let mut xp = a + (b - a) * gs;
+    let mut xl = b - (b - a) * gs;
+    let (i_err, mut yp) = dist_pc_max(proj, c1, xp, criteria, i_c, st);
     if i_err != 0 {
         return i_err;
     }
-    let (i_err, mut a_yl) = dist_pc_max(proj, c1, a_xl, the_criteria, i_c, st);
+    let (i_err, mut yl) = dist_pc_max(proj, c1, xl, criteria, i_c, st);
     if i_err != 0 {
         return i_err;
     }
 
-    let an_eps = the_eps.max(epsilon(a_a.abs().max(a_b.abs())) * 10.0);
+    let an_eps = eps.max(epsilon(a.abs().max(b.abs())) * 10.0);
     loop {
         let i_err;
-        if (i_c as f64) * (a_yp - a_yl) > 0.0 {
-            a_a = a_xl;
-            a_xl = a_xp;
-            a_yl = a_yp;
-            a_xp = a_a + (a_b - a_a) * a_gs;
-            let (e, d) = dist_pc_max(proj, c1, a_xp, the_criteria, i_c, st);
+        if (i_c as f64) * (yp - yl) > 0.0 {
+            a = xl;
+            xl = xp;
+            yl = yp;
+            xp = a + (b - a) * gs;
+            let (e, d) = dist_pc_max(proj, c1, xp, criteria, i_c, st);
             i_err = e;
-            a_yp = d;
+            yp = d;
         } else {
-            a_b = a_xp;
-            a_xp = a_xl;
-            a_yp = a_yl;
-            a_xl = a_b - (a_b - a_a) * a_gs;
-            let (e, d) = dist_pc_max(proj, c1, a_xl, the_criteria, i_c, st);
+            b = xp;
+            xp = xl;
+            yp = yl;
+            xl = b - (b - a) * gs;
+            let (e, d) = dist_pc_max(proj, c1, xl, criteria, i_c, st);
             i_err = e;
-            a_yl = d;
+            yl = d;
         }
         if i_err != 0 {
             if i_err == 2 && !b_max_dist {
-                let a_xp_mid = (a_a + a_b) * 0.5;
-                let _ = dist_pc_max(proj, c1, a_xp_mid, the_criteria, i_c, st);
+                let xp_mid = (a + b) * 0.5;
+                let _ = dist_pc_max(proj, c1, xp_mid, criteria, i_c, st);
             }
             return i_err;
         }
-        if (a_b - a_a) < an_eps {
+        if (b - a) < an_eps {
             break;
         }
     }
@@ -449,67 +449,67 @@ fn find_dist_pc(
 
 /// `IntTools_EdgeEdge::FindParameters` (`IntTools_EdgeEdge.cxx:553-671`).
 ///
-/// Walks from each end of `[a_t1, a_t2]` towards the box, growing the step by
+/// Walks from each end of `[t1, a_t2]` towards the box, growing the step by
 /// the local curve resolution, then bisects (golden section) for the boundary
-/// parameter. `a_tb1`/`a_tb2` are the caller's *current* range values, which
+/// parameter. `tb1`/`tb2` are the caller's *current* range values, which
 /// OCCT passes by reference and only overwrites when a bounding point is
 /// found. `None` reproduces OCCT's `false` return (the edge is out of the box).
 #[allow(clippy::too_many_arguments)]
 pub(super) fn find_parameters(
     c: &dyn Curve,
     kind: GeomCurveKind,
-    a_t1: f64,
+    t1: f64,
     a_t2: f64,
-    the_tol: f64,
-    the_res: f64,
-    the_ptol: f64,
-    the_res_coeff: f64,
-    the_cbox: &BndBox,
-    a_tb1_in: f64,
-    a_tb2_in: f64,
+    tol: f64,
+    res: f64,
+    ptol: f64,
+    res_coeff: f64,
+    cbox: &BndBox,
+    tb1_in: f64,
+    tb2_in: f64,
 ) -> Option<(f64, f64)> {
-    let a_cf = 0.618_033_988_749_894_8; // = 0.5*(1+sqrt(5))/2
-    let mut a_cbx = *the_cbox;
-    a_cbx.set_gap(a_cbx.gap() + the_tol);
-    let a_max_dt = (a_t2 - a_t1) * 0.01;
+    let cf = 0.618_033_988_749_894_8; // = 0.5*(1+sqrt(5))/2
+    let mut cbx = *cbox;
+    cbx.set_gap(cbx.gap() + tol);
+    let max_dt = (a_t2 - t1) * 0.01;
 
-    let mut a_tb1 = a_tb1_in;
-    let mut a_tb2 = a_tb2_in;
+    let mut tb1 = tb1_in;
+    let mut tb2 = tb2_in;
     let mut b_ret = false;
 
     for i in 0..2 {
-        let mut a_tb = if i == 0 { a_t1 } else { a_t2 };
-        let mut a_t = if i == 0 { a_t2 } else { a_tb1 };
+        let mut tb = if i == 0 { t1 } else { a_t2 };
+        let mut t = if i == 0 { a_t2 } else { tb1 };
         let a_c = if i == 0 { 1.0 } else { -1.0 };
-        let mut a_dt = the_res;
-        let mut a_distp = 0.0;
+        let mut dt = res;
+        let mut distp = 0.0;
         b_ret = false;
         let mut k = 1.0;
         // Looking for the point on the edge which is in the box.
-        while a_c * (a_t - a_tb) >= 0.0 {
-            let a_p = c.d0(a_tb);
-            let a_dist = point_box_distance(the_cbox, &a_p);
-            if a_dist > the_tol {
-                if a_distp > 0.0 {
+        while a_c * (t - tb) >= 0.0 {
+            let p = c.d0(tb);
+            let dist = point_box_distance(cbox, &p);
+            if dist > tol {
+                if distp > 0.0 {
                     let mut to_grow = false;
-                    if (a_distp - a_dist).abs() / a_distp < 0.1 {
-                        a_dt = resolution_of(c, kind, the_res_coeff, k * a_dist);
-                        if a_dt < a_max_dt {
+                    if (distp - dist).abs() / distp < 0.1 {
+                        dt = resolution_of(c, kind, res_coeff, k * dist);
+                        if dt < max_dt {
                             to_grow = true;
                             k *= 2.0;
                         }
                     }
                     if !to_grow {
                         k = 1.0;
-                        a_dt = resolution_of(c, kind, the_res_coeff, a_dist);
+                        dt = resolution_of(c, kind, res_coeff, dist);
                     }
                 }
-                a_tb += a_c * a_dt;
+                tb += a_c * dt;
             } else {
                 b_ret = true;
                 break;
             }
-            a_distp = a_dist;
+            distp = dist;
         }
         if !b_ret {
             if i == 0 {
@@ -517,34 +517,34 @@ pub(super) fn find_parameters(
                 return None;
             }
             b_ret = true;
-            a_tb = a_tb1;
-            a_dt = a_t2 - a_tb1;
+            tb = tb1;
+            dt = a_t2 - tb1;
         }
-        a_t = if i == 0 { a_t1 } else { a_t2 };
-        if a_tb != a_t {
+        t = if i == 0 { t1 } else { a_t2 };
+        if tb != t {
             // One point IN, one point OUT: look for the bounding point.
-            let mut a_tin = a_tb;
-            let mut a_tout = a_tb - a_c * a_dt;
-            let mut a_diff = a_tin - a_tout;
-            while a_diff.abs() > the_ptol {
-                a_tb = a_tout + a_diff * a_cf;
-                let a_p = c.d0(a_tb);
-                if a_cbx.is_out(&a_p) {
-                    a_tout = a_tb;
+            let mut tin = tb;
+            let mut tout = tb - a_c * dt;
+            let mut diff = tin - tout;
+            while diff.abs() > ptol {
+                tb = tout + diff * cf;
+                let p = c.d0(tb);
+                if cbx.is_out(&p) {
+                    tout = tb;
                 } else {
-                    a_tin = a_tb;
+                    tin = tb;
                 }
-                a_diff = a_tin - a_tout;
+                diff = tin - tout;
             }
             if i == 0 {
-                a_tb1 = a_tb;
+                tb1 = tb;
             } else {
-                a_tb2 = a_tb;
+                tb2 = tb;
             }
         }
     }
     if b_ret {
-        Some((a_tb1, a_tb2))
+        Some((tb1, tb2))
     } else {
         None
     }
@@ -571,9 +571,9 @@ impl EdgeEdge {
 
         let mut b_is_closed2 = is_closed(&*c2, a_t21, a_t22, self.tol2, self.res2);
         if b_is_closed2 {
-            let a_b1 = bnd_build_box(&*c1, a_t11, a_t12, self.tol1);
-            let a_p = c2.d0(a_t21);
-            b_is_closed2 = !a_b1.is_out(&a_p);
+            let b1 = bnd_build_box(&*c1, a_t11, a_t12, self.tol1);
+            let p = c2.d0(a_t21);
+            b_is_closed2 = !b1.is_out(&p);
         }
 
         let mut ranges1: Vec<IntRange> = Vec::new();
@@ -581,13 +581,13 @@ impl EdgeEdge {
         let b_split2;
 
         if !b_is_closed2 {
-            let a_b1 = bnd_build_box(&*c1, a_t11, a_t12, self.tol1);
-            let a_b2 = bnd_build_box(&*c2, a_t21, a_t22, self.tol2);
+            let b1 = bnd_build_box(&*c1, a_t11, a_t12, self.tol1);
+            let b2 = bnd_build_box(&*c2, a_t21, a_t22, self.tol2);
             self.find_solutions_range(
                 IntRange::new_unchecked(a_t11, a_t12),
-                &a_b1,
+                &b1,
                 IntRange::new_unchecked(a_t21, a_t22),
-                &a_b2,
+                &b2,
                 &mut ranges1,
                 &mut ranges2,
             );
@@ -604,22 +604,22 @@ impl EdgeEdge {
             return;
         }
 
-        let a_nb1 = if is_closed(&*c1, a_t11, a_t12, self.tol1, self.res1) {
+        let nb1 = if is_closed(&*c1, a_t11, a_t12, self.tol1, self.res1) {
             2
         } else {
             1
         };
-        let a_segments1 = split_range_on_segments(a_t11, a_t12, self.res1, a_nb1);
-        let a_segments2 = split_range_on_segments(a_t21, a_t22, self.res2, 2);
+        let segments1 = split_range_on_segments(a_t11, a_t12, self.res1, nb1);
+        let segments2 = split_range_on_segments(a_t21, a_t22, self.res2, 2);
 
-        for a_r1 in &a_segments1 {
-            let a_b1 = bnd_build_box(&*c1, a_r1.first, a_r1.last, self.tol1);
-            for a_r2 in &a_segments2 {
-                let a_b2 = bnd_build_box(&*c2, a_r2.first, a_r2.last, self.tol2);
-                self.find_solutions_range(*a_r1, &a_b1, *a_r2, &a_b2, &mut ranges1, &mut ranges2);
+        for a_r1 in &segments1 {
+            let b1 = bnd_build_box(&*c1, a_r1.first, a_r1.last, self.tol1);
+            for a_r2 in &segments2 {
+                let b2 = bnd_build_box(&*c2, a_r2.first, a_r2.last, self.tol2);
+                self.find_solutions_range(*a_r1, &b1, *a_r2, &b2, &mut ranges1, &mut ranges2);
             }
         }
-        b_split2 = a_segments2.len() > 1;
+        b_split2 = segments2.len() > 1;
         self.merge_solutions_boxes(&ranges1, &ranges2, b_split2);
     }
 
@@ -628,50 +628,50 @@ impl EdgeEdge {
     #[allow(clippy::too_many_arguments)]
     fn find_solutions_range(
         &self,
-        the_r1: IntRange,
-        the_box1: &BndBox,
-        the_r2: IntRange,
-        the_box2: &BndBox,
-        the_ranges1: &mut Vec<IntRange>,
-        the_ranges2: &mut Vec<IntRange>,
+        r1: IntRange,
+        box1: &BndBox,
+        r2: IntRange,
+        box2: &BndBox,
+        ranges1: &mut Vec<IntRange>,
+        ranges2: &mut Vec<IntRange>,
     ) {
         let c1 = self.curve1.as_ref().unwrap();
         let c2 = self.curve2.as_ref().unwrap();
-        let (mut a_t11, mut a_t12) = (the_r1.first, the_r1.last);
-        let (mut a_t21, mut a_t22) = (the_r2.first, the_r2.last);
-        let mut a_b1 = *the_box1;
+        let (mut a_t11, mut a_t12) = (r1.first, r1.last);
+        let (mut a_t21, mut a_t22) = (r2.first, r2.last);
+        let mut b1 = *box1;
         // `cxx:371`: `aB2` starts at the incoming box and is rebuilt at step 2;
         // the rebuilt value carries into the next iteration's step 1.
-        let mut a_b2 = *the_box2;
+        let mut b2 = *box2;
 
         let mut b_out;
         let mut b_thin = false;
         let mut b_stop = false;
         let mut i_com = 1;
         loop {
-            let (a_tb11, a_tb12) = (a_t11, a_t12);
-            let (a_tb21, a_tb22) = (a_t21, a_t22);
+            let (tb11, tb12) = (a_t11, a_t12);
+            let (tb21, tb22) = (a_t21, a_t22);
 
             // 1. Find the parameters of the second edge inside the box of the
             //    first one.
-            b_out = a_b1.is_out_box(&a_b2);
+            b_out = b1.is_out_box(&b2);
             if b_out {
                 break;
             }
             b_thin = (a_t12 - a_t11) < self.res1
-                || (a_b1.is_x_thin(self.tol)
-                    && a_b1.is_y_thin(self.tol)
-                    && a_b1.is_z_thin(self.tol));
+                || (b1.is_x_thin(self.tol)
+                    && b1.is_y_thin(self.tol)
+                    && b1.is_z_thin(self.tol));
             match find_parameters(
                 &**c2,
                 self.kind2,
-                a_tb21,
-                a_tb22,
+                tb21,
+                tb22,
                 self.tol2,
                 self.res2,
                 self.ptol2,
                 self.res_coeff2,
-                &a_b1,
+                &b1,
                 a_t21,
                 a_t22,
             ) {
@@ -690,25 +690,25 @@ impl EdgeEdge {
 
             // 2. Build the box of the second edge and find the parameters of
             //    the first one inside it.
-            a_b2 = bnd_build_box(&**c2, a_t21, a_t22, self.tol2);
-            b_out = a_b1.is_out_box(&a_b2);
+            b2 = bnd_build_box(&**c2, a_t21, a_t22, self.tol2);
+            b_out = b1.is_out_box(&b2);
             if b_out {
                 break;
             }
             b_thin = (a_t22 - a_t21) < self.res2
-                || (a_b2.is_x_thin(self.tol)
-                    && a_b2.is_y_thin(self.tol)
-                    && a_b2.is_z_thin(self.tol));
+                || (b2.is_x_thin(self.tol)
+                    && b2.is_y_thin(self.tol)
+                    && b2.is_z_thin(self.tol));
             match find_parameters(
                 &**c1,
                 self.kind1,
-                a_tb11,
-                a_tb12,
+                tb11,
+                tb12,
                 self.tol1,
                 self.res1,
                 self.ptol1,
                 self.res_coeff1,
-                &a_b2,
+                &b2,
                 a_t11,
                 a_t12,
             ) {
@@ -726,22 +726,22 @@ impl EdgeEdge {
             }
 
             // 3. Check whether it makes sense to continue.
-            let mut a_small_step1 = (a_tb12 - a_tb11) / 250.0;
-            let mut a_small_step2 = (a_tb22 - a_tb21) / 250.0;
-            if a_small_step1 < self.res1 {
-                a_small_step1 = self.res1;
+            let mut small_step1 = (tb12 - tb11) / 250.0;
+            let mut small_step2 = (tb22 - tb21) / 250.0;
+            if small_step1 < self.res1 {
+                small_step1 = self.res1;
             }
-            if a_small_step2 < self.res2 {
-                a_small_step2 = self.res2;
+            if small_step2 < self.res2 {
+                small_step2 = self.res2;
             }
-            if ((a_t11 - a_tb11) < a_small_step1)
-                && ((a_tb12 - a_t12) < a_small_step1)
-                && ((a_t21 - a_tb21) < a_small_step2)
-                && ((a_tb22 - a_t22) < a_small_step2)
+            if ((a_t11 - tb11) < small_step1)
+                && ((tb12 - a_t12) < small_step1)
+                && ((a_t21 - tb21) < small_step2)
+                && ((tb22 - a_t22) < small_step2)
             {
                 b_stop = true;
             } else {
-                a_b1 = bnd_build_box(&**c1, a_t11, a_t12, self.tol1);
+                b1 = bnd_build_box(&**c1, a_t11, a_t12, self.tol1);
             }
             if b_stop {
                 break;
@@ -762,15 +762,15 @@ impl EdgeEdge {
         if b_thin {
             if i_com != 0 {
                 // check the intermediate points
-                let a_t1 = (a_t11 + a_t12) * 0.5;
-                let a_p1 = c1.d0(a_t1);
+                let t1 = (a_t11 + a_t12) * 0.5;
+                let p1 = c1.d0(t1);
                 let proj = ProjPc::new(&**c2, a_t21, a_t22);
-                let b_sol = match proj.project(&a_p1) {
+                let b_sol = match proj.project(&p1) {
                     Some((d, _)) => d <= self.tol,
                     None => {
                         let a_t2 = (a_t21 + a_t22) * 0.5;
-                        let a_p2 = c2.d0(a_t2);
-                        a_p1.distance(&a_p2) <= self.tol
+                        let p2 = c2.d0(a_t2);
+                        p1.distance(&p2) <= self.tol
                     }
                 };
                 if !b_sol {
@@ -778,8 +778,8 @@ impl EdgeEdge {
                 }
             }
             // add the common part
-            the_ranges1.push(IntRange::new_unchecked(a_t11, a_t12));
-            the_ranges2.push(IntRange::new_unchecked(a_t21, a_t22));
+            ranges1.push(IntRange::new_unchecked(a_t11, a_t12));
+            ranges2.push(IntRange::new_unchecked(a_t21, a_t22));
             return;
         }
 
@@ -788,18 +788,18 @@ impl EdgeEdge {
         }
 
         // Split the ranges on segments and repeat.
-        let a_b1_first = bnd_build_box(&**c1, a_t11, a_t12, self.tol1);
-        let a_b1_sq_extent = a_b1_first.square_extent();
+        let b1_first = bnd_build_box(&**c1, a_t11, a_t12, self.tol1);
+        let b1_sq_extent = b1_first.square_extent();
         let a_r2 = IntRange::new_unchecked(a_t21, a_t22);
-        let a_b2_seg = bnd_build_box(&**c2, a_t21, a_t22, self.tol2);
-        let a_segments1 = split_range_on_segments(a_t11, a_t12, self.res1, 3);
-        let a_nb1 = a_segments1.len();
-        for a_r1 in a_segments1 {
-            let a_b1s = bnd_build_box(&**c1, a_r1.first, a_r1.last, self.tol1);
-            if !a_b1s.is_out_box(&a_b2_seg)
-                && (a_nb1 == 1 || a_b1s.square_extent() < a_b1_sq_extent)
+        let b2_seg = bnd_build_box(&**c2, a_t21, a_t22, self.tol2);
+        let segments1 = split_range_on_segments(a_t11, a_t12, self.res1, 3);
+        let nb1 = segments1.len();
+        for a_r1 in segments1 {
+            let b1s = bnd_build_box(&**c1, a_r1.first, a_r1.last, self.tol1);
+            if !b1s.is_out_box(&b2_seg)
+                && (nb1 == 1 || b1s.square_extent() < b1_sq_extent)
             {
-                self.find_solutions_range(a_r1, &a_b1s, a_r2, &a_b2_seg, the_ranges1, the_ranges2);
+                self.find_solutions_range(a_r1, &b1s, a_r2, &b2_seg, ranges1, ranges2);
             }
         }
     }
@@ -808,12 +808,12 @@ impl EdgeEdge {
     /// groups the parameter ranges found by the recursion and stores them.
     fn merge_solutions_boxes(
         &mut self,
-        the_ranges1: &[IntRange],
-        the_ranges2: &[IntRange],
+        ranges1: &[IntRange],
+        ranges2: &[IntRange],
         b_split2: bool,
     ) {
-        let a_nb_cp = the_ranges1.len();
-        if a_nb_cp == 0 {
+        let nb_cp = ranges1.len();
+        if nb_cp == 0 {
             return;
         }
         let c1 = self.curve1.clone().unwrap();
@@ -824,44 +824,44 @@ impl EdgeEdge {
         let (a_t21, a_t22) = (self.r2().first, self.r2().last);
         let d_tr1 = 20.0 * a_res1;
         let d_tr2 = 20.0 * a_res2;
-        let mut a_type_edge = false;
-        let mut used = vec![false; a_nb_cp];
+        let mut type_edge = false;
+        let mut used = vec![false; nb_cp];
 
         let mut i = 0usize;
-        while i < a_nb_cp {
+        while i < nb_cp {
             if used[i] {
                 i += 1;
                 continue;
             }
-            let (mut a_ti11, mut a_ti12) = (the_ranges1[i].first, the_ranges1[i].last);
-            let (mut a_ti21, mut a_ti22) = (the_ranges2[i].first, the_ranges2[i].last);
+            let (mut ti11, mut ti12) = (ranges1[i].first, ranges1[i].last);
+            let (mut ti21, mut ti22) = (ranges2[i].first, ranges2[i].last);
             used[i] = true;
 
             let mut j = i + 1;
-            while j < a_nb_cp {
+            while j < nb_cp {
                 if used[j] {
                     j += 1;
                     continue;
                 }
-                let (a_tj11, a_tj12) = (the_ranges1[j].first, the_ranges1[j].last);
-                let (a_tj21, a_tj22) = (the_ranges2[j].first, the_ranges2[j].last);
-                let mut b_cond = ((a_ti12 - a_tj11).abs() < d_tr1)
-                    || (a_tj11 > a_ti11 && a_tj11 < a_ti12)
-                    || (a_ti11 > a_tj11 && a_ti11 < a_tj12)
-                    || (b_split2 && (a_tj12 - a_ti11).abs() < d_tr1);
+                let (tj11, tj12) = (ranges1[j].first, ranges1[j].last);
+                let (tj21, tj22) = (ranges2[j].first, ranges2[j].last);
+                let mut b_cond = ((ti12 - tj11).abs() < d_tr1)
+                    || (tj11 > ti11 && tj11 < ti12)
+                    || (ti11 > tj11 && ti11 < tj12)
+                    || (b_split2 && (tj12 - ti11).abs() < d_tr1);
                 if b_cond && b_split2 {
-                    b_cond = ((a_ti22.max(a_tj22) - a_ti21.min(a_tj21))
-                        - ((a_ti22 - a_ti21) + (a_tj22 - a_tj21)))
+                    b_cond = ((ti22.max(tj22) - ti21.min(tj21))
+                        - ((ti22 - ti21) + (tj22 - tj21)))
                         .abs()
                         < d_tr2
-                        || (a_tj21 > a_ti21 && a_tj21 < a_ti22)
-                        || (a_ti21 > a_tj21 && a_ti21 < a_tj22);
+                        || (tj21 > ti21 && tj21 < ti22)
+                        || (ti21 > tj21 && ti21 < tj22);
                 }
                 if b_cond {
-                    a_ti11 = a_ti11.min(a_tj11);
-                    a_ti12 = a_ti12.max(a_tj12);
-                    a_ti21 = a_ti21.min(a_tj21);
-                    a_ti22 = a_ti22.max(a_tj22);
+                    ti11 = ti11.min(tj11);
+                    ti12 = ti12.max(tj12);
+                    ti21 = ti21.min(tj21);
+                    ti22 = ti22.max(tj22);
                     used[j] = true;
                     j += 1;
                 } else if !b_split2 {
@@ -872,15 +872,15 @@ impl EdgeEdge {
                 }
             }
 
-            if ((a_t11 - a_ti11).abs() < self.res1 && (a_t12 - a_ti12).abs() < self.res1)
-                || ((a_t21 - a_ti21).abs() < self.res2 && (a_t22 - a_ti22).abs() < self.res2)
+            if ((a_t11 - ti11).abs() < self.res1 && (a_t12 - ti12).abs() < self.res1)
+                || ((a_t21 - ti21).abs() < self.res2 && (a_t22 - ti22).abs() < self.res2)
             {
-                a_type_edge = true;
+                type_edge = true;
                 self.common_parts.clear();
             }
 
-            self.add_solution_occt(a_ti11, a_ti12, a_ti21, a_ti22, a_type_edge);
-            if a_type_edge {
+            self.add_solution_occt(ti11, ti12, ti21, ti22, type_edge);
+            if type_edge {
                 break;
             }
             if b_split2 {
@@ -904,14 +904,14 @@ impl EdgeEdge {
                 .push(CommonPrt::with(CommonPartType::Edge, range, None, Vec::new()));
             return;
         }
-        let (a_t1, a_t2) = self.find_best_solution_ranges(a_t11, a_t12, a_t21, a_t22);
+        let (t1, a_t2) = self.find_best_solution_ranges(a_t11, a_t12, a_t21, a_t22);
         // `cxx:810-819`: when swapped, `aT1` lives on the caller's *second*
         // edge and the vertex parameters are exchanged.
-        let (e1, e2) = if !self.swapped { (a_t1, a_t2) } else { (a_t2, a_t1) };
+        let (e1, e2) = if !self.swapped { (t1, a_t2) } else { (a_t2, t1) };
         let Some(c1) = self.curve1.as_ref() else {
             return;
         };
-        let p = c1.d0(a_t1);
+        let p = c1.d0(t1);
         self.points.push(PntOn2Faces::new(0, 1, p, p, (e1, 0.0), (e2, 0.0)));
     }
 
@@ -928,21 +928,21 @@ impl EdgeEdge {
         const A_TOUCH_CRITERIA: f64 = 5.0e-13;
         let c1 = self.curve1.as_ref().unwrap();
         let c2 = self.curve2.as_ref().unwrap();
-        let mut a_d_min = INFINITE;
-        let mut a_t1 = 0.0;
+        let mut d_min = INFINITE;
+        let mut t1 = 0.0;
         let mut a_t2 = 0.0;
         let mut b_touch = false;
         let mut b_touch_confirm = false;
-        let (mut a_t11_touch, mut a_t12_touch) = (a_t11, a_t12);
-        let (mut a_t21_touch, mut a_t22_touch) = (a_t21, a_t22);
+        let (mut t11_touch, mut t12_touch) = (a_t11, a_t12);
+        let (mut t21_touch, mut t22_touch) = (a_t21, a_t22);
         let mut is_sol_found = false;
 
         let a_res1 = resolution_of(&**c1, self.kind1, self.res_coeff1, self.tol);
-        let a_nb_s = 10;
-        let a_ranges = split_range_on_segments(a_t11, a_t12, 3.0 * a_res1, a_nb_s);
+        let nb_s = 10;
+        let ranges = split_range_on_segments(a_t11, a_t12, 3.0 * a_res1, nb_s);
         let proj = ProjPc::new(&**c2, a_t21, a_t22);
 
-        for a_r1 in a_ranges {
+        for a_r1 in ranges {
             let mut st = DistState { d_max: self.tol, t1_max: 0.0, t2_max: 0.0 };
             let i_err = find_dist_pc(
                 &proj,
@@ -954,22 +954,22 @@ impl EdgeEdge {
                 &mut st,
                 false,
             );
-            let a_d = st.d_max;
+            let d = st.d_max;
             if i_err != 1 {
-                if a_d < a_d_min {
-                    a_t1 = st.t1_max;
+                if d < d_min {
+                    t1 = st.t1_max;
                     a_t2 = st.t2_max;
-                    a_d_min = a_d;
+                    d_min = d;
                     is_sol_found = true;
                 }
-                if a_d < A_TOUCH_CRITERIA {
+                if d < A_TOUCH_CRITERIA {
                     if b_touch {
-                        a_t12_touch = st.t1_max;
-                        a_t22_touch = st.t2_max;
+                        t12_touch = st.t1_max;
+                        t22_touch = st.t2_max;
                         b_touch_confirm = true;
                     } else {
-                        a_t11_touch = st.t1_max;
-                        a_t21_touch = st.t2_max;
+                        t11_touch = st.t1_max;
+                        t21_touch = st.t2_max;
                         b_touch = true;
                     }
                 }
@@ -977,14 +977,14 @@ impl EdgeEdge {
         }
 
         if !is_sol_found || b_touch_confirm {
-            a_t1 = (a_t11_touch + a_t12_touch) * 0.5;
-            let (i_err, _d, t2) = dist_pc(&proj, &**c1, a_t1, A_SOL_CRITERIA, -1);
+            t1 = (t11_touch + t12_touch) * 0.5;
+            let (i_err, _d, t2) = dist_pc(&proj, &**c1, t1, A_SOL_CRITERIA, -1);
             a_t2 = t2;
             if i_err == 1 {
-                a_t2 = (a_t21_touch + a_t22_touch) * 0.5;
+                a_t2 = (t21_touch + t22_touch) * 0.5;
             }
         }
-        (a_t1, a_t2)
+        (t1, a_t2)
     }
 
     /// `IntTools_EdgeEdge::CheckCoincidence` (`IntTools_EdgeEdge.cxx:1150-1206`).
@@ -997,24 +997,24 @@ impl EdgeEdge {
         a_t12: f64,
         a_t21: f64,
         a_t22: f64,
-        the_criteria: f64,
-        the_curve_res1: f64,
+        criteria: f64,
+        curve_res1: f64,
     ) -> i32 {
         let c1 = self.curve1.as_ref().unwrap();
         let c2 = self.curve2.as_ref().unwrap();
         let proj = ProjPc::new(&**c2, a_t21, a_t22);
-        let a_nb = 10;
-        let a_ranges = split_range_on_segments(a_t11, a_t12, the_curve_res1, a_nb);
-        let a_nb1 = a_ranges.len() as i32;
+        let nb = 10;
+        let ranges = split_range_on_segments(a_t11, a_t12, curve_res1, nb);
+        let nb1 = ranges.len() as i32;
 
         // 1. Express evaluation. The 7-argument `DistPC` writes the distance
         //    straight into `aDmax` (`cxx:1174`), so there is no extremum
         //    tracking here.
         let mut a_d_max = -1.0;
         let mut i_err = 0;
-        for k in 0..a_nb1.saturating_sub(1) {
-            let a_t1b = a_ranges[k as usize].last;
-            let (e, d, _t2) = dist_pc(&proj, &**c1, a_t1b, the_criteria, 1);
+        for k in 0..nb1.saturating_sub(1) {
+            let t1b = ranges[k as usize].last;
+            let (e, d, _t2) = dist_pc(&proj, &**c1, t1b, criteria, 1);
             a_d_max = d;
             i_err = e;
             if i_err != 0 {
@@ -1023,21 +1023,21 @@ impl EdgeEdge {
         }
         // If the ranges are shorter than `theCurveRes1`, there is no need for
         // the deep evaluation.
-        if a_nb1 < a_nb {
+        if nb1 < nb {
             return i_err;
         }
 
         // 2. Deep evaluation.
-        for k in 1..a_nb1.saturating_sub(1) {
-            let (a_t1a, a_t1b) = (a_ranges[k as usize].first, a_ranges[k as usize].last);
+        for k in 1..nb1.saturating_sub(1) {
+            let (t1a, t1b) = (ranges[k as usize].first, ranges[k as usize].last);
             let mut st = DistState { d_max: a_d_max, t1_max: 0.0, t2_max: 0.0 };
             i_err = find_dist_pc(
                 &proj,
                 &**c1,
-                a_t1a,
-                a_t1b,
-                the_criteria,
-                the_curve_res1,
+                t1a,
+                t1b,
+                criteria,
+                curve_res1,
                 &mut st,
                 true,
             );
@@ -1053,43 +1053,43 @@ impl EdgeEdge {
     fn is_intersection(&self, a_t11: f64, a_t12: f64, a_t21: f64, a_t22: f64) -> bool {
         let c1 = self.curve1.as_ref().unwrap();
         let c2 = self.curve2.as_ref().unwrap();
-        let a_coef;
+        let coef;
         if ((a_t12 - a_t11) > 1.0e5 * self.res1) && ((a_t22 - a_t21) > 1.0e5 * self.res2) {
-            a_coef = 5000.0;
+            coef = 5000.0;
         } else {
-            let a_tr_min = ((a_t12 - a_t11) / self.res1).min((a_t22 - a_t21) / self.res2);
-            let a_coef_tmp = a_tr_min / 100.0;
-            a_coef = if a_coef_tmp < 1.0 { 1.0 } else { a_coef_tmp };
+            let tr_min = ((a_t12 - a_t11) / self.res1).min((a_t22 - a_t21) / self.res2);
+            let coef_tmp = tr_min / 100.0;
+            coef = if coef_tmp < 1.0 { 1.0 } else { coef_tmp };
         }
-        let mut a_criteria = a_coef * self.tol;
+        let mut a_criteria = coef * self.tol;
         a_criteria *= a_criteria;
 
-        let (a_p11, a_v11) = c1.d1(a_t11);
-        let (a_p12, a_v12) = c1.d1(a_t12);
-        let (a_p21, a_v21) = c2.d1(a_t21);
-        let (a_p22, a_v22) = c2.d1(a_t22);
+        let (p11, v11) = c1.d1(a_t11);
+        let (p12, v12) = c1.d1(a_t12);
+        let (p21, v21) = c2.d1(a_t21);
+        let (p22, v22) = c2.d1(a_t22);
 
-        let b_small_11_21 = a_p11.square_distance(&a_p21) < a_criteria;
-        let b_small_11_22 = a_p11.square_distance(&a_p22) < a_criteria;
-        let b_small_12_21 = a_p12.square_distance(&a_p21) < a_criteria;
-        let b_small_12_22 = a_p12.square_distance(&a_p22) < a_criteria;
+        let b_small_11_21 = p11.square_distance(&p21) < a_criteria;
+        let b_small_11_22 = p11.square_distance(&p22) < a_criteria;
+        let b_small_12_21 = p12.square_distance(&p21) < a_criteria;
+        let b_small_12_22 = p12.square_distance(&p22) < a_criteria;
 
         let mut b_ret = true;
         if (b_small_11_21 && b_small_12_22) || (b_small_11_22 && b_small_12_21) {
-            if a_coef == 1.0 {
+            if coef == 1.0 {
                 return b_ret;
             }
             let an_angle_criteria = 5.0e-3;
             let mut an_angle1 = 0.0;
             let mut an_angle2 = 0.0;
             let v_ok = |v: &GpVec| v.dot(v) > SQUARE_CONFUSION;
-            if v_ok(&a_v11) && v_ok(&a_v12) && v_ok(&a_v21) && v_ok(&a_v22) {
+            if v_ok(&v11) && v_ok(&v12) && v_ok(&v21) && v_ok(&v22) {
                 if b_small_11_21 && b_small_12_22 {
-                    an_angle1 = a_v11.angle(&a_v21);
-                    an_angle2 = a_v12.angle(&a_v22);
+                    an_angle1 = v11.angle(&v21);
+                    an_angle2 = v12.angle(&v22);
                 } else {
-                    an_angle1 = a_v11.angle(&a_v22);
-                    an_angle2 = a_v12.angle(&a_v21);
+                    an_angle1 = v11.angle(&v22);
+                    an_angle2 = v12.angle(&v21);
                 }
             }
             if (an_angle1 < an_angle_criteria

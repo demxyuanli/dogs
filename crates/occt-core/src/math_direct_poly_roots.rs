@@ -353,13 +353,13 @@ fn factor_quartic_via_ferrari(a: f64, b: f64, c: f64, d: f64, y0: f64) -> Quarti
         q0 = if q0 < 0.0 { 0.0 } else { q0.sqrt() };
     }
 
-    let a_demi = a * 0.5;
+    let demi = a * 0.5;
     let y_demi = y0 * 0.5;
     let sdiscr_q0 = sdiscr * q0;
 
-    let mut p1 = a_demi + p0;
+    let mut p1 = demi + p0;
     let mut q1 = y_demi + sdiscr_q0;
-    let mut p2 = a_demi - p0;
+    let mut p2 = demi - p0;
     let mut q2 = y_demi - sdiscr_q0;
 
     // Clean up near-zero coefficients.

@@ -275,7 +275,7 @@ pub(crate) fn is_an_isoparametric(
         let Some(ci) = ci else {
             continue;
         };
-        let a_box = iso_bound_box(ci.as_ref());
+        let bnd_box = iso_bound_box(ci.as_ref());
         // `cxx:2578-2583`: a degenerate iso (all three probe points equal) is
         // skipped.
         let ext1 = ci.d0(tt1);
@@ -313,7 +313,7 @@ pub(crate) fn is_an_isoparametric(
                 continue;
             }
             // `cxx:2619-2622`.
-            if a_box.is_out(&points[k]) {
+            if bnd_box.is_out(&points[k]) {
                 continue;
             }
             let cf0 = ci.first_parameter();
@@ -472,10 +472,10 @@ pub(crate) fn uv_from_iso(s: &dyn Surface, p: &GpPnt, preci: f64, u: f64, v: f64
     // `cxx:1528-1537`: the seed itself is the first candidate.
     let mut uu = u;
     let mut vv = v;
-    let mut the_min = s.d0(u, v).distance(p);
-    if the_min < preci / 10.0 {
+    let mut min = s.d0(u, v).distance(p);
+    if min < preci / 10.0 {
         // `cxx:1539-1542` "c etait deja OK"
-        return (the_min, uu, vv);
+        return (min, uu, vv);
     }
     // `cxx:1535-1538` reads `myUF` / `myUL` (the raw `Bounds`, not the
     // restricted window) and skips an infinite one (`cxx:1605`).
@@ -504,8 +504,8 @@ pub(crate) fn uv_from_iso(s: &dyn Surface, p: &GpPnt, preci: f64, u: f64, v: f64
         let (mut cf, mut cl) = (iso.first_parameter(), iso.last_parameter());
         restrict_bounds(&mut cf, &mut cl);
         if let Some((other, dist)) = project_on_curve_range(iso.as_ref(), p, preci, cf, cl) {
-            if dist < the_min {
-                the_min = dist;
+            if dist < min {
+                min = dist;
                 uu = if uv { par } else { other };
                 vv = if uv { other } else { par };
             }
@@ -515,7 +515,7 @@ pub(crate) fn uv_from_iso(s: &dyn Surface, p: &GpPnt, preci: f64, u: f64, v: f64
     // enters with `UV = false` (the last `UV = (num < 3)` has `num = 5`).
     let (mut prev_u, mut prev_v) = (u, v);
     let mut iters = 0;
-    while (prev_u != uu || prev_v != vv) && iters < 5 && the_min > preci {
+    while (prev_u != uu || prev_v != vv) && iters < 5 && min > preci {
         prev_u = uu;
         prev_v = vv;
         for _ in 0..2 {
@@ -524,8 +524,8 @@ pub(crate) fn uv_from_iso(s: &dyn Surface, p: &GpPnt, preci: f64, u: f64, v: f64
                 let (mut cf, mut cl) = (iso.first_parameter(), iso.last_parameter());
                 restrict_bounds(&mut cf, &mut cl);
                 if let Some((other, dist)) = project_on_curve_range(iso.as_ref(), p, preci, cf, cl) {
-                    if dist < the_min {
-                        the_min = dist;
+                    if dist < min {
+                        min = dist;
                         if uv {
                             vv = other;
                         } else {
@@ -538,7 +538,7 @@ pub(crate) fn uv_from_iso(s: &dyn Surface, p: &GpPnt, preci: f64, u: f64, v: f64
         }
         iters += 1;
     }
-    (the_min, uu, vv)
+    (min, uu, vv)
 }
 
 /// `theIndCoord` accessor of `insertAdditionalPointOrAdjust` (`cxx:2039`):

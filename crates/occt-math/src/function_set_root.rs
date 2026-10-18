@@ -862,7 +862,7 @@ pub struct MathFunctionSetRoot {
     /// `Save(0, theNbIterations)` (`math_FunctionSetRoot.cxx:729`); stored
     /// 0-based, index `k` is OCCT's `Save(k)`.
     save: Vec<f64>,
-    my_is_divergent: bool,
+    is_divergent: bool,
 }
 
 impl MathFunctionSetRoot {
@@ -910,7 +910,7 @@ impl MathFunctionSetRoot {
             ff: MathVector::new(1, neq),
             previous_solution: MathVector::new(1, ninc),
             save: vec![0.0; save_len],
-            my_is_divergent: false,
+            is_divergent: false,
         }
     }
 
@@ -959,7 +959,7 @@ impl MathFunctionSetRoot {
 
     /// `IsDivergent` (`math_FunctionSetRoot.hxx:174`).
     pub fn is_divergent(&self) -> bool {
-        self.my_is_divergent
+        self.is_divergent
     }
 
     /// `IsSolutionReached` base implementation
@@ -992,17 +992,17 @@ impl MathFunctionSetRoot {
         &mut self,
         f: &mut F,
         starting_point: &MathVector,
-        the_inf_bound: &MathVector,
-        the_sup_bound: &MathVector,
-        the_stop_on_divergent: bool,
+        inf_bound: &MathVector,
+        sup_bound: &MathVector,
+        stop_on_divergent: bool,
     ) {
         let ninc = f.nb_variables();
         let neq = f.nb_equations();
 
         if neq == 0
             || starting_point.len() != ninc
-            || the_inf_bound.len() != ninc
-            || the_sup_bound.len() != ninc
+            || inf_bound.len() != ninc
+            || sup_bound.len() != ninc
         {
             // math_FunctionSetRoot.cxx:804-808 throws Standard_DimensionError.
             panic!("math_FunctionSetRoot::Perform: dimension error");
@@ -1020,14 +1020,14 @@ impl MathFunctionSetRoot {
         // InvLengthMax / aConstraints (math_FunctionSetRoot.cxx:817-824).
         let mut inv_length_max = MathVector::new(1, ninc);
         for i in 1..=ninc {
-            let a_sup_bound = the_sup_bound.value(i).min(PRECISION_INFINITE);
-            let an_inf_bound = the_inf_bound.value(i).max(-PRECISION_INFINITE);
+            let a_sup_bound = sup_bound.value(i).min(PRECISION_INFINITE);
+            let an_inf_bound = inf_bound.value(i).max(-PRECISION_INFINITE);
             inv_length_max.set_value(
                 i,
                 1.0 / ((a_sup_bound - an_inf_bound) / 4.0).max(1.0e-9),
             );
         }
-        let mut a_constraints = vec![0i32; ninc + 1];
+        let mut constraints = vec![0i32; ninc + 1];
 
         let mut dir = DirFunction::new(ninc, neq);
 
@@ -1035,22 +1035,22 @@ impl MathFunctionSetRoot {
         self.sol = starting_point.clone();
         self.kount = 0;
 
-        self.my_is_divergent = false;
+        self.is_divergent = false;
         for i in 1..=ninc {
-            self.my_is_divergent = self.my_is_divergent
-                || self.sol.value(i) < the_inf_bound.value(i)
-                || self.sol.value(i) > the_sup_bound.value(i);
+            self.is_divergent = self.is_divergent
+                || self.sol.value(i) < inf_bound.value(i)
+                || self.sol.value(i) > sup_bound.value(i);
         }
-        if the_stop_on_divergent && self.my_is_divergent {
+        if stop_on_divergent && self.is_divergent {
             return;
         }
 
         // Recentrage sur les bornes (math_FunctionSetRoot.cxx:846-856).
         for i in 1..=ninc {
-            if self.sol.value(i) <= the_inf_bound.value(i) {
-                self.sol.set_value(i, the_inf_bound.value(i));
-            } else if self.sol.value(i) > the_sup_bound.value(i) {
-                self.sol.set_value(i, the_sup_bound.value(i));
+            if self.sol.value(i) <= inf_bound.value(i) {
+                self.sol.set_value(i, inf_bound.value(i));
+            } else if self.sol.value(i) > sup_bound.value(i) {
+                self.sol.set_value(i, sup_bound.value(i));
             }
         }
 
@@ -1065,7 +1065,7 @@ impl MathFunctionSetRoot {
             Some(v) => v,
             None => {
                 self.done = false;
-                if !the_stop_on_divergent || !self.my_is_divergent {
+                if !stop_on_divergent || !self.is_divergent {
                     self.state = f.get_state_number();
                 }
                 return;
@@ -1073,11 +1073,11 @@ impl MathFunctionSetRoot {
         };
         let mut ambda2 = gnr1;
         self.save[0] = f2.max(epsk);
-        let a_tol_func = epsilon_of(f2);
+        let tol_func = epsilon_of(f2);
 
         if f2 <= eps || gnr1 <= eps2 {
             self.done = false;
-            if !the_stop_on_divergent || !self.my_is_divergent {
+            if !stop_on_divergent || !self.is_divergent {
                 self.done = true;
                 self.state = f.get_state_number();
             }
@@ -1105,7 +1105,7 @@ impl MathFunctionSetRoot {
             );
             if dy.abs() <= eps {
                 self.done = false;
-                if !the_stop_on_divergent || !self.my_is_divergent {
+                if !stop_on_divergent || !self.is_divergent {
                     self.done = true;
                     // modified by jgv, 31.08.2011: update F before GetStateNumber
                     f.value(&self.sol, &mut self.ff);
@@ -1129,21 +1129,21 @@ impl MathFunctionSetRoot {
                     .set_value(i, self.sol.value(i) + ambda * self.dh.value(i));
             }
             for i in 1..=ninc {
-                self.my_is_divergent = self.my_is_divergent
-                    || self.sol.value(i) < the_inf_bound.value(i)
-                    || self.sol.value(i) > the_sup_bound.value(i);
+                self.is_divergent = self.is_divergent
+                    || self.sol.value(i) < inf_bound.value(i)
+                    || self.sol.value(i) > sup_bound.value(i);
             }
-            if the_stop_on_divergent && self.my_is_divergent {
+            if stop_on_divergent && self.is_divergent {
                 return;
             }
 
             let br = bounds(
-                the_inf_bound,
-                the_sup_bound,
+                inf_bound,
+                sup_bound,
                 &self.tol,
                 &mut self.sol,
                 &self.sol_save,
-                &mut a_constraints,
+                &mut constraints,
                 &mut self.delta,
             );
             sort = br.0;
@@ -1164,7 +1164,7 @@ impl MathFunctionSetRoot {
                     }
                     None => {
                         self.done = false;
-                        if !the_stop_on_divergent || !self.my_is_divergent {
+                        if !stop_on_divergent || !self.is_divergent {
                             self.state = f.get_state_number();
                         }
                         return;
@@ -1174,7 +1174,7 @@ impl MathFunctionSetRoot {
 
             if f2 <= eps || gnr1 <= eps2 {
                 self.done = false;
-                if !the_stop_on_divergent || !self.my_is_divergent {
+                if !stop_on_divergent || !self.is_divergent {
                     self.done = true;
                     f.value(&self.sol, &mut self.ff);
                     self.state = f.get_state_number();
@@ -1204,20 +1204,20 @@ impl MathFunctionSetRoot {
                                 );
                             }
                             for i in 1..=ninc {
-                                self.my_is_divergent = self.my_is_divergent
-                                    || self.sol.value(i) < the_inf_bound.value(i)
-                                    || self.sol.value(i) > the_sup_bound.value(i);
+                                self.is_divergent = self.is_divergent
+                                    || self.sol.value(i) < inf_bound.value(i)
+                                    || self.sol.value(i) > sup_bound.value(i);
                             }
-                            if the_stop_on_divergent && self.my_is_divergent {
+                            if stop_on_divergent && self.is_divergent {
                                 return;
                             }
                             let br = bounds(
-                                the_inf_bound,
-                                the_sup_bound,
+                                inf_bound,
+                                sup_bound,
                                 &self.tol,
                                 &mut self.sol,
                                 &self.sol_save,
-                                &mut a_constraints,
+                                &mut constraints,
                                 &mut self.delta,
                             );
                             stop = br.0;
@@ -1262,20 +1262,20 @@ impl MathFunctionSetRoot {
                                 } else {
                                     self.sol = self.sol_save.added(&self.delta);
                                     for i in 1..=ninc {
-                                        self.my_is_divergent = self.my_is_divergent
-                                            || self.sol.value(i) < the_inf_bound.value(i)
-                                            || self.sol.value(i) > the_sup_bound.value(i);
+                                        self.is_divergent = self.is_divergent
+                                            || self.sol.value(i) < inf_bound.value(i)
+                                            || self.sol.value(i) > sup_bound.value(i);
                                     }
-                                    if the_stop_on_divergent && self.my_is_divergent {
+                                    if stop_on_divergent && self.is_divergent {
                                         return;
                                     }
                                     let br = bounds(
-                                        the_inf_bound,
-                                        the_sup_bound,
+                                        inf_bound,
+                                        sup_bound,
                                         &self.tol,
                                         &mut self.sol,
                                         &self.sol_save,
-                                        &mut a_constraints,
+                                        &mut constraints,
                                         &mut self.delta,
                                     );
                                     sort = br.0;
@@ -1300,7 +1300,7 @@ impl MathFunctionSetRoot {
                                 }
                                 None => {
                                     self.done = false;
-                                    if !the_stop_on_divergent || !self.my_is_divergent {
+                                    if !stop_on_divergent || !self.is_divergent {
                                         self.state = f.get_state_number();
                                     }
                                     return;
@@ -1313,7 +1313,7 @@ impl MathFunctionSetRoot {
                                 self.sol = self.sol_save.clone();
                             }
                             self.done = false;
-                            if !the_stop_on_divergent || !self.my_is_divergent {
+                            if !stop_on_divergent || !self.is_divergent {
                                 self.done = true;
                                 f.value(&self.sol, &mut self.ff);
                                 self.state = f.get_state_number();
@@ -1341,7 +1341,7 @@ impl MathFunctionSetRoot {
                             &self.df,
                             &self.gh,
                             &self.ff,
-                            &a_constraints,
+                            &constraints,
                             &self.sol,
                             change_direction,
                             &inv_length_max,
@@ -1366,20 +1366,20 @@ impl MathFunctionSetRoot {
                                 );
                             }
                             for i in 1..=ninc {
-                                self.my_is_divergent = self.my_is_divergent
-                                    || self.sol.value(i) < the_inf_bound.value(i)
-                                    || self.sol.value(i) > the_sup_bound.value(i);
+                                self.is_divergent = self.is_divergent
+                                    || self.sol.value(i) < inf_bound.value(i)
+                                    || self.sol.value(i) > sup_bound.value(i);
                             }
-                            if the_stop_on_divergent && self.my_is_divergent {
+                            if stop_on_divergent && self.is_divergent {
                                 return;
                             }
                             let br = bounds(
-                                the_inf_bound,
-                                the_sup_bound,
+                                inf_bound,
+                                sup_bound,
                                 &self.tol,
                                 &mut self.sol,
                                 &self.sol_save,
-                                &mut a_constraints,
+                                &mut constraints,
                                 &mut self.delta,
                             );
                             sort_bis = br.0;
@@ -1400,7 +1400,7 @@ impl MathFunctionSetRoot {
                                     }
                                     None => {
                                         self.done = false;
-                                        if !the_stop_on_divergent || !self.my_is_divergent {
+                                        if !stop_on_divergent || !self.is_divergent {
                                             self.state = f.get_state_number();
                                         }
                                         return;
@@ -1425,20 +1425,20 @@ impl MathFunctionSetRoot {
                                     );
                                 }
                                 for i in 1..=ninc {
-                                    self.my_is_divergent = self.my_is_divergent
-                                        || self.sol.value(i) < the_inf_bound.value(i)
-                                        || self.sol.value(i) > the_sup_bound.value(i);
+                                    self.is_divergent = self.is_divergent
+                                        || self.sol.value(i) < inf_bound.value(i)
+                                        || self.sol.value(i) > sup_bound.value(i);
                                 }
-                                if the_stop_on_divergent && self.my_is_divergent {
+                                if stop_on_divergent && self.is_divergent {
                                     return;
                                 }
                                 let br = bounds(
-                                    the_inf_bound,
-                                    the_sup_bound,
+                                    inf_bound,
+                                    sup_bound,
                                     &self.tol,
                                     &mut self.sol,
                                     &self.sol_save,
-                                    &mut a_constraints,
+                                    &mut constraints,
                                     &mut self.delta,
                                 );
                                 sort_bis = br.0;
@@ -1459,7 +1459,7 @@ impl MathFunctionSetRoot {
                                     }
                                     None => {
                                         self.done = false;
-                                        if !the_stop_on_divergent || !self.my_is_divergent {
+                                        if !stop_on_divergent || !self.is_divergent {
                                             self.state = f.get_state_number();
                                         }
                                         return;
@@ -1494,20 +1494,20 @@ impl MathFunctionSetRoot {
                         } else {
                             self.sol = self.sol_save.added(&self.delta);
                             for i in 1..=ninc {
-                                self.my_is_divergent = self.my_is_divergent
-                                    || self.sol.value(i) < the_inf_bound.value(i)
-                                    || self.sol.value(i) > the_sup_bound.value(i);
+                                self.is_divergent = self.is_divergent
+                                    || self.sol.value(i) < inf_bound.value(i)
+                                    || self.sol.value(i) > sup_bound.value(i);
                             }
-                            if the_stop_on_divergent && self.my_is_divergent {
+                            if stop_on_divergent && self.is_divergent {
                                 return;
                             }
                             let br = bounds(
-                                the_inf_bound,
-                                the_sup_bound,
+                                inf_bound,
+                                sup_bound,
                                 &self.tol,
                                 &mut self.sol,
                                 &self.sol_save,
-                                &mut a_constraints,
+                                &mut constraints,
                                 &mut self.delta,
                             );
                             sort = br.0;
@@ -1526,7 +1526,7 @@ impl MathFunctionSetRoot {
                                     }
                                     None => {
                                         self.done = false;
-                                        if !the_stop_on_divergent || !self.my_is_divergent {
+                                        if !stop_on_divergent || !self.is_divergent {
                                             self.state = f.get_state_number();
                                         }
                                         return;
@@ -1569,7 +1569,7 @@ impl MathFunctionSetRoot {
                         self.sol = self.sol_save.clone();
                     }
                     self.done = false;
-                    if !the_stop_on_divergent || !self.my_is_divergent {
+                    if !stop_on_divergent || !self.is_divergent {
                         self.done = true;
                         f.value(&self.sol, &mut self.ff);
                         self.state = f.get_state_number();
@@ -1579,7 +1579,7 @@ impl MathFunctionSetRoot {
             }
 
             // Analyse de la progression...
-            if (f2 - previous_minimum) <= a_tol_func {
+            if (f2 - previous_minimum) <= tol_func {
                 if self.kount > 5 {
                     // L'historique est il bon ?
                     if f2 >= 0.95 * self.save[(self.kount - 5) as usize] {
@@ -1587,7 +1587,7 @@ impl MathFunctionSetRoot {
                             change_direction = true;
                         } else {
                             self.done = false;
-                            if !the_stop_on_divergent || !self.my_is_divergent {
+                            if !stop_on_divergent || !self.is_divergent {
                                 self.done = true;
                                 self.state = f.get_state_number();
                             }
@@ -1615,7 +1615,7 @@ impl MathFunctionSetRoot {
                     }
                     if self.is_solution_reached() {
                         self.done = false;
-                        if !the_stop_on_divergent || !self.my_is_divergent {
+                        if !stop_on_divergent || !self.is_divergent {
                             self.done = true;
                             f.value(&self.sol, &mut self.ff);
                             self.state = f.get_state_number();
@@ -1642,14 +1642,14 @@ impl MathFunctionSetRoot {
                         }
                         None => {
                             self.done = false;
-                            if !the_stop_on_divergent || !self.my_is_divergent {
+                            if !stop_on_divergent || !self.is_divergent {
                                 self.state = f.get_state_number();
                             }
                             return;
                         }
                     }
                 } else {
-                    if !the_stop_on_divergent || !self.my_is_divergent {
+                    if !stop_on_divergent || !self.is_divergent {
                         self.state = f.get_state_number();
                     }
                     // y a plus d'issues
@@ -1659,7 +1659,7 @@ impl MathFunctionSetRoot {
 
             self.kount += 1;
         }
-        if !the_stop_on_divergent || !self.my_is_divergent {
+        if !stop_on_divergent || !self.is_divergent {
             self.state = f.get_state_number();
         }
     }
@@ -1675,9 +1675,9 @@ impl MathFunctionSetRoot {
 /// `math_FunctionSetRoot` and `math_MyFunctionSetWithDerivatives`.
 pub struct MathFunctionRoot {
     done: bool,
-    the_root: f64,
-    the_error: f64,
-    the_derivative: f64,
+    root: f64,
+    error: f64,
+    derivative: f64,
     nb_iter: i32,
 }
 
@@ -1714,7 +1714,7 @@ impl MathFunctionRoot {
         let mut bb = MathVector::new(1, 1);
         bb.set_value(1, b);
 
-        let (done, nb_iter, the_root, the_derivative) = {
+        let (done, nb_iter, root, derivative) = {
             let mut ff = MyFunctionSetWithDerivatives { f: &mut *f };
             let mut sol = MathFunctionSetRoot::new(&ff, &tol, nb_iterations);
             sol.perform_with_bounds(&mut ff, &v, &aa, &bb, false);
@@ -1733,21 +1733,21 @@ impl MathFunctionRoot {
 
         if done {
             f.get_state_number();
-            let mut the_error = 0.0;
-            f.value(the_root, &mut the_error);
+            let mut error = 0.0;
+            f.value(root, &mut error);
             Self {
                 done: true,
-                the_root,
-                the_error,
-                the_derivative,
+                root,
+                error,
+                derivative,
                 nb_iter,
             }
         } else {
             Self {
                 done: false,
-                the_root: 0.0,
-                the_error: 0.0,
-                the_derivative: 0.0,
+                root: 0.0,
+                error: 0.0,
+                derivative: 0.0,
                 nb_iter: 0,
             }
         }
@@ -1761,19 +1761,19 @@ impl MathFunctionRoot {
     /// `Root` (`math_FunctionRoot.lxx:28-32`).
     pub fn root(&self) -> f64 {
         assert!(self.done, "math_FunctionRoot: NotDone");
-        self.the_root
+        self.root
     }
 
     /// `Derivative` (`math_FunctionRoot.lxx:34-38`).
     pub fn derivative(&self) -> f64 {
         assert!(self.done, "math_FunctionRoot: NotDone");
-        self.the_derivative
+        self.derivative
     }
 
     /// `Value` (`math_FunctionRoot.lxx:40-44`).
     pub fn value(&self) -> f64 {
         assert!(self.done, "math_FunctionRoot: NotDone");
-        self.the_error
+        self.error
     }
 
     /// `NbIterations` (`math_FunctionRoot.lxx:46-50`).

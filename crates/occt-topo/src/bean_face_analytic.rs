@@ -82,9 +82,9 @@ impl BeanFaceIntersector {
 
         // Parameter half-width from the tolerances and the incidence angle.
         let angle = (PI * 0.5 - ld.angle(&pn)).abs();
-        let a_dt = analytic_compute_int_range(self.bean_tolerance, self.face_tolerance, angle);
-        let t1 = self.first_parameter.max(t - a_dt);
-        let t2 = self.last_parameter.min(t + a_dt);
+        let dt = analytic_compute_int_range(self.bean_tolerance, self.face_tolerance, angle);
+        let t1 = self.first_parameter.max(t - dt);
+        let t2 = self.last_parameter.min(t + dt);
         self.results.push(IntRange::new_unchecked(t1, t2));
     }
 

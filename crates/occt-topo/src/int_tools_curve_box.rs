@@ -71,7 +71,7 @@ pub fn add_curve_to_box(curve: &dyn Curve, first: f64, last: f64, tol: f64, box_
 /// `IntTools_Tools::CheckCurve(theCurve, theBox)`.
 ///
 /// Returns `false` when the 3D curve is missing or the box is thin in every
-/// direction (`3 * Confusion`). On success `the_box` is the enlarged bounding
+/// direction (`3 * Confusion`). On success `bnd_box` is the enlarged bounding
 /// box of the curve.
 pub fn check_curve(
     curve: Option<&dyn Curve>,
@@ -79,15 +79,15 @@ pub fn check_curve(
     last: f64,
     tolerance: f64,
     tangential: f64,
-    the_box: &mut BndBox,
+    bnd_box: &mut BndBox,
 ) -> bool {
     let Some(c) = curve else {
         return false;
     };
-    *the_box = BndBox::new();
+    *bnd_box = BndBox::new();
     let enlarge = tolerance.max(tangential);
-    add_curve_to_box(c, first, last, enlarge, the_box);
-    !box_is_thin(the_box, CHECK_CURVE_THIN)
+    add_curve_to_box(c, first, last, enlarge, bnd_box);
+    !box_is_thin(bnd_box, CHECK_CURVE_THIN)
 }
 
 /// Convenience: check an `IntTools_Curve`-shaped payload (curve + range + tols).
@@ -117,20 +117,20 @@ pub fn is_on_pave(t1: f64, range: IntRange, tolerance: f64) -> bool {
 ///
 /// True when `aTR` is inside the range expanded by `aTol`, or on either
 /// bound within `aTol`.
-pub fn curve_box_is_on_pave1(a_tr: f64, range: IntRange, a_tol: f64) -> bool {
-    if is_on_pave(a_tr, range, a_tol) {
+pub fn curve_box_is_on_pave1(tr: f64, range: IntRange, tol: f64) -> bool {
+    if is_on_pave(tr, range, tol) {
         return true;
     }
-    a_tr > range.first - a_tol && a_tr < range.last + a_tol
+    tr > range.first - tol && tr < range.last + tol
 }
 
 /// `IntTools_Tools::IsInRange(aR, aRA, aTol)` — overlap of two 1D ranges
 /// expanded by `aTol`.
-pub fn curve_box_is_in_range(a_r: IntRange, a_ra: IntRange, a_tol: f64) -> bool {
-    let f = a_r.first - a_tol;
-    let l = a_r.last + a_tol;
-    let fa = a_ra.first;
-    let la = a_ra.last;
+pub fn curve_box_is_in_range(r: IntRange, ra: IntRange, tol: f64) -> bool {
+    let f = r.first - tol;
+    let l = r.last + tol;
+    let fa = ra.first;
+    let la = ra.last;
     (fa >= f && fa <= l) || (la >= f && la <= l) || (fa <= f && la >= l)
 }
 

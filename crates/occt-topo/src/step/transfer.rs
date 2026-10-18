@@ -881,7 +881,7 @@ pub(super) fn step_precision(records: &HashMap<usize, Record>) -> f64 {
     // `UNCERTAINTY_MEASURE_WITH_UNIT` whose unit component is an SI (`cxx:504`)
     // or conversion-based (`cxx:521`) length unit counts, and `theUncertainty`
     // (initialised to `RealLast`) is only ever lowered.
-    let mut the_uncertainty = f64::MAX;
+    let mut uncertainty = f64::MAX;
     let mut has_uncertainty = false;
     for rec in records.values() {
         if rec.type_name != "UNCERTAINTY_MEASURE_WITH_UNIT" {
@@ -899,15 +899,15 @@ pub(super) fn step_precision(records: &HashMap<usize, Record>) -> f64 {
         if !unit.members.iter().any(|(t, _)| t == "LENGTH_UNIT") {
             continue;
         }
-        if the_uncertainty > value {
-            the_uncertainty = value;
+        if uncertainty > value {
+            uncertainty = value;
         }
         has_uncertainty = true;
     }
     if !has_uncertainty {
         return READ_PRECISION_VAL;
     }
-    the_uncertainty * context_length_factor(records)
+    uncertainty * context_length_factor(records)
 }
 
 pub(super) fn parse_ref(s: &str) -> Option<usize> {

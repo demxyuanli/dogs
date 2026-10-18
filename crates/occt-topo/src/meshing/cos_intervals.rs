@@ -60,12 +60,12 @@ fn add_intervals(parameters: &mut Vec<f64>, roots: &FunctionRoots, tol: f64) {
         }
         let mut inserted = false;
         for j in 1..parameters.len() {
-            let a_delta = parameters[j] - param;
-            if a_delta > tol {
+            let delta = parameters[j] - param;
+            if delta > tol {
                 parameters.insert(j, param);
                 inserted = true;
                 break;
-            } else if a_delta >= -tol {
+            } else if delta >= -tol {
                 inserted = true;
                 break;
             }

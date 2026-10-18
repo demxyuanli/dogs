@@ -159,8 +159,8 @@ impl Curve2d for ReparamCurve2d {
 /// `Precision::PConfusion()`).
 fn same_range_window(inner: &dyn Curve2d, first_on: f64, last_on: f64) -> (f64, f64) {
     let pconfusion = occt_core::precision::PCONFUSION;
-    let a_check: &dyn Curve2d = inner.trimmed_basis().unwrap_or(inner);
-    if a_check.is_periodic() {
+    let check: &dyn Curve2d = inner.trimmed_basis().unwrap_or(inner);
+    if check.is_periodic() {
         if (last_on - first_on).abs() > pconfusion {
             (first_on, last_on)
         } else {

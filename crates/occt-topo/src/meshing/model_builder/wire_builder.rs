@@ -537,26 +537,26 @@ fn vmap_toggle(vmap: &mut Vec<(usize, Orientation)>, key: usize, ori: Orientatio
 /// (`BRepTools_WireExplorer.cxx:521-705`): returns the index into `list` of the
 /// next edge, or `None` when the walk stops (`myEdge = TopoDS_Edge()`).
 fn wire_next_by_uv(
-    my_edge: &Edge,
+    edge: &Edge,
     face: &Face,
     list: &[Edge],
     tol_u: f64,
     tol_v: f64,
 ) -> Option<usize> {
-    let (a_pcurve, df_f_par, df_l_par) = pcurve_and_range(my_edge, face)?;
+    let (pcurve, df_f_par, df_l_par) = pcurve_and_range(edge, face)?;
     // The 2D point of the current vertex on the current edge (`cxx:548-547`):
     // MAX pcurve parameter for a FORWARD edge, MIN for a REVERSED one.
-    let my_rev = my_edge.0.orientation().is_reversed();
-    let p_ref = if my_rev {
-        a_pcurve.d0(df_f_par)
+    let rev = edge.0.orientation().is_reversed();
+    let p_ref = if rev {
+        pcurve.d0(df_f_par)
     } else {
-        a_pcurve.d0(df_l_par)
+        pcurve.d0(df_l_par)
     };
     // The direction from the current vertex back into the current edge
     // (`cxx:551-556`), used as the angle reference.
     let df_m_par =
-        get_next_param_on_pc(a_pcurve.as_ref(), &p_ref, df_f_par, df_l_par, tol_u, tol_v, my_rev);
-    let p_refm = a_pcurve.d0(df_m_par);
+        get_next_param_on_pc(pcurve.as_ref(), &p_ref, df_f_par, df_l_par, tol_u, tol_v, rev);
+    let p_refm = pcurve.d0(df_m_par);
     let an_e_ref_dir = GpVec2d::new(p_refm.x() - p_ref.x(), p_refm.y() - p_ref.y());
     if an_e_ref_dir.square_magnitude() < REAL_SMALL {
         return None;
@@ -570,55 +570,55 @@ fn wire_next_by_uv(
     for _pass in 0..2 {
         let mut k = 1usize;
         for e in list {
-            if Arc::ptr_eq(&e.0.tshape, &my_edge.0.tshape) {
+            if Arc::ptr_eq(&e.0.tshape, &edge.0.tshape) {
                 k += 1;
                 continue;
             }
-            let (a_v1, a_v2) = edge_oriented_ends(e);
-            let (Some(a_v1), Some(a_v2)) = (a_v1, a_v2) else {
+            let (v1, v2) = edge_oriented_ends(e);
+            let (Some(v1), Some(v2)) = (v1, v2) else {
                 k += 1;
                 continue;
             };
-            let Some((a_pc, a_f, a_l)) = pcurve_and_range(e, face) else {
+            let Some((pc, f, l)) = pcurve_and_range(e, face) else {
                 k += 1;
                 continue;
             };
             // `cxx:602`: pass 1 keeps closed edges (`V1.IsSame(V2)`), pass 2 the
             // rest.
-            if same_vertex(&a_v1, &a_v2) == is_degenerated {
-                let a_peb = if e.0.orientation().is_reversed() {
-                    a_pc.d0(a_l)
+            if same_vertex(&v1, &v2) == is_degenerated {
+                let peb = if e.0.orientation().is_reversed() {
+                    pc.d0(l)
                 } else {
-                    a_pc.d0(a_f)
+                    pc.d0(f)
                 };
-                if (a_l - a_f).abs() > PCONFUSION {
+                if (l - f).abs() > PCONFUSION {
                     let reverse = !e.0.orientation().is_reversed();
-                    let a_epm =
-                        get_next_param_on_pc(a_pc.as_ref(), &a_peb, a_f, a_l, tol_u, tol_v, reverse);
-                    let mut a_pee = a_pc.d0(a_epm);
-                    if a_peb.square_distance(&a_pee) <= REAL_SMALL {
+                    let epm =
+                        get_next_param_on_pc(pc.as_ref(), &peb, f, l, tol_u, tol_v, reverse);
+                    let mut pee = pc.d0(epm);
+                    if peb.square_distance(&pee) <= REAL_SMALL {
                         // Very short curve: take its tangent (`cxx:626-643`).
-                        let (_, d) = a_pc.d1(a_epm);
-                        a_pee = if e.0.orientation().is_reversed() {
-                            GpPnt2d::new(a_peb.x() - d.x(), a_peb.y() - d.y())
+                        let (_, d) = pc.d1(epm);
+                        pee = if e.0.orientation().is_reversed() {
+                            GpPnt2d::new(peb.x() - d.x(), peb.y() - d.y())
                         } else {
-                            GpPnt2d::new(a_peb.x() + d.x(), a_peb.y() + d.y())
+                            GpPnt2d::new(peb.x() + d.x(), peb.y() + d.y())
                         };
-                        if a_peb.square_distance(&a_pee) <= REAL_SMALL {
+                        if peb.square_distance(&pee) <= REAL_SMALL {
                             k += 1;
                             continue;
                         }
                     }
-                    let an_e_dir = GpVec2d::new(a_pee.x() - a_peb.x(), a_pee.y() - a_peb.y());
+                    let an_e_dir = GpVec2d::new(pee.x() - peb.x(), pee.y() - peb.y());
                     df_cur_angle = an_e_dir.angle(&an_e_ref_dir).abs();
                 }
                 if df_cur_angle <= df_min_angle {
-                    let mut d = p_ref.square_distance(&a_peb);
+                    let mut d = p_ref.square_distance(&peb);
                     if d <= PCONFUSION {
                         d = 0.0;
                     }
-                    if (a_peb.x() - p_ref.x()).abs() < tol_u
-                        && (a_peb.y() - p_ref.y()).abs() < tol_v
+                    if (peb.x() - p_ref.x()).abs() < tol_u
+                        && (peb.y() - p_ref.y()).abs() < tol_v
                         && d <= dmin
                     {
                         df_min_angle = df_cur_angle;

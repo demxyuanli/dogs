@@ -36,24 +36,24 @@ use crate::shape::{Edge, Vertex};
 pub fn is_existing_vertex(
     ds: &BopdsDS,
     p: &GpPnt,
-    the_tol_r3d: f64,
+    tol_r3d: f64,
     mv_on_in: &std::collections::HashSet<usize>,
     fuzzy: f64,
 ) -> bool {
-    let a_tol_check = the_tol_r3d + fuzzy;
-    let mut a_box_p = BndBox::new();
-    a_box_p.add_point(p);
-    a_box_p.enlarge(the_tol_r3d);
+    let tol_check = tol_r3d + fuzzy;
+    let mut box_p = BndBox::new();
+    box_p.add_point(p);
+    box_p.enlarge(tol_r3d);
     for &n_v in mv_on_in {
         if let Some(bv) = ds.box_of(n_v) {
-            if a_box_p.is_out_box(bv) {
+            if box_p.is_out_box(bv) {
                 continue;
             }
         }
         let Some(v) = ds.shape(n_v) else {
             continue;
         };
-        if AlgoTools::compute_vv(v, p, a_tol_check) != 0 {
+        if AlgoTools::compute_vv(v, p, tol_check) != 0 {
             return true;
         }
     }
@@ -64,46 +64,46 @@ pub fn is_existing_vertex(
 pub fn is_existing_pave_block_on_shared(
     ds: &BopdsDS,
     ctx: &IntToolsContext,
-    the_pb: &BopdsPaveBlock,
+    pb: &BopdsPaveBlock,
     curve: &dyn Curve,
-    the_lse: &[usize],
+    lse: &[usize],
     fuzzy: f64,
 ) -> Option<(usize, f64)> {
-    if the_lse.is_empty() {
+    if lse.is_empty() {
         return None;
     }
-    let (a_t1, a_t2) = the_pb.range();
-    let (n_v1, n_v2) = the_pb.indices();
-    let mut a_tol = 0.0f64;
+    let (t1, t2) = pb.range();
+    let (n_v1, n_v2) = pb.indices();
+    let mut tol = 0.0f64;
     if let Some(v) = ds.shape(n_v1) {
-        a_tol = a_tol.max(BRepTool::vertex_tolerance(&Vertex(v.clone())));
+        tol = tol.max(BRepTool::vertex_tolerance(&Vertex(v.clone())));
     }
     if let Some(v) = ds.shape(n_v2) {
-        a_tol = a_tol.max(BRepTool::vertex_tolerance(&Vertex(v.clone())));
+        tol = tol.max(BRepTool::vertex_tolerance(&Vertex(v.clone())));
     }
-    let a_tm = intermediate_point(a_t1, a_t2);
-    let a_pm = curve.d0(a_tm);
-    let mut a_box_pm = BndBox::new();
-    a_box_pm.add_point(&a_pm);
-    a_box_pm.enlarge(a_tol);
-    for &n_e in the_lse {
+    let tm = intermediate_point(t1, t2);
+    let pm = curve.d0(tm);
+    let mut box_pm = BndBox::new();
+    box_pm.add_point(&pm);
+    box_pm.enlarge(tol);
+    for &n_e in lse {
         if n_e == 0 {
             continue;
         }
         if let Some(be) = ds.box_of(n_e) {
-            if be.is_out_box(&a_box_pm) {
+            if be.is_out_box(&box_pm) {
                 continue;
             }
         }
         let Some(e_shape) = ds.shape(n_e) else {
             continue;
         };
-        let a_e = Edge(e_shape.clone());
-        let a_tol_e = BRepTool::edge_tolerance(&a_e);
-        let a_tol_check = a_tol_e.max(a_tol) + fuzzy;
-        let (i_flag, _tx, a_dist) = ctx.compute_pe_pnt(&a_pm, a_tol_check, &a_e);
+        let e = Edge(e_shape.clone());
+        let tol_e = BRepTool::edge_tolerance(&e);
+        let tol_check = tol_e.max(tol) + fuzzy;
+        let (i_flag, _tx, dist) = ctx.compute_pe_pnt(&pm, tol_check, &e);
         if i_flag == 0 {
-            return Some((n_e, a_dist));
+            return Some((n_e, dist));
         }
     }
     None

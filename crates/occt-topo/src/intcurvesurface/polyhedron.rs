@@ -36,11 +36,11 @@ pub struct ThePolyhedronOfHInter {
     /// `nbdeltaV` (`...hxx:140`).
     nb_delta_v: usize,
     /// `TheBnd` (`...hxx:141`).
-    the_bnd: BndBox,
+    bnd: BndBox,
     /// `TheComponentsBnd` (`...hxx:142`), 1-based: element 0 is unused.
-    the_components_bnd: Vec<BndBox>,
+    components_bnd: Vec<BndBox>,
     /// `TheDeflection` (`...hxx:143`).
-    the_deflection: f64,
+    deflection: f64,
     /// `C_MyPnts` (`...hxx:146`), 1-based.
     pnts: Vec<GpPnt>,
     /// `C_MyU` (`...hxx:147`), 1-based.
@@ -58,7 +58,7 @@ pub struct ThePolyhedronOfHInter {
     /// `VMaxSingular` (`...hxx:152`).
     vmax_singular: bool,
     /// `TheBorderDeflection` (`...hxx:153`).
-    the_border_deflection: f64,
+    border_deflection: f64,
 }
 
 impl ThePolyhedronOfHInter {
@@ -96,9 +96,9 @@ impl ThePolyhedronOfHInter {
         Self {
             nb_delta_u,
             nb_delta_v,
-            the_bnd: BndBox::new(),
-            the_components_bnd: Vec::new(),
-            the_deflection: epsilon(100.0),
+            bnd: BndBox::new(),
+            components_bnd: Vec::new(),
+            deflection: epsilon(100.0),
             pnts: vec![GpPnt::new(0.0, 0.0, 0.0); n],
             us: vec![0.0; n],
             vs: vec![0.0; n],
@@ -107,7 +107,7 @@ impl ThePolyhedronOfHInter {
             umax_singular: false,
             vmin_singular: false,
             vmax_singular: false,
-            the_border_deflection: 0.0,
+            border_deflection: 0.0,
         }
     }
 
@@ -129,7 +129,7 @@ impl ThePolyhedronOfHInter {
                 self.vs[index] = v;
                 self.is_on_bounds[index] =
                     i1 == 0 || i1 == self.nb_delta_u || i2 == 0 || i2 == self.nb_delta_v;
-                self.the_bnd.add_point(&p);
+                self.bnd.add_point(&p);
                 index += 1;
             }
         }
@@ -138,7 +138,7 @@ impl ThePolyhedronOfHInter {
         let tol = self.compute_max_deflection(surface, ntri);
         self.set_deflection_over_estimation(tol * 1.2);
         self.fill_bounding();
-        self.the_border_deflection =
+        self.border_deflection =
             Self::compute_max_border_deflection(surface, u0, v0, u1, v1, self.nb_delta_u, self.nb_delta_v);
     }
 
@@ -156,7 +156,7 @@ impl ThePolyhedronOfHInter {
                 self.vs[index] = v;
                 self.is_on_bounds[index] =
                     i1 == 0 || i1 == self.nb_delta_u || i2 == 0 || i2 == self.nb_delta_v;
-                self.the_bnd.add_point(&p);
+                self.bnd.add_point(&p);
             }
         }
 
@@ -164,7 +164,7 @@ impl ThePolyhedronOfHInter {
         let tol = self.compute_max_deflection(surface, ntri);
         self.set_deflection_over_estimation(tol * 1.2);
         self.fill_bounding();
-        self.the_border_deflection = Self::compute_max_border_deflection(
+        self.border_deflection = Self::compute_max_border_deflection(
             surface,
             upars[0],
             vpars[0],
@@ -230,41 +230,41 @@ impl ThePolyhedronOfHInter {
 
     /// `Bounding()` (`...cxx:192-196`).
     pub fn bounding(&self) -> &BndBox {
-        &self.the_bnd
+        &self.bnd
     }
 
     /// `ComponentsBounding()` (`...cxx:210-214`).
     pub fn components_bounding(&self) -> &[BndBox] {
-        &self.the_components_bnd[1..]
+        &self.components_bnd[1..]
     }
 
     /// `DeflectionOverEstimation()` (`...cxx:186-189`).
     pub fn deflection_over_estimation(&self) -> f64 {
-        self.the_deflection
+        self.deflection
     }
 
     /// `DeflectionOverEstimation(flec)` (`...cxx:179-183` =
     /// `PolyhedronUtils.pxx:836-848`).
     pub fn set_deflection_over_estimation(&mut self, flec: f64) {
         if flec < THE_MIN_DEFLECTION {
-            self.the_deflection = THE_MIN_DEFLECTION;
-            self.the_bnd.enlarge(THE_MIN_DEFLECTION);
+            self.deflection = THE_MIN_DEFLECTION;
+            self.bnd.enlarge(THE_MIN_DEFLECTION);
         } else {
-            self.the_deflection = flec;
-            self.the_bnd.enlarge(flec);
+            self.deflection = flec;
+            self.bnd.enlarge(flec);
         }
     }
 
     /// `GetBorderDeflection()` (`...hxx:151`).
     pub fn get_border_deflection(&self) -> f64 {
-        self.the_border_deflection
+        self.border_deflection
     }
 
     /// `FillBounding()` (`...cxx:200-208` =
     /// `PolyhedronUtils.pxx:578-608`).
     pub fn fill_bounding(&mut self) {
         let ntri = self.nb_triangles();
-        self.the_components_bnd = vec![BndBox::new(); ntri + 1];
+        self.components_bnd = vec![BndBox::new(); ntri + 1];
         for tri in 1..=ntri {
             let (n1, n2, n3) = self.triangle_indices(tri);
             let p1 = self.pnts[n1 as usize];
@@ -279,28 +279,28 @@ impl ThePolyhedronOfHInter {
                 boite.add_point(&p1);
                 boite.add_point(&p2);
                 boite.add_point(&p3);
-                boite.enlarge(self.the_deflection);
+                boite.enlarge(self.deflection);
             }
-            boite.enlarge(self.the_deflection);
-            self.the_components_bnd[tri] = boite;
+            boite.enlarge(self.deflection);
+            self.components_bnd[tri] = boite;
         }
     }
 
     /// `Contain(Triang, ThePnt)` (`...cxx:256-262` =
     /// `PolyhedronUtils.pxx:556-567`).
-    pub fn contain(&self, triang: usize, the_pnt: &GpPnt) -> bool {
+    pub fn contain(&self, triang: usize, pnt: &GpPnt) -> bool {
         let (n1, n2, n3) = self.triangle_indices(triang);
         let p1 = self.pnts[n1 as usize];
         let p2 = self.pnts[n2 as usize];
         let p3 = self.pnts[n3 as usize];
-        Self::contain_point(&p1, &p2, &p3, the_pnt)
+        Self::contain_point(&p1, &p2, &p3, pnt)
     }
 
     /// `PolyUtils::Contain` (`PolyhedronUtils.pxx:556-567`).
-    pub fn contain_point(p1: &GpPnt, p2: &GpPnt, p3: &GpPnt, the_pnt: &GpPnt) -> bool {
-        let v1 = GpVec::from_pnts(p1, p2).crossed(&GpVec::from_pnts(p1, the_pnt));
-        let v2 = GpVec::from_pnts(p2, p3).crossed(&GpVec::from_pnts(p2, the_pnt));
-        let v3 = GpVec::from_pnts(p3, p1).crossed(&GpVec::from_pnts(p3, the_pnt));
+    pub fn contain_point(p1: &GpPnt, p2: &GpPnt, p3: &GpPnt, pnt: &GpPnt) -> bool {
+        let v1 = GpVec::from_pnts(p1, p2).crossed(&GpVec::from_pnts(p1, pnt));
+        let v2 = GpVec::from_pnts(p2, p3).crossed(&GpVec::from_pnts(p2, pnt));
+        let v3 = GpVec::from_pnts(p3, p1).crossed(&GpVec::from_pnts(p3, pnt));
         v1.dot(&v2) >= 0.0 && v2.dot(&v3) >= 0.0 && v3.dot(&v1) >= 0.0
     }
 
@@ -684,10 +684,10 @@ impl ThePolyhedronOfHInter {
     /// (`Intf_Tool::PolyhedronBox`), not part of
     /// `IntCurveSurface_ThePolyhedronOfHInter`.
     pub fn is_out_polygon(&self, poly: &super::polygon::ThePolygonOfHInter) -> bool {
-        if self.the_bnd.is_void() || poly.bounding().is_void() {
+        if self.bnd.is_void() || poly.bounding().is_void() {
             return true;
         }
-        self.the_bnd.is_out_box(poly.bounding())
+        self.bnd.is_out_box(poly.bounding())
     }
 }
 
@@ -697,44 +697,44 @@ pub struct ThePolyhedronToolOfHInter;
 impl IntfPolyhedronTool for ThePolyhedronToolOfHInter {
     type Polyhedron = ThePolyhedronOfHInter;
 
-    fn bounding(the_polyh: &Self::Polyhedron) -> &BndBox {
-        the_polyh.bounding()
+    fn bounding(polyh: &Self::Polyhedron) -> &BndBox {
+        polyh.bounding()
     }
 
-    fn components_bounding(the_polyh: &Self::Polyhedron) -> &[BndBox] {
-        the_polyh.components_bounding()
+    fn components_bounding(polyh: &Self::Polyhedron) -> &[BndBox] {
+        polyh.components_bounding()
     }
 
-    fn deflection_over_estimation(the_polyh: &Self::Polyhedron) -> f64 {
-        the_polyh.deflection_over_estimation()
+    fn deflection_over_estimation(polyh: &Self::Polyhedron) -> f64 {
+        polyh.deflection_over_estimation()
     }
 
-    fn nb_triangles(the_polyh: &Self::Polyhedron) -> usize {
-        the_polyh.nb_triangles()
+    fn nb_triangles(polyh: &Self::Polyhedron) -> usize {
+        polyh.nb_triangles()
     }
 
-    fn triangle(the_polyh: &Self::Polyhedron, index: i32) -> (i32, i32, i32) {
-        the_polyh.triangle_indices(index as usize)
+    fn triangle(polyh: &Self::Polyhedron, index: i32) -> (i32, i32, i32) {
+        polyh.triangle_indices(index as usize)
     }
 
-    fn point(the_polyh: &Self::Polyhedron, index: i32) -> GpPnt {
-        the_polyh.point(index)
+    fn point(polyh: &Self::Polyhedron, index: i32) -> GpPnt {
+        polyh.point(index)
     }
 
     fn tri_connex(
-        the_polyh: &Self::Polyhedron,
+        polyh: &Self::Polyhedron,
         triang: i32,
         pivot: i32,
         pedge: i32,
     ) -> (i32, i32, i32) {
-        the_polyh.tri_connex(triang, pivot, pedge)
+        polyh.tri_connex(triang, pivot, pedge)
     }
 
-    fn is_on_bound(the_polyh: &Self::Polyhedron, index1: i32, index2: i32) -> bool {
-        the_polyh.is_on_bound(index1, index2)
+    fn is_on_bound(polyh: &Self::Polyhedron, index1: i32, index2: i32) -> bool {
+        polyh.is_on_bound(index1, index2)
     }
 
-    fn get_border_deflection(the_polyh: &Self::Polyhedron) -> f64 {
-        the_polyh.get_border_deflection()
+    fn get_border_deflection(polyh: &Self::Polyhedron) -> f64 {
+        polyh.get_border_deflection()
     }
 }

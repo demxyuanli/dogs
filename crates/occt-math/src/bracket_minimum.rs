@@ -38,8 +38,8 @@ pub struct BracketMinimum {
     /// `myIsLimited` (`math_BracketMinimum.hxx:133`).
     is_limited: bool,
     /// `myFA` / `myFB` (`math_BracketMinimum.hxx:134-135`).
-    my_fa: bool,
-    my_fb: bool,
+    fa: bool,
+    fb: bool,
 }
 
 impl BracketMinimum {
@@ -58,8 +58,8 @@ impl BracketMinimum {
             left: -INFINITE,
             right: INFINITE,
             is_limited: false,
-            my_fa: false,
-            my_fb: false,
+            fa: false,
+            fb: false,
         }
     }
 
@@ -71,15 +71,15 @@ impl BracketMinimum {
     }
 
     /// `SetFA(theValue)` (`math_BracketMinimum.lxx:53-57`).
-    pub fn set_fa(&mut self, the_value: f64) {
-        self.fax = the_value;
-        self.my_fa = true;
+    pub fn set_fa(&mut self, value: f64) {
+        self.fax = value;
+        self.fa = true;
     }
 
     /// `SetFB(theValue)` (`math_BracketMinimum.lxx:59-63`).
-    pub fn set_fb(&mut self, the_value: f64) {
-        self.fbx = the_value;
-        self.my_fb = true;
+    pub fn set_fb(&mut self, value: f64) {
+        self.fbx = value;
+        self.fb = true;
     }
 
     /// `IsDone()` (`math_BracketMinimum.lxx:35-38`).
@@ -108,13 +108,13 @@ impl BracketMinimum {
     }
 
     /// `Limited(theValue)` (`math_BracketMinimum.lxx:65-68`).
-    fn limited(&self, the_value: f64) -> f64 {
-        if the_value < self.left {
+    fn limited(&self, value: f64) -> f64 {
+        if value < self.left {
             self.left
-        } else if the_value > self.right {
+        } else if value > self.right {
             self.right
         } else {
-            the_value
+            value
         }
     }
 
@@ -158,13 +158,13 @@ impl BracketMinimum {
         let mut fcx: f64;
 
         // cxx:70-85
-        if !self.my_fa {
+        if !self.fa {
             match f(ax) {
                 Some(v) => fax = v,
                 None => return,
             }
         }
-        if !self.my_fb {
+        if !self.fb {
             match f(bx) {
                 Some(v) => fbx = v,
                 None => return,
@@ -307,33 +307,33 @@ impl BracketMinimum {
 /// over a fallible objective: `None` also covers `cxx:47-51`'s `F.Value` failure.
 fn limit_and_may_be_swap_fallible<F: FnMut(f64) -> Option<f64>>(
     f: &mut F,
-    the_a: f64,
-    the_b: f64,
-    the_fb: f64,
-    the_c: f64,
+    a: f64,
+    b: f64,
+    fb: f64,
+    c: f64,
     the_left: f64,
     the_right: f64,
 ) -> Option<(f64, f64, f64, f64)> {
-    let the_c = if the_c < the_left {
+    let c = if c < the_left {
         the_left
-    } else if the_c > the_right {
+    } else if c > the_right {
         the_right
     } else {
-        the_c
+        c
     };
-    if (the_b - the_c).abs() < P_CONFUSION {
+    if (b - c).abs() < P_CONFUSION {
         return None;
     }
-    let the_fc = match f(the_c) {
+    let fc = match f(c) {
         Some(v) => v,
         None => return None,
     };
     // check that B is between A and C
-    if (the_a - the_b) * (the_b - the_c) < 0.0 {
+    if (a - b) * (b - c) < 0.0 {
         // swap B and C
-        Some((the_c, the_b, the_fc, the_fb))
+        Some((c, b, fc, fb))
     } else {
-        Some((the_b, the_c, the_fb, the_fc))
+        Some((b, c, fb, fc))
     }
 }
 

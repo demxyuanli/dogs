@@ -22,7 +22,7 @@ pub fn find_parameter_range(
 ) -> f64 {
     // cxx:34-35.
     let nb_pts = curve_tool::nb_samples_curve(c) as i32;
-    let the_eps_x = curve_tool::geom2d_eps_x();
+    let eps_x = curve_tool::geom2d_eps_x();
     // cxx:38-44.
     let (defaultparam, _p_on_c) =
         curve_locator::locate_range(p, c, nb_pts, low_parameter, high_parameter);
@@ -32,7 +32,7 @@ pub fn find_parameter_range(
         c,
         curve_tool::geom2d_first_parameter(c),
         curve_tool::geom2d_last_parameter(c),
-        the_eps_x,
+        eps_x,
     );
     loc.perform(p, defaultparam);
     if !loc.is_done() {

@@ -358,7 +358,7 @@ impl Curve2d for Geom2dOffsetCurve {
         if a_d1.square_magnitude() <= GP_RESOLUTION {
             // `cxx:258-280`: the basis D1 is singular, so `D1..D3` and
             // `isDirectionChange` come from `AdjustDerivative(..., 3, ...)`.
-            let mut a_dummy_d4 = GpVec2d::zero();
+            let mut dummy_d4 = GpVec2d::zero();
             // A `false` return throws `Geom2d_UndefinedDerivative` (`cxx:265-268`);
             // `adjust_derivative` has no failure channel and always succeeds.
             let _ = adjust_derivative(
@@ -368,7 +368,7 @@ impl Curve2d for Geom2dOffsetCurve {
                 &mut a_d1,
                 &mut a_d2,
                 &mut a_d3,
-                &mut a_dummy_d4,
+                &mut dummy_d4,
                 &mut is_direction_change,
             );
         }
@@ -391,7 +391,7 @@ impl Curve2d for Geom2dOffsetCurve {
         let mut a_d1 = d1;
         let mut a_d2 = d2;
         let mut a_d3 = d3;
-        let mut a_d4 = self.basis.eval_dn(u, 4);
+        let mut d4 = self.basis.eval_dn(u, 4);
         let mut is_direction_change = false;
         if a_d1.square_magnitude() <= GP_RESOLUTION {
             // `cxx:302-311`: `AdjustDerivative(theBasisCurve, 4, ...)`.
@@ -402,7 +402,7 @@ impl Curve2d for Geom2dOffsetCurve {
                 &mut a_d1,
                 &mut a_d2,
                 &mut a_d3,
-                &mut a_d4,
+                &mut d4,
                 &mut is_direction_change,
             );
         }
@@ -412,7 +412,7 @@ impl Curve2d for Geom2dOffsetCurve {
             &mut a_d1,
             &mut a_d2,
             &mut a_d3,
-            &a_d4,
+            &d4,
             is_direction_change,
         ) {
             // `cxx:325` throws `Geom2d_UndefinedDerivative`.

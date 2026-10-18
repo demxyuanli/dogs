@@ -210,7 +210,7 @@ impl MeshMaterialMap {
     }
 
     /// `RWMesh_MaterialMap::CopyTexture` (`RWMesh_MaterialMap.cxx:200-232`):
-    /// copy the image into the textures folder, renamed after `the_key` unless
+    /// copy the image into the textures folder, renamed after `key` unless
     /// the source is a plain image file (then its own name is kept,
     /// `cxx:206-215`).
     ///
@@ -219,7 +219,7 @@ impl MeshMaterialMap {
     /// C++, `cxx:212-213` / `cxx:227-228`), so a failed copy still yields the
     /// name the caller would reference — `RWObj_ObjMaterialMap.cxx:137-140`
     /// writes `map_Kd` for any non-empty result.
-    pub fn copy_texture(&mut self, texture: &ImageTexture, the_key: &str) -> (String, bool) {
+    pub fn copy_texture(&mut self, texture: &ImageTexture, key: &str) -> (String, bool) {
         self.create_texture_folder();
 
         let mut tex_file_name;
@@ -243,7 +243,7 @@ impl MeshMaterialMap {
             ext = "bin".to_string();
         }
         // `aTexFileName = theKey + "." + anExt;` (`cxx:222`).
-        tex_file_name = format!("{the_key}.{ext}");
+        tex_file_name = format!("{key}.{ext}");
 
         let res_tex_file = format!("{}{}", self.tex_folder, tex_file_name);
         let res_texture = format!("{}{}", self.tex_folder_short, tex_file_name);
@@ -255,19 +255,19 @@ impl MeshMaterialMap {
     /// `RWMesh_MaterialMap::copyFileTo` (`RWMesh_MaterialMap.cxx:120-148`): an
     /// empty side or a missing source fails, identical paths succeed without
     /// touching the file, otherwise the bytes are copied.
-    fn copy_file_to(the_file_src: &str, the_file_dst: &str) -> bool {
-        if the_file_src.is_empty() || the_file_dst.is_empty() {
+    fn copy_file_to(file_src: &str, file_dst: &str) -> bool {
+        if file_src.is_empty() || file_dst.is_empty() {
             return false;
-        } else if the_file_src == the_file_dst {
+        } else if file_src == file_dst {
             return true;
         }
         // `OSD_File aFileSrc(aSrcPath); if (!aFileSrc.Exists()) ... return false;`
         // (`cxx:132-139`).
-        if !std::path::Path::new(the_file_src).exists() {
+        if !std::path::Path::new(file_src).exists() {
             return false;
         }
         // `aFileSrc.Copy(aDstPath); return !aFileSrc.Failed();` (`cxx:140-141`).
-        std::fs::copy(the_file_src, the_file_dst).is_ok()
+        std::fs::copy(file_src, file_dst).is_ok()
     }
 
     /// `IsFailed()` (`hxx:90`).

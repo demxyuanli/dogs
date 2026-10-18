@@ -31,9 +31,9 @@ fn shape_key(s: &TopoShape) -> usize {
 /// the ancestor maps above. Two geometric views of one segment may carry
 /// opposite intrinsic directions, so the orientation test is expressed as the
 /// traversal test it stands for in OCCT ([`crate::shell_splitter::edge_traversal`]).
-fn get_edge_off_geo(the_e1: &Edge, the_f2: &TopoShape) -> Option<Edge> {
-    let k = edge_ek(the_e1);
-    for w in crate::bop_occt_util::iter_children(the_f2) {
+fn get_edge_off_geo(e1: &Edge, f2: &TopoShape) -> Option<Edge> {
+    let k = edge_ek(e1);
+    for w in crate::bop_occt_util::iter_children(f2) {
         if w.shape_type() != ShapeType::Wire {
             continue;
         }
@@ -49,9 +49,9 @@ fn get_edge_off_geo(the_e1: &Edge, the_f2: &TopoShape) -> Option<Edge> {
             // occurrence of `theE1` inside `theF2` to carry the opposite
             // orientation; the geometric views used here are compared by
             // traversal instead ([`crate::shell_splitter::same_traversal`]).
-            let off = match crate::shell_splitter::same_traversal(the_e1, &e2) {
+            let off = match crate::shell_splitter::same_traversal(e1, &e2) {
                 Some(same) => !same,
-                None => e2.0.orientation() == the_e1.0.orientation().reversed(),
+                None => e2.0.orientation() == e1.0.orientation().reversed(),
             };
             if off {
                 return Some(e2);
@@ -259,15 +259,15 @@ fn refine_shell(
 pub fn split_shell_block(block: &mut ConnexityBlock) {
     block.change_loops_mut().clear();
     let my_shapes = block.shapes().to_vec();
-    let mut a_m_faces: HashMap<(usize, u8), TopoShape> = HashMap::new();
+    let mut m_faces: HashMap<(usize, u8), TopoShape> = HashMap::new();
     for f in &my_shapes {
-        a_m_faces.insert(ori_key(f), f.clone());
+        m_faces.insert(ori_key(f), f.clone());
     }
     loop {
-        let live: Vec<TopoShape> = a_m_faces.values().cloned().collect();
-        let a_ef = map_edges_and_faces(&live);
-            let begin = a_m_faces.len();
-        for (ek, lf) in &a_ef {
+        let live: Vec<TopoShape> = m_faces.values().cloned().collect();
+        let ef = map_edges_and_faces(&live);
+            let begin = m_faces.len();
+        for (ek, lf) in &ef {
             let Some(e_rep) = live.iter().find_map(|f| {
                 face_boundary_edges(f)
                     .into_iter()
@@ -279,50 +279,50 @@ pub fn split_shell_block(block: &mut ConnexityBlock) {
                 continue;
             }
             if lf.len() == 1 {
-                a_m_faces.remove(&ori_key(&lf[0]));
+                m_faces.remove(&ori_key(&lf[0]));
             }
         }
-        let end = a_m_faces.len();
+        let end = m_faces.len();
         if end == begin || end == 0 {
             break;
         }
     }
-    if a_m_faces.is_empty() {
+    if m_faces.is_empty() {
         return;
     }
 
-    let mut a_lf_connected: Vec<TopoShape> = Vec::new();
-    let mut a_boundary: HashSet<usize> = HashSet::new();
+    let mut lf_connected: Vec<TopoShape> = Vec::new();
+    let mut boundary: HashSet<usize> = HashSet::new();
     for f in &my_shapes {
-        if a_m_faces.contains_key(&ori_key(f)) {
-            a_lf_connected.push(f.clone());
-            if !a_boundary.insert(shape_key(f)) {
-                a_boundary.remove(&shape_key(f));
+        if m_faces.contains_key(&ori_key(f)) {
+            lf_connected.push(f.clone());
+            if !boundary.insert(shape_key(f)) {
+                boundary.remove(&shape_key(f));
             }
         }
     }
-    let a_nb_shapes = a_lf_connected.len();
-    let live: Vec<TopoShape> = a_m_faces.values().cloned().collect();
-    let a_ef_map = map_edges_and_faces(&live);
+    let nb_shapes = lf_connected.len();
+    let live: Vec<TopoShape> = m_faces.values().cloned().collect();
+    let ef_map = map_edges_and_faces(&live);
     let mut added: HashSet<(usize, u8)> = HashSet::new();
     let ctx = IntToolsContext::new();
     let mut all_taken = false;
-    for a_ff in &a_lf_connected {
+    for ff in &lf_connected {
         if all_taken {
             break;
         }
-        if !added.insert(ori_key(a_ff)) {
+        if !added.insert(ori_key(ff)) {
             continue;
         }
-        let mut shell_faces: Vec<TopoShape> = vec![a_ff.clone()];
-        let mut a_mefp: HashMap<crate::shell_splitter::EKey, Vec<TopoShape>> = HashMap::new();
-        merge_face_into_mef(&mut a_mefp, a_ff);
+        let mut shell_faces: Vec<TopoShape> = vec![ff.clone()];
+        let mut mefp: HashMap<crate::shell_splitter::EKey, Vec<TopoShape>> = HashMap::new();
+        merge_face_into_mef(&mut mefp, ff);
         let mut i = 0usize;
         while i < shell_faces.len() {
             let a_f = shell_faces[i].clone();
-            let is_boundary = a_boundary.contains(&shape_key(&a_f));
+            let is_boundary = boundary.contains(&shape_key(&a_f));
             for a_e in face_boundary_edges(&a_f) {
-                if a_mefp
+                if mefp
                     .get(&edge_ek(&a_e))
                     .map(|l| l.len() > 1)
                     .unwrap_or(false)
@@ -335,36 +335,36 @@ pub fn split_shell_block(block: &mut ConnexityBlock) {
                 if BRepTool::is_degenerated(&a_e) {
                     continue;
                 }
-                let Some(a_lf) = a_ef_map.get(&edge_ek(&a_e)) else {
+                let Some(a_lf) = ef_map.get(&edge_ek(&a_e)) else {
                     continue;
                 };
                 if a_lf.is_empty() {
                     continue;
                 }
-                let mut a_lcs_off: Vec<CoupleOfShape> = Vec::new();
-                let mut a_nb_ways_inside = 0i32;
+                let mut lcs_off: Vec<CoupleOfShape> = Vec::new();
+                let mut nb_ways_inside = 0i32;
                 let mut a_sel: Option<TopoShape> = None;
-                for a_fl in a_lf {
-                    if is_same(&a_f, a_fl) || added.contains(&ori_key(a_fl)) {
+                for fl in a_lf {
+                    if is_same(&a_f, fl) || added.contains(&ori_key(fl)) {
                         continue;
                     }
-                    let Some(a_el) = get_edge_off_geo(&a_e, a_fl) else {
+                    let Some(el) = get_edge_off_geo(&a_e, fl) else {
                         continue;
                     };
-                    if is_boundary && !a_boundary.contains(&shape_key(a_fl)) {
-                        a_nb_ways_inside += 1;
-                        a_sel = Some(a_fl.clone());
+                    if is_boundary && !boundary.contains(&shape_key(fl)) {
+                        nb_ways_inside += 1;
+                        a_sel = Some(fl.clone());
                     }
-                    a_lcs_off.push(CoupleOfShape::new(a_el.0, a_fl.clone()));
+                    lcs_off.push(CoupleOfShape::new(el.0, fl.clone()));
                 }
-                if a_lcs_off.is_empty() {
+                if lcs_off.is_empty() {
                     continue;
                 }
-                if !is_boundary || a_nb_ways_inside != 1 {
-                    if a_lcs_off.len() == 1 {
-                        a_sel = Some(a_lcs_off[0].shape2.clone());
+                if !is_boundary || nb_ways_inside != 1 {
+                    if lcs_off.len() == 1 {
+                        a_sel = Some(lcs_off[0].shape2.clone());
                     } else if let Some((f, _)) =
-                        get_face_off(&a_e, &Face(a_f.clone()), &a_lcs_off, &ctx)
+                        get_face_off(&a_e, &Face(a_f.clone()), &lcs_off, &ctx)
                     {
                         a_sel = Some(f.0);
                     }
@@ -372,15 +372,15 @@ pub fn split_shell_block(block: &mut ConnexityBlock) {
                 if let Some(sel) = a_sel {
                     if added.insert(ori_key(&sel)) {
                         shell_faces.push(sel.clone());
-                        merge_face_into_mef(&mut a_mefp, &sel);
+                        merge_face_into_mef(&mut mefp, &sel);
                     }
                 }
             }
             i += 1;
         }
         let walked = make_shell(&shell_faces);
-        let mut a_l_sh_nc: Vec<TopoShape> = Vec::new();
-        let refined = refine_shell(&walked, &a_mefp);
+        let mut l_sh_nc: Vec<TopoShape> = Vec::new();
+        let refined = refine_shell(&walked, &mefp);
         let n_sp = refined.len();
 
         for sh in refined {
@@ -389,17 +389,17 @@ pub fn split_shell_block(block: &mut ConnexityBlock) {
                 c.set_closed(true);
                 block.change_loops_mut().push(c);
             } else {
-                a_l_sh_nc.push(sh);
+                l_sh_nc.push(sh);
             }
         }
-        all_taken = added.len() == a_nb_shapes;
+        all_taken = added.len() == nb_shapes;
         if all_taken {
             break;
         }
         if n_sp == 1 {
             continue;
         }
-        for sh in a_l_sh_nc {
+        for sh in l_sh_nc {
             for f in crate::bop_occt_util::iter_children(&sh) {
                 if f.is_face() {
                     added.remove(&ori_key(&f));

@@ -80,12 +80,12 @@ pub fn prepare_insert_knots(
             last_u_knot_index(degree, mults),
         )
     };
-    let a_delta_k1 = get1(knots, first) - add_knots[0];
-    let a_delta_k2 = add_knots[add_knots.len() - 1] - get1(knots, last);
-    if a_delta_k1 > tolerance {
+    let delta_k1 = get1(knots, first) - add_knots[0];
+    let delta_k2 = add_knots[add_knots.len() - 1] - get1(knots, last);
+    if delta_k1 > tolerance {
         return None;
     }
-    if a_delta_k2 > tolerance {
+    if delta_k2 > tolerance {
         return None;
     }
 
@@ -96,14 +96,14 @@ pub fn prepare_insert_knots(
     let mut ak = 0usize; // `AddKnots.Lower()` (0-based)
     if periodic
         && add_knots.len() > 1
-        && a_delta_k1.abs() <= REAL_SMALL
-        && a_delta_k2.abs() <= REAL_SMALL
+        && delta_k1.abs() <= REAL_SMALL
+        && delta_k2.abs() <= REAL_SMALL
     {
         // gka: a full-period segment may add only one knot, at the end.
         ak += 1;
     }
 
-    let mut a_last_knot_mult = mults[mults.len() - 1];
+    let mut last_knot_mult = mults[mults.len() - 1];
     let mut oldau = add_knots[ak];
 
     while ak < add_knots.len() {
@@ -155,8 +155,8 @@ pub fn prepare_insert_knots(
                     amult = degree;
                 }
                 if k == knots_upper && periodic {
-                    a_last_knot_mult = amult.max(mult);
-                    sigma += 2 * (a_last_knot_mult - mult);
+                    last_knot_mult = amult.max(mult);
+                    sigma += 2 * (last_knot_mult - mult);
                 } else {
                     sigma += amult - mult;
                 }
@@ -180,7 +180,7 @@ pub fn prepare_insert_knots(
     }
 
     let nb_poles = if periodic {
-        sigma - a_last_knot_mult
+        sigma - last_knot_mult
     } else {
         sigma - degree - 1
     };

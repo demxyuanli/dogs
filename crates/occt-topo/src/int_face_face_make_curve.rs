@@ -94,62 +94,62 @@ pub fn make_bspline2d(wl: &WLine, ideb: i32, ifin: i32, on_first: bool) -> Optio
 }
 
 /// `ApproxWithPCurves` (`IntTools_FaceFace.cxx:2357`).
-pub fn approx_with_pcurves(the_cyl: &GpCylinder, the_sph: &GpSphere) -> bool {
+pub fn approx_with_pcurves(cyl: &GpCylinder, sph: &GpSphere) -> bool {
     let b_res = true;
-    let r1 = the_cyl.radius();
-    let r2 = the_sph.radius();
+    let r1 = cyl.radius();
+    let r2 = sph.radius();
     {
         let a_eps = 1.0e-7;
-        let a_rc2 = r1 * r1;
-        let a_ax3_sph = the_sph.position();
-        let a_loc_sph = a_ax3_sph.location();
-        let a_dir_sph = a_ax3_sph.direction();
-        let a_ax1_cyl = the_cyl.axis();
-        let a_lin_cyl = GpLin::new(a_ax1_cyl);
-        let mut a_apex = GpPnt::new(
-            a_loc_sph.x() + r2 * a_dir_sph.x(),
-            a_loc_sph.y() + r2 * a_dir_sph.y(),
-            a_loc_sph.z() + r2 * a_dir_sph.z(),
+        let rc2 = r1 * r1;
+        let ax3_sph = sph.position();
+        let loc_sph = ax3_sph.location();
+        let dir_sph = ax3_sph.direction();
+        let ax1_cyl = cyl.axis();
+        let lin_cyl = GpLin::new(ax1_cyl);
+        let mut apex = GpPnt::new(
+            loc_sph.x() + r2 * dir_sph.x(),
+            loc_sph.y() + r2 * dir_sph.y(),
+            loc_sph.z() + r2 * dir_sph.z(),
         );
-        let a_d2 = a_lin_cyl.square_distance(&a_apex);
-        if (a_d2 - a_rc2).abs() < a_eps {
+        let d2 = lin_cyl.square_distance(&apex);
+        if (d2 - rc2).abs() < a_eps {
             return !b_res;
         }
-        a_apex = GpPnt::new(
-            a_loc_sph.x() - r2 * a_dir_sph.x(),
-            a_loc_sph.y() - r2 * a_dir_sph.y(),
-            a_loc_sph.z() - r2 * a_dir_sph.z(),
+        apex = GpPnt::new(
+            loc_sph.x() - r2 * dir_sph.x(),
+            loc_sph.y() - r2 * dir_sph.y(),
+            loc_sph.z() - r2 * dir_sph.z(),
         );
-        let a_d2 = a_lin_cyl.square_distance(&a_apex);
-        if (a_d2 - a_rc2).abs() < a_eps {
+        let d2 = lin_cyl.square_distance(&apex);
+        if (d2 - rc2).abs() < a_eps {
             return !b_res;
         }
     }
     if r1 < 2.0 * r2 {
         return b_res;
     }
-    let an_cyl_ax = GpLin::new(the_cyl.axis());
-    let a_dist = an_cyl_ax.distance(&the_sph.location());
-    let a_d_rel = (a_dist - r1).abs() / r2;
-    if a_d_rel > 0.2 {
+    let an_cyl_ax = GpLin::new(cyl.axis());
+    let dist = an_cyl_ax.distance(&sph.location());
+    let d_rel = (dist - r1).abs() / r2;
+    if d_rel > 0.2 {
         return b_res;
     }
     let loc = an_cyl_ax.location();
     let dir = an_cyl_ax.direction();
-    let par = (the_sph.location().x() - loc.x()) * dir.x()
-        + (the_sph.location().y() - loc.y()) * dir.y()
-        + (the_sph.location().z() - loc.z()) * dir.z();
+    let par = (sph.location().x() - loc.x()) * dir.x()
+        + (sph.location().y() - loc.y()) * dir.y()
+        + (sph.location().z() - loc.z()) * dir.z();
     let a_p = GpPnt::new(
         loc.x() + par * dir.x(),
         loc.y() + par * dir.y(),
         loc.z() + par * dir.z(),
     );
-    let a_v = occt_core::gp::GpVec::from_pnts(&a_p, &the_sph.location());
-    let dd = a_v.dot(&occt_core::gp::GpVec::from_xyz(the_sph.position().x_direction().xyz()));
-    if a_dist < r1 && dd > 0.0 {
+    let v = occt_core::gp::GpVec::from_pnts(&a_p, &sph.location());
+    let dd = v.dot(&occt_core::gp::GpVec::from_xyz(sph.position().x_direction().xyz()));
+    if dist < r1 && dd > 0.0 {
         return false;
     }
-    if a_dist > r1 && dd < 0.0 {
+    if dist > r1 && dd < 0.0 {
         return false;
     }
     b_res
@@ -187,10 +187,10 @@ pub fn classify_lin2d(
     umax: f64,
     vmin: f64,
     vmax: f64,
-    the_lin2d: &GpLin2d,
-    the_tol: f64,
+    lin2d: &GpLin2d,
+    tol: f64,
 ) -> Option<(f64, f64)> {
-    let (a, b, c) = lin2d_coefficients(the_lin2d);
+    let (a, b, c) = lin2d_coefficients(lin2d);
     let mut par = [0.0f64; 2];
     let mut nbi = 0usize;
     let xmin = umin;
@@ -200,17 +200,17 @@ pub fn classify_lin2d(
 
     let mut d1 = a * xmin + b * ymin + c;
     let mut d2 = a * xmin + b * ymax + c;
-    if inter(d1, d2, the_tol) {
+    if inter(d1, d2, tol) {
         let y = -(c + a * xmin) / b;
-        par[nbi] = lin2d_parameter(the_lin2d, &GpPnt2d::new(xmin, y));
+        par[nbi] = lin2d_parameter(lin2d, &GpPnt2d::new(xmin, y));
         nbi += 1;
-    } else if coinc(d1, d2, the_tol) {
-        par[0] = lin2d_parameter(the_lin2d, &GpPnt2d::new(xmin, ymin));
-        par[1] = lin2d_parameter(the_lin2d, &GpPnt2d::new(xmin, ymax));
+    } else if coinc(d1, d2, tol) {
+        par[0] = lin2d_parameter(lin2d, &GpPnt2d::new(xmin, ymin));
+        par[1] = lin2d_parameter(lin2d, &GpPnt2d::new(xmin, ymax));
         nbi = 2;
     }
     if nbi == 2 {
-        return if (par[0] - par[1]).abs() > the_tol {
+        return if (par[0] - par[1]).abs() > tol {
             Some((par[0].min(par[1]), par[0].max(par[1])))
         } else {
             None
@@ -219,19 +219,19 @@ pub fn classify_lin2d(
 
     d1 = d2;
     d2 = a * xmax + b * ymax + c;
-    if d1 > the_tol || d1 < -the_tol {
-        if inter(d1, d2, the_tol) {
+    if d1 > tol || d1 < -tol {
+        if inter(d1, d2, tol) {
             let x = -(c + b * ymax) / a;
-            par[nbi] = lin2d_parameter(the_lin2d, &GpPnt2d::new(x, ymax));
+            par[nbi] = lin2d_parameter(lin2d, &GpPnt2d::new(x, ymax));
             nbi += 1;
-        } else if coinc(d1, d2, the_tol) {
-            par[0] = lin2d_parameter(the_lin2d, &GpPnt2d::new(xmin, ymax));
-            par[1] = lin2d_parameter(the_lin2d, &GpPnt2d::new(xmax, ymax));
+        } else if coinc(d1, d2, tol) {
+            par[0] = lin2d_parameter(lin2d, &GpPnt2d::new(xmin, ymax));
+            par[1] = lin2d_parameter(lin2d, &GpPnt2d::new(xmax, ymax));
             nbi = 2;
         }
     }
     if nbi == 2 {
-        return if (par[0] - par[1]).abs() > the_tol {
+        return if (par[0] - par[1]).abs() > tol {
             Some((par[0].min(par[1]), par[0].max(par[1])))
         } else {
             None
@@ -240,19 +240,19 @@ pub fn classify_lin2d(
 
     d1 = d2;
     d2 = a * xmax + b * ymin + c;
-    if d1 > the_tol || d1 < -the_tol {
-        if inter(d1, d2, the_tol) {
+    if d1 > tol || d1 < -tol {
+        if inter(d1, d2, tol) {
             let y = -(c + a * xmax) / b;
-            par[nbi] = lin2d_parameter(the_lin2d, &GpPnt2d::new(xmax, y));
+            par[nbi] = lin2d_parameter(lin2d, &GpPnt2d::new(xmax, y));
             nbi += 1;
-        } else if coinc(d1, d2, the_tol) {
-            par[0] = lin2d_parameter(the_lin2d, &GpPnt2d::new(xmax, ymax));
-            par[1] = lin2d_parameter(the_lin2d, &GpPnt2d::new(xmax, ymin));
+        } else if coinc(d1, d2, tol) {
+            par[0] = lin2d_parameter(lin2d, &GpPnt2d::new(xmax, ymax));
+            par[1] = lin2d_parameter(lin2d, &GpPnt2d::new(xmax, ymin));
             nbi = 2;
         }
     }
     if nbi == 2 {
-        return if (par[0] - par[1]).abs() > the_tol {
+        return if (par[0] - par[1]).abs() > tol {
             Some((par[0].min(par[1]), par[0].max(par[1])))
         } else {
             None
@@ -261,19 +261,19 @@ pub fn classify_lin2d(
 
     d1 = d2;
     d2 = a * xmin + b * ymin + c;
-    if d1 > the_tol || d1 < -the_tol {
-        if inter(d1, d2, the_tol) {
+    if d1 > tol || d1 < -tol {
+        if inter(d1, d2, tol) {
             let x = -(c + b * ymin) / a;
-            par[nbi] = lin2d_parameter(the_lin2d, &GpPnt2d::new(x, ymin));
+            par[nbi] = lin2d_parameter(lin2d, &GpPnt2d::new(x, ymin));
             nbi += 1;
-        } else if coinc(d1, d2, the_tol) {
-            par[0] = lin2d_parameter(the_lin2d, &GpPnt2d::new(xmax, ymin));
-            par[1] = lin2d_parameter(the_lin2d, &GpPnt2d::new(xmin, ymin));
+        } else if coinc(d1, d2, tol) {
+            par[0] = lin2d_parameter(lin2d, &GpPnt2d::new(xmax, ymin));
+            par[1] = lin2d_parameter(lin2d, &GpPnt2d::new(xmin, ymin));
             nbi = 2;
         }
     }
     if nbi == 2 {
-        if (par[0] - par[1]).abs() > the_tol {
+        if (par[0] - par[1]).abs() > tol {
             Some((par[0].min(par[1]), par[0].max(par[1])))
         } else {
             None
@@ -300,56 +300,56 @@ pub fn approx_parameters(kind_a: SurfaceKind, kind_b: SurfaceKind) -> (i32, i32,
 }
 
 /// `Tolerances` (`IntTools_FaceFace.cxx:2787`).
-pub fn tolerances(kind_a: SurfaceKind, kind_b: SurfaceKind, a_tol_tang: &mut f64) {
+pub fn tolerances(kind_a: SurfaceKind, kind_b: SurfaceKind, tol_tang: &mut f64) {
     if (kind_a == SurfaceKind::Cylinder && kind_b == SurfaceKind::Torus)
         || (kind_b == SurfaceKind::Cylinder && kind_a == SurfaceKind::Torus)
     {
-        *a_tol_tang *= 0.1;
+        *tol_tang *= 0.1;
     }
 }
 
 /// Golden-section max of curve-to-surface distance on `[first, last]`.
 fn find_max_distance_interval(
     the_c: &dyn Curve,
-    the_first: f64,
-    the_last: f64,
+    first: f64,
+    last: f64,
     surf: &dyn Surface,
-    the_eps: f64,
+    eps: f64,
 ) -> f64 {
-    let a_cf = 0.6180339887498948;
-    let mut a_a = the_first;
-    let mut a_b = the_last;
-    let mut a_x1 = a_b - a_cf * (a_b - a_a);
-    let mut a_f1 = max_distance(the_c, a_x1, surf);
-    let mut a_x2 = a_a + a_cf * (a_b - a_a);
-    let mut a_f2 = max_distance(the_c, a_x2, surf);
-    while (a_x1 - a_x2).abs() > the_eps {
-        if a_f1 > a_f2 {
-            a_b = a_x2;
-            a_x2 = a_x1;
-            a_f2 = a_f1;
-            a_x1 = a_b - a_cf * (a_b - a_a);
-            a_f1 = max_distance(the_c, a_x1, surf);
+    let cf = 0.6180339887498948;
+    let mut a = first;
+    let mut b = last;
+    let mut x1 = b - cf * (b - a);
+    let mut f1 = max_distance(the_c, x1, surf);
+    let mut x2 = a + cf * (b - a);
+    let mut f2 = max_distance(the_c, x2, surf);
+    while (x1 - x2).abs() > eps {
+        if f1 > f2 {
+            b = x2;
+            x2 = x1;
+            f2 = f1;
+            x1 = b - cf * (b - a);
+            f1 = max_distance(the_c, x1, surf);
         } else {
-            a_a = a_x1;
-            a_x1 = a_x2;
-            a_f1 = a_f2;
-            a_x2 = a_a + a_cf * (a_b - a_a);
-            a_f2 = max_distance(the_c, a_x2, surf);
+            a = x1;
+            x1 = x2;
+            f1 = f2;
+            x2 = a + cf * (b - a);
+            f2 = max_distance(the_c, x2, surf);
         }
     }
-    let mut a_f = max_distance(the_c, 0.5 * (a_x1 + a_x2), surf);
-    if a_f1 > a_f {
-        a_f = a_f1;
+    let mut f = max_distance(the_c, 0.5 * (x1 + x2), surf);
+    if f1 > f {
+        f = f1;
     }
-    if a_f2 > a_f {
-        a_f = a_f2;
+    if f2 > f {
+        f = f2;
     }
-    a_f
+    f
 }
 
-fn max_distance(the_c: &dyn Curve, a_t: f64, surf: &dyn Surface) -> f64 {
-    let a_p = the_c.d0(a_t);
+fn max_distance(the_c: &dyn Curve, t: f64, surf: &dyn Surface) -> f64 {
+    let a_p = the_c.d0(t);
     project_point_on_surface(surf, &a_p, 0.0)
         .map(|p| p.distance)
         .unwrap_or(0.0)
@@ -357,73 +357,73 @@ fn max_distance(the_c: &dyn Curve, a_t: f64, surf: &dyn Surface) -> f64 {
 
 /// `FindMaxDistance` over a face (`IntTools_FaceFace.cxx:2899`).
 pub fn find_max_distance_face(
-    the_curve: &dyn Curve,
-    the_first: f64,
-    the_last: f64,
-    the_face: &Face,
+    curve: &dyn Curve,
+    first: f64,
+    last: f64,
+    face: &Face,
 ) -> f64 {
-    let Some(surf) = BRepTool::face_surface(the_face) else {
+    let Some(surf) = BRepTool::face_surface(face) else {
         return 0.0;
     };
-    let a_nb_s = 11.0;
-    let a_dt = (the_last - the_first) / a_nb_s;
-    let mut a_d_max = 0.0;
-    let an_eps = 1.0e-4 * a_dt;
-    let mut a_t2 = the_first;
+    let nb_s = 11.0;
+    let dt = (last - first) / nb_s;
+    let mut d_max = 0.0;
+    let an_eps = 1.0e-4 * dt;
+    let mut t2 = first;
     loop {
-        let a_t1 = a_t2;
-        a_t2 += a_dt;
-        if a_t2 > the_last {
+        let t1 = t2;
+        t2 += dt;
+        if t2 > last {
             break;
         }
-        let a_d = find_max_distance_interval(the_curve, a_t1, a_t2, surf.as_ref(), an_eps);
-        if a_d > a_d_max {
-            a_d_max = a_d;
+        let d = find_max_distance_interval(curve, t1, t2, surf.as_ref(), an_eps);
+        if d > d_max {
+            d_max = d;
         }
     }
-    a_d_max
+    d_max
 }
 
 /// `CheckPCurve` (`IntTools_FaceFace.cxx:3010`) with a single CN interval.
-pub fn face_pcurve_check(a_pc: &dyn Curve2d, a_face: &Face) -> bool {
+pub fn face_pcurve_check(pc: &dyn Curve2d, a_face: &Face) -> bool {
     const N_POINTS: i32 = 23;
     let (mut umin, mut umax, mut vmin, mut vmax) = crate::brep_surface::face_uv_bounds(a_face);
     let tol_u = ((umax - umin) * 0.01).max(CONFUSION);
     let tol_v = ((vmax - vmin) * 0.01).max(CONFUSION);
-    let fp = a_pc.first_parameter();
-    let lp = a_pc.last_parameter();
-    if let Some(a_surf) = BRepTool::face_surface(a_face) {
-        let pnt = a_pc.d0(0.5 * (fp + lp));
+    let fp = pc.first_parameter();
+    let lp = pc.last_parameter();
+    if let Some(surf) = BRepTool::face_surface(a_face) {
+        let pnt = pc.d0(0.5 * (fp + lp));
         let (u, v) = (pnt.x(), pnt.y());
-        if a_surf.is_u_periodic() {
-            let a_per = crate::int_tools_wline::u_period(a_surf.as_ref()).unwrap_or(0.0);
-            if a_per > 0.0 {
-                let mut nshift = ((u - umin) / a_per) as i32;
-                if u < umin + a_per * nshift as f64 {
+        if surf.is_u_periodic() {
+            let per = crate::int_tools_wline::u_period(surf.as_ref()).unwrap_or(0.0);
+            if per > 0.0 {
+                let mut nshift = ((u - umin) / per) as i32;
+                if u < umin + per * nshift as f64 {
                     nshift -= 1;
                 }
-                umin += a_per * nshift as f64;
-                umax += a_per * nshift as f64;
+                umin += per * nshift as f64;
+                umax += per * nshift as f64;
             }
         }
-        if a_surf.is_v_periodic() {
-            let a_per = crate::int_tools_wline::v_period(a_surf.as_ref()).unwrap_or(0.0);
-            if a_per > 0.0 {
-                let mut nshift = ((v - vmin) / a_per) as i32;
-                if v < vmin + a_per * nshift as f64 {
+        if surf.is_v_periodic() {
+            let per = crate::int_tools_wline::v_period(surf.as_ref()).unwrap_or(0.0);
+            if per > 0.0 {
+                let mut nshift = ((v - vmin) / per) as i32;
+                if v < vmin + per * nshift as f64 {
                     nshift -= 1;
                 }
-                vmin += a_per * nshift as f64;
-                vmax += a_per * nshift as f64;
+                vmin += per * nshift as f64;
+                vmax += per * nshift as f64;
             }
         }
     }
     let d_t = (lp - fp) / N_POINTS as f64;
-    let mut a_t = fp;
+    let mut t = fp;
     for _i in 1..N_POINTS {
-        a_t += d_t;
-        let a_p2d = a_pc.d0(a_t);
-        let (u, v) = (a_p2d.x(), a_p2d.y());
+        t += d_t;
+        let p2d = pc.d0(t);
+        let (u, v) = (p2d.x(), p2d.y());
         if umin - u > tol_u || u - umax > tol_u || vmin - v > tol_v || v - vmax > tol_v {
             return false;
         }
@@ -556,7 +556,7 @@ impl FaceFace {
             an_approx2 = false;
         }
 
-        let mut a_seq_of_l: Vec<WLine> = Vec::new();
+        let mut seq_of_l: Vec<WLine> = Vec::new();
         let b_is_decomposited = decomposition_of_wline(
             wl,
             sa,
@@ -566,11 +566,11 @@ impl FaceFace {
             &line_parts,
             b_avoid,
             self.tol,
-            &mut a_seq_of_l,
+            &mut seq_of_l,
         );
 
         let nbiter = if b_is_decomposited {
-            a_seq_of_l.len() as i32
+            seq_of_l.len() as i32
         } else {
             line_parts.len() as i32
         };
@@ -582,7 +582,7 @@ impl FaceFace {
         let mut out = Vec::new();
         for i in 1..=nbiter {
             let (piece, ifprm, ilprm): (&WLine, i32, i32) = if b_is_decomposited {
-                let w = &a_seq_of_l[(i as usize).saturating_sub(1)];
+                let w = &seq_of_l[(i as usize).saturating_sub(1)];
                 (w, 1, w.nb_pnts())
             } else {
                 let (f, l) = line_parts[(i as usize).saturating_sub(1)];
@@ -639,71 +639,71 @@ impl FaceFace {
 
     /// `ComputeTolReached3d` (`IntTools_FaceFace.cxx:613`).
     pub(crate) fn compute_tol_reached_3d(&mut self, fa: &Face, fb: &Face) {
-        let a_tol_f_max = BRepTool::face_tolerance(fa).max(BRepTool::face_tolerance(fb));
-        let Some(a_s1) = BRepTool::face_surface(fa) else {
+        let tol_f_max = BRepTool::face_tolerance(fa).max(BRepTool::face_tolerance(fb));
+        let Some(s1) = BRepTool::face_surface(fa) else {
             return;
         };
-        let Some(a_s2) = BRepTool::face_surface(fb) else {
+        let Some(s2) = BRepTool::face_surface(fb) else {
             return;
         };
         for c in &mut self.result.curves {
             let a_first = c.curve.first_parameter();
             let a_last = c.curve.last_parameter();
-            let mut a_tol_c = c.tolerance;
+            let mut tol_c = c.tolerance;
             for j in 0..2 {
-                let a_c2d = if j == 0 { &c.pcurve1 } else { &c.pcurve2 };
-                if let Some(pc) = a_c2d {
-                    let a_s = if j == 0 { &a_s1 } else { &a_s2 };
-                    if let Some((a_d, _a_t)) =
-                        compute_tolerance(&c.curve, pc, a_s, a_first, a_last)
+                let c2d = if j == 0 { &c.pcurve1 } else { &c.pcurve2 };
+                if let Some(pc) = c2d {
+                    let s = if j == 0 { &s1 } else { &s2 };
+                    if let Some((d, _a_t)) =
+                        compute_tolerance(&c.curve, pc, s, a_first, a_last)
                     {
-                        if a_d > a_tol_c {
-                            a_tol_c = a_d;
+                        if d > tol_c {
+                            tol_c = d;
                         }
                     }
                 } else {
-                    let a_f = if j == 0 { fa } else { fb };
-                    let a_d = find_max_distance_face(c.curve.as_ref(), a_first, a_last, a_f);
-                    if a_d > a_tol_c {
-                        a_tol_c = a_d;
+                    let f = if j == 0 { fa } else { fb };
+                    let d = find_max_distance_face(c.curve.as_ref(), a_first, a_last, f);
+                    if d > tol_c {
+                        tol_c = d;
                     }
                 }
             }
-            c.tolerance = a_tol_c;
-            if c.tangential_tolerance < a_tol_f_max {
-                c.tangential_tolerance = a_tol_f_max;
+            c.tolerance = tol_c;
+            if c.tangential_tolerance < tol_f_max {
+                c.tangential_tolerance = tol_f_max;
             }
         }
     }
 
     /// `PrepareLines3D` (`IntTools_FaceFace.cxx:1932`).
     pub fn prepare_lines_3d(&mut self, b_to_split: bool) {
-        let mut a_new_cvs: Vec<FaceFaceCurve> = Vec::new();
+        let mut new_cvs: Vec<FaceFaceCurve> = Vec::new();
         for c in &self.result.curves {
             if b_to_split {
                 let split = split_curve(c);
                 if split.is_empty() {
-                    a_new_cvs.push(c.clone());
+                    new_cvs.push(c.clone());
                 } else {
-                    a_new_cvs.extend(split);
+                    new_cvs.extend(split);
                 }
             } else {
-                a_new_cvs.push(c.clone());
+                new_cvs.push(c.clone());
             }
         }
-        let a_type1 = self.face1.as_ref().and_then(BRepTool::face_surface);
-        let a_type2 = self.face2.as_ref().and_then(BRepTool::face_surface);
-        let k1 = a_type1.as_ref().map(|s| classify_surface(s.as_ref()));
-        let k2 = a_type2.as_ref().map(|s| classify_surface(s.as_ref()));
+        let type1 = self.face1.as_ref().and_then(BRepTool::face_surface);
+        let type2 = self.face2.as_ref().and_then(BRepTool::face_surface);
+        let k1 = type1.as_ref().map(|s| classify_surface(s.as_ref()));
+        let k2 = type2.as_ref().map(|s| classify_surface(s.as_ref()));
         let plane_cone = matches!(
             (k1, k2),
             (Some(SurfaceKind::Plane), Some(SurfaceKind::Cone))
                 | (Some(SurfaceKind::Cone), Some(SurfaceKind::Plane))
         );
-        if plane_cone && a_new_cvs.len() == 4 && a_new_cvs[0].kind == CurveKind::Line {
-            a_new_cvs = reject_lines(&a_new_cvs);
+        if plane_cone && new_cvs.len() == 4 && new_cvs[0].kind == CurveKind::Line {
+            new_cvs = reject_lines(&new_cvs);
         }
-        self.result.curves = a_new_cvs;
+        self.result.curves = new_cvs;
     }
 }
 

@@ -17,7 +17,7 @@ impl Jacobi {
     pub fn new(a: &MathMatrix) -> Self {
         let n = a.row_count();
         let mut eigv = MathVector::new(1, n);
-        let mut a_mat = a.clone();
+        let mut mat = a.clone();
         let mut v = MathMatrix::new(1, n, 1, n);
         for i in 1..=n { v.set_value(i, i, 1.0); }
 
@@ -34,7 +34,7 @@ impl Jacobi {
             // Compute sum of off-diagonal elements
             let mut sm = 0.0;
             for i in 1..n {
-                for j in (i + 1)..=n { sm += a_mat.value(i, j).abs(); }
+                for j in (i + 1)..=n { sm += mat.value(i, j).abs(); }
             }
             if sm == 0.0 { break; }
 
@@ -42,16 +42,16 @@ impl Jacobi {
 
             for p in 1..n {
                 for q in (p + 1)..=n {
-                    let g = 100.0 * a_mat.value(p, q).abs();
+                    let g = 100.0 * mat.value(p, q).abs();
                     if iter > 4 && eigv.value(p).abs() + g == eigv.value(p).abs()
                         && eigv.value(q).abs() + g == eigv.value(q).abs() {
-                        a_mat.set_value(p, q, 0.0);
-                    } else if a_mat.value(p, q).abs() > threshold {
+                        mat.set_value(p, q, 0.0);
+                    } else if mat.value(p, q).abs() > threshold {
                         let h = eigv.value(q) - eigv.value(p);
                         let t = if h.abs() + g == h.abs() {
-                            a_mat.value(p, q) / h
+                            mat.value(p, q) / h
                         } else {
-                            let theta = 0.5 * h / a_mat.value(p, q);
+                            let theta = 0.5 * h / mat.value(p, q);
                             let mut t = 1.0 / (theta.abs() + (1.0 + theta * theta).sqrt());
                             if theta < 0.0 { t = -t; }
                             t
@@ -59,29 +59,29 @@ impl Jacobi {
                         let c = 1.0 / (1.0 + t * t).sqrt();
                         let s = t * c;
                         let tau = s / (1.0 + c);
-                        let h = t * a_mat.value(p, q);
+                        let h = t * mat.value(p, q);
                         z.set_value(p, z.value(p) - h);
                         z.set_value(q, z.value(q) + h);
                         eigv.set_value(p, eigv.value(p) - h);
                         eigv.set_value(q, eigv.value(q) + h);
-                        a_mat.set_value(p, q, 0.0);
+                        mat.set_value(p, q, 0.0);
                         for j in 1..p {
-                            let g = a_mat.value(j, p);
-                            let h = a_mat.value(j, q);
-                            a_mat.set_value(j, p, g - s * (h + g * tau));
-                            a_mat.set_value(j, q, h + s * (g - h * tau));
+                            let g = mat.value(j, p);
+                            let h = mat.value(j, q);
+                            mat.set_value(j, p, g - s * (h + g * tau));
+                            mat.set_value(j, q, h + s * (g - h * tau));
                         }
                         for j in (p + 1)..q {
-                            let g = a_mat.value(p, j);
-                            let h = a_mat.value(j, q);
-                            a_mat.set_value(p, j, g - s * (h + g * tau));
-                            a_mat.set_value(j, q, h + s * (g - h * tau));
+                            let g = mat.value(p, j);
+                            let h = mat.value(j, q);
+                            mat.set_value(p, j, g - s * (h + g * tau));
+                            mat.set_value(j, q, h + s * (g - h * tau));
                         }
                         for j in (q + 1)..=n {
-                            let g = a_mat.value(p, j);
-                            let h = a_mat.value(q, j);
-                            a_mat.set_value(p, j, g - s * (h + g * tau));
-                            a_mat.set_value(q, j, h + s * (g - h * tau));
+                            let g = mat.value(p, j);
+                            let h = mat.value(q, j);
+                            mat.set_value(p, j, g - s * (h + g * tau));
+                            mat.set_value(q, j, h + s * (g - h * tau));
                         }
                         for j in 1..=n {
                             let g = v.value(j, p);

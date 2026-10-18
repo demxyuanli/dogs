@@ -24,9 +24,9 @@ pub fn curve_nb_samples(curve: &dyn Curve, u0: f64, u1: f64) -> usize {
     } else if let Some(degree) = curve.nurbs_degree() {
         let nb_knots = curve.bspline_knots().map_or(0, unique_knot_count) as f64;
         nbs = nb_knots * degree as f64 * (curve.last_parameter() - curve.first_parameter());
-        let a_range = u1 - u0;
-        if a_range.abs() > occt_core::precision::PCONFUSION {
-            nbs /= a_range;
+        let range = u1 - u0;
+        if range.abs() > occt_core::precision::PCONFUSION {
+            nbs /= range;
         }
         if nbs < 2.0 {
             nbs = 2.0;
@@ -120,7 +120,7 @@ pub fn sample_pars(curve: &dyn Curve, u0: f64, u1: f64, defl: f64, nb_min: usize
 
     // 1-based arrays to mirror the OCCT index arithmetic.
     let mut a_pars = vec![0.0; nbsu + 1];
-    let mut a_flg = vec![false; nbsu + 1];
+    let mut flg = vec![false; nbsu + 1];
     if nbsu >= 2 {
         if b_uniform {
             let t1 = u0;
@@ -145,7 +145,7 @@ pub fn sample_pars(curve: &dyn Curve, u0: f64, u1: f64, defl: f64, nb_min: usize
                     k += 1;
                     if k <= nbsu {
                         a_pars[k] = t1;
-                        a_flg[k] = false;
+                        flg[k] = false;
                     }
                     t1 += dt;
                     j += 1;
@@ -165,16 +165,16 @@ pub fn sample_pars(curve: &dyn Curve, u0: f64, u1: f64, defl: f64, nb_min: usize
     }
 
     // `...cxx:197-268`: deflection analysis over the raw samples.
-    let a_defl2 = (defl * defl).max(1e-9);
-    let tol = (0.01 * a_defl2).max(1e-9);
+    let defl2 = (defl * defl).max(1e-9);
+    let tol = (0.01 * defl2).max(1e-9);
 
     let mut nb_samples = 2usize;
-    a_flg[1] = true;
-    a_flg[nbsu] = true;
+    flg[1] = true;
+    flg[nbsu] = true;
     let mut j = 1usize;
     let mut b_cont = true;
     while j < nbsu - 1 && b_cont {
-        if a_flg[j + 1] {
+        if flg[j + 1] {
             j += 1;
             continue;
         }
@@ -193,13 +193,13 @@ pub fn sample_pars(curve: &dyn Curve, u0: f64, u1: f64, defl: f64, nb_min: usize
             {
                 let lin = occt_core::gp::GpLin::from_pnt_dir(p1, dir);
                 for l in (j + 1)..k {
-                    if a_flg[l] {
+                    if flg[l] {
                         ok = false;
                         break;
                     }
                     let pp = curve.d0(a_pars[l]);
                     let d = lin.square_distance(&pp);
-                    if d <= a_defl2 {
+                    if d <= defl2 {
                         continue;
                     }
                     ok = false;
@@ -210,11 +210,11 @@ pub fn sample_pars(curve: &dyn Curve, u0: f64, u1: f64, defl: f64, nb_min: usize
             }
             if !ok {
                 j = k - 1;
-                a_flg[j] = true;
+                flg[j] = true;
                 nb_samples += 1;
                 break;
             }
-            if a_flg[k] {
+            if flg[k] {
                 j = k;
                 break;
             }
@@ -243,7 +243,7 @@ pub fn sample_pars(curve: &dyn Curve, u0: f64, u1: f64, defl: f64, nb_min: usize
     // `...cxx:289-297`: collect the flagged samples.
     let mut pars = Vec::with_capacity(nb_samples);
     for i in 1..=nbsu {
-        if a_flg[i] {
+        if flg[i] {
             pars.push(a_pars[i]);
         }
     }

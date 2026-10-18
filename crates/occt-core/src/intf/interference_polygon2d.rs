@@ -120,7 +120,7 @@ impl IntfInterferencePolygon2d {
 
     /// `Pnt2dValue(Index)` (`cxx:134-137`).
     pub fn pnt2d_value(&self, index: usize) -> GpPnt2d {
-        let p = self.base.my_s_poins[index - 1].pnt();
+        let p = self.base.s_poins[index - 1].pnt();
         GpPnt2d::new(p.x(), p.y())
     }
 
@@ -188,16 +188,16 @@ impl IntfInterferencePolygon2d {
 
     /// `Clean()` (`cxx:214-305`).
     fn clean(&mut self) {
-        let mut nb_it = self.base.my_t_zones.len();
+        let mut nb_it = self.base.t_zones.len();
         let mut decal = 0usize;
         let mut only1_seg = false;
 
         for ltz in 1..=nb_it {
             let mut tsp = 0usize;
             let mut tsps = 0usize;
-            let (pr1mi, pr1ma) = self.base.my_t_zones[ltz - decal - 1].param_on_first();
+            let (pr1mi, pr1ma) = self.base.t_zones[ltz - decal - 1].param_on_first();
             let delta1 = pr1ma - pr1mi;
-            let (pr2mi, pr2ma) = self.base.my_t_zones[ltz - decal - 1].param_on_second();
+            let (pr2mi, pr2ma) = self.base.t_zones[ltz - decal - 1].param_on_second();
             let delta2 = pr2ma - pr2mi;
             if delta1 < 1.0 && delta2 < 1.0 {
                 only1_seg = true;
@@ -206,8 +206,8 @@ impl IntfInterferencePolygon2d {
                 only1_seg = true;
             }
 
-            for lpi in 1..=self.base.my_t_zones[ltz - decal - 1].number_of_points() {
-                let pi1 = *self.base.my_t_zones[ltz - decal - 1].get_point(lpi);
+            for lpi in 1..=self.base.t_zones[ltz - decal - 1].number_of_points() {
+                let pi1 = *self.base.t_zones[ltz - decal - 1].get_point(lpi);
                 if pi1.incidence() <= PRCANG {
                     tsp = 0;
                     tsps = 0;
@@ -228,25 +228,25 @@ impl IntfInterferencePolygon2d {
                 }
             }
             if tsp > 0 {
-                let p = *self.base.my_t_zones[ltz - decal - 1].get_point(tsp);
-                self.base.my_s_poins.push(p);
-                self.base.my_t_zones.remove(ltz - decal - 1);
+                let p = *self.base.t_zones[ltz - decal - 1].get_point(tsp);
+                self.base.s_poins.push(p);
+                self.base.t_zones.remove(ltz - decal - 1);
                 decal += 1;
             } else if only1_seg && tsps != 0 {
-                let p = *self.base.my_t_zones[ltz - decal - 1].get_point(tsps);
-                self.base.my_s_poins.push(p);
-                self.base.my_t_zones.remove(ltz - decal - 1);
+                let p = *self.base.t_zones[ltz - decal - 1].get_point(tsps);
+                self.base.s_poins.push(p);
+                self.base.t_zones.remove(ltz - decal - 1);
                 decal += 1;
             }
         }
 
-        nb_it = self.base.my_s_poins.len();
+        nb_it = self.base.s_poins.len();
         decal = 0;
         for lpi in 1..=nb_it {
-            for ltz in 1..=self.base.my_t_zones.len() {
-                let p = self.base.my_s_poins[lpi - decal - 1];
-                if self.base.my_t_zones[ltz - 1].range_contains(&p) {
-                    self.base.my_s_poins.remove(lpi - decal - 1);
+            for ltz in 1..=self.base.t_zones.len() {
+                let p = self.base.s_poins[lpi - decal - 1];
+                if self.base.t_zones[ltz - 1].range_contains(&p) {
+                    self.base.s_poins.remove(lpi - decal - 1);
                     decal += 1;
                     break;
                 }
@@ -677,24 +677,24 @@ impl IntfInterferencePolygon2d {
             if !self.base.self_intf {
                 let contains = self
                     .base
-                    .my_s_poins
+                    .s_poins
                     .iter()
                     .any(|p| the_pi[0].is_equal(p));
                 if !contains {
-                    self.base.my_s_poins.push(the_pi[0]);
+                    self.base.s_poins.push(the_pi[0]);
                 }
             } else if i_obje2 - i_obje1 != 1
                 && (!self.o_clos || (i_obje1 != 1 && i_obje2 != self.nbso))
             {
-                self.base.my_s_poins.push(the_pi[0]);
+                self.base.s_poins.push(the_pi[0]);
             }
         } else if nbpi >= 2 {
-            let mut the_tz = IntfTangentZone::new();
+            let mut tz = IntfTangentZone::new();
             if nbpi == 2 {
                 let p1 = the_pi[0];
                 let p2 = the_pi[1];
-                the_tz.polygon_insert(&p1);
-                the_tz.polygon_insert(&p2);
+                tz.polygon_insert(&p1);
+                tz.polygon_insert(&p2);
             } else {
                 let mut lmin = 1usize;
                 let mut lmax = 1usize;
@@ -706,9 +706,9 @@ impl IntfInterferencePolygon2d {
                     }
                 }
                 let p = the_pi[lmin - 1];
-                the_tz.polygon_insert(&p);
+                tz.polygon_insert(&p);
                 let p = the_pi[lmax - 1];
-                the_tz.polygon_insert(&p);
+                tz.polygon_insert(&p);
 
                 let mut ltmin = 1usize;
                 let mut ltmax = 1usize;
@@ -721,11 +721,11 @@ impl IntfInterferencePolygon2d {
                 }
                 if ltmin != lmin && ltmin != lmax {
                     let p = the_pi[ltmin - 1];
-                    the_tz.polygon_insert(&p);
+                    tz.polygon_insert(&p);
                 }
                 if ltmax != lmin && ltmax != lmax {
                     let p = the_pi[ltmax - 1];
-                    the_tz.polygon_insert(&p);
+                    tz.polygon_insert(&p);
                 }
             }
 
@@ -743,27 +743,27 @@ impl IntfInterferencePolygon2d {
                     par_tsp,
                     sin_teta,
                 );
-                the_tz.polygon_insert(&p);
+                tz.polygon_insert(&p);
             }
 
-            let nbtz = self.base.my_t_zones.len();
+            let nbtz = self.base.t_zones.len();
             let mut l_index: Vec<usize> = Vec::new();
             for ltz in 1..=nbtz {
-                if the_tz.has_common_range(&self.base.my_t_zones[ltz - 1]) {
+                if tz.has_common_range(&self.base.t_zones[ltz - 1]) {
                     l_index.push(ltz);
                 }
             }
             if l_index.is_empty() {
-                self.base.my_t_zones.push(the_tz);
+                self.base.t_zones.push(tz);
             } else {
                 let mut decal2 = 0usize;
                 let indexfirst = l_index.remove(0);
-                self.base.my_t_zones[indexfirst - 1].append_zone(&the_tz);
+                self.base.t_zones[indexfirst - 1].append_zone(&tz);
                 while !l_index.is_empty() {
                     let index = l_index.remove(0);
-                    let src = self.base.my_t_zones[index - decal2 - 1].clone();
-                    self.base.my_t_zones[indexfirst - 1].append_zone(&src);
-                    self.base.my_t_zones.remove(index - decal2 - 1);
+                    let src = self.base.t_zones[index - decal2 - 1].clone();
+                    self.base.t_zones[indexfirst - 1].append_zone(&src);
+                    self.base.t_zones.remove(index - decal2 - 1);
                     decal2 += 1;
                 }
             }

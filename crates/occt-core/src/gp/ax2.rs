@@ -45,9 +45,9 @@ impl GpAx2 {
 
     /// `gp_Ax2::Rotated(const gp_Ax1&, angle)` (`gp_Ax2.hxx:311-318`).
     pub fn rotated(&self, ax1: &GpAx1, angle: f64) -> Self {
-        let mut a_temp = *self;
-        a_temp.rotate(ax1, angle);
-        a_temp
+        let mut temp = *self;
+        temp.rotate(ax1, angle);
+        temp
     }
 
     /// Standard: Z up, X right, Y computed.

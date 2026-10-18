@@ -35,13 +35,13 @@ pub fn compute_nb_samples2d(
     nb_knots: usize,
     first: f64,
     last: f64,
-    the_u_min: f64,
-    the_u_max: f64,
+    u_min: f64,
+    u_max: f64,
 ) -> i32 {
     let mut n = match kind {
         SampleCurveKind::Bezier => {
             let mut n = 2 * nb_poles as i32;
-            let du = the_u_max - the_u_min;
+            let du = u_max - u_min;
             if du < 0.9 {
                 n = real_to_int(du * n as f64) + 1;
                 n = n.max(5);
@@ -54,7 +54,7 @@ pub fn compute_nb_samples2d(
             let umax = last;
             let den = umax - umin;
             let du = if den.abs() > f64::EPSILON {
-                (the_u_max - the_u_min) / den
+                (u_max - u_min) / den
             } else {
                 1.0
             };
@@ -91,13 +91,13 @@ pub fn compute_nb_u_samples(
     nb_u_knots: usize,
     umin: f64,
     umax: f64,
-    the_u_min: f64,
-    the_u_max: f64,
+    u_min: f64,
+    u_max: f64,
 ) -> i32 {
     let n = match kind {
         SampleSurfaceKind::Bezier => {
             let mut n = 2 * nb_u_poles as i32;
-            let du = the_u_max - the_u_min;
+            let du = u_max - u_min;
             if du < 0.9 {
                 n = real_to_int(du * n as f64) + 1;
                 n = n.max(5);
@@ -108,7 +108,7 @@ pub fn compute_nb_u_samples(
             let mut n = 2 * (u_degree as i32 + 1) * (nb_u_knots as i32 - 1).max(0);
             let den = umax - umin;
             let du = if den.abs() > f64::EPSILON {
-                (the_u_max - the_u_min) / den
+                (u_max - u_min) / den
             } else {
                 1.0
             };
@@ -132,13 +132,13 @@ pub fn compute_nb_v_samples(
     nb_v_knots: usize,
     vmin: f64,
     vmax: f64,
-    the_v_min: f64,
-    the_v_max: f64,
+    v_min: f64,
+    v_max: f64,
 ) -> i32 {
     let n = match kind {
         SampleSurfaceKind::Bezier => {
             let mut n = 2 * nb_v_poles as i32;
-            let dv = the_v_max - the_v_min;
+            let dv = v_max - v_min;
             if dv < 0.9 {
                 n = real_to_int(dv * n as f64) + 1;
                 n = n.max(5);
@@ -149,7 +149,7 @@ pub fn compute_nb_v_samples(
             let mut n = 2 * (v_degree as i32 + 1) * (nb_v_knots as i32 - 1).max(0);
             let den = vmax - vmin;
             let dv = if den.abs() > f64::EPSILON {
-                (the_v_max - the_v_min) / den
+                (v_max - v_min) / den
             } else {
                 1.0
             };
@@ -208,13 +208,13 @@ pub fn compute_nb_samples_3d(
     nb_knots: usize,
     first: f64,
     last: f64,
-    the_u_min: f64,
-    the_u_max: f64,
+    u_min: f64,
+    u_max: f64,
 ) -> i32 {
     let n = match kind {
         SampleCurveKind::Bezier => {
             let mut n = 2 * nb_poles as i32;
-            let du = the_u_max - the_u_min;
+            let du = u_max - u_min;
             if du < 0.9 {
                 n = real_to_int(du * n as f64) + 1;
                 n = n.max(5);
@@ -225,7 +225,7 @@ pub fn compute_nb_samples_3d(
             let mut n = 2 * (degree as i32 + 1) * (nb_knots as i32 - 1).max(0);
             let den = last - first;
             let du = if den.abs() > f64::EPSILON {
-                (the_u_max - the_u_min) / den
+                (u_max - u_min) / den
             } else {
                 1.0
             };

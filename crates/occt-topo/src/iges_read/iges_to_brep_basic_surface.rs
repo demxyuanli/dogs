@@ -363,23 +363,23 @@ fn pack_knots(raw: &[f64], degree: usize, n_poles: usize) -> Result<PackedKnots,
     let mut old_sum = 0i32;
     let mut mults = Vec::with_capacity(temp_k.len());
     for i in 0..temp_k.len() {
-        let mut a_mult = temp_m[i];
+        let mut mult = temp_m[i];
         let max_mult = if i == 0 || i + 1 == temp_k.len() {
             degree as i32 + 1
         } else {
             degree as i32
         };
-        if a_mult > max_mult {
+        if mult > max_mult {
             let mut del = old_sum + 1;
-            while a_mult > max_mult {
+            while mult > max_mult {
                 new_nb = new_nb.saturating_sub(1);
                 seq.push(del as usize);
                 del += 1;
-                a_mult -= 1;
+                mult -= 1;
             }
         }
         old_sum += temp_m[i];
-        mults.push(a_mult);
+        mults.push(mult);
     }
     let mut keep: Vec<usize> = (0..n_poles).collect();
     if new_nb < n_poles {

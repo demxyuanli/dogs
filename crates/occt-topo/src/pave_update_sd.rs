@@ -34,7 +34,7 @@ use crate::shape::{Edge, Vertex};
 /// a new vertex linked through the SD map, recorded in
 /// `myVertsToAvoidExtension`. Vertices whose tolerance grew are recorded in
 /// `myIncreasedSS`.
-pub fn update_vertex(f: &mut PaveFiller, n_v: usize, a_tol_new: f64) -> Result<usize, String> {
+pub fn update_vertex(f: &mut PaveFiller, n_v: usize, tol_new: f64) -> Result<usize, String> {
     let n_v_new = f.ds().has_shape_sd(n_v).unwrap_or(n_v);
     let has_sd = f.ds().has_shape_sd(n_v).is_some();
     let is_new = f.ds().is_new_shape(n_v_new) || f.ds().is_new_shape(n_v);
@@ -46,16 +46,16 @@ pub fn update_vertex(f: &mut PaveFiller, n_v: usize, a_tol_new: f64) -> Result<u
             .cloned()
             .ok_or("update_vertex: bad vertex index")?;
         let vtx = Vertex(shape);
-        let a_tol_v = BRepTool::vertex_tolerance(&vtx);
-        if a_tol_v < a_tol_new {
-            vtx.set_tolerance(a_tol_new);
-            f.ds_mut().refresh_vertex_box(n_v_new, a_tol_new + CONFUSION);
+        let tol_v = BRepTool::vertex_tolerance(&vtx);
+        if tol_v < tol_new {
+            vtx.set_tolerance(tol_new);
+            f.ds_mut().refresh_vertex_box(n_v_new, tol_new + CONFUSION);
             f.ds_mut().increased_ss_mut().insert(n_v);
         }
         return Ok(n_v_new);
     }
 
-    let (point, a_tol_v) = {
+    let (point, tol_v) = {
         let shape = f
             .ds()
             .shape(n_v)
@@ -64,12 +64,12 @@ pub fn update_vertex(f: &mut PaveFiller, n_v: usize, a_tol_new: f64) -> Result<u
         let vtx = Vertex(shape);
         (BRepTool::vertex_point(&vtx), BRepTool::vertex_tolerance(&vtx))
     };
-    let v_new = AlgoTools::make_new_vertex(&point, a_tol_v.max(a_tol_new))?;
+    let v_new = AlgoTools::make_new_vertex(&point, tol_v.max(tol_new))?;
     let n_new = f.ds_mut().append_info(crate::bopds::BopdsShapeInfo::new(v_new));
-    f.ds_mut().refresh_vertex_box(n_new, a_tol_v.max(a_tol_new) + CONFUSION);
+    f.ds_mut().refresh_vertex_box(n_new, tol_v.max(tol_new) + CONFUSION);
     f.ds_mut().add_shape_sd(n_v, n_new);
     f.verts_to_avoid_extension_mut().insert(n_new);
-    if a_tol_v < a_tol_new {
+    if tol_v < tol_new {
         f.ds_mut().increased_ss_mut().insert(n_v);
     }
     Ok(n_new)
@@ -81,7 +81,7 @@ pub fn update_vertex(f: &mut PaveFiller, n_v: usize, a_tol_new: f64) -> Result<u
 /// an edge whose bound vertices are still original (no SD replacement).
 /// Otherwise the edge tolerance is written, the DS box is rebuilt, and each
 /// bound vertex is passed to [`update_vertex`].
-pub fn update_edge_tolerance(f: &mut PaveFiller, n_e: usize, the_tol: f64) -> Result<(), String> {
+pub fn update_edge_tolerance(f: &mut PaveFiller, n_e: usize, tol: f64) -> Result<(), String> {
     let subs = f
         .ds()
         .shape_info(n_e)
@@ -105,13 +105,13 @@ pub fn update_edge_tolerance(f: &mut PaveFiller, n_e: usize, the_tol: f64) -> Re
             .ok_or("update_edge_tolerance: bad edge index")?;
         let edge = Edge(shape);
         if let Some(mut g) = crate::tgeometry::GeometryRegistry::global().edge_geom(&edge.0) {
-            g.tolerance = the_tol;
+            g.tolerance = tol;
             crate::tgeometry::GeometryRegistry::global().set_edge(&edge.0, g);
         }
     }
     f.ds_mut().refresh_shape_box(n_e, CONFUSION);
     for &n_v in &subs {
-        update_vertex(f, n_v, the_tol)?;
+        update_vertex(f, n_v, tol)?;
     }
     Ok(())
 }
@@ -158,11 +158,11 @@ pub fn update_common_blocks_with_sd_vertices(f: &mut PaveFiller) -> Result<(), S
         ds_update_pave_blocks_with_sd_vertices(f);
         return Ok(());
     }
-    let a_nb_pbp = f.ds().pave_blocks_pool().len();
-    if a_nb_pbp == 0 {
+    let nb_pbp = f.ds().pave_blocks_pool().len();
+    if nb_pbp == 0 {
         return Ok(());
     }
-    let a_tol_v = CONFUSION;
+    let tol_v = CONFUSION;
     let mut seen: HashSet<(Vec<usize>, Vec<usize>)> = HashSet::new();
     let mut jobs: Vec<(usize, usize)> = Vec::new();
     for list in f.ds().pave_blocks_pool() {
@@ -182,8 +182,8 @@ pub fn update_common_blocks_with_sd_vertices(f: &mut PaveFiller) -> Result<(), S
         }
     }
     for (n_v1, n_v2) in jobs {
-        update_vertex(f, n_v1, a_tol_v)?;
-        update_vertex(f, n_v2, a_tol_v)?;
+        update_vertex(f, n_v1, tol_v)?;
+        update_vertex(f, n_v2, tol_v)?;
     }
     let n_cb = f.ds().common_blocks().len();
     for i in 0..n_cb {

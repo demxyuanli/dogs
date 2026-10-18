@@ -38,9 +38,9 @@ pub(crate) fn make_curve(
 ) {
     let mut tolpc = tol;
     let my_approx = approx;
-    let my_approx1 = approx_s1;
-    let my_approx2 = approx_s2;
-    let my_tol_approx = 1.0e-7;
+    let approx1 = approx_s1;
+    let approx2 = approx_s2;
+    let tol_approx = 1.0e-7;
     let typl = line.arc_type();
 
     iss.l_construct.perform(line);
@@ -50,10 +50,10 @@ pub(crate) fn make_curve(
 
     match typl {
         IntPatchIType::Lin | IntPatchIType::Parabola | IntPatchIType::Hyperbola => {
-            make_lin_parab_hypr(iss, line, typl, my_approx1, my_approx2, &mut tolpc);
+            make_lin_parab_hypr(iss, line, typl, approx1, approx2, &mut tolpc);
         }
         IntPatchIType::Circle | IntPatchIType::Ellipse => {
-            make_circle_ellipse(iss, line, typl, my_approx1, my_approx2, &mut tolpc);
+            make_circle_ellipse(iss, line, typl, approx1, approx2, &mut tolpc);
         }
         IntPatchIType::Analytic => {
             if let Some(al) = line.as_aline() {
@@ -68,9 +68,9 @@ pub(crate) fn make_curve(
                             iss,
                             &wl,
                             my_approx,
-                            my_approx1,
-                            my_approx2,
-                            my_tol_approx,
+                            approx1,
+                            approx2,
+                            tol_approx,
                         );
                     }
                 }
@@ -82,15 +82,15 @@ pub(crate) fn make_curve(
                     iss,
                     wl,
                     my_approx,
-                    my_approx1,
-                    my_approx2,
-                    my_tol_approx,
+                    approx1,
+                    approx2,
+                    tol_approx,
                 );
             }
         }
         IntPatchIType::Restriction => {
             if let Some(rl) = line.as_rline() {
-                make_restriction(iss, rl, my_approx1, my_approx2);
+                make_restriction(iss, rl, approx1, approx2);
             }
         }
     }
@@ -146,8 +146,8 @@ fn make_lin_parab_hypr(
     iss: &mut IntSS,
     line: &GeomIntLine,
     typl: IntPatchIType,
-    my_approx1: bool,
-    my_approx2: bool,
+    approx1: bool,
+    approx2: bool,
     tolpc: &mut f64,
 ) {
     let Some(newc) = gline_curve(typl, line) else {
@@ -164,10 +164,10 @@ fn make_lin_parab_hypr(
             continue;
         };
         if !Precision::is_negative_infinite(fprm) && !Precision::is_positive_infinite(lprm) {
-            let a_ct3d: Arc<dyn Curve> = Arc::new(GeomTrimmedCurve::new(newc.clone(), fprm, lprm));
-            let c1 = maybe_trimmed_pcurve(iss, my_approx1, fprm, lprm, s1, newc.as_ref(), tolpc);
-            let c2 = maybe_trimmed_pcurve(iss, my_approx2, fprm, lprm, s2, newc.as_ref(), tolpc);
-            iss.append_line(a_ct3d, c1, c2);
+            let ct3d: Arc<dyn Curve> = Arc::new(GeomTrimmedCurve::new(newc.clone(), fprm, lprm));
+            let c1 = maybe_trimmed_pcurve(iss, approx1, fprm, lprm, s1, newc.as_ref(), tolpc);
+            let c2 = maybe_trimmed_pcurve(iss, approx2, fprm, lprm, s2, newc.as_ref(), tolpc);
+            iss.append_line(ct3d, c1, c2);
             continue;
         }
         let typ_s1 = classify_surface(s1);
@@ -179,14 +179,14 @@ fn make_lin_parab_hypr(
         let b_fnit = Precision::is_negative_infinite(fprm);
         let b_lpit = Precision::is_positive_infinite(lprm);
         let d_t = 100.0;
-        let a_test_prm = if b_fnit && !b_lpit {
+        let test_prm = if b_fnit && !b_lpit {
             lprm - d_t
         } else if !b_fnit && b_lpit {
             fprm + d_t
         } else {
             0.0
         };
-        let ptref = newc.d0(a_test_prm);
+        let ptref = newc.d0(test_prm);
         if classify_both(iss, &ptref) {
             iss.append_line(newc.clone(), None, None);
         }
@@ -215,8 +215,8 @@ fn make_circle_ellipse(
     iss: &mut IntSS,
     line: &GeomIntLine,
     typl: IntPatchIType,
-    my_approx1: bool,
-    my_approx2: bool,
+    approx1: bool,
+    approx2: bool,
     tolpc: &mut f64,
 ) {
     let Some(newc) = gline_curve(typl, line) else {
@@ -227,27 +227,27 @@ fn make_circle_ellipse(
     };
     let s1 = s1.as_ref();
     let s2 = s2.as_ref();
-    let a_real_eps = f64::EPSILON;
-    let a_period = TWO_PI;
+    let real_eps = f64::EPSILON;
+    let period = TWO_PI;
     let a_nb_parts = iss.l_construct.nb_parts();
     for i in 1..=a_nb_parts {
         let Some((fprm, lprm)) = iss.l_construct.part(i) else {
             continue;
         };
-        if fprm.abs() > a_real_eps || (lprm - a_period).abs() > a_real_eps {
-            append_trimmed_conic(iss, newc.clone(), fprm, lprm, s1, s2, my_approx1, my_approx2, tolpc);
+        if fprm.abs() > real_eps || (lprm - period).abs() > real_eps {
+            append_trimmed_conic(iss, newc.clone(), fprm, lprm, s1, s2, approx1, approx2, tolpc);
             continue;
         }
-        if a_nb_parts == 1 && fprm.abs() < a_real_eps && (lprm - TWO_PI).abs() < a_real_eps {
-            append_trimmed_conic(iss, newc.clone(), fprm, lprm, s1, s2, my_approx1, my_approx2, tolpc);
+        if a_nb_parts == 1 && fprm.abs() < real_eps && (lprm - TWO_PI).abs() < real_eps {
+            append_trimmed_conic(iss, newc.clone(), fprm, lprm, s1, s2, approx1, approx2, tolpc);
             break;
         }
-        let a_two_pi_div_17 = TWO_PI / 17.0;
+        let two_pi_div_17 = TWO_PI / 17.0;
         for j in 0..=17 {
-            let ptref = newc.d0(j as f64 * a_two_pi_div_17);
+            let ptref = newc.d0(j as f64 * two_pi_div_17);
             if classify_both(iss, &ptref) {
-                let c1 = maybe_pcurve(iss, my_approx1, fprm, lprm, s1, newc.as_ref(), tolpc);
-                let c2 = maybe_pcurve(iss, my_approx2, fprm, lprm, s2, newc.as_ref(), tolpc);
+                let c1 = maybe_pcurve(iss, approx1, fprm, lprm, s1, newc.as_ref(), tolpc);
+                let c2 = maybe_pcurve(iss, approx2, fprm, lprm, s2, newc.as_ref(), tolpc);
                 iss.append_line(newc.clone(), c1, c2);
                 break;
             }
@@ -262,26 +262,26 @@ fn append_trimmed_conic(
     lprm: f64,
     s1: &dyn Surface,
     s2: &dyn Surface,
-    my_approx1: bool,
-    my_approx2: bool,
+    approx1: bool,
+    approx2: bool,
     tolpc: &mut f64,
 ) {
-    let a_tc3d = GeomTrimmedCurve::new(newc.clone(), fprm, lprm);
-    let f = a_tc3d.first_parameter();
-    let l = a_tc3d.last_parameter();
-    let c1 = maybe_pcurve(iss, my_approx1, fprm, lprm, s1, newc.as_ref(), tolpc);
-    let c2 = maybe_pcurve(iss, my_approx2, fprm, lprm, s2, newc.as_ref(), tolpc);
+    let tc3d = GeomTrimmedCurve::new(newc.clone(), fprm, lprm);
+    let f = tc3d.first_parameter();
+    let l = tc3d.last_parameter();
+    let c1 = maybe_pcurve(iss, approx1, fprm, lprm, s1, newc.as_ref(), tolpc);
+    let c2 = maybe_pcurve(iss, approx2, fprm, lprm, s2, newc.as_ref(), tolpc);
     let _ = (f, l);
-    iss.append_line(Arc::new(a_tc3d), c1, c2);
+    iss.append_line(Arc::new(tc3d), c1, c2);
 }
 
 fn make_walking(
     iss: &mut IntSS,
     wl: &WLine,
     my_approx: bool,
-    my_approx1: bool,
-    my_approx2: bool,
-    my_tol_approx: f64,
+    approx1: bool,
+    approx2: bool,
+    tol_approx: f64,
 ) {
     let Some((s1, s2)) = surface_arcs(iss) else {
         return;
@@ -296,28 +296,28 @@ fn make_walking(
             };
             let ifprm = fprm as i32;
             let ilprm = lprm as i32;
-            let a_h1 = if my_approx1 {
+            let h1 = if approx1 {
                 int_ss_make_bspline2d(wl, ifprm, ilprm, true)
             } else {
                 None
             };
-            let a_h2 = if my_approx2 {
+            let h2 = if approx2 {
                 int_ss_make_bspline2d(wl, ifprm, ilprm, false)
             } else {
                 None
             };
-            if let Some(a_bsp) = int_ss_make_bspline(wl, ifprm, ilprm) {
-                iss.append_line(a_bsp, a_h1, a_h2);
+            if let Some(bsp) = int_ss_make_bspline(wl, ifprm, ilprm) {
+                iss.append_line(bsp, h1, h2);
             }
         }
         return;
     }
 
     let mut theapp3d = WlApprox::new();
-    let tol2d = my_tol_approx;
-    let a_tol_ss = 2.0e-7;
+    let tol2d = tol_approx;
+    let tol_ss = 2.0e-7;
     theapp3d.set_parameters(
-        my_tol_approx,
+        tol_approx,
         tol2d,
         4,
         8,
@@ -326,25 +326,25 @@ fn make_walking(
         !iss.same_surfaces,
         ParametrizationType::ChordLength,
     );
-    let mut a_seq_of_l: Vec<WLine> = Vec::new();
+    let mut seq_of_l: Vec<WLine> = Vec::new();
     let b_is_decomposited = line_tool::decomposition_from_constructor(
         wl,
         s1,
         s2,
-        a_tol_ss,
+        tol_ss,
         &iss.l_construct,
-        &mut a_seq_of_l,
+        &mut seq_of_l,
     );
     let a_nb_parts = iss.l_construct.nb_parts();
-    let a_nb_seq_of_l = a_seq_of_l.len() as i32;
+    let nb_seq_of_l = seq_of_l.len() as i32;
     let nbiter = if b_is_decomposited {
-        a_nb_seq_of_l
+        nb_seq_of_l
     } else {
         a_nb_parts
     };
     for i in 1..=nbiter {
         let (piece, ifprm, ilprm) = if b_is_decomposited {
-            let w = &a_seq_of_l[(i as usize).saturating_sub(1)];
+            let w = &seq_of_l[(i as usize).saturating_sub(1)];
             (w, 1, w.nb_pnts())
         } else {
             let Some((fprm, lprm)) = iss.l_construct.part(i) else {
@@ -358,9 +358,9 @@ fn make_walking(
             ifprm,
             ilprm,
             my_approx,
-            my_approx1,
-            my_approx2,
-            my_tol_approx,
+            approx1,
+            approx2,
+            tol_approx,
             &mut theapp3d,
         );
     }
@@ -372,9 +372,9 @@ fn walking_approx_one(
     ifprm: i32,
     ilprm: i32,
     my_approx: bool,
-    my_approx1: bool,
-    my_approx2: bool,
-    my_tol_approx: f64,
+    approx1: bool,
+    approx2: bool,
+    tol_approx: f64,
     theapp3d: &mut WlApprox,
 ) {
     let Some((s1, s2)) = surface_arcs(iss) else {
@@ -383,8 +383,8 @@ fn walking_approx_one(
     let s1 = s1.as_ref();
     let s2 = s2.as_ref();
     let mut an_approx = my_approx;
-    let mut an_approx1 = my_approx1;
-    let mut an_approx2 = my_approx2;
+    let mut an_approx1 = approx1;
+    let mut an_approx2 = approx2;
     let typs1 = classify_surface(s1);
     let typs2 = classify_surface(s2);
     if typs1 == SurfaceKind::Plane {
@@ -395,9 +395,9 @@ fn walking_approx_one(
         an_approx2 = true;
     }
     let _ = (an_approx, an_approx1, an_approx2);
-    let tol2d = my_tol_approx;
+    let tol2d = tol_approx;
     theapp3d.set_parameters(
-        my_tol_approx,
+        tol_approx,
         tol2d,
         4,
         8,
@@ -407,31 +407,31 @@ fn walking_approx_one(
         ParametrizationType::ChordLength,
     );
     if typs1 == SurfaceKind::Plane {
-        theapp3d.perform(s1, s2, wl, false, true, my_approx2, ifprm, ilprm);
+        theapp3d.perform(s1, s2, wl, false, true, approx2, ifprm, ilprm);
     } else if typs2 == SurfaceKind::Plane {
-        theapp3d.perform(s1, s2, wl, false, my_approx1, true, ifprm, ilprm);
+        theapp3d.perform(s1, s2, wl, false, approx1, true, ifprm, ilprm);
     } else {
-        theapp3d.perform(s1, s2, wl, true, my_approx1, my_approx2, ifprm, ilprm);
+        theapp3d.perform(s1, s2, wl, true, approx1, approx2, ifprm, ilprm);
     }
 
     if !theapp3d.is_done() {
-        let a_h1 = if my_approx1 {
+        let h1 = if approx1 {
             int_ss_make_bspline2d(wl, ifprm, ilprm, true)
         } else {
             None
         };
-        let a_h2 = if my_approx2 {
+        let h2 = if approx2 {
             int_ss_make_bspline2d(wl, ifprm, ilprm, false)
         } else {
             None
         };
-        if let Some(a_bsp) = int_ss_make_bspline(wl, ifprm, ilprm) {
-            iss.append_line(a_bsp, a_h1, a_h2);
+        if let Some(bsp) = int_ss_make_bspline(wl, ifprm, ilprm) {
+            iss.append_line(bsp, h1, h2);
         }
         return;
     }
 
-    if my_approx1 || my_approx2 || typs1 == SurfaceKind::Plane || typs2 == SurfaceKind::Plane {
+    if approx1 || approx2 || typs1 == SurfaceKind::Plane || typs2 == SurfaceKind::Plane {
         iss.bump_tol_2d(theapp3d.tol_reached_2d());
     }
     if typs1 == SurfaceKind::Plane || typs2 == SurfaceKind::Plane {
@@ -440,17 +440,17 @@ fn walking_approx_one(
         iss.bump_tol_3d(theapp3d.tol_reached_3d());
     }
 
-    let a_nb_multi = theapp3d.nb_multi_curves();
-    for j in 1..=a_nb_multi {
+    let nb_multi = theapp3d.nb_multi_curves();
+    for j in 1..=nb_multi {
         let Some(mbspc) = theapp3d.value(j).cloned() else {
             continue;
         };
         if typs1 == SurfaceKind::Plane {
-            append_plane_lift(iss, s1, s2, &mbspc, true, my_approx1, my_approx2);
+            append_plane_lift(iss, s1, s2, &mbspc, true, approx1, approx2);
         } else if typs2 == SurfaceKind::Plane {
-            append_plane_lift(iss, s1, s2, &mbspc, false, my_approx1, my_approx2);
+            append_plane_lift(iss, s1, s2, &mbspc, false, approx1, approx2);
         } else {
-            append_walking_done(iss, s1, s2, &mbspc, my_approx1, my_approx2);
+            append_walking_done(iss, s1, s2, &mbspc, approx1, approx2);
         }
     }
 }
@@ -504,8 +504,8 @@ fn append_plane_lift(
     s2: &dyn Surface,
     mbspc: &crate::geom_int::wl_approx::MultiBSpCurve,
     plane_is_s1: bool,
-    my_approx1: bool,
-    my_approx2: bool,
+    approx1: bool,
+    approx2: bool,
 ) {
     let (uvs, plane) = if plane_is_s1 {
         (&mbspc.poles2d_s1, s1)
@@ -525,7 +525,7 @@ fn append_plane_lift(
     let Some(bs) = bspline_from_poles(poles, &mbspc.knots) else {
         return;
     };
-    let mut c1 = if my_approx1 {
+    let mut c1 = if approx1 {
         if plane_is_s1 {
             bspline2d_from_poles(&mbspc.poles2d_s1, &mbspc.knots)
         } else {
@@ -534,7 +534,7 @@ fn append_plane_lift(
     } else {
         None
     };
-    let mut c2 = if my_approx2 {
+    let mut c2 = if approx2 {
         if plane_is_s1 {
             mbspc.curve2d_s2.clone()
         } else {
@@ -557,8 +557,8 @@ fn append_walking_done(
     s1: &dyn Surface,
     s2: &dyn Surface,
     mbspc: &crate::geom_int::wl_approx::MultiBSpCurve,
-    my_approx1: bool,
-    my_approx2: bool,
+    approx1: bool,
+    approx2: bool,
 ) {
     let Some(mut bs) = mbspc.curve3d.clone() else {
         return;
@@ -566,19 +566,19 @@ fn append_walking_done(
     if mbspc.poles3d.len() == 2 {
         let a = mbspc.poles3d[0];
         let b = mbspc.poles3d[1];
-        let a_dist = a.coord.square_modulus().max(b.coord.square_modulus());
-        let eps = f64::EPSILON * a_dist.max(1.0);
+        let dist = a.coord.square_modulus().max(b.coord.square_modulus());
+        let eps = f64::EPSILON * dist.max(1.0);
         if a.square_distance(&b) < 2.0 * eps {
             return;
         }
     }
     let _ = &mut bs;
-    let mut c1 = if my_approx1 {
+    let mut c1 = if approx1 {
         mbspc.curve2d_s1.clone()
     } else {
         None
     };
-    let mut c2 = if my_approx2 {
+    let mut c2 = if approx2 {
         mbspc.curve2d_s2.clone()
     } else {
         None
@@ -595,19 +595,19 @@ fn append_walking_done(
 fn make_restriction(
     iss: &mut IntSS,
     rl: &crate::geom_int::types::RLine,
-    my_approx1: bool,
-    my_approx2: bool,
+    approx1: bool,
+    approx2: bool,
 ) {
     let Some((s1, s2)) = surface_arcs(iss) else {
         return;
     };
     let s1 = s1.as_ref();
     let s2 = s2.as_ref();
-    let (a_c3d, a_c2d1, a_c2d2, a_tol_reached) = treat_rline(rl, s1, s2);
-    let Some(a_c3d) = a_c3d else {
+    let (c3d, c2d1, c2d2, tol_reached) = treat_rline(rl, s1, s2);
+    let Some(c3d) = c3d else {
         return;
     };
-    iss.bump_tol_3d(a_tol_reached);
+    iss.bump_tol_3d(tol_reached);
     let mut box1 = BndBox2d::new();
     let mut box2 = BndBox2d::new();
     let (u1f, u1l) = s1.u_range();
@@ -618,46 +618,46 @@ fn make_restriction(
     box1.update_point(u1l, v1l);
     box2.update_point(u2f, v2f);
     box2.update_point(u2l, v2l);
-    let mut an_array = vec![a_c3d.first_parameter(), a_c3d.last_parameter()];
+    let mut an_array = vec![c3d.first_parameter(), c3d.last_parameter()];
     trim_iline_on_surf_boundaries(
-        a_c2d1.as_deref(),
-        a_c2d2.as_deref(),
+        c2d1.as_deref(),
+        c2d2.as_deref(),
         &box1,
         &box2,
         &mut an_array,
     );
     let n = an_array.len().saturating_sub(1);
     for an_ind in 0..n {
-        let a_par_f = an_array[an_ind];
-        let a_par_l = an_array[an_ind + 1];
-        if a_par_l - a_par_f <= PCONFUSION {
+        let par_f = an_array[an_ind];
+        let par_l = an_array[an_ind + 1];
+        if par_l - par_f <= PCONFUSION {
             continue;
         }
-        let a_par = 0.5 * (a_par_f + a_par_l);
-        let mut a_curv2d1 = None;
-        let mut a_curv2d2 = None;
-        if let Some(c) = &a_c2d1 {
-            let a_pt = c.d0(a_par);
-            if box1.is_out(&a_pt) {
+        let par = 0.5 * (par_f + par_l);
+        let mut curv2d1 = None;
+        let mut curv2d2 = None;
+        if let Some(c) = &c2d1 {
+            let pt = c.d0(par);
+            if box1.is_out(&pt) {
                 continue;
             }
-            if my_approx1 {
-                a_curv2d1 = Some(Arc::new(Geom2dTrimmedCurve::new(c.clone(), a_par_f, a_par_l))
+            if approx1 {
+                curv2d1 = Some(Arc::new(Geom2dTrimmedCurve::new(c.clone(), par_f, par_l))
                     as Arc<dyn Curve2d>);
             }
         }
-        if let Some(c) = &a_c2d2 {
-            let a_pt = c.d0(a_par);
-            if box2.is_out(&a_pt) {
+        if let Some(c) = &c2d2 {
+            let pt = c.d0(par);
+            if box2.is_out(&pt) {
                 continue;
             }
-            if my_approx2 {
-                a_curv2d2 = Some(Arc::new(Geom2dTrimmedCurve::new(c.clone(), a_par_f, a_par_l))
+            if approx2 {
+                curv2d2 = Some(Arc::new(Geom2dTrimmedCurve::new(c.clone(), par_f, par_l))
                     as Arc<dyn Curve2d>);
             }
         }
-        let a_curv3d: Arc<dyn Curve> =
-            Arc::new(GeomTrimmedCurve::new(a_c3d.clone(), a_par_f, a_par_l));
-        iss.append_line(a_curv3d, a_curv2d1, a_curv2d2);
+        let curv3d: Arc<dyn Curve> =
+            Arc::new(GeomTrimmedCurve::new(c3d.clone(), par_f, par_l));
+        iss.append_line(curv3d, curv2d1, curv2d2);
     }
 }

@@ -173,9 +173,9 @@ pub(crate) fn ff_is_existing_pave_block_on_shared(
         }
         let Some(e_shape) = ds.shape(n_e) else { continue };
         let e = Edge(e_shape.clone());
-        let a_tol_e = BRepTool::edge_tolerance(&e);
-        let a_tol_check = a_tol_e.max(tol) + fuzzy;
-        let (flag, _, dist) = ctx.compute_pe_pnt(&pm, a_tol_check, &e);
+        let tol_e = BRepTool::edge_tolerance(&e);
+        let tol_check = tol_e.max(tol) + fuzzy;
+        let (flag, _, dist) = ctx.compute_pe_pnt(&pm, tol_check, &e);
         if flag == 0 {
             return Some((n_e, dist));
         }
@@ -276,17 +276,17 @@ fn post_treat_ff_legacy(
     }
 
     let mut existing: Vec<TopoShape> = Vec::new();
-    let mut a_ls: Vec<TopoShape> = Vec::new();
+    let mut ls: Vec<TopoShape> = Vec::new();
     let mut added_sd: HashSet<usize> = HashSet::new();
     for (shape, cpb) in mscpb.iter().rev() {
         if let Some(pb) = cpb.pb.as_ref() {
             if pb_has_edge(pb) {
                 existing.push(shape.clone());
             } else {
-                a_ls.push(shape.clone());
+                ls.push(shape.clone());
             }
         } else {
-            a_ls.push(shape.clone());
+            ls.push(shape.clone());
         }
         for child in ShapeIterator::of_shape(shape) {
             if child.shape_type() != ShapeType::Vertex {
@@ -296,23 +296,23 @@ fn post_treat_ff_legacy(
             let Some(&n_sd) = dm_new_sd.get(&i_ver) else { continue };
             if added_sd.insert(n_sd) {
                 if let Some(v_sd) = f.ds().shape(n_sd).cloned() {
-                    a_ls.push(v_sd);
+                    ls.push(v_sd);
                 }
             }
         }
     }
     if !existing.is_empty() {
-        a_ls.push(TopoBuilder::new().make_compound_of(&existing).0);
+        ls.push(TopoBuilder::new().make_compound_of(&existing).0);
     }
     for v in unused {
         let Some(i_ver) = f.ds().index(&v) else {
-            a_ls.push(v);
+            ls.push(v);
             continue;
         };
         let n = dm_new_sd.get(&i_ver).copied().unwrap_or(i_ver);
         if added_sd.insert(n) {
             if let Some(s) = f.ds().shape(n).cloned() {
-                a_ls.push(s);
+                ls.push(s);
             }
         }
     }
@@ -321,9 +321,9 @@ fn post_treat_ff_legacy(
         micro_pb,
         dm_new_sd,
         &mut added_sd,
-        &mut a_ls,
+        &mut ls,
     );
-    if a_ls.is_empty() {
+    if ls.is_empty() {
         return Ok(());
     }
 
@@ -331,7 +331,7 @@ fn post_treat_ff_legacy(
     nested.set_is_primary(false);
     nested.set_non_destructive(f.non_destructive());
     nested.set_fuzzy_value(f.fuzzy_value());
-    nested.set_arguments(&a_ls);
+    nested.set_arguments(&ls);
     if let Err(e) = nested.perform() {
         f.add_error("BOPAlgo_AlertPostTreatFF".into());
         return Err(e);
@@ -348,12 +348,12 @@ fn post_treat_ff_legacy(
         .collect();
 
     let mut k = 0;
-    while k < a_ls.len() {
-        let sx = a_ls[k].clone();
+    while k < ls.len() {
+        let sx = ls[k].clone();
         k += 1;
         if sx.shape_type() == ShapeType::Compound {
             for c in ShapeIterator::of_shape(&sx) {
-                a_ls.push(c);
+                ls.push(c);
             }
             continue;
         }
@@ -406,7 +406,7 @@ fn post_treat_ff_legacy(
                     }
                     for child in ShapeIterator::of_shape(&sx) {
                         if child.shape_type() == ShapeType::Vertex {
-                            a_ls.push(child);
+                            ls.push(child);
                         }
                     }
                     continue;
@@ -426,7 +426,7 @@ fn post_treat_ff_legacy(
                     pb_new.set_edge(i_e);
                     if nested.ds().is_common_block(pbx) {
                         if let Some(cb) = nested.ds().common_block(pbx) {
-                            let a_tol = crate::bopalgo_tools::compute_tolerance_of_cb(
+                            let tol = crate::bopalgo_tools::compute_tolerance_of_cb(
                                 cb,
                                 nested.ds(),
                                 nested.context(),
@@ -437,8 +437,8 @@ fn post_treat_ff_legacy(
                                 .get_mut(i_x)
                                 .and_then(|ff| ff.change_curves().get_mut(i_c))
                             {
-                                if nc.tolerance() < a_tol {
-                                    nc.set_tolerance(a_tol);
+                                if nc.tolerance() < tol {
+                                    nc.set_tolerance(tol);
                                 }
                             }
                         }

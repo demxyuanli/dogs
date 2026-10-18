@@ -262,20 +262,20 @@ impl CurveAdaptor {
 
 /// `BRepLib_FindSurface` (`BRepLib_FindSurface.hxx:48-101`).
 pub struct FindSurface {
-    my_tolerance: f64,
-    my_tol_reached: f64,
+    tolerance: f64,
+    tol_reached: f64,
     is_existed: bool,
-    my_surface: Option<Arc<dyn Surface>>,
+    surface: Option<Arc<dyn Surface>>,
 }
 
 impl FindSurface {
     /// `BRepLib_FindSurface()` (`cxx:158-163`).
     pub fn empty() -> Self {
         Self {
-            my_tolerance: 0.0,
-            my_tol_reached: 0.0,
+            tolerance: 0.0,
+            tol_reached: 0.0,
             is_existed: false,
-            my_surface: None,
+            surface: None,
         }
     }
 
@@ -288,22 +288,22 @@ impl FindSurface {
 
     /// `Found()` (`cxx:583-586`).
     pub fn found(&self) -> bool {
-        self.my_surface.is_some()
+        self.surface.is_some()
     }
 
     /// `Surface()` (`cxx:590-593`).
     pub fn surface(&self) -> Option<Arc<dyn Surface>> {
-        self.my_surface.clone()
+        self.surface.clone()
     }
 
     /// `Tolerance()` (`cxx:595-598`).
     pub fn tolerance(&self) -> f64 {
-        self.my_tolerance
+        self.tolerance
     }
 
     /// `ToleranceReached()` (`cxx:602-605`).
     pub fn tolerance_reached(&self) -> f64 {
-        self.my_tol_reached
+        self.tol_reached
     }
 
     /// `Existed()` (`cxx:611-614`).
@@ -316,17 +316,17 @@ impl FindSurface {
     /// `myLocation.Identity()` (`cxx:255`) is the identity `TopLoc_Location`
     /// the port always carries.
     pub fn init(&mut self, shape: &TopoShape, tol: f64, only_plane: bool, only_closed: bool) {
-        self.my_tolerance = tol;
-        self.my_tol_reached = 0.0;
+        self.tolerance = tol;
+        self.tol_reached = 0.0;
         self.is_existed = false;
-        self.my_surface = None;
+        self.surface = None;
 
         // compute the tolerance (cxx:260-268)
         let edges = edges_of(shape);
         for e in &edges {
             let t = BRepTool::edge_tolerance(e);
-            if t > self.my_tolerance {
-                self.my_tolerance = t;
+            if t > self.tolerance {
+                self.tolerance = t;
             }
         }
 
@@ -374,13 +374,13 @@ impl FindSurface {
                 // the lateral (cylindrical) face of the cylinder; reject an
                 // improper mySurface (cxx:333-340)
                 if !only_closed || is_2d_closed(shape, &s) {
-                    self.my_surface = Some(s);
+                    self.surface = Some(s);
                     break;
                 }
             }
         }
 
-        if self.my_surface.is_some() {
+        if self.surface.is_some() {
             self.is_existed = true;
             return;
         }
@@ -555,12 +555,12 @@ impl FindSurface {
         };
         let plane = GpPln::new(ax3);
         let plane_surface: Arc<dyn Surface> = Arc::new(GeomPlane::new(plane.clone()));
-        self.my_tol_reached = controle(&points, &plane);
+        self.tol_reached = controle(&points, &plane);
         let weakness = 5.0;
-        if self.my_tol_reached <= self.my_tolerance
-            || (tol < 0.0 && self.my_tol_reached < self.my_tolerance * weakness)
+        if self.tol_reached <= self.tolerance
+            || (tol < 0.0 && self.tol_reached < self.tolerance * weakness)
         {
-            self.my_surface = Some(plane_surface.clone());
+            self.surface = Some(plane_surface.clone());
             // If S is wire, try to orient surface according to orientation of
             // wire (cxx:564-576).
             if shape.shape_type() == ShapeType::Wire && shape.closed() {
@@ -576,7 +576,7 @@ impl FindSurface {
                             let loc = plane.location();
                             let dir = plane.axis().direction().reversed();
                             if let Ok(ax3) = GpAx3::from_point_dir(loc, dir) {
-                                self.my_surface =
+                                self.surface =
                                     Some(Arc::new(GeomPlane::new(GpPln::new(ax3))));
                             }
                         }

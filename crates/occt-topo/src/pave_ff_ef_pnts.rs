@@ -40,48 +40,48 @@ fn push_pnt(
     uv_on_opp: (f64, f64),
     out: &mut Vec<PntOn2s>,
 ) {
-    let mut a_pnt = PntOn2s {
+    let mut pnt = PntOn2s {
         u1: 0.0,
         v1: 0.0,
         u2: 0.0,
         v2: 0.0,
     };
     if n_f == n_f1 {
-        a_pnt.set_value(uv_on_f.0, uv_on_f.1, uv_on_opp.0, uv_on_opp.1);
+        pnt.set_value(uv_on_f.0, uv_on_f.1, uv_on_opp.0, uv_on_opp.1);
     } else {
-        a_pnt.set_value(uv_on_opp.0, uv_on_opp.1, uv_on_f.0, uv_on_f.1);
+        pnt.set_value(uv_on_opp.0, uv_on_opp.1, uv_on_f.0, uv_on_f.1);
     }
-    out.push(a_pnt);
+    out.push(pnt);
 }
 
 fn project_with_pcurve(
     ctx: &IntToolsContext,
-    a_par: f64,
-    a_pcurve: &dyn Curve2d,
-    a_point: &GpPnt,
-    a_f_opp: &Face,
+    par: f64,
+    pcurve: &dyn Curve2d,
+    point: &GpPnt,
+    f_opp: &Face,
     n_f: usize,
     n_f1: usize,
     out: &mut Vec<PntOn2s>,
 ) {
-    let a_p2d = a_pcurve.d0(a_par);
-    if let Ok((u1, v1)) = ctx.project_point_on_face(a_f_opp, a_point) {
-        push_pnt(n_f, n_f1, (a_p2d.x(), a_p2d.y()), (u1, v1), out);
+    let p2d = pcurve.d0(par);
+    if let Ok((u1, v1)) = ctx.project_point_on_face(f_opp, point) {
+        push_pnt(n_f, n_f1, (p2d.x(), p2d.y()), (u1, v1), out);
     }
 }
 
 fn project_both_faces(
     ctx: &IntToolsContext,
-    a_point: &GpPnt,
+    point: &GpPnt,
     a_f: &Face,
-    a_f_opp: &Face,
+    f_opp: &Face,
     n_f: usize,
     n_f1: usize,
     out: &mut Vec<PntOn2s>,
 ) {
     if let (Ok((u1, v1)), Ok((u2, v2))) = (
-        ctx.project_point_on_face(a_f, a_point),
-        ctx.project_point_on_face(a_f_opp, a_point),
+        ctx.project_point_on_face(a_f, point),
+        ctx.project_point_on_face(f_opp, point),
     ) {
         push_pnt(n_f, n_f1, (u1, v1), (u2, v2), out);
     }
@@ -91,7 +91,7 @@ fn project_both_faces(
 struct EfNewVertex {
     n_e: usize,
     n_f_opp: usize,
-    a_par: f64,
+    par: f64,
 }
 
 fn collect_ef_new_vertices(f: &PaveFiller, mi: &HashSet<usize>) -> Vec<EfNewVertex> {
@@ -105,11 +105,11 @@ fn collect_ef_new_vertices(f: &PaveFiller, mi: &HashSet<usize>) -> Vec<EfNewVert
         if !mi.contains(&n_e) || !mi.contains(&n_f_opp) {
             continue;
         }
-        let a_par = curve_box_vertex_parameter1(it.common_first, it.common_last);
+        let par = curve_box_vertex_parameter1(it.common_first, it.common_last);
         out.push(EfNewVertex {
             n_e,
             n_f_opp,
-            a_par,
+            par,
         });
     }
     out
@@ -128,9 +128,9 @@ fn append_ef_point(
     let Some(f_opp_shape) = f.ds().shape(rec.n_f_opp).cloned() else {
         return;
     };
-    let a_e = Edge(e_shape);
-    let a_f_opp = Face(f_opp_shape);
-    let Some(a_curve) = BRepTool::edge_curve(&a_e) else {
+    let e = Edge(e_shape);
+    let f_opp = Face(f_opp_shape);
+    let Some(curve) = BRepTool::edge_curve(&e) else {
         return;
     };
     let n_f = if rec.n_f_opp == n_f1 { n_f2 } else { n_f1 };
@@ -138,21 +138,21 @@ fn append_ef_point(
         return;
     };
     let a_f = Face(f_shape);
-    let a_point = a_curve.d0(rec.a_par);
+    let point = curve.d0(rec.par);
     let ctx = f.context();
-    if let Some(a_pcurve) = curve_on_surface(&a_e, &a_f) {
+    if let Some(pcurve) = curve_on_surface(&e, &a_f) {
         project_with_pcurve(
             ctx,
-            rec.a_par,
-            a_pcurve.as_ref(),
-            &a_point,
-            &a_f_opp,
+            rec.par,
+            pcurve.as_ref(),
+            &point,
+            &f_opp,
             n_f,
             n_f1,
             out,
         );
     } else {
-        project_both_faces(ctx, &a_point, &a_f, &a_f_opp, n_f, n_f1, out);
+        project_both_faces(ctx, &point, &a_f, &f_opp, n_f, n_f1, out);
     }
 }
 

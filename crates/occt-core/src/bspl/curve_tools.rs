@@ -100,8 +100,8 @@ pub fn reverse_periodic_span<T>(items: &mut [T], flat_knot_len: usize, degree: u
         return;
     }
     let last = flat_knot_len as i32 - degree as i32 - 1;
-    let a_l = 1 + (last - 1).rem_euclid(n);
-    let a = a_l as usize;
+    let l = 1 + (last - 1).rem_euclid(n);
+    let a = l as usize;
     items[..a].reverse();
     if a < items.len() {
         items[a..].reverse();

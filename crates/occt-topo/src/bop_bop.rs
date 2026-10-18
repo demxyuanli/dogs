@@ -387,10 +387,10 @@ pub fn build_solid(b: &BopBuilder, rc: &TopoShape) -> Result<TopoShape, String> 
     let bb = TopoBuilder::new();
     let mut arg_solids: HashSet<ShapeMapKey> = HashSet::new();
     let mut ancestors: HashMap<ShapeMapKey, Vec<TopoShape>> = HashMap::new();
-    let mut a_lsc: Vec<TopoShape> = Vec::new();
+    let mut lsc: Vec<TopoShape> = Vec::new();
     for group in [b.objects(), b.tools()] {
         for s in group {
-            collect_containers(s, &mut a_lsc);
+            collect_containers(s, &mut lsc);
             for sol in explore(s, ShapeType::Solid) {
                 arg_solids.insert(shape_key(&sol));
                 map_faces_and_ancestors(&sol, &mut ancestors);
@@ -457,10 +457,10 @@ pub fn build_solid(b: &BopBuilder, rc: &TopoShape) -> Result<TopoShape, String> 
         out.push(set.shape().clone());
     }
     let rc = bb.make_compound_of(&out).0;
-    if a_lsc.is_empty() {
+    if lsc.is_empty() {
         return Ok(rc);
     }
-    Ok(rebuild_compsolids(b, &rc, &a_lsc))
+    Ok(rebuild_compsolids(b, &rc, &lsc))
 }
 
 /// `CollectContainers` (`BOPAlgo_BOP.cxx:1587`).
@@ -589,33 +589,33 @@ fn check_args_for_open_solid(b: &BopBuilder) -> bool {
         w.contains("AlertSolidBuilderUnusedFaces")
             || (w.contains("BuilderSolid:") && w.contains("fit no region"))
     });
-    for a_solid in source_solids(b.ds()) {
+    for solid in source_solids(b.ds()) {
         let mut mef: HashMap<ShapeMapKey, (TopoShape, Vec<TopoShape>)> = HashMap::new();
         let mut mf_internal: HashSet<ShapeMapKey> = HashSet::new();
-        for a_sh in iter_children(&a_solid) {
-            if a_sh.shape_type() != ShapeType::Shell {
+        for sh in iter_children(&solid) {
+            if sh.shape_type() != ShapeType::Shell {
                 continue;
             }
-            for a_f in iter_children(&a_sh) {
-                if a_f.shape_type() != ShapeType::Face {
+            for f in iter_children(&sh) {
+                if f.shape_type() != ShapeType::Face {
                     continue;
                 }
-                if a_f.orientation() == Orientation::Internal {
-                    for im in images_of(b.history(), &a_f) {
+                if f.orientation() == Orientation::Internal {
+                    for im in images_of(b.history(), &f) {
                         mf_internal.insert(shape_key(im));
                     }
-                    if images_of(b.history(), &a_f).is_empty() {
-                        mf_internal.insert(shape_key(&a_f));
+                    if images_of(b.history(), &f).is_empty() {
+                        mf_internal.insert(shape_key(&f));
                     }
                     continue;
                 }
-                for e in edges_of(&a_f) {
+                for e in edges_of(&f) {
                     let ent = mef.entry(shape_key(&e.0)).or_insert_with(|| (e.0.clone(), Vec::new()));
                     // `TopExp::MapShapesAndAncestors(aF, EDGE, FACE, aMEF)`
                     // appends without a uniqueness check
                     // (`BOPAlgo_BOP.cxx:1469`), so a seam edge listed twice on
                     // the face yields `Extent() == 2`.
-                    ent.1.push(a_f.clone());
+                    ent.1.push(f.clone());
                 }
             }
         }
@@ -641,19 +641,19 @@ fn check_args_for_open_solid(b: &BopBuilder) -> bool {
         if failed_from_warning {
             return true;
         }
-        let images = images_of(b.history(), &a_solid);
+        let images = images_of(b.history(), &solid);
         if images.is_empty() {
             continue;
         }
-        for a_sim in images {
-            for a_sh in iter_children(a_sim) {
-                if a_sh.shape_type() != ShapeType::Shell {
+        for sim in images {
+            for sh in iter_children(sim) {
+                if sh.shape_type() != ShapeType::Shell {
                     continue;
                 }
-                for a_f in iter_children(&a_sh) {
-                    if a_f.shape_type() == ShapeType::Face
-                        && a_f.orientation() == Orientation::Internal
-                        && !mf_internal.contains(&shape_key(&a_f))
+                for f in iter_children(&sh) {
+                    if f.shape_type() == ShapeType::Face
+                        && f.orientation() == Orientation::Internal
+                        && !mf_internal.contains(&shape_key(&f))
                     {
                         return true;
                     }

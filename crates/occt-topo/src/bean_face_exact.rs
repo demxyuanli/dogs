@@ -197,9 +197,9 @@ impl BeanFaceIntersector {
 
             let old_len = self.range_manager.len();
 
-            if let Some(a_sq_dist) = self.extcs_is_parallel(anarg1, anarg2) {
-                self.min_sq_distance = self.min_sq_distance.min(a_sq_dist);
-                if a_sq_dist < self.criteria * self.criteria {
+            if let Some(sq_dist) = self.extcs_is_parallel(anarg1, anarg2) {
+                self.min_sq_distance = self.min_sq_distance.min(sq_dist);
+                if sq_dist < self.criteria * self.criteria {
                     let mut u1 = 0.0;
                     let mut v1 = 0.0;
                     let mut u2 = 0.0;

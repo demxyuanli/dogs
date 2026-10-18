@@ -245,8 +245,8 @@ pub fn is_iso_line(c2d: &dyn Curve2d) -> Option<IsoLine> {
 pub fn build_c3d_on_iso_line(
     c2d: &dyn Curve2d,
     surface: &Arc<dyn Surface>,
-    the_first: f64,
-    the_last: f64,
+    first: f64,
+    last: f64,
     tolerance: f64,
     is_u: bool,
     param: f64,
@@ -258,16 +258,16 @@ pub fn build_c3d_on_iso_line(
     }
 
     // Extract isoline (`cxx:3100-3105`).
-    let mut a_surf: Arc<dyn Surface> = surface.clone();
+    let mut surf: Arc<dyn Surface> = surface.clone();
 
     // `aF2d = theC2D->Value(FirstParameter())`, `aL2d = ... Value(LastParameter())`.
-    let f2d = c2d.d0(the_first);
-    let l2d = c2d.d0(the_last);
+    let f2d = c2d.d0(first);
+    let l2d = c2d.d0(last);
 
-    let (u1, u2) = a_surf.u_range();
-    let (v1, v2) = a_surf.v_range();
+    let (u1, u2) = surf.u_range();
+    let (v1, v2) = surf.v_range();
     let mut is_to_trim = true;
-    let a_iso: Arc<dyn Curve>;
+    let iso: Arc<dyn Curve>;
     // `aV1Param` / `aV2Param` (`theIsU`) or `aU1Param` / `aU2Param` — the trim
     // range used by `new Geom_TrimmedCurve` below.
     let trim_first: f64;
@@ -283,9 +283,9 @@ pub fn build_c3d_on_iso_line(
             if (a_v2 - a_v1).abs() < PCONFUSION {
                 return None;
             }
-            a_surf = Arc::new(
+            surf = Arc::new(
                 crate::rectangular_trimmed::GeomRectangularTrimmedSurface::uv(
-                    a_surf, u1, u2, a_v1, a_v2,
+                    surf, u1, u2, a_v1, a_v2,
                 )
                 // OCCT lets `Geom_RectangularTrimmedSurface` throw here; the
                 // deviation guards above make it unreachable, so a failure is
@@ -302,7 +302,7 @@ pub fn build_c3d_on_iso_line(
         }
         trim_first = a_v1;
         trim_last = a_v2;
-        a_iso = a_surf.u_iso_curve(param)?;
+        iso = surf.u_iso_curve(param)?;
     } else {
         // `cxx:3146-3173`.
         let mut a_u1 = f2d.x().min(l2d.x());
@@ -313,9 +313,9 @@ pub fn build_c3d_on_iso_line(
             if (a_u2 - a_u1).abs() < PCONFUSION {
                 return None;
             }
-            a_surf = Arc::new(
+            surf = Arc::new(
                 crate::rectangular_trimmed::GeomRectangularTrimmedSurface::uv(
-                    a_surf, a_u1, a_u2, v1, v2,
+                    surf, a_u1, a_u2, v1, v2,
                 )
                 // See the U arm above.
                 .ok()?,
@@ -330,22 +330,22 @@ pub fn build_c3d_on_iso_line(
         }
         trim_first = a_u1;
         trim_last = a_u2;
-        a_iso = a_surf.v_iso_curve(param)?;
+        iso = surf.v_iso_curve(param)?;
     }
 
     // `if (isToTrim) aC3d = new Geom_TrimmedCurve(aC3d, aV1Param, aV2Param)`
     // (`cxx:3137-3142` / `cxx:3169-3172`): the trim keeps the basis
     // parameters, which is `GeomTrimmedCurveBasis`.
-    let a_c3d: Arc<dyn Curve> = if is_to_trim {
-        Arc::new(GeomTrimmedCurveBasis::new(a_iso, trim_first, trim_last))
+    let c3d: Arc<dyn Curve> = if is_to_trim {
+        Arc::new(GeomTrimmedCurveBasis::new(iso, trim_first, trim_last))
     } else {
-        a_iso
+        iso
     };
 
     // Convert arbitrary curve type to the b-spline (`cxx:3175-3178`).
     let mut curve3d =
         crate::convert_bspl::curve_to_bspline_curve(
-            a_c3d.as_ref(),
+            c3d.as_ref(),
             occt_core::convert::ParameterisationType::QuasiAngular,
         )
         .ok()?;
@@ -365,13 +365,13 @@ pub fn build_c3d_on_iso_line(
     // pcurve handed to this function is *not* trimmed, so its own range may be
     // infinite (a 2D line) and must not leak into the reparameterization.
     let (mut knots, _mults) = curve3d.distinct_knots_and_mults();
-    knots_reparametrize(the_first, the_last, &mut knots);
+    knots_reparametrize(first, last, &mut knots);
     curve3d.set_knots(&knots).ok()?;
 
     // Evaluate error (`cxx:3190-3213`).
     let mut error3d = 0.0f64;
-    let par_f = the_first;
-    let par_l = the_last;
+    let par_f = first;
+    let par_l = last;
     const NB_PNT: i32 = 23;
     for idx in 0..=NB_PNT {
         let par = par_f + ((par_l - par_f) * idx as f64) / NB_PNT as f64;

@@ -38,12 +38,12 @@ pub(super) enum GltfAlphaMode {
 
 /// `RWGltf_GltfParseAlphaMode` (`RWGltf_GltfAlphaMode.hxx:30-46`): unknown
 /// strings fall back to `OPAQUE`.
-pub(super) fn parse_alpha_mode(the_type: &str) -> GltfAlphaMode {
-    if the_type.eq_ignore_ascii_case("OPAQUE") {
+pub(super) fn parse_alpha_mode(kind: &str) -> GltfAlphaMode {
+    if kind.eq_ignore_ascii_case("OPAQUE") {
         GltfAlphaMode::Opaque
-    } else if the_type.eq_ignore_ascii_case("MASK") {
+    } else if kind.eq_ignore_ascii_case("MASK") {
         GltfAlphaMode::Mask
-    } else if the_type.eq_ignore_ascii_case("BLEND") {
+    } else if kind.eq_ignore_ascii_case("BLEND") {
         GltfAlphaMode::Blend
     } else {
         GltfAlphaMode::Opaque

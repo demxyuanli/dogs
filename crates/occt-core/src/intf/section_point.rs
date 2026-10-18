@@ -21,7 +21,7 @@ pub enum IntfPIType {
 #[derive(Clone, Copy, Debug)]
 pub struct IntfSectionPoint {
     /// `myPnt` (`hxx:111`)
-    my_pnt: GpPnt,
+    pnt: GpPnt,
     /// `DimenObje` (`hxx:112`)
     dimen_obje: IntfPIType,
     /// `IndexO1` (`hxx:113`)
@@ -53,7 +53,7 @@ impl IntfSectionPoint {
     /// `Intf_SectionPoint()` (`Intf_SectionPoint.cxx:136-148`).
     pub fn new() -> Self {
         Self {
-            my_pnt: GpPnt::new(0.0, 0.0, 0.0),
+            pnt: GpPnt::new(0.0, 0.0, 0.0),
             dimen_obje: IntfPIType::External,
             index_o1: 0,
             index_o2: 0,
@@ -82,7 +82,7 @@ impl IntfSectionPoint {
         incid: f64,
     ) -> Self {
         Self {
-            my_pnt: *where_,
+            pnt: *where_,
             dimen_obje: dime_o,
             index_o1: addr_o1,
             index_o2: addr_o2,
@@ -109,7 +109,7 @@ impl IntfSectionPoint {
         incid: f64,
     ) -> Self {
         Self {
-            my_pnt: GpPnt::new(where_.x(), where_.y(), 0.0),
+            pnt: GpPnt::new(where_.x(), where_.y(), 0.0),
             dimen_obje: dime_o,
             index_o1: 0,
             index_o2: addr_o1,
@@ -124,7 +124,7 @@ impl IntfSectionPoint {
 
     /// `Pnt()` (`Intf_SectionPoint.cxx:23-27`).
     pub fn pnt(&self) -> &GpPnt {
-        &self.my_pnt
+        &self.pnt
     }
 
     /// `ParamOnFirst()` (`SectionPoint.lxx:17-20`).
@@ -218,7 +218,7 @@ impl IntfSectionPoint {
 
     /// `Merge(Other)` (`Intf_SectionPoint.cxx:202-233`).
     pub fn merge(&mut self, other: &mut Self) {
-        other.my_pnt = self.my_pnt;
+        other.pnt = self.pnt;
         if self.dimen_obje >= other.dimen_obje {
             other.dimen_obje = self.dimen_obje;
             other.index_o1 = self.index_o1;

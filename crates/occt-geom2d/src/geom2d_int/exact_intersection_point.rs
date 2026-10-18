@@ -25,7 +25,7 @@ pub struct Geom2dIntExactIntersectionPoint<'a> {
     /// `nbroots` (`hxx`).
     nbroots: i32,
     /// `myTol` = `Tol * Tol` (`gxx:30`).
-    my_tol: f64,
+    tol: f64,
     /// `FctDist` (`hxx`).
     fct_dist: DistBetweenPCurves<'a>,
     /// `ToleranceVector` (`gxx:32`).
@@ -50,7 +50,7 @@ impl<'a> Geom2dIntExactIntersectionPoint<'a> {
         let mut r = Self {
             done: false,
             nbroots: 0,
-            my_tol: tol * tol,
+            tol: tol * tol,
             fct_dist: DistBetweenPCurves::new(c1, c2),
             tolerance_vector,
             b_inf_vector: MathVector::new(1, 2),
@@ -276,7 +276,7 @@ impl<'a> Geom2dIntExactIntersectionPoint<'a> {
             let mut xy = MathVector::new(1, 2);
             dist.value(&self.root, &mut xy);
             let dist2 = xy.value(1) * xy.value(1) + xy.value(2) * xy.value(2);
-            if dist2 > self.my_tol {
+            if dist2 > self.tol {
                 self.nbroots = 0;
             }
         } else {

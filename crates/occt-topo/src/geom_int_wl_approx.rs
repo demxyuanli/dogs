@@ -205,11 +205,11 @@ impl WlApprox {
         self.done = true;
     }
 
-    fn fill_data(&mut self, the_line: &WLine) {
-        if the_line.nb_pnts() < 1 {
+    fn fill_data(&mut self, line: &WLine) {
+        if line.nb_pnts() < 1 {
             return;
         }
-        let p = the_line.point(1);
+        let p = line.point(1);
         self.data.xo = p.p.x();
         self.data.yo = p.p.y();
         self.data.zo = p.p.z();

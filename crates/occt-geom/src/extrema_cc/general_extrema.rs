@@ -213,41 +213,41 @@ impl<'a> GGenExtCC<'a> {
         }
 
         // --- Lipschitz constant (`hxx:543-616`) ---------------------------
-        let a_max_lc = 10000.0f64;
-        let mut a_lc = 100.0f64;
-        let a_max_der1 = 1.0 / c1.resolution(1.0);
-        let a_max_der2 = 1.0 / c2.resolution(1.0);
-        let mut a_max_der = a_max_der1.max(a_max_der2) * std::f64::consts::SQRT_2;
-        if a_lc > a_max_der {
-            a_lc = a_max_der;
+        let max_lc = 10000.0f64;
+        let mut lc = 100.0f64;
+        let max_der1 = 1.0 / c1.resolution(1.0);
+        let max_der2 = 1.0 / c2.resolution(1.0);
+        let mut max_der = max_der1.max(max_der2) * std::f64::consts::SQRT_2;
+        if lc > max_der {
+            lc = max_der;
         }
         let mut is_const_locked = false;
         const A_CR: f64 = 0.001;
-        if a_max_der1 / a_max_der < A_CR || a_max_der2 / a_max_der < A_CR {
+        if max_der1 / max_der < A_CR || max_der2 / max_der < A_CR {
             is_const_locked = true;
         }
-        if a_max_der > a_max_lc {
-            a_lc = a_max_lc;
+        if max_der > max_lc {
+            lc = max_lc;
             is_const_locked = true;
         }
         if c1.gp_line().is_some() {
-            a_max_der = 1.0 / c2.resolution(1.0);
-            if a_lc > a_max_der {
+            max_der = 1.0 / c2.resolution(1.0);
+            if lc > max_der {
                 is_const_locked = true;
-                a_lc = a_max_der;
+                lc = max_der;
             }
         }
         if c2.gp_line().is_some() {
-            a_max_der = 1.0 / c1.resolution(1.0);
-            if a_lc > a_max_der {
+            max_der = 1.0 / c1.resolution(1.0);
+            if lc > max_der {
                 is_const_locked = true;
-                a_lc = a_max_der;
+                lc = max_der;
             }
         }
 
         let func = GlobOptFuncCCC2::new(c1, c2);
-        if a_lc < a_max_lc || a_max_der > a_max_lc {
-            let mut a_max_g = 0.0f64;
+        if lc < max_lc || max_der > max_lc {
+            let mut max_g = 0.0f64;
             let n1 = 21;
             let n2 = 21;
             let dt1 = (c1.last_parameter() - c1.first_parameter()) / f64::from(n1 - 1);
@@ -258,21 +258,21 @@ impl<'a> GGenExtCC<'a> {
                 for _i2 in 1..=n2 {
                     if let Some((_f, (g1, g2))) = func.values_uv(t1, t2) {
                         let a_mod = g1 * g1 + g2 * g2;
-                        a_max_g = a_max_g.max(a_mod);
+                        max_g = max_g.max(a_mod);
                     }
                     t2 += dt2;
                 }
                 t1 += dt1;
             }
-            a_max_g = a_max_g.sqrt();
-            if a_max_g > a_max_der {
-                a_lc = a_max_g.min(a_max_lc);
+            max_g = max_g.sqrt();
+            if max_g > max_der {
+                lc = max_g.min(max_lc);
                 is_const_locked = true;
             }
-            if a_max_g > 100.0 * a_max_lc {
-                a_lc = 100.0 * a_max_lc;
+            if max_g > 100.0 * max_lc {
+                lc = 100.0 * max_lc;
                 is_const_locked = true;
-            } else if a_max_g < 0.1 * a_max_der {
+            } else if max_g < 0.1 * max_der {
                 is_const_locked = true;
             }
         }
@@ -281,10 +281,10 @@ impl<'a> GGenExtCC<'a> {
         let mut finder = GlobOptMin::new();
         finder.set_lip_const_state(is_const_locked);
         finder.set_continuity(if cont == GEOM_ABS_C2 { 2 } else { 1 });
-        let a_disc_tol = 1.0e-2;
-        let a_value_tol = 1.0e-2;
-        let a_same_tol = self.curve_min_tol / a_disc_tol;
-        finder.set_tolerance(a_disc_tol, a_same_tol);
+        let disc_tol = 1.0e-2;
+        let value_tol = 1.0e-2;
+        let same_tol = self.curve_min_tol / disc_tol;
+        finder.set_tolerance(disc_tol, same_tol);
         finder.set_functional_minimal_value(0.0);
         finder.find_single_solution = self.single_solution;
         // `math_GlobOptMin aFinder(&aFunc, myLowBorder, myUppBorder, aLC)`
@@ -297,19 +297,19 @@ impl<'a> GGenExtCC<'a> {
         let up = [border(self.upp_border.0), border(self.upp_border.1)];
         let lower = MathVector::from_slice(&lo);
         let upper = MathVector::from_slice(&up);
-        finder.set_global_params(&func, &lower, &upper, a_lc)?;
+        finder.set_global_params(&func, &lower, &upper, lc)?;
 
         // `aCellSize` (`hxx:626-629`).
         let span = (iv1[iv1.len() - 1] - iv1[0]).max(iv2[iv2.len() - 1] - iv2[0]);
-        let a_cell_size = (span * PCONFUSION / (2.0 * std::f64::consts::SQRT_2)).max(PCONFUSION);
+        let cell_size = (span * PCONFUSION / (2.0 * std::f64::consts::SQRT_2)).max(PCONFUSION);
 
         // The cell filter's container: OCCT uses `NCollection_CellFilter`, the
         // port an accepted-point list; the acceptance test (`Inspect`,
         // `hxx:231-240`, strict `< aCellSize^2`) is reproduced exactly and the
         // `hxx:675-680` query box `[p - aCellSize, p + aCellSize]` covers every
         // point the predicate can accept, so the dedup outcome is identical.
-        let mut a_pnts: Vec<(f64, f64)> = Vec::new();
-        let mut a_f = f64::MAX;
+        let mut pnts: Vec<(f64, f64)> = Vec::new();
+        let mut f = f64::MAX;
 
         for i in 0..nb1 as usize {
             for j in 0..nb2 as usize {
@@ -320,17 +320,17 @@ impl<'a> GGenExtCC<'a> {
                     .perform_local(&func)
                     .map_err(|e| format!("Extrema_GGenExtCC: {e}"))?;
 
-                let a_curr_f = finder.minimal_value();
-                if a_curr_f >= a_f + a_same_tol * a_value_tol {
+                let curr_f = finder.minimal_value();
+                if curr_f >= f + same_tol * value_tol {
                     continue;
                 }
-                if a_curr_f > a_f - a_same_tol * a_value_tol {
-                    if a_curr_f < a_f {
-                        a_f = a_curr_f;
+                if curr_f > f - same_tol * value_tol {
+                    if curr_f < f {
+                        f = curr_f;
                     }
                 } else {
-                    a_f = a_curr_f;
-                    a_pnts.clear();
+                    f = curr_f;
+                    pnts.clear();
                 }
 
                 for k in 0..finder.nb_extrema() {
@@ -338,74 +338,74 @@ impl<'a> GGenExtCC<'a> {
                     let pnt = (sol.value(1), sol.value(2));
                     // `PointsInspector::Inspect` (`hxx:231-240`).
                     let mut is_find = false;
-                    for &(x, y) in &a_pnts {
+                    for &(x, y) in &pnts {
                         let dx = pnt.0 - x;
                         let dy = pnt.1 - y;
-                        if dx * dx + dy * dy < a_cell_size * a_cell_size {
+                        if dx * dx + dy * dy < cell_size * cell_size {
                             is_find = true;
                             break;
                         }
                     }
                     if !is_find {
-                        a_pnts.push(pnt);
+                        pnts.push(pnt);
                     }
                 }
             }
         }
 
         // --- results (`hxx:690-802`) --------------------------------------
-        let nb_sol = a_pnts.len();
+        let nb_sol = pnts.len();
         if nb_sol == 0 {
             self.done = false;
             return Ok(());
         }
         self.done = true;
         if nb_sol == 1 {
-            self.points1.push(a_pnts[0].0);
-            self.points2.push(a_pnts[0].1);
+            self.points1.push(pnts[0].0);
+            self.points2.push(pnts[0].1);
             return Ok(());
         }
 
         // `Extrema_GGenExtCC_comp` (`hxx:135-150`): by X, then by Y.
-        a_pnts.sort_by(|a, b| {
+        pnts.sort_by(|a, b| {
             a.0.partial_cmp(&b.0)
                 .unwrap_or(Ordering::Equal)
                 .then(a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal))
         });
 
-        let mut a_solutions: Vec<usize> = Vec::new();
+        let mut solutions: Vec<usize> = Vec::new();
         let mut b_save_solution = true;
         let mut b_dirs_coinside = true;
         let mut b_different_solutions = false;
         let mut is_parallel = true;
         for an_idx in 0..nb_sol - 1 {
-            let a_current = a_pnts[an_idx];
-            let a_next = a_pnts[an_idx + 1];
-            let mid = ((a_current.0 + a_next.0) * 0.5, (a_current.1 + a_next.1) * 0.5);
-            let a_val = func.value_uv(mid.0, mid.1).unwrap_or(f64::MAX);
-            if (a_val - a_f).abs() < CONFUSION {
+            let current = pnts[an_idx];
+            let next = pnts[an_idx + 1];
+            let mid = ((current.0 + next.0) * 0.5, (current.1 + next.1) * 0.5);
+            let val = func.value_uv(mid.0, mid.1).unwrap_or(f64::MAX);
+            if (val - f).abs() < CONFUSION {
                 if b_save_solution {
-                    a_solutions.push(an_idx);
+                    solutions.push(an_idx);
                     b_save_solution = false;
                 }
             } else {
                 is_parallel = false;
-                a_solutions.push(an_idx);
+                solutions.push(an_idx);
                 b_save_solution = true;
             }
             if !b_different_solutions {
-                if a_next.0 > a_current.0 {
-                    if a_next.1 > a_current.1 {
+                if next.0 > current.0 {
+                    if next.1 > current.1 {
                         b_different_solutions = true;
                         b_dirs_coinside = true;
-                    } else if a_next.1 < a_current.1 {
+                    } else if next.1 < current.1 {
                         b_different_solutions = true;
                         b_dirs_coinside = false;
                     }
                 }
             }
         }
-        a_solutions.push(nb_sol - 1);
+        solutions.push(nb_sol - 1);
 
         if !b_different_solutions {
             is_parallel = false;
@@ -422,20 +422,20 @@ impl<'a> GGenExtCC<'a> {
                 if !is_parallel {
                     break;
                 }
-                let a_dist1 = proj_p_on_c(c2, &c1.d0(a_t1[i_t]), self.low_border.1, self.upp_border.1);
-                let a_dist2 = proj_p_on_c(c1, &c2.d0(a_t2[i_t]), self.low_border.0, self.upp_border.0);
-                is_parallel = (a_dist1.min(a_dist2) - a_f * a_f).abs() < CONFUSION;
+                let dist1 = proj_p_on_c(c2, &c1.d0(a_t1[i_t]), self.low_border.1, self.upp_border.1);
+                let dist2 = proj_p_on_c(c1, &c2.d0(a_t2[i_t]), self.low_border.0, self.upp_border.0);
+                is_parallel = (dist1.min(dist2) - f * f).abs() < CONFUSION;
             }
         }
 
         if is_parallel {
-            self.points1.push(a_pnts[0].0);
-            self.points2.push(a_pnts[0].1);
+            self.points1.push(pnts[0].0);
+            self.points2.push(pnts[0].1);
             self.parallel = true;
         } else {
-            for idx in a_solutions {
-                self.points1.push(a_pnts[idx].0);
-                self.points2.push(a_pnts[idx].1);
+            for idx in solutions {
+                self.points1.push(pnts[idx].0);
+                self.points2.push(pnts[idx].1);
             }
         }
         Ok(())
@@ -479,62 +479,62 @@ fn border(v: f64) -> f64 {
 }
 
 /// `Extrema_GGenExtCC_ChangeIntervals` (`Extrema_GGenExtCC.hxx:152-202`).
-fn change_intervals(the_ints: &mut Vec<f64>, the_nb_ints: i32) {
-    let a_nb_ints = (the_ints.len() - 1) as i32;
-    let mut a_nb_add = the_nb_ints - a_nb_ints;
+fn change_intervals(ints: &mut Vec<f64>, nb_ints: i32) {
+    let a_nb_ints = (ints.len() - 1) as i32;
+    let mut nb_add = nb_ints - a_nb_ints;
     if a_nb_ints == 1 {
-        let first = the_ints[0];
-        let last = the_ints[the_ints.len() - 1];
-        let dt = (last - first) / f64::from(the_nb_ints);
-        let mut out = Vec::with_capacity(the_nb_ints as usize + 1);
+        let first = ints[0];
+        let last = ints[ints.len() - 1];
+        let dt = (last - first) / f64::from(nb_ints);
+        let mut out = Vec::with_capacity(nb_ints as usize + 1);
         out.push(first);
         let mut t = first + dt;
-        for _i in 2..=the_nb_ints {
+        for _i in 2..=nb_ints {
             out.push(t);
             t += dt;
         }
         out.push(last);
         // OCCT writes `theNbInts + 1` entries with the last one at index
         // `theNbInts + 1`; the loop above fills indices 2..=theNbInts.
-        *the_ints = out;
+        *ints = out;
         return;
     }
-    let mut out: Vec<f64> = the_ints.clone();
-    let mut a_nb_last = the_ints.len() as i32;
-    while a_nb_add > 0 {
+    let mut out: Vec<f64> = ints.clone();
+    let mut nb_last = ints.len() as i32;
+    while nb_add > 0 {
         let mut an_l_int_max = -1.0f64;
-        let mut a_max_ind = -1i32;
-        for i in 1..a_nb_last {
+        let mut max_ind = -1i32;
+        for i in 1..nb_last {
             let an_l = out[i as usize] - out[(i - 1) as usize];
             if an_l > an_l_int_max {
                 an_l_int_max = an_l;
-                a_max_ind = i;
+                max_ind = i;
             }
         }
-        let t = (out[a_max_ind as usize] + out[(a_max_ind - 1) as usize]) / 2.0;
-        for i in (a_max_ind..a_nb_last).rev() {
+        let t = (out[max_ind as usize] + out[(max_ind - 1) as usize]) / 2.0;
+        for i in (max_ind..nb_last).rev() {
             out[(i + 1) as usize] = out[i as usize];
         }
-        a_nb_last += 1;
-        a_nb_add -= 1;
-        out[a_max_ind as usize] = t;
+        nb_last += 1;
+        nb_add -= 1;
+        out[max_ind as usize] = t;
     }
-    the_ints.clear();
-    the_ints.extend_from_slice(&out[..a_nb_last as usize]);
+    ints.clear();
+    ints.extend_from_slice(&out[..nb_last as usize]);
 }
 
 /// `Extrema_GGenExtCC_ProjPOnC` (`Extrema_GGenExtCC.hxx:248-263`): the smallest
-/// **squared** distance of `the_p` to any of the range-restricted `Extrema_ExtPC`
+/// **squared** distance of `p` to any of the range-restricted `Extrema_ExtPC`
 /// solutions, or `RealLast()` when there is none.
-fn proj_p_on_c(c: &dyn Curve, the_p: &GpPnt, u1: f64, u2: f64) -> f64 {
-    let sols: Vec<ExtPcSolution> = extrema_ext_pc_range(c, the_p, u1, u2);
-    let mut a_dist = f64::MAX;
+fn proj_p_on_c(c: &dyn Curve, p: &GpPnt, u1: f64, u2: f64) -> f64 {
+    let sols: Vec<ExtPcSolution> = extrema_ext_pc_range(c, p, u1, u2);
+    let mut dist = f64::MAX;
     for s in sols {
-        if s.sq_dist < a_dist {
-            a_dist = s.sq_dist;
+        if s.sq_dist < dist {
+            dist = s.sq_dist;
         }
     }
-    a_dist
+    dist
 }
 
 /// `GeomAdaptor_Curve::IsClosed()` (`GeomAdaptor_Curve.cxx:576-585`): an

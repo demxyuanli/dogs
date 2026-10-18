@@ -42,42 +42,42 @@ impl POnCurv2d {
 
 /// `Extrema_GFuncExtPC` (`hxx:53-480`), 2D instantiation.
 pub struct GFuncExtPC2d<'a> {
-    my_p: GpPnt2d,
-    my_c: Option<&'a dyn Curve2d>,
-    my_u: f64,
-    my_pc: GpPnt2d,
-    my_d1f: f64,
-    my_sq_dist: Vec<f64>,
-    my_is_min: Vec<i32>,
-    my_point: Vec<POnCurv2d>,
-    my_p_init: bool,
-    my_c_init: bool,
-    my_d1_init: bool,
-    my_tol: f64,
-    my_max_deriv_order: i32,
-    my_u_infium: f64,
-    my_u_supremum: f64,
+    p: GpPnt2d,
+    c: Option<&'a dyn Curve2d>,
+    u: f64,
+    pc: GpPnt2d,
+    d1f: f64,
+    sq_dist: Vec<f64>,
+    is_min: Vec<i32>,
+    point: Vec<POnCurv2d>,
+    p_init: bool,
+    c_init: bool,
+    d1_init: bool,
+    tol: f64,
+    max_deriv_order: i32,
+    u_infium: f64,
+    u_supremum: f64,
 }
 
 impl<'a> Default for GFuncExtPC2d<'a> {
     /// `Extrema_GFuncExtPC()` (`hxx:59-71`).
     fn default() -> Self {
         Self {
-            my_p: GpPnt2d::new(0.0, 0.0),
-            my_c: None,
-            my_u: 0.0,
-            my_pc: GpPnt2d::new(0.0, 0.0),
-            my_d1f: 0.0,
-            my_sq_dist: Vec::new(),
-            my_is_min: Vec::new(),
-            my_point: Vec::new(),
-            my_p_init: false,
-            my_c_init: false,
-            my_d1_init: false,
-            my_tol: MIN_TOL,
-            my_max_deriv_order: 0,
-            my_u_infium: 0.0,
-            my_u_supremum: 0.0,
+            p: GpPnt2d::new(0.0, 0.0),
+            c: None,
+            u: 0.0,
+            pc: GpPnt2d::new(0.0, 0.0),
+            d1f: 0.0,
+            sq_dist: Vec::new(),
+            is_min: Vec::new(),
+            point: Vec::new(),
+            p_init: false,
+            c_init: false,
+            d1_init: false,
+            tol: MIN_TOL,
+            max_deriv_order: 0,
+            u_infium: 0.0,
+            u_supremum: 0.0,
         }
     }
 }
@@ -85,53 +85,53 @@ impl<'a> Default for GFuncExtPC2d<'a> {
 impl<'a> GFuncExtPC2d<'a> {
     /// `Initialize(theC)` (`hxx:105-129`).
     pub fn initialize(&mut self, c: &'a dyn Curve2d) {
-        self.my_c = Some(c);
-        self.my_c_init = true;
-        self.my_point.clear();
-        self.my_sq_dist.clear();
-        self.my_is_min.clear();
+        self.c = Some(c);
+        self.c_init = true;
+        self.point.clear();
+        self.sq_dist.clear();
+        self.is_min.clear();
         self.sub_interval_initialize(curve_tool::geom2d_first_parameter(c), curve_tool::geom2d_last_parameter(c));
         match curve_tool::geom2d_curve_type(c) {
             GeomAbsCurveType2d::BezierCurve
             | GeomAbsCurveType2d::BSplineCurve
             | GeomAbsCurveType2d::OffsetCurve
             | GeomAbsCurveType2d::OtherCurve => {
-                self.my_max_deriv_order = MAX_ORDER;
-                self.my_tol = self.search_of_tolerance();
+                self.max_deriv_order = MAX_ORDER;
+                self.tol = self.search_of_tolerance();
             }
             _ => {
-                self.my_max_deriv_order = 0;
-                self.my_tol = MIN_TOL;
+                self.max_deriv_order = 0;
+                self.tol = MIN_TOL;
             }
         }
     }
 
     /// `SetPoint(theP)` (`hxx:133-140`).
     pub fn set_point(&mut self, p: &GpPnt2d) {
-        self.my_p = *p;
-        self.my_p_init = true;
-        self.my_point.clear();
-        self.my_sq_dist.clear();
-        self.my_is_min.clear();
+        self.p = *p;
+        self.p_init = true;
+        self.point.clear();
+        self.sq_dist.clear();
+        self.is_min.clear();
     }
 
     /// `SubIntervalInitialize` (`hxx:420-424`).
     pub fn sub_interval_initialize(&mut self, u_first: f64, u_last: f64) {
-        self.my_u_infium = u_first;
-        self.my_u_supremum = u_last;
+        self.u_infium = u_first;
+        self.u_supremum = u_last;
     }
 
     /// `SearchOfTolerance` (`hxx:428-457`).
     fn search_of_tolerance(&self) -> f64 {
         const N_POINT: i32 = 10;
-        let a_step = (self.my_u_supremum - self.my_u_infium) / f64::from(N_POINT);
-        let c = self.my_c.expect("curve not initialized");
-        let mut a_num = 0;
+        let step = (self.u_supremum - self.u_infium) / f64::from(N_POINT);
+        let c = self.c.expect("curve not initialized");
+        let mut num = 0;
         let mut a_max = -INFINITE;
         loop {
-            let mut u = self.my_u_infium + f64::from(a_num) * a_step;
-            if u > self.my_u_supremum {
-                u = self.my_u_supremum;
+            let mut u = self.u_infium + f64::from(num) * step;
+            if u > self.u_supremum {
+                u = self.u_supremum;
             }
             let (_p, v_der) = curve_tool::geom2d_d1(c, u);
             if !Precision::is_infinite(v_der.x()) && !Precision::is_infinite(v_der.y()) {
@@ -140,8 +140,8 @@ impl<'a> GFuncExtPC2d<'a> {
                     a_max = vm;
                 }
             }
-            a_num += 1;
-            if a_num >= N_POINT + 1 {
+            num += 1;
+            if num >= N_POINT + 1 {
                 break;
             }
         }
@@ -149,65 +149,65 @@ impl<'a> GFuncExtPC2d<'a> {
     }
 
     /// `Value` (`hxx:146-253`).
-    fn value_impl(&mut self, the_u: f64, the_f: &mut f64) -> bool {
-        let c = match self.my_c {
+    fn value_impl(&mut self, the_u: f64, f: &mut f64) -> bool {
+        let c = match self.c {
             Some(c) => c,
             None => return false,
         };
-        self.my_u = the_u;
-        let (pc, mut d1c) = curve_tool::geom2d_d1(c, self.my_u);
-        self.my_pc = pc;
+        self.u = the_u;
+        let (pc, mut d1c) = curve_tool::geom2d_d1(c, self.u);
+        self.pc = pc;
         if Precision::is_infinite(d1c.x()) || Precision::is_infinite(d1c.y()) {
-            *the_f = INFINITE;
+            *f = INFINITE;
             return false;
         }
         let mut ndu = d1c.magnitude();
-        if self.my_max_deriv_order != 0 && ndu <= self.my_tol {
+        if self.max_deriv_order != 0 && ndu <= self.tol {
             const DIVISION_FACTOR: f64 = 1.0e-3;
-            let du = if self.my_u_supremum >= f64::MAX || self.my_u_infium <= -f64::MAX {
+            let du = if self.u_supremum >= f64::MAX || self.u_infium <= -f64::MAX {
                 0.0
             } else {
-                self.my_u_supremum - self.my_u_infium
+                self.u_supremum - self.u_infium
             };
-            let a_delta = (du * DIVISION_FACTOR).max(MIN_STEP);
+            let delta = (du * DIVISION_FACTOR).max(MIN_STEP);
             let mut n = 1i32;
             let mut v = GpVec2d::new(0.0, 0.0);
             let mut is_derive_found = false;
             loop {
                 n += 1;
-                v = curve_tool::geom2d_dn(c, self.my_u, n);
+                v = curve_tool::geom2d_dn(c, self.u, n);
                 ndu = v.magnitude();
-                is_derive_found = ndu > self.my_tol;
-                if is_derive_found || n >= self.my_max_deriv_order {
+                is_derive_found = ndu > self.tol;
+                if is_derive_found || n >= self.max_deriv_order {
                     break;
                 }
             }
             if is_derive_found {
-                let u = if self.my_u - self.my_u_infium < a_delta {
-                    self.my_u + a_delta
+                let u = if self.u - self.u_infium < delta {
+                    self.u + delta
                 } else {
-                    self.my_u - a_delta
+                    self.u - delta
                 };
-                let p1 = curve_tool::geom2d_d0(c, self.my_u.min(u));
-                let p2 = curve_tool::geom2d_d0(c, self.my_u.max(u));
+                let p1 = curve_tool::geom2d_d0(c, self.u.min(u));
+                let p2 = curve_tool::geom2d_d0(c, self.u.max(u));
                 let v1 = GpVec2d::new(p2.x() - p1.x(), p2.y() - p1.y());
-                let a_dir_factor = v.dot(&v1);
-                d1c = if a_dir_factor < 0.0 {
+                let dir_factor = v.dot(&v1);
+                d1c = if dir_factor < 0.0 {
                     GpVec2d::new(-v.x(), -v.y())
                 } else {
                     v
                 };
             } else {
                 let (p1, p2, p3, grown);
-                if self.my_u - self.my_u_infium < 2.0 * a_delta {
-                    p1 = curve_tool::geom2d_d0(c, self.my_u);
-                    p2 = curve_tool::geom2d_d0(c, self.my_u + a_delta);
-                    p3 = curve_tool::geom2d_d0(c, self.my_u + 2.0 * a_delta);
+                if self.u - self.u_infium < 2.0 * delta {
+                    p1 = curve_tool::geom2d_d0(c, self.u);
+                    p2 = curve_tool::geom2d_d0(c, self.u + delta);
+                    p3 = curve_tool::geom2d_d0(c, self.u + 2.0 * delta);
                     grown = true;
                 } else {
-                    p1 = curve_tool::geom2d_d0(c, self.my_u - 2.0 * a_delta);
-                    p2 = curve_tool::geom2d_d0(c, self.my_u - a_delta);
-                    p3 = curve_tool::geom2d_d0(c, self.my_u);
+                    p1 = curve_tool::geom2d_d0(c, self.u - 2.0 * delta);
+                    p2 = curve_tool::geom2d_d0(c, self.u - delta);
+                    p3 = curve_tool::geom2d_d0(c, self.u);
                     grown = false;
                 }
                 let (v1, v2, v3) = (
@@ -226,100 +226,100 @@ impl<'a> GFuncExtPC2d<'a> {
         if ndu <= MIN_TOL {
             return false;
         }
-        let ppc = GpVec2d::new(self.my_pc.x() - self.my_p.x(), self.my_pc.y() - self.my_p.y());
-        *the_f = ppc.dot(&d1c) / ndu;
+        let ppc = GpVec2d::new(self.pc.x() - self.p.x(), self.pc.y() - self.p.y());
+        *f = ppc.dot(&d1c) / ndu;
         true
     }
 
     /// `Values` (`hxx:274-353`).
-    fn values_impl(&mut self, the_u: f64, the_f: &mut f64, the_df: &mut f64) -> bool {
-        let c = match self.my_c {
+    fn values_impl(&mut self, the_u: f64, f: &mut f64, df: &mut f64) -> bool {
+        let c = match self.c {
             Some(c) => c,
             None => return false,
         };
-        let pc_old = self.my_pc;
-        let p_old = self.my_p;
-        if !self.value_impl(the_u, the_f) {
-            self.my_d1_init = false;
+        let pc_old = self.pc;
+        let p_old = self.p;
+        if !self.value_impl(the_u, f) {
+            self.d1_init = false;
             return false;
         }
-        self.my_u = the_u;
-        self.my_pc = pc_old;
-        self.my_p = p_old;
-        let (pc, d1c, d2c) = curve_tool::geom2d_d2(c, self.my_u);
-        self.my_pc = pc;
+        self.u = the_u;
+        self.pc = pc_old;
+        self.p = p_old;
+        let (pc, d1c, d2c) = curve_tool::geom2d_d2(c, self.u);
+        self.pc = pc;
         let ndu = d1c.magnitude();
-        if ndu <= self.my_tol {
+        if ndu <= self.tol {
             const DIVISION_FACTOR: f64 = 0.01;
-            let du = if self.my_u_supremum >= f64::MAX || self.my_u_infium <= -f64::MAX {
+            let du = if self.u_supremum >= f64::MAX || self.u_infium <= -f64::MAX {
                 0.0
             } else {
-                self.my_u_supremum - self.my_u_infium
+                self.u_supremum - self.u_infium
             };
-            let a_delta = (du * DIVISION_FACTOR).max(MIN_STEP);
-            if self.my_u - self.my_u_infium < 2.0 * a_delta {
-                let f1 = *the_f;
-                let u2 = self.my_u + a_delta;
-                let u3 = self.my_u + a_delta * 2.0;
+            let delta = (du * DIVISION_FACTOR).max(MIN_STEP);
+            if self.u - self.u_infium < 2.0 * delta {
+                let f1 = *f;
+                let u2 = self.u + delta;
+                let u3 = self.u + delta * 2.0;
                 let (mut f2, mut f3) = (0.0, 0.0);
                 if !self.value_impl(u2, &mut f2) || !self.value_impl(u3, &mut f3) {
-                    self.my_d1_init = false;
+                    self.d1_init = false;
                     return false;
                 }
-                *the_df = (-3.0 * f1 + 4.0 * f2 - f3) / (2.0 * a_delta);
+                *df = (-3.0 * f1 + 4.0 * f2 - f3) / (2.0 * delta);
             } else {
-                let f3 = *the_f;
-                let u1 = self.my_u - a_delta * 2.0;
-                let u2 = self.my_u - a_delta;
+                let f3 = *f;
+                let u1 = self.u - delta * 2.0;
+                let u2 = self.u - delta;
                 let (mut f1, mut f2) = (0.0, 0.0);
                 if !self.value_impl(u2, &mut f2) || !self.value_impl(u1, &mut f1) {
-                    self.my_d1_init = false;
+                    self.d1_init = false;
                     return false;
                 }
-                *the_df = (f1 - 4.0 * f2 + 3.0 * f3) / (2.0 * a_delta);
+                *df = (f1 - 4.0 * f2 + 3.0 * f3) / (2.0 * delta);
             }
-            self.my_u = the_u;
-            self.my_pc = pc_old;
-            self.my_p = p_old;
+            self.u = the_u;
+            self.pc = pc_old;
+            self.p = p_old;
         } else {
-            let ppc = GpVec2d::new(self.my_p.x() - self.my_pc.x(), self.my_p.y() - self.my_pc.y());
-            *the_df = ndu + (ppc.dot(&d2c) / ndu) - *the_f * (d1c.dot(&d2c)) / (ndu * ndu);
+            let ppc = GpVec2d::new(self.p.x() - self.pc.x(), self.p.y() - self.pc.y());
+            *df = ndu + (ppc.dot(&d2c) / ndu) - *f * (d1c.dot(&d2c)) / (ndu * ndu);
         }
-        self.my_d1f = *the_df;
-        self.my_d1_init = true;
+        self.d1f = *df;
+        self.d1_init = true;
         true
     }
 
     /// `GetStateNumber` (`hxx:357-379`).
     fn get_state_number_impl(&mut self) -> i32 {
-        self.my_sq_dist.push(self.my_pc.square_distance(&self.my_p));
-        self.my_d1_init = true;
+        self.sq_dist.push(self.pc.square_distance(&self.p));
+        self.d1_init = true;
         let (mut ff, mut dd) = (0.0, 0.0);
-        self.values_impl(self.my_u, &mut ff, &mut dd);
-        let int_val = if self.my_d1f > 0.0 { 1 } else { 0 };
-        self.my_is_min.push(int_val);
-        self.my_point.push(POnCurv2d::new(self.my_u, self.my_pc));
+        self.values_impl(self.u, &mut ff, &mut dd);
+        let int_val = if self.d1f > 0.0 { 1 } else { 0 };
+        self.is_min.push(int_val);
+        self.point.push(POnCurv2d::new(self.u, self.pc));
         0
     }
 
     /// `NbExt` (`hxx:382`).
     pub fn nb_ext(&self) -> usize {
-        self.my_sq_dist.len()
+        self.sq_dist.len()
     }
 
     /// `SquareDistance` (`hxx:386-393`), 1-based.
     pub fn square_distance(&self, the_n: usize) -> f64 {
-        self.my_sq_dist[the_n - 1]
+        self.sq_dist[the_n - 1]
     }
 
     /// `IsMin` (`hxx:397-404`), 1-based.
     pub fn is_min(&self, the_n: usize) -> bool {
-        self.my_is_min[the_n - 1] == 1
+        self.is_min[the_n - 1] == 1
     }
 
     /// `Point` (`hxx:408-415`), 1-based.
     pub fn point(&self, the_n: usize) -> POnCurv2d {
-        self.my_point[the_n - 1]
+        self.point[the_n - 1]
     }
 }
 

@@ -34,8 +34,8 @@ const WEAKNESS: f64 = 1.5;
 
 /// `GeomBndLib_OtherCurve.cxx` local `FillBox` (33 samples) sampled envelope.
 fn fill_box3d(box_: &mut BndBox, curve: &dyn Curve, first: f64, last: f64, n: i32) -> f64 {
-    let mut a_p1 = curve.d0(first);
-    box_.add_point(&a_p1);
+    let mut p1 = curve.d0(first);
+    box_.add_point(&p1);
     let mut tol = 0.0_f64;
     let mut p = first;
     let dp = last - first;
@@ -43,14 +43,14 @@ fn fill_box3d(box_: &mut BndBox, curve: &dyn Curve, first: f64, last: f64, n: i3
         let step = dp / (2 * n) as f64;
         for _ in 1..=n {
             p += step;
-            let a_p2 = curve.d0(p);
-            box_.add_point(&a_p2);
+            let p2 = curve.d0(p);
+            box_.add_point(&p2);
             p += step;
-            let a_p3 = curve.d0(p);
-            box_.add_point(&a_p3);
-            let a_pc = mid(&a_p1, &a_p3);
-            tol = tol.max(a_pc.distance(&a_p2));
-            a_p1 = a_p3;
+            let p3 = curve.d0(p);
+            box_.add_point(&p3);
+            let pc = mid(&p1, &p3);
+            tol = tol.max(pc.distance(&p2));
+            p1 = p3;
         }
     } else {
         box_.add_point(&curve.d0(last));
@@ -132,11 +132,11 @@ fn reduce_spline_box3d_range(poles: &[GpPnt], min_idx: i32, max_idx: i32, orig: 
 
 /// `GeomBndLib_OtherCurve::Box` (`OtherCurve.cxx:72-87`).
 pub fn box_other(curve: &dyn Curve, u1: f64, u2: f64, tol: f64) -> BndBox {
-    let mut a_b1 = BndBox::new();
-    let t = fill_box3d(&mut a_b1, curve, u1, u2, 33);
-    a_b1.enlarge(WEAKNESS * t);
+    let mut b1 = BndBox::new();
+    let t = fill_box3d(&mut b1, curve, u1, u2, 33);
+    b1.enlarge(WEAKNESS * t);
     let mut a_box = BndBox::new();
-    if let Some((xmin, xmax, ymin, ymax, zmin, zmax)) = a_b1.get() {
+    if let Some((xmin, xmax, ymin, ymax, zmin, zmax)) = b1.get() {
         a_box.update(xmin, ymin, zmin, xmax, ymax, zmax);
     }
     a_box.enlarge(tol);
@@ -144,89 +144,89 @@ pub fn box_other(curve: &dyn Curve, u1: f64, u2: f64, tol: f64) -> BndBox {
 }
 
 /// `GeomBndLib_Ellipse::Box(theElips, theTol)` (`GeomBndLib_Ellipse.cxx:23-45`).
-pub fn box_ellipse_full(the_elips: &GpElips, the_tol: f64) -> BndBox {
+pub fn box_ellipse_full(elips: &GpElips, the_tol: f64) -> BndBox {
     let mut a_box = BndBox::new();
-    let a_maj_r = the_elips.major_radius();
-    let a_min_r = the_elips.minor_radius();
-    let a_loc = the_elips.location();
-    let a_o = a_loc.xyz();
-    let a_xd = the_elips.pos.x_direction().xyz();
-    let a_yd = the_elips.pos.y_direction().xyz();
+    let maj_r = elips.major_radius();
+    let min_r = elips.minor_radius();
+    let loc = elips.location();
+    let o = loc.xyz();
+    let xd = elips.pos.x_direction().xyz();
+    let yd = elips.pos.y_direction().xyz();
 
     // Full ellipse: per-coordinate analytic extrema
     // `Amp = sqrt(Major²·Xd_k² + Minor²·Yd_k²)` (`cxx:38`).
-    let mut a_min = [0.0_f64; 3];
-    let mut a_max = [0.0_f64; 3];
+    let mut min = [0.0_f64; 3];
+    let mut max = [0.0_f64; 3];
     for k in 0..3 {
-        let a_xk = a_xd.coord(k);
-        let a_yk = a_yd.coord(k);
-        let a_amp = (a_maj_r * a_maj_r * a_xk * a_xk + a_min_r * a_min_r * a_yk * a_yk).sqrt();
-        a_min[k] = a_o.coord(k) - a_amp;
-        a_max[k] = a_o.coord(k) + a_amp;
+        let xk = xd.coord(k);
+        let yk = yd.coord(k);
+        let amp = (maj_r * maj_r * xk * xk + min_r * min_r * yk * yk).sqrt();
+        min[k] = o.coord(k) - amp;
+        max[k] = o.coord(k) + amp;
     }
-    a_box.update(a_min[0], a_min[1], a_min[2], a_max[0], a_max[1], a_max[2]);
+    a_box.update(min[0], min[1], min[2], max[0], max[1], max[2]);
     a_box.enlarge(the_tol);
     a_box
 }
 
 /// `GeomBndLib_Ellipse::Box(theElips, theU1, theU2, theTol)`
 /// (`GeomBndLib_Ellipse.cxx:49-114`).
-pub fn box_ellipse_range(the_elips: &GpElips, the_u1: f64, the_u2: f64, the_tol: f64) -> BndBox {
-    let a_period = 2.0 * std::f64::consts::PI - PCONFUSION;
-    if the_u2 - the_u1 >= a_period {
-        return box_ellipse_full(the_elips, the_tol);
+pub fn box_ellipse_range(elips: &GpElips, the_u1: f64, u2: f64, the_tol: f64) -> BndBox {
+    let period = 2.0 * std::f64::consts::PI - PCONFUSION;
+    if u2 - the_u1 >= period {
+        return box_ellipse_full(elips, the_tol);
     }
 
-    let a_maj_r = the_elips.major_radius();
-    let a_min_r = the_elips.minor_radius();
-    let a_loc = the_elips.location();
-    let a_o = a_loc.xyz();
-    let a_xd = the_elips.pos.x_direction().xyz();
-    let a_yd = the_elips.pos.y_direction().xyz();
+    let maj_r = elips.major_radius();
+    let min_r = elips.minor_radius();
+    let loc = elips.location();
+    let o = loc.xyz();
+    let xd = elips.pos.x_direction().xyz();
+    let yd = elips.pos.y_direction().xyz();
 
     let mut a_box = BndBox::new();
     let mut a_u1 = the_u1;
-    let mut a_u2 = the_u2;
+    let mut a_u2 = u2;
     let a_tol = epsilon(1.0);
     adjust_periodic(0.0, 2.0 * std::f64::consts::PI, a_tol, &mut a_u1, &mut a_u2);
 
     // Arc endpoints (`cxx:71-72`).
-    a_box.add_point(&ellipse_value(the_elips, a_u1));
-    a_box.add_point(&ellipse_value(the_elips, a_u2));
+    a_box.add_point(&ellipse_value(elips, a_u1));
+    a_box.add_point(&ellipse_value(elips, a_u2));
 
     for k in 0..3 {
-        let a_xk = a_xd.coord(k);
-        let a_yk = a_yd.coord(k);
+        let xk = xd.coord(k);
+        let yk = yd.coord(k);
 
-        let mut a_t_extr_min = if a_xk.abs() > occt_core::precision::RESOLUTION {
-            let t = ((a_min_r * a_yk) / (a_maj_r * a_xk)).atan();
+        let mut t_extr_min = if xk.abs() > occt_core::precision::RESOLUTION {
+            let t = ((min_r * yk) / (maj_r * xk)).atan();
             in_period(t, 0.0, 2.0 * std::f64::consts::PI)
         } else {
             std::f64::consts::PI / 2.0
         };
-        let mut a_t_extr_max = if a_t_extr_min <= std::f64::consts::PI {
-            a_t_extr_min + std::f64::consts::PI
+        let mut t_extr_max = if t_extr_min <= std::f64::consts::PI {
+            t_extr_min + std::f64::consts::PI
         } else {
-            a_t_extr_min - std::f64::consts::PI
+            t_extr_min - std::f64::consts::PI
         };
 
-        let a_val_min = a_maj_r * a_t_extr_min.cos() * a_xk
-            + a_min_r * a_t_extr_min.sin() * a_yk
-            + a_o.coord(k);
-        let a_val_max = a_maj_r * a_t_extr_max.cos() * a_xk
-            + a_min_r * a_t_extr_max.sin() * a_yk
-            + a_o.coord(k);
-        if a_val_min > a_val_max {
-            std::mem::swap(&mut a_t_extr_min, &mut a_t_extr_max);
+        let val_min = maj_r * t_extr_min.cos() * xk
+            + min_r * t_extr_min.sin() * yk
+            + o.coord(k);
+        let val_max = maj_r * t_extr_max.cos() * xk
+            + min_r * t_extr_max.sin() * yk
+            + o.coord(k);
+        if val_min > val_max {
+            std::mem::swap(&mut t_extr_min, &mut t_extr_max);
         }
 
-        let a_tk = in_period(a_t_extr_min, a_u1, a_u1 + 2.0 * std::f64::consts::PI);
-        if a_tk >= a_u1 && a_tk <= a_u2 {
-            a_box.add_point(&ellipse_value(the_elips, a_t_extr_min));
+        let tk = in_period(t_extr_min, a_u1, a_u1 + 2.0 * std::f64::consts::PI);
+        if tk >= a_u1 && tk <= a_u2 {
+            a_box.add_point(&ellipse_value(elips, t_extr_min));
         }
-        let a_tk = in_period(a_t_extr_max, a_u1, a_u1 + 2.0 * std::f64::consts::PI);
-        if a_tk >= a_u1 && a_tk <= a_u2 {
-            a_box.add_point(&ellipse_value(the_elips, a_t_extr_max));
+        let tk = in_period(t_extr_max, a_u1, a_u1 + 2.0 * std::f64::consts::PI);
+        if tk >= a_u1 && tk <= a_u2 {
+            a_box.add_point(&ellipse_value(elips, t_extr_max));
         }
     }
 
@@ -235,90 +235,90 @@ pub fn box_ellipse_range(the_elips: &GpElips, the_u1: f64, the_u2: f64, the_tol:
 }
 
 /// `computeHyperbolaBox` (`GeomBndLib_Hyperbola.cxx:25-69`).
-fn compute_hyperbola_box(the_hypr: &GpHypr, the_t1: f64, the_t2: f64, the_box: &mut BndBox) {
-    let a_p1 = hyperbola_value(the_hypr, the_t1);
-    let a_p2 = hyperbola_value(the_hypr, the_t2);
-    the_box.add_point(&a_p1);
-    the_box.add_point(&a_p2);
+fn compute_hyperbola_box(the_hypr: &GpHypr, t1: f64, t2: f64, bnd_box: &mut BndBox) {
+    let p1 = hyperbola_value(the_hypr, t1);
+    let p2 = hyperbola_value(the_hypr, t2);
+    bnd_box.add_point(&p1);
+    bnd_box.add_point(&p2);
 
-    if the_t1 * the_t2 < 0.0 {
-        the_box.add_point(&hyperbola_value(the_hypr, 0.0));
+    if t1 * t2 < 0.0 {
+        bnd_box.add_point(&hyperbola_value(the_hypr, 0.0));
     }
 
-    let a_x_dir = the_hypr.pos.x_direction().xyz();
-    let a_y_dir = the_hypr.pos.y_direction().xyz();
-    let a_r_maj = the_hypr.major_radius;
-    let a_r_min = the_hypr.minor_radius;
-    let a_eps = epsilon(1.0);
+    let x_dir = the_hypr.pos.x_direction().xyz();
+    let y_dir = the_hypr.pos.y_direction().xyz();
+    let r_maj = the_hypr.major_radius;
+    let r_min = the_hypr.minor_radius;
+    let eps = epsilon(1.0);
 
     for i in 0..3 {
-        let a_a = a_r_min * a_y_dir.coord(i);
-        let a_b = a_r_maj * a_x_dir.coord(i);
+        let a = r_min * y_dir.coord(i);
+        let a_b = r_maj * x_dir.coord(i);
 
-        let a_abp = (a_a + a_b).abs();
-        let a_bam = (a_b - a_a).abs();
+        let abp = (a + a_b).abs();
+        let bam = (a_b - a).abs();
 
         // A coordinate whose extremal equation degenerates has no interior
         // extremum (`cxx:55-58`).
-        if a_abp < a_eps || a_bam < a_eps {
+        if abp < eps || bam < eps {
             continue;
         }
 
-        let a_cf = a_bam / a_abp;
-        let a_t3 = 0.5 * a_cf.ln();
+        let cf = bam / abp;
+        let t3 = 0.5 * cf.ln();
 
-        if a_t3 < the_t1 || a_t3 > the_t2 {
+        if t3 < t1 || t3 > t2 {
             continue;
         }
-        the_box.add_point(&hyperbola_value(the_hypr, a_t3));
+        bnd_box.add_point(&hyperbola_value(the_hypr, t3));
     }
 }
 
 /// `GeomBndLib_Hyperbola::Box(theHypr, theU1, theU2, theTol)`
 /// (`GeomBndLib_Hyperbola.cxx:75-140`).
-pub fn box_hyperbola_range(the_hypr: &GpHypr, the_u1: f64, the_u2: f64, the_tol: f64) -> BndBox {
+pub fn box_hyperbola_range(the_hypr: &GpHypr, the_u1: f64, u2: f64, the_tol: f64) -> BndBox {
     let mut a_box = BndBox::new();
     if Precision::is_negative_infinite(the_u1) {
-        if Precision::is_negative_infinite(the_u2) {
+        if Precision::is_negative_infinite(u2) {
             // `cxx:82` throws `Standard_Failure`; the port returns the void box
             // the caller's `IsVoid` check already handles.
             return a_box;
-        } else if Precision::is_positive_infinite(the_u2) {
+        } else if Precision::is_positive_infinite(u2) {
             a_box.open_xmax();
             a_box.open_ymax();
             a_box.open_zmax();
         } else {
-            a_box.add_point(&hyperbola_value(the_hypr, the_u2));
+            a_box.add_point(&hyperbola_value(the_hypr, u2));
         }
         a_box.open_xmin();
         a_box.open_ymin();
         a_box.open_zmin();
     } else if Precision::is_positive_infinite(the_u1) {
-        if Precision::is_negative_infinite(the_u2) {
+        if Precision::is_negative_infinite(u2) {
             a_box.open_xmin();
             a_box.open_ymin();
             a_box.open_zmin();
-        } else if Precision::is_positive_infinite(the_u2) {
+        } else if Precision::is_positive_infinite(u2) {
             // `cxx:108` throws; see above.
             return a_box;
         } else {
-            a_box.add_point(&hyperbola_value(the_hypr, the_u2));
+            a_box.add_point(&hyperbola_value(the_hypr, u2));
         }
         a_box.open_xmax();
         a_box.open_ymax();
         a_box.open_zmax();
     } else {
         a_box.add_point(&hyperbola_value(the_hypr, the_u1));
-        if Precision::is_negative_infinite(the_u2) {
+        if Precision::is_negative_infinite(u2) {
             a_box.open_xmin();
             a_box.open_ymin();
             a_box.open_zmin();
-        } else if Precision::is_positive_infinite(the_u2) {
+        } else if Precision::is_positive_infinite(u2) {
             a_box.open_xmax();
             a_box.open_ymax();
             a_box.open_zmax();
         } else {
-            compute_hyperbola_box(the_hypr, the_u1, the_u2, &mut a_box);
+            compute_hyperbola_box(the_hypr, the_u1, u2, &mut a_box);
         }
     }
     a_box.enlarge(the_tol);
@@ -327,49 +327,49 @@ pub fn box_hyperbola_range(the_hypr: &GpHypr, the_u1: f64, the_u2: f64, the_tol:
 
 /// `GeomBndLib_Parabola::Box(theParab, theU1, theU2, theTol)`
 /// (`GeomBndLib_Parabola.cxx:23-94`).
-pub fn box_parabola_range(the_parab: &GpParab, the_u1: f64, the_u2: f64, the_tol: f64) -> BndBox {
+pub fn box_parabola_range(the_parab: &GpParab, the_u1: f64, u2: f64, the_tol: f64) -> BndBox {
     let mut a_box = BndBox::new();
     if Precision::is_negative_infinite(the_u1) {
-        if Precision::is_negative_infinite(the_u2) {
+        if Precision::is_negative_infinite(u2) {
             // `cxx:33` throws; see `box_hyperbola_range`.
             return a_box;
-        } else if Precision::is_positive_infinite(the_u2) {
+        } else if Precision::is_positive_infinite(u2) {
             a_box.open_xmax();
             a_box.open_ymax();
             a_box.open_zmax();
         } else {
-            a_box.add_point(&parabola_value(the_parab, the_u2));
+            a_box.add_point(&parabola_value(the_parab, u2));
         }
         a_box.open_xmin();
         a_box.open_ymin();
         a_box.open_zmin();
     } else if Precision::is_positive_infinite(the_u1) {
-        if Precision::is_negative_infinite(the_u2) {
+        if Precision::is_negative_infinite(u2) {
             a_box.open_xmin();
             a_box.open_ymin();
             a_box.open_zmin();
-        } else if Precision::is_positive_infinite(the_u2) {
+        } else if Precision::is_positive_infinite(u2) {
             // `cxx:59` throws; see above.
             return a_box;
         } else {
-            a_box.add_point(&parabola_value(the_parab, the_u2));
+            a_box.add_point(&parabola_value(the_parab, u2));
         }
         a_box.open_xmax();
         a_box.open_ymax();
         a_box.open_zmax();
     } else {
         a_box.add_point(&parabola_value(the_parab, the_u1));
-        if Precision::is_negative_infinite(the_u2) {
+        if Precision::is_negative_infinite(u2) {
             a_box.open_xmin();
             a_box.open_ymin();
             a_box.open_zmin();
-        } else if Precision::is_positive_infinite(the_u2) {
+        } else if Precision::is_positive_infinite(u2) {
             a_box.open_xmax();
             a_box.open_ymax();
             a_box.open_zmax();
         } else {
-            a_box.add_point(&parabola_value(the_parab, the_u2));
-            if the_u1 * the_u2 < 0.0 {
+            a_box.add_point(&parabola_value(the_parab, u2));
+            if the_u1 * u2 < 0.0 {
                 a_box.add_point(&parabola_value(the_parab, 0.0));
             }
         }
@@ -433,10 +433,10 @@ fn box_bezier(curve: &dyn Curve, poles: &[GpPnt], u1: f64, u2: f64, tol: f64) ->
         return box_other(curve, u1, u2, tol);
     }
     let degree = curve.nurbs_degree().unwrap_or(1) as i32;
-    let mut a_sampled = BndBox::new();
-    let defl = fill_box3d(&mut a_sampled, curve, u1, u2, degree.max(1));
-    a_sampled.enlarge(WEAKNESS * defl);
-    let mut a_box = reduce_spline_box3d(poles, &a_sampled);
+    let mut sampled = BndBox::new();
+    let defl = fill_box3d(&mut sampled, curve, u1, u2, degree.max(1));
+    sampled.enlarge(WEAKNESS * defl);
+    let mut a_box = reduce_spline_box3d(poles, &sampled);
     a_box.enlarge(tol);
     a_box
 }
@@ -500,7 +500,7 @@ fn box_bspline(curve: &dyn Curve, poles: &[GpPnt], knots: &[f64], u1: f64, u2: f
     // `cxx:92-104`: spans `[a_u1, k1] [k1, k2] ... [kn, a_u2]` over the
     // segmented curve's distinct knots; the interior knots outside the range are
     // dropped (the segment's end knots carry multiplicity `degree + 1`).
-    let mut a_b1 = BndBox::new();
+    let mut b1 = BndBox::new();
     let mut a_tol = 0.0_f64;
     let mut a_first = a_u1;
     let n = degree.max(1);
@@ -512,19 +512,19 @@ fn box_bspline(curve: &dyn Curve, poles: &[GpPnt], knots: &[f64], u1: f64, u2: f
     {
         let a_last = cut.min(a_u2);
         if a_last > a_first + PCONFUSION {
-            a_tol = a_tol.max(fill_box3d(&mut a_b1, curve, a_first, a_last, n));
+            a_tol = a_tol.max(fill_box3d(&mut b1, curve, a_first, a_last, n));
         }
         a_first = a_last;
     }
-    if a_b1.is_void() {
+    if b1.is_void() {
         let mut a_box = BndBox::new();
         a_box.add_point(&curve.d0(a_u1));
         a_box.add_point(&curve.d0(a_u2));
         a_box.enlarge(tol);
         return a_box;
     }
-    a_b1.enlarge(WEAKNESS * a_tol);
-    let mut a_box = reduce_spline_box3d(poles, &a_b1);
+    b1.enlarge(WEAKNESS * a_tol);
+    let mut a_box = reduce_spline_box3d(poles, &b1);
     a_box.enlarge(tol);
     a_box
 }

@@ -306,46 +306,46 @@ impl EdgeFace {
     fn is_coincident(&self) -> bool {
         let curve = self.curve.clone().expect("curve set");
         let surface = self.surface.clone().expect("surface set");
-        let a_nb_seg = if curve_kind(curve.as_ref()) == CurveKind::Line
+        let nb_seg = if curve_kind(curve.as_ref()) == CurveKind::Line
             && edge_face_surface_kind(surface.as_ref()) == SurfaceKind::Plane
         {
             2
         } else {
             23
         };
-        let a_tresh = 0.5;
-        let a_tresh_idx_f = ((a_nb_seg + 1) as f64 * 0.25) as i32;
-        let a_tresh_idx_l = ((a_nb_seg + 1) as f64 * 0.75) as i32;
+        let tresh = 0.5;
+        let tresh_idx_f = ((nb_seg + 1) as f64 * 0.25) as i32;
+        let tresh_idx_l = ((nb_seg + 1) as f64 * 0.75) as i32;
 
-        let (mut a_t1, mut a_t2) = (self.range.first, self.range.last);
-        if a_t2 - a_t1 <= 1e-12 {
+        let (mut t1, mut t2) = (self.range.first, self.range.last);
+        if t2 - t1 <= 1e-12 {
             return false;
         }
-        let a_bnd_shift = 0.01 * (a_t2 - a_t1);
-        a_t1 += a_bnd_shift;
-        a_t2 -= a_bnd_shift;
-        if a_t2 <= a_t1 {
+        let bnd_shift = 0.01 * (t2 - t1);
+        t1 += bnd_shift;
+        t2 -= bnd_shift;
+        if t2 <= t1 {
             return false;
         }
-        let d_t = (a_t2 - a_t1) / a_nb_seg as f64;
+        let d_t = (t2 - t1) / nb_seg as f64;
 
         let mut is_classified = false;
         let mut i_cnt = 0;
-        for i in 0..=a_nb_seg {
-            let a_t = a_t1 + i as f64 * d_t;
-            let a_p = curve.d0(a_t);
-            let (u, v, a_d) = self.project_point(&a_p);
-            if a_d > self.criteria {
-                if a_d > 100.0 * self.criteria {
+        for i in 0..=nb_seg {
+            let t = t1 + i as f64 * d_t;
+            let p = curve.d0(t);
+            let (u, v, d) = self.project_point(&p);
+            if d > self.criteria {
+                if d > 100.0 * self.criteria {
                     return false;
                 }
                 continue;
             }
             i_cnt += 1;
-            if ((0 < i) && (i < a_tresh_idx_f)) || ((a_tresh_idx_l < i) && (i < a_nb_seg)) {
+            if ((0 < i) && (i < tresh_idx_f)) || ((tresh_idx_l < i) && (i < nb_seg)) {
                 continue;
             }
-            if is_classified && (i != a_nb_seg) {
+            if is_classified && (i != nb_seg) {
                 continue;
             }
             let state = self
@@ -360,8 +360,8 @@ impl EdgeFace {
                 is_classified = true;
             }
         }
-        let a_coeff = i_cnt as f64 / (a_nb_seg + 1) as f64;
-        a_coeff > a_tresh
+        let coeff = i_cnt as f64 / (nb_seg + 1) as f64;
+        coeff > tresh
     }
 
     /// Whether the curve point at parameter `t` is on the face within

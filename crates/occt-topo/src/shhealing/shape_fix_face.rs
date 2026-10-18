@@ -64,16 +64,16 @@ pub fn healing_check_wire(
 
     // cxx:1683-1715.
     let isuopen = {
-        let a_delta = vec_x.abs() - d_u;
-        if a_delta.abs() < 0.1 * d_u {
+        let delta = vec_x.abs() - d_u;
+        if delta.abs() < 0.1 * d_u {
             if vec_x > 0.0 { 1 } else { -1 }
         } else {
             0
         }
     };
     let isvopen = {
-        let a_delta = vec_y.abs() - d_v;
-        if a_delta.abs() < 0.1 * d_v {
+        let delta = vec_y.abs() - d_v;
+        if delta.abs() < 0.1 * d_v {
             if vec_y > 0.0 { 1 } else { -1 }
         } else {
             0
@@ -254,7 +254,7 @@ pub struct ShapeFixFace {
     /// `ShapeFix_Root::myFwd` (`ShapeFix_Face.cxx:218`):
     /// `theFace.Orientation() != TopAbs_REVERSED`. `FixOrientation` re-applies
     /// it to the rebuilt face (`cxx:1634-1636`).
-    pub my_fwd: bool,
+    pub fwd: bool,
 }
 
 impl Default for ShapeFixFace {
@@ -273,7 +273,7 @@ impl Default for ShapeFixFace {
             fix_add_natural_bound_mode: true,
             fix_split_face_mode: true,
             map_wires: Vec::new(),
-            my_fwd: true,
+            fwd: true,
         }
     }
 }
@@ -311,7 +311,7 @@ impl ShapeFixFace {
             map_wires: Vec::new(),
             // `myFwd = (theFace.Orientation() != TopAbs_REVERSED)`
             // (`ShapeFix_Face.cxx:218`): INTERNAL/EXTERNAL count as forward.
-            my_fwd: face.0.orientation() != Orientation::Reversed,
+            fwd: face.0.orientation() != Orientation::Reversed,
         }
     }
 
@@ -570,17 +570,17 @@ impl ShapeFixFace {
             }
             // cxx:1620-1633.
             if nb < nb_all {
-                for a_s2 in &all_sub {
-                    let ori = a_s2.orientation();
-                    if a_s2.shape_type() != ShapeType::Wire
+                for s2 in &all_sub {
+                    let ori = s2.orientation();
+                    if s2.shape_type() != ShapeType::Wire
                         || (ori != Orientation::Forward && ori != Orientation::Reversed)
                     {
-                        builder.add(&mut new_face.0, a_s2);
+                        builder.add(&mut new_face.0, s2);
                     }
                 }
             }
             // cxx:1634-1636.
-            if !self.my_fwd {
+            if !self.fwd {
                 new_face.0.set_orientation(Orientation::Reversed);
             }
             // cxx:1639-1641: `Context()->Replace(myFace, S)`.
@@ -909,25 +909,25 @@ impl ShapeFixFace {
             // cone-like surfaces, then handle them as a regular pair.
             let mut builder_pt = GpPnt2d::new(0.0, 0.0);
             let dir;
-            let a_range;
+            let range;
             if ismodeu != 0 && an_is_degenerated_tor {
                 let t = torus.as_ref().expect("torus");
-                let a_ra = t.major_radius;
-                let a_ri = t.minor_radius;
-                let a_phi = (-a_ra / a_ri).acos();
+                let ra = t.major_radius;
+                let ri = t.minor_radius;
+                let phi = (-ra / ri).acos();
                 builder_pt = GpPnt2d::new(
                     0.0,
-                    if ismodeu > 0 { std::f64::consts::PI + a_phi } else { a_phi },
+                    if ismodeu > 0 { std::f64::consts::PI + phi } else { phi },
                 );
                 dir = GpDir2d::new(-(ismodeu as f64), 0.0).expect("dir");
-                a_range = 2.0 * std::f64::consts::PI;
+                range = 2.0 * std::f64::consts::PI;
             } else if ismodeu != 0 && surf.gp_sphere().is_some() {
                 builder_pt = GpPnt2d::new(
                     if ismodeu < 0 { 0.0 } else { 2.0 * std::f64::consts::PI },
                     ismodeu as f64 * 0.5 * std::f64::consts::PI,
                 );
                 dir = GpDir2d::new(-(ismodeu as f64), 0.0).expect("dir");
-                a_range = 2.0 * std::f64::consts::PI;
+                range = 2.0 * std::f64::consts::PI;
             } else if ismodev != 0 && surf.is_bspline_surface() {
                 let u_coord;
                 if surf.d0(suf, svf).distance(&surf.d0(suf, (svf + svl) / 2.0)) < CONFUSION {
@@ -939,7 +939,7 @@ impl ShapeFixFace {
                 }
                 builder_pt = GpPnt2d::new(u_coord, if ismodev < 0 { 0.0 } else { v_range });
                 dir = GpDir2d::new(0.0, -(ismodev as f64)).expect("dir");
-                a_range = v_range;
+                range = v_range;
             } else if ismodeu != 0 && surf.is_bspline_surface() {
                 let v_coord;
                 if surf.d0(suf, svf).distance(&surf.d0((suf + sul) / 2.0, svf)) < CONFUSION {
@@ -951,7 +951,7 @@ impl ShapeFixFace {
                 }
                 builder_pt = GpPnt2d::new(if ismodeu < 0 { 0.0 } else { u_range }, v_coord);
                 dir = GpDir2d::new(-(ismodeu as f64), 0.0).expect("dir");
-                a_range = u_range;
+                range = u_range;
             } else {
                 return false; // cxx:1972-1975
             }
@@ -964,7 +964,7 @@ impl ShapeFixFace {
             let mut edge = builder.make_shape(ShapeType::Edge);
             reg.set_degenerated(&edge, true);
             reg.set_edge_pcurve(&edge, face_key, line);
-            reg.set_pcurve_range(&edge, face_key, 0.0, a_range);
+            reg.set_pcurve_range(&edge, face_key, 0.0, range);
             reg.set_edge_tolerance(&edge, CONFUSION);
             let mut v = builder.make_vertex(surf.d0(builder_pt.x(), builder_pt.y()), CONFUSION);
             v.0.set_orientation(Orientation::Forward);

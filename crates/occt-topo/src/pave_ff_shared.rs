@@ -84,12 +84,12 @@ pub fn update_blocks_with_shared_vertices(f: &mut PaveFiller) -> Result<(), Stri
                 if !on_curve {
                     continue;
                 }
-                let a_tol_v = f
+                let tol_v = f
                     .ds()
                     .shape(n_v)
                     .map(|s| BRepTool::vertex_tolerance(&Vertex(s.clone())))
                     .unwrap_or(0.0);
-                let _ = update_vertex(f, n_v, a_tol_v)?;
+                let _ = update_vertex(f, n_v, tol_v)?;
                 init_pave_blocks_for_vertex(f, n_v);
             }
         }

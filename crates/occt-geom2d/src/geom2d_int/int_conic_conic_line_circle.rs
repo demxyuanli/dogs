@@ -56,9 +56,9 @@ pub(crate) fn line_circle_geometric_intersection(
         let mut d_alpha1;
         // Line cuts Circle+ (= C(x1, y1, R1 + Tol))
         if r > d_o1_o2 + tol_tang {
-            let a_tol2 = tol * tol;
-            let a_x2 = 4.0 * (r * r - d_o1_o2 * d_o1_o2);
-            if a_x2 > a_tol2 {
+            let tol2 = tol * tol;
+            let x2 = 4.0 * (r * r - d_o1_o2 * d_o1_o2);
+            if x2 > tol2 {
                 b2_sol = !b2_sol;
             }
         }

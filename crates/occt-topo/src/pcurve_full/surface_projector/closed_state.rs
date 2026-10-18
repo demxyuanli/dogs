@@ -142,13 +142,13 @@ pub(crate) fn sa_u_close_state(s: &dyn Surface) -> (f64, f64, f64) {
                         v = 0.5 * (vknots[i - 1] + vknots[i]);
                         let p1 = s.value(uf, v);
                         let p2 = s.value(ul, v);
-                        let a_dist = p1.square_distance(&p2);
-                        if a_dist > close {
-                            close = a_dist;
+                        let dist = p1.square_distance(&p2);
+                        if dist > close {
+                            close = dist;
                             let pm = s.value(0.5 * (uf + ul), v);
                             mid = p1.square_distance(&pm);
                         } else {
-                            distmin = distmin.min(a_dist);
+                            distmin = distmin.min(dist);
                         }
                     }
                     // `cxx:763-764`.
@@ -160,13 +160,13 @@ pub(crate) fn sa_u_close_state(s: &dyn Surface) -> (f64, f64, f64) {
                     mid = bs.poles[0][0].square_distance(&bs.poles[nbup / 2][0]);
                     distmin = close;
                     for i in 1..nbvp {
-                        let a_dist =
+                        let dist =
                             bs.poles[0][i].square_distance(&bs.poles[nbup - 1][i]);
-                        if a_dist > close {
-                            close = a_dist;
+                        if dist > close {
+                            close = dist;
                             mid = bs.poles[0][i].square_distance(&bs.poles[nbup / 2][i]);
                         } else {
-                            distmin = distmin.min(a_dist);
+                            distmin = distmin.min(dist);
                         }
                     }
                     // `cxx:785-786`.
@@ -184,13 +184,13 @@ pub(crate) fn sa_u_close_state(s: &dyn Surface) -> (f64, f64, f64) {
                     mid = bz.poles[0][0].square_distance(&bz.poles[nbup / 2][0]);
                     let mut distmin = close;
                     for i in 0..nbvp {
-                        let a_dist =
+                        let dist =
                             bz.poles[0][i].square_distance(&bz.poles[nbup - 1][i]);
-                        if a_dist > close {
-                            close = a_dist;
+                        if dist > close {
+                            close = dist;
                             mid = bz.poles[0][i].square_distance(&bz.poles[nbup / 2][i]);
                         } else {
-                            distmin = distmin.min(a_dist);
+                            distmin = distmin.min(dist);
                         }
                     }
                     // `cxx:817-818`.
@@ -212,13 +212,13 @@ pub(crate) fn sa_u_close_state(s: &dyn Surface) -> (f64, f64, f64) {
                 let vparam = vf + (vl - vf) * i as f64 / (nbpoints - 1) as f64;
                 let p1 = s.value(uf, vparam);
                 let p2 = s.value(ul, vparam);
-                let a_dist = p1.square_distance(&p2);
-                if a_dist > close {
-                    close = a_dist;
+                let dist = p1.square_distance(&p2);
+                if dist > close {
+                    close = dist;
                     let pm = s.value(0.5 * (uf + ul), vparam);
                     mid = p1.square_distance(&pm);
                 } else {
-                    distmin = distmin.min(a_dist);
+                    distmin = distmin.min(dist);
                 }
             }
             // `cxx:848-849`.
@@ -301,13 +301,13 @@ pub(crate) fn sa_v_close_state(s: &dyn Surface) -> (f64, f64, f64) {
                         u = 0.5 * (uknots[i - 1] + uknots[i]);
                         let p1 = s.value(u, vf);
                         let p2 = s.value(u, vl);
-                        let a_dist = p1.square_distance(&p2);
-                        if a_dist > close {
-                            close = a_dist;
+                        let dist = p1.square_distance(&p2);
+                        if dist > close {
+                            close = dist;
                             let pm = s.value(u, 0.5 * (vf + vl));
                             mid = p1.square_distance(&pm);
                         } else {
-                            distmin = distmin.min(a_dist);
+                            distmin = distmin.min(dist);
                         }
                     }
                     // `cxx:958-959`.
@@ -319,12 +319,12 @@ pub(crate) fn sa_v_close_state(s: &dyn Surface) -> (f64, f64, f64) {
                     mid = bs.poles[0][0].square_distance(&bs.poles[0][nbvp / 2]);
                     distmin = close;
                     for i in 1..nbup {
-                        let a_dist = bs.poles[i][0].square_distance(&bs.poles[i][nbvp - 1]);
-                        if a_dist > close {
-                            close = a_dist;
+                        let dist = bs.poles[i][0].square_distance(&bs.poles[i][nbvp - 1]);
+                        if dist > close {
+                            close = dist;
                             mid = bs.poles[i][0].square_distance(&bs.poles[i][nbvp / 2]);
                         } else {
-                            distmin = distmin.min(a_dist);
+                            distmin = distmin.min(dist);
                         }
                     }
                     // `cxx:980-981`.
@@ -342,12 +342,12 @@ pub(crate) fn sa_v_close_state(s: &dyn Surface) -> (f64, f64, f64) {
                     mid = bz.poles[0][0].square_distance(&bz.poles[0][nbvp / 2]);
                     let mut distmin = close;
                     for i in 1..nbup {
-                        let a_dist = bz.poles[i][0].square_distance(&bz.poles[i][nbvp - 1]);
-                        if a_dist > close {
-                            close = a_dist;
+                        let dist = bz.poles[i][0].square_distance(&bz.poles[i][nbvp - 1]);
+                        if dist > close {
+                            close = dist;
                             mid = bz.poles[i][0].square_distance(&bz.poles[i][nbvp / 2]);
                         } else {
-                            distmin = distmin.min(a_dist);
+                            distmin = distmin.min(dist);
                         }
                     }
                     // `cxx:1012-1013`.
@@ -368,13 +368,13 @@ pub(crate) fn sa_v_close_state(s: &dyn Surface) -> (f64, f64, f64) {
                 let uparam = uf + (ul - uf) * i as f64 / (nbpoints - 1) as f64;
                 let p1 = s.value(uparam, vf);
                 let p2 = s.value(uparam, vl);
-                let a_dist = p1.square_distance(&p2);
-                if a_dist > close {
-                    close = a_dist;
+                let dist = p1.square_distance(&p2);
+                if dist > close {
+                    close = dist;
                     let pm = s.value(uparam, 0.5 * (vf + vl));
                     mid = p1.square_distance(&pm);
                 } else {
-                    distmin = distmin.min(a_dist);
+                    distmin = distmin.min(dist);
                 }
             }
             // `cxx:1043-1044`.

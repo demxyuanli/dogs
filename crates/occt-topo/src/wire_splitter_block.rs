@@ -236,9 +236,9 @@ fn path(
         {
             let mut buf: Vec<Edge> = Vec::new();
             let mut has_edge = false;
-            let a_nb = ls.len();
+            let nb = ls.len();
             let mut cut: Option<usize> = None;
-            for i in (0..a_nb).rev() {
+            for i in (0..nb).rev() {
                 let e_prev = &ls[i];
                 buf.push(e_prev.clone());
                 if !has_edge {
@@ -291,15 +291,15 @@ fn path(
             .last()
             .map(|&(s, ii)| !map.infos[s][ii].is_inside)
             .unwrap_or(true);
-        let a_le = &map.infos[vb_slot];
-        let angle_in = angle_in(e_in.as_ref().unwrap_or(&e_out), a_le);
-        let i_cnt = nb_ways_out(a_le);
+        let le = &map.infos[vb_slot];
+        let angle_in = angle_in(e_in.as_ref().unwrap_or(&e_out), le);
+        let i_cnt = nb_ways_out(le);
         let mut min_angle = 100.0;
         let mut chosen: Option<usize> = None;
         let mut only_inside: Option<usize> = None;
         let mut n_inside = 0usize;
 
-        for (k, ei) in a_le.iter().enumerate() {
+        for (k, ei) in le.iter().enumerate() {
             if ei.is_in || ei.passed {
                 continue;
             }
@@ -349,19 +349,19 @@ fn make_wire(edges: &[Edge]) -> TopoShape {
 
 /// `ClockWiseAngle`.
 fn clockwise_angle(angle_in: f64, angle_out: f64) -> f64 {
-    let mut a_in = angle_in;
-    let mut a_out = angle_out;
-    if a_in >= TWO_PI {
-        a_in -= TWO_PI;
+    let mut in_value = angle_in;
+    let mut out = angle_out;
+    if in_value >= TWO_PI {
+        in_value -= TWO_PI;
     }
-    if a_out >= TWO_PI {
-        a_out -= TWO_PI;
+    if out >= TWO_PI {
+        out -= TWO_PI;
     }
-    let mut a1 = a_in + PI;
+    let mut a1 = in_value + PI;
     if a1 >= TWO_PI {
         a1 -= TWO_PI;
     }
-    let mut da = a1 - a_out;
+    let mut da = a1 - out;
     if da <= 0.0 {
         da += TWO_PI;
     } else if da <= 1.0e-14 {
@@ -590,17 +590,17 @@ fn refine_angles(face: &Face, map: &mut SmartMap) {
 }
 
 fn refine_angles_at_vertex(face: &Face, v: &TopoShape, infos: &mut [EdgeInfo]) {
-    let mut a_a1 = 0.0_f64; // angle of the outgoing boundary edge
-    let mut a_a2 = 0.0_f64; // angle of the incoming boundary edge
+    let mut a1 = 0.0_f64; // angle of the outgoing boundary edge
+    let mut a2 = 0.0_f64; // angle of the incoming boundary edge
     let mut i_cnt_bnd = 0usize;
     let mut i_cnt_int = 0usize;
     for ei in infos.iter() {
         if !ei.is_inside {
             i_cnt_bnd += 1;
             if ei.is_in {
-                a_a2 = ei.angle;
+                a2 = ei.angle;
             } else {
-                a_a1 = ei.angle;
+                a1 = ei.angle;
             }
         } else {
             i_cnt_int += 1;
@@ -609,25 +609,25 @@ fn refine_angles_at_vertex(face: &Face, v: &TopoShape, infos: &mut [EdgeInfo]) {
     if i_cnt_bnd != 2 {
         return;
     }
-    let a_delta = clockwise_angle(a_a2, a_a1);
+    let delta = clockwise_angle(a2, a1);
     let mut refined: HashMap<usize, f64> = HashMap::new();
     for ei in infos.iter() {
         if !ei.is_inside || ei.is_in {
             continue;
         }
-        if clockwise_angle(a_a2, ei.angle) < a_delta {
+        if clockwise_angle(a2, ei.angle) < delta {
             continue; // already inside the wedge
         }
         let ek = GeometryRegistry::shape_key(&ei.edge.0);
-        match refine_angle_2d(face, v, &ei.edge, a_a1, a_a2, a_delta) {
+        match refine_angle_2d(face, v, &ei.edge, a1, a2, delta) {
             Some(a_new) => {
                 refined.insert(ek, a_new);
             }
             None if i_cnt_int == 2 => {
-                let a_new = if ei.angle <= a_a1 {
-                    a_a1 + ANGULAR
+                let a_new = if ei.angle <= a1 {
+                    a1 + ANGULAR
                 } else {
-                    a_a2 - ANGULAR
+                    a2 - ANGULAR
                 };
                 refined.insert(ek, a_new);
             }
@@ -655,64 +655,64 @@ fn refine_angles_at_vertex(face: &Face, v: &TopoShape, infos: &mut [EdgeInfo]) {
 ///   aGAC2, aDomain2, aTolInt, aTolInt)` with an explicit `IntRes2d_Domain`
 ///   (`cxx:1080`); this port calls
 ///   [`occt_geom2d::geom2d_api::intersect_curves`] and applies the
-///   `[a_t1, a_t2]` restriction itself (`:1084-1100`). The two agree when the
+///   `[t1, t2]` restriction itself (`:1084-1100`). The two agree when the
 ///   intersector returns every intersection point of that domain.
 fn refine_angle_2d(
     face: &Face,
     v: &TopoShape,
     e: &Edge,
-    a_a1: f64,
-    a_a2: f64,
-    a_delta: f64,
+    a1: f64,
+    a2: f64,
+    delta: f64,
 ) -> Option<f64> {
-    let a_cf = 0.01;
-    let a_tol_int = 1.0e-10;
+    let cf = 0.01;
+    let tol_int = 1.0e-10;
     let c = make_2d(e, face).ok()?;
-    let (a_t1, a_t2) = BRepTool::edge_parameters(e);
+    let (t1, t2) = BRepTool::edge_parameters(e);
     // `aTV = BRep_Tool::Parameter(aV, aE, myFace)` (`cxx:1060`) — the vertex
     // parameter on the *pcurve*, not on the 3D edge.
-    let a_tv = vertex_parameter_on_face(v, e);
-    let a_pv = c.d0(a_tv);
-    let a_t_op = if (a_tv - a_t1).abs() < (a_tv - a_t2).abs() {
-        a_t2
+    let tv = vertex_parameter_on_face(v, e);
+    let pv = c.d0(tv);
+    let t_op = if (tv - t1).abs() < (tv - t2).abs() {
+        t2
     } else {
-        a_t1
+        t1
     };
     // `aGAC1.Load(aC2D, aT1, aT2)`: the intersection is restricted to the
     // CurveOnSurface range, which for a bounded p-curve is its own domain.
-    let max_dt = 0.3 * (a_t2 - a_t1);
+    let max_dt = 0.3 * (t2 - t1);
     for i in 0..2 {
-        let a_ai = if i == 0 { a_a1 } else { a_a2 + PI };
-        let dir = GpDir2d::from_vec2d(&GpVec2d::new(a_ai.cos(), a_ai.sin())).ok()?;
-        let line = Geom2dLine::from_pnt_dir(a_pv, dir);
-        let points = occt_geom2d::geom2d_api::intersect_curves(c.as_ref(), &line, a_tol_int);
-        let mut a_t1max = a_tv;
-        let mut a_t2max = -1.0_f64;
+        let ai = if i == 0 { a1 } else { a2 + PI };
+        let dir = GpDir2d::from_vec2d(&GpVec2d::new(ai.cos(), ai.sin())).ok()?;
+        let line = Geom2dLine::from_pnt_dir(pv, dir);
+        let points = occt_geom2d::geom2d_api::intersect_curves(c.as_ref(), &line, tol_int);
+        let mut t1max = tv;
+        let mut t2max = -1.0_f64;
         for p in points {
-            if p.u1 < a_t1 - a_tol_int || p.u1 > a_t2 + a_tol_int {
+            if p.u1 < t1 - tol_int || p.u1 > t2 + tol_int {
                 continue;
             }
-            if p.u2 > a_t2max && (p.u1 - a_tv).abs() < max_dt {
-                a_t2max = p.u2;
-                a_t1max = p.u1;
+            if p.u2 > t2max && (p.u1 - tv).abs() < max_dt {
+                t2max = p.u2;
+                t1max = p.u1;
             }
         }
-        if a_t2max <= 0.0 {
+        if t2max <= 0.0 {
             continue;
         }
-        let d_t = a_t_op - a_t1max;
-        if d_t.abs() < a_tol_int {
+        let d_t = t_op - t1max;
+        if d_t.abs() < tol_int {
             continue;
         }
-        let a_t = a_t1max + a_cf * d_t;
-        let a_p = c.d0(a_t);
-        let vec2 = GpVec2d::new(a_p.x() - a_pv.x(), a_p.y() - a_pv.y());
+        let t = t1max + cf * d_t;
+        let a_p = c.d0(t);
+        let vec2 = GpVec2d::new(a_p.x() - pv.x(), a_p.y() - pv.y());
         let Ok(dir2) = GpDir2d::from_vec2d(&vec2) else {
             continue;
         };
-        let a_angle = dir2d_angle(&dir2);
-        if clockwise_angle(a_a2, a_angle) < a_delta {
-            return Some(a_angle);
+        let angle = dir2d_angle(&dir2);
+        if clockwise_angle(a2, angle) < delta {
+            return Some(angle);
         }
     }
     None

@@ -132,8 +132,8 @@ fn remove_loop(
     // by the face plane when the face is planar, otherwise the 3D curve is the
     // pcurve lifted onto that default plane.
     let mut pln = GpPln::new(GpAx3::default());
-    let a_plane = BRepTool::face_surface(face).and_then(|s| s.gp_pln());
-    let pcurve3d: Arc<dyn Curve> = match &a_plane {
+    let plane = BRepTool::face_surface(face).and_then(|s| s.gp_pln());
+    let pcurve3d: Arc<dyn Curve> = match &plane {
         Some(p) => {
             pln = p.clone();
             crv.clone()
@@ -173,10 +173,10 @@ fn remove_loop(
         return false;
     }
     // `cxx:2382-2387`.
-    let Some(a_new3d) = connect.into_curve() else {
+    let Some(new3d) = connect.into_curve() else {
         return false;
     };
-    let Some(mut bs) = to_2d(&a_new3d, &pln) else {
+    let Some(mut bs) = to_2d(&new3d, &pln) else {
         return false;
     };
 
@@ -188,7 +188,7 @@ fn remove_loop(
         let mut newtol = 0.0f64;
         // `cxx:2397-2405`: `howMuchPCurves`.
         let nb_c2d = reg.pcurve_rep_count(&e.0);
-        if nb_c2d <= 1 && a_plane.is_some() {
+        if nb_c2d <= 1 && plane.is_some() {
             // `cxx:2399-2401`: `B.UpdateEdge(E, bs, face, 0)`.
             reg.set_edge_pcurve(&e.0, face_key, bs.clone());
         } else {
@@ -209,8 +209,8 @@ fn remove_loop(
         }
         // `cxx:2422-2431`: `B.UpdateEdge(E, aNew3dCrv, max(newtol, tol))` then
         // re-run `TryNewPCurve`.
-        if a_plane.is_some() {
-            reg.set_edge_curve3d(&e.0, Arc::new(a_new3d.clone()), newtol.max(tol));
+        if plane.is_some() {
+            reg.set_edge_curve3d(&e.0, Arc::new(new3d.clone()), newtol.max(tol));
             let Some(t) = try_new_pcurve(e, face, &mut bs, &mut a, &mut b) else {
                 return false;
             };

@@ -105,43 +105,43 @@ fn border(v: f64) -> f64 {
 /// NCollection_Sequence<Extrema_POnCurv>>` (`Extrema_CCLocFOfLocECC.hxx:29-36`).
 pub(super) struct GFuncExtCC<'a> {
     /// `myC1` (`hxx:114`).
-    my_c1: &'a dyn Curve,
+    c1: &'a dyn Curve,
     /// `myC2` (`hxx:115`).
-    my_c2: &'a dyn Curve,
+    c2: &'a dyn Curve,
     /// `myTol` (`hxx:116`).
-    my_tol: f64,
+    tol: f64,
     /// `myU` (`hxx:117`).
-    my_u: f64,
+    u: f64,
     /// `myV` (`hxx:118`).
-    my_v: f64,
+    v: f64,
     /// `myP1` (`hxx:119`).
-    my_p1: GpPnt,
+    p1: GpPnt,
     /// `myP2` (`hxx:120`).
-    my_p2: GpPnt,
+    p2: GpPnt,
     /// `myDu` (`hxx:121`).
-    my_du: GpVec,
+    du: GpVec,
     /// `myDv` (`hxx:122`).
-    my_dv: GpVec,
+    dv: GpVec,
     /// `mySqDist` (`hxx:123`).
-    my_sq_dist: Vec<f64>,
+    sq_dist: Vec<f64>,
     /// `myPoints` (`hxx:124`); two consecutive entries per extremum.
-    my_points: Vec<POnCurv>,
+    points: Vec<POnCurv>,
     /// `myTolC1` (`hxx:125`).
-    my_tol_c1: f64,
+    tol_c1: f64,
     /// `myTolC2` (`hxx:126`).
-    my_tol_c2: f64,
+    tol_c2: f64,
     /// `myMaxDerivOrderC1` (`hxx:127`).
-    my_max_deriv_order_c1: i32,
+    max_deriv_order_c1: i32,
     /// `myMaxDerivOrderC2` (`hxx:128`).
-    my_max_deriv_order_c2: i32,
+    max_deriv_order_c2: i32,
     /// `myUinfium` (`hxx:129`).
-    my_uinfium: f64,
+    uinfium: f64,
     /// `myUsupremum` (`hxx:130`).
-    my_usupremum: f64,
+    usupremum: f64,
     /// `myVinfium` (`hxx:131`).
-    my_vinfium: f64,
+    vinfium: f64,
     /// `myVsupremum` (`hxx:132`).
-    my_vsupremum: f64,
+    vsupremum: f64,
 }
 
 impl<'a> GFuncExtCC<'a> {
@@ -149,25 +149,25 @@ impl<'a> GFuncExtCC<'a> {
     /// (`Extrema_GFuncExtCC.hxx:235-291`).
     pub(super) fn new(c1: &'a dyn Curve, c2: &'a dyn Curve, the_tol: f64) -> Self {
         let mut out = Self {
-            my_c1: c1,
-            my_c2: c2,
-            my_tol: the_tol,
-            my_u: 0.0,
-            my_v: 0.0,
-            my_p1: GpPnt::zero(),
-            my_p2: GpPnt::zero(),
-            my_du: GpVec::zero(),
-            my_dv: GpVec::zero(),
-            my_sq_dist: Vec::new(),
-            my_points: Vec::new(),
-            my_tol_c1: THE_MIN_TOL,
-            my_tol_c2: THE_MIN_TOL,
-            my_max_deriv_order_c1: 0,
-            my_max_deriv_order_c2: 0,
-            my_uinfium: 0.0,
-            my_usupremum: 0.0,
-            my_vinfium: 0.0,
-            my_vsupremum: 0.0,
+            c1: c1,
+            c2: c2,
+            tol: the_tol,
+            u: 0.0,
+            v: 0.0,
+            p1: GpPnt::zero(),
+            p2: GpPnt::zero(),
+            du: GpVec::zero(),
+            dv: GpVec::zero(),
+            sq_dist: Vec::new(),
+            points: Vec::new(),
+            tol_c1: THE_MIN_TOL,
+            tol_c2: THE_MIN_TOL,
+            max_deriv_order_c1: 0,
+            max_deriv_order_c2: 0,
+            uinfium: 0.0,
+            usupremum: 0.0,
+            vinfium: 0.0,
+            vsupremum: 0.0,
         };
         // `hxx:256-261`: SubIntervalInitialize over both curves' own ranges.
         out.sub_interval_initialize(
@@ -178,14 +178,14 @@ impl<'a> GFuncExtCC<'a> {
         );
 
         // `hxx:263-276` / `hxx:278-291`: the GetType switches.
-        out.my_max_deriv_order_c1 = max_deriv_order(c1);
-        out.my_tol_c1 = if out.my_max_deriv_order_c1 != 0 {
+        out.max_deriv_order_c1 = max_deriv_order(c1);
+        out.tol_c1 = if out.max_deriv_order_c1 != 0 {
             out.search_of_tolerance(1)
         } else {
             THE_MIN_TOL
         };
-        out.my_max_deriv_order_c2 = max_deriv_order(c2);
-        out.my_tol_c2 = if out.my_max_deriv_order_c2 != 0 {
+        out.max_deriv_order_c2 = max_deriv_order(c2);
+        out.tol_c2 = if out.max_deriv_order_c2 != 0 {
             out.search_of_tolerance(2)
         } else {
             THE_MIN_TOL
@@ -196,51 +196,51 @@ impl<'a> GFuncExtCC<'a> {
     /// `SubIntervalInitialize(theUfirst, theUlast)`
     /// (`Extrema_GFuncExtCC.hxx:899-925`).
     fn sub_interval_initialize(&mut self, u_inf: f64, u_sup: f64, v_inf: f64, v_sup: f64) {
-        self.my_uinfium = border(u_inf);
-        self.my_usupremum = border(u_sup);
-        self.my_vinfium = border(v_inf);
-        self.my_vsupremum = border(v_sup);
+        self.uinfium = border(u_inf);
+        self.usupremum = border(u_sup);
+        self.vinfium = border(v_inf);
+        self.vsupremum = border(v_sup);
     }
 
-    /// `SearchOfTolerance(theC)` (`Extrema_GFuncExtCC.hxx:150-197`); `the_rank`
+    /// `SearchOfTolerance(theC)` (`Extrema_GFuncExtCC.hxx:150-197`); `rank`
     /// selects the sub-interval and the curve the `D1` samples come from, which
     /// is what the `theC == myC1` / `theC == myC2` pointer tests decide.
     ///
     /// Unlike `Extrema_GFuncExtPC::SearchOfTolerance`
     /// (`Extrema_GFuncExtPC.hxx:434-444`) this one has no infinity guard: a
     /// sample whose `D1` is not finite contributes its (non-finite) magnitude.
-    fn search_of_tolerance(&self, the_rank: i32) -> f64 {
-        let (a_start_param, an_end_param) = if the_rank == 1 {
-            (self.my_uinfium, self.my_usupremum)
+    fn search_of_tolerance(&self, rank: i32) -> f64 {
+        let (start_param, an_end_param) = if rank == 1 {
+            (self.uinfium, self.usupremum)
         } else {
-            (self.my_vinfium, self.my_vsupremum)
+            (self.vinfium, self.vsupremum)
         };
 
-        let a_step = (an_end_param - a_start_param) / (N_POINT as f64);
+        let step = (an_end_param - start_param) / (N_POINT as f64);
 
-        let mut a_num = 0;
+        let mut num = 0;
         let mut a_max = -INFINITE;
 
         loop {
-            let mut u = a_start_param + (a_num as f64) * a_step;
+            let mut u = start_param + (num as f64) * step;
             if u > an_end_param {
                 u = an_end_param;
             }
 
             // `TheCurveTool1::D1` (`hxx:189`) -- both tools are
             // `Extrema_CurveTool` in this instantiation.
-            let (_, v_der) = if the_rank == 1 {
-                self.my_c1.d1(u)
+            let (_, v_der) = if rank == 1 {
+                self.c1.d1(u)
             } else {
-                self.my_c2.d1(u)
+                self.c2.d1(u)
             };
             let vm = v_der.magnitude();
             if vm > a_max {
                 a_max = vm;
             }
 
-            a_num += 1;
-            if a_num >= N_POINT + 1 {
+            num += 1;
+            if num >= N_POINT + 1 {
                 break;
             }
         }
@@ -252,25 +252,25 @@ impl<'a> GFuncExtCC<'a> {
     /// (`Extrema_GFuncExtCC.hxx:381-457` for the first curve, `:465-540` for the
     /// second): rebuild `myDu` / `myDv`. Returns the reconstructed derivative
     /// and its magnitude.
-    fn reconstruct_d1(&self, the_rank: i32) -> (GpVec, f64) {
-        let (u, u_inf, u_sup, tol, max_order) = if the_rank == 1 {
+    fn reconstruct_d1(&self, rank: i32) -> (GpVec, f64) {
+        let (u, u_inf, u_sup, tol, max_order) = if rank == 1 {
             (
-                self.my_u,
-                self.my_uinfium,
-                self.my_usupremum,
-                self.my_tol_c1,
-                self.my_max_deriv_order_c1,
+                self.u,
+                self.uinfium,
+                self.usupremum,
+                self.tol_c1,
+                self.max_deriv_order_c1,
             )
         } else {
             (
-                self.my_v,
-                self.my_vinfium,
-                self.my_vsupremum,
-                self.my_tol_c2,
-                self.my_max_deriv_order_c2,
+                self.v,
+                self.vinfium,
+                self.vsupremum,
+                self.tol_c2,
+                self.max_deriv_order_c2,
             )
         };
-        let c: &dyn Curve = if the_rank == 1 { self.my_c1 } else { self.my_c2 };
+        let c: &dyn Curve = if rank == 1 { self.c1 } else { self.c2 };
 
         const DIVISION_FACTOR: f64 = 1.0e-3; // `hxx:386` / `:469`
         let d = if u_sup >= REAL_LAST || u_inf <= REAL_FIRST {
@@ -278,7 +278,7 @@ impl<'a> GFuncExtCC<'a> {
         } else {
             u_sup - u_inf
         };
-        let a_delta = (d * DIVISION_FACTOR).max(THE_MIN_STEP);
+        let delta = (d * DIVISION_FACTOR).max(THE_MIN_STEP);
 
         // `do { V = DN(++n); ... } while (!IsDeriveFound && n < myMaxDerivOrderCx)`.
         let mut n = 1;
@@ -294,7 +294,7 @@ impl<'a> GFuncExtCC<'a> {
         }
 
         if is_derive_found {
-            let uu = if u - u_inf < a_delta { u + a_delta } else { u - a_delta };
+            let uu = if u - u_inf < delta { u + delta } else { u - delta };
             let p1 = c.d0(u.min(uu));
             let p2 = c.d0(u.max(uu));
             let v1 = GpVec::from_pnts(&p1, &p2);
@@ -303,13 +303,13 @@ impl<'a> GFuncExtCC<'a> {
             (out, mag)
         } else {
             // Three-point Taylor; `Ptemp` stays at the default `gp_Pnt(0, 0, 0)`.
-            let (grown, p1, p2, p3) = if u - u_inf < 2.0 * a_delta {
-                (true, c.d0(u), c.d0(u + a_delta), c.d0(u + 2.0 * a_delta))
+            let (grown, p1, p2, p3) = if u - u_inf < 2.0 * delta {
+                (true, c.d0(u), c.d0(u + delta), c.d0(u + 2.0 * delta))
             } else {
                 (
                     false,
-                    c.d0(u - 2.0 * a_delta),
-                    c.d0(u - a_delta),
+                    c.d0(u - 2.0 * delta),
+                    c.d0(u - delta),
                     c.d0(u),
                 )
             };
@@ -333,23 +333,23 @@ impl<'a> GFuncExtCC<'a> {
 
     /// `Extrema_GFuncExtCC::Value(theUV, theF)`
     /// (`Extrema_GFuncExtCC.hxx:359-550`).
-    fn value_impl(&mut self, the_u: f64, the_v: f64, the_f: &mut MathVector) -> bool {
-        self.my_u = the_u;
-        self.my_v = the_v;
+    fn value_impl(&mut self, the_u: f64, the_v: f64, f: &mut MathVector) -> bool {
+        self.u = the_u;
+        self.v = the_v;
 
-        let (p1, du) = self.my_c1.d1(the_u);
-        let (p2, dv) = self.my_c2.d1(the_v);
-        self.my_p1 = p1;
-        self.my_p2 = p2;
-        self.my_du = du;
-        self.my_dv = dv;
+        let (p1, du) = self.c1.d1(the_u);
+        let (p2, dv) = self.c2.d1(the_v);
+        self.p1 = p1;
+        self.p2 = p2;
+        self.du = du;
+        self.dv = dv;
 
         let p1p2 = GpVec::from_pnts(&p1, &p2);
 
         let mut ndu = du.magnitude();
-        if self.my_max_deriv_order_c1 != 0 && ndu <= self.my_tol_c1 {
+        if self.max_deriv_order_c1 != 0 && ndu <= self.tol_c1 {
             let (v, mag) = self.reconstruct_d1(1);
-            self.my_du = v;
+            self.du = v;
             ndu = mag;
         }
 
@@ -359,9 +359,9 @@ impl<'a> GFuncExtCC<'a> {
         }
 
         let mut ndv = dv.magnitude();
-        if self.my_max_deriv_order_c2 != 0 && ndv <= self.my_tol_c2 {
+        if self.max_deriv_order_c2 != 0 && ndv <= self.tol_c2 {
             let (v, mag) = self.reconstruct_d1(2);
-            self.my_dv = v;
+            self.dv = v;
             ndv = mag;
         }
 
@@ -369,226 +369,226 @@ impl<'a> GFuncExtCC<'a> {
             return false;
         }
 
-        the_f.set_value(1, p1p2.dot(&self.my_du) / ndu);
-        the_f.set_value(2, p1p2.dot(&self.my_dv) / ndv);
+        f.set_value(1, p1p2.dot(&self.du) / ndu);
+        f.set_value(2, p1p2.dot(&self.dv) / ndv);
         true
     }
 
     /// `Extrema_GFuncExtCC::Values(theUV, theF, theDF)`
     /// (`Extrema_GFuncExtCC.hxx:568-827`).
-    fn values_impl(&mut self, the_uv: &MathVector, the_f: &mut MathVector, the_df: &mut MathMatrix) -> bool {
-        if !self.value_impl(the_uv.value(1), the_uv.value(2), the_f) {
+    fn values_impl(&mut self, uv: &MathVector, f: &mut MathVector, df: &mut MathMatrix) -> bool {
+        if !self.value_impl(uv.value(1), uv.value(2), f) {
             return false;
         }
-        let the_f1 = the_f.value(1);
-        let the_f2 = the_f.value(2);
+        let f1 = f.value(1);
+        let f2 = f.value(2);
 
-        let (p1, du, duu) = self.my_c1.d2(self.my_u);
-        let (p2, dv, dvv) = self.my_c2.d2(self.my_v);
-        self.my_p1 = p1;
-        self.my_p2 = p2;
+        let (p1, du, duu) = self.c1.d2(self.u);
+        let (p2, dv, dvv) = self.c2.d2(self.v);
+        self.p1 = p1;
+        self.p2 = p2;
 
-        let my_u_old = self.my_u;
-        let my_v_old = self.my_v;
-        let my_p1_old = self.my_p1;
-        let my_p2_old = self.my_p2;
-        let my_du_old = self.my_du;
-        let my_dv_old = self.my_dv;
+        let u_old = self.u;
+        let v_old = self.v;
+        let p1_old = self.p1;
+        let p2_old = self.p2;
+        let du_old = self.du;
+        let dv_old = self.dv;
 
         const DIVISION_FACTOR: f64 = 0.01; // `hxx:614`
 
-        let du_span = if self.my_usupremum >= REAL_LAST || self.my_uinfium <= REAL_FIRST {
+        let du_span = if self.usupremum >= REAL_LAST || self.uinfium <= REAL_FIRST {
             0.0
         } else {
-            self.my_usupremum - self.my_uinfium
+            self.usupremum - self.uinfium
         };
-        let a_delta_u = (du_span * DIVISION_FACTOR).max(THE_MIN_STEP);
+        let delta_u = (du_span * DIVISION_FACTOR).max(THE_MIN_STEP);
 
-        let dv_span = if self.my_vsupremum >= REAL_LAST || self.my_vinfium <= REAL_FIRST {
+        let dv_span = if self.vsupremum >= REAL_LAST || self.vinfium <= REAL_FIRST {
             0.0
         } else {
-            self.my_vsupremum - self.my_vinfium
+            self.vsupremum - self.vinfium
         };
-        let a_delta_v = (dv_span * DIVISION_FACTOR).max(THE_MIN_STEP);
+        let delta_v = (dv_span * DIVISION_FACTOR).max(THE_MIN_STEP);
 
-        let p1p2 = GpVec::from_pnts(&self.my_p1, &self.my_p2);
+        let p1p2 = GpVec::from_pnts(&self.p1, &self.p2);
 
-        if self.my_max_deriv_order_c1 != 0 && du.magnitude() <= self.my_tol_c1 {
+        if self.max_deriv_order_c1 != 0 && du.magnitude() <= self.tol_c1 {
             // `hxx:636-722`.
             let mut ff1 = MathVector::new(1, 2);
             let mut ff2 = MathVector::new(1, 2);
             let mut ff3 = MathVector::new(1, 2);
 
             let (v1a, v2a, v3a);
-            if my_u_old - self.my_uinfium < 2.0 * a_delta_u {
-                v1a = the_f1;
-                let uv2_1 = my_u_old + a_delta_u;
-                let uv3_1 = my_u_old + 2.0 * a_delta_u;
-                if !(self.value_impl(uv2_1, my_v_old, &mut ff2)
-                    && self.value_impl(uv3_1, my_v_old, &mut ff3))
+            if u_old - self.uinfium < 2.0 * delta_u {
+                v1a = f1;
+                let uv2_1 = u_old + delta_u;
+                let uv3_1 = u_old + 2.0 * delta_u;
+                if !(self.value_impl(uv2_1, v_old, &mut ff2)
+                    && self.value_impl(uv3_1, v_old, &mut ff3))
                 {
                     return false;
                 }
                 v2a = ff2.value(1);
                 v3a = ff3.value(1);
             } else {
-                v3a = the_f1;
-                let uv2_1 = my_u_old - a_delta_u;
-                let uv1_1 = my_u_old - 2.0 * a_delta_u;
-                if !(self.value_impl(uv2_1, my_v_old, &mut ff2)
-                    && self.value_impl(uv1_1, my_v_old, &mut ff1))
+                v3a = f1;
+                let uv2_1 = u_old - delta_u;
+                let uv1_1 = u_old - 2.0 * delta_u;
+                if !(self.value_impl(uv2_1, v_old, &mut ff2)
+                    && self.value_impl(uv1_1, v_old, &mut ff1))
                 {
                     return false;
                 }
                 v1a = ff1.value(1);
                 v2a = ff2.value(1);
             }
-            let d11 = if my_u_old - self.my_uinfium < 2.0 * a_delta_u {
-                (-3.0 * v1a + 4.0 * v2a - v3a) / (2.0 * a_delta_u)
+            let d11 = if u_old - self.uinfium < 2.0 * delta_u {
+                (-3.0 * v1a + 4.0 * v2a - v3a) / (2.0 * delta_u)
             } else {
-                (v1a - 4.0 * v2a + 3.0 * v3a) / (2.0 * a_delta_u)
+                (v1a - 4.0 * v2a + 3.0 * v3a) / (2.0 * delta_u)
             };
-            the_df.set_value(1, 1, d11);
+            df.set_value(1, 1, d11);
 
-            self.my_u = my_u_old;
-            self.my_v = my_v_old;
+            self.u = u_old;
+            self.v = v_old;
 
             let (w1, w2, w3);
-            if my_v_old - self.my_vinfium < 2.0 * a_delta_v {
-                w1 = the_f1;
-                let uv2_2 = my_v_old + a_delta_v;
-                let uv3_2 = my_v_old + 2.0 * a_delta_v;
-                if !(self.value_impl(my_u_old, uv2_2, &mut ff2)
-                    && self.value_impl(my_u_old, uv3_2, &mut ff3))
+            if v_old - self.vinfium < 2.0 * delta_v {
+                w1 = f1;
+                let uv2_2 = v_old + delta_v;
+                let uv3_2 = v_old + 2.0 * delta_v;
+                if !(self.value_impl(u_old, uv2_2, &mut ff2)
+                    && self.value_impl(u_old, uv3_2, &mut ff3))
                 {
                     return false;
                 }
                 w2 = ff2.value(1);
                 w3 = ff3.value(1);
             } else {
-                w3 = the_f1;
-                let uv2_2 = my_v_old - a_delta_v;
-                let uv1_2 = my_v_old - 2.0 * a_delta_v;
-                if !(self.value_impl(my_u_old, uv2_2, &mut ff2)
-                    && self.value_impl(my_u_old, uv1_2, &mut ff1))
+                w3 = f1;
+                let uv2_2 = v_old - delta_v;
+                let uv1_2 = v_old - 2.0 * delta_v;
+                if !(self.value_impl(u_old, uv2_2, &mut ff2)
+                    && self.value_impl(u_old, uv1_2, &mut ff1))
                 {
                     return false;
                 }
                 w1 = ff1.value(1);
                 w2 = ff2.value(1);
             }
-            let d12 = if my_v_old - self.my_vinfium < 2.0 * a_delta_v {
-                (-3.0 * w1 + 4.0 * w2 - w3) / (2.0 * a_delta_v)
+            let d12 = if v_old - self.vinfium < 2.0 * delta_v {
+                (-3.0 * w1 + 4.0 * w2 - w3) / (2.0 * delta_v)
             } else {
-                (w1 - 4.0 * w2 + 3.0 * w3) / (2.0 * a_delta_v)
+                (w1 - 4.0 * w2 + 3.0 * w3) / (2.0 * delta_v)
             };
-            the_df.set_value(1, 2, d12);
+            df.set_value(1, 2, d12);
 
-            self.my_u = my_u_old;
-            self.my_v = my_v_old;
-            self.my_p1 = my_p1_old;
-            self.my_p2 = my_p2_old;
-            self.my_du = my_du_old;
-            self.my_dv = my_dv_old;
+            self.u = u_old;
+            self.v = v_old;
+            self.p1 = p1_old;
+            self.p2 = p2_old;
+            self.du = du_old;
+            self.dv = dv_old;
         } else {
             // `hxx:724-728`.
-            let ndu = self.my_du.magnitude();
-            the_df.set_value(
+            let ndu = self.du.magnitude();
+            df.set_value(
                 1,
                 1,
                 -ndu + (p1p2.dot(&duu) / ndu)
-                    - the_f1 * (self.my_du.dot(&duu) / (ndu * ndu)),
+                    - f1 * (self.du.dot(&duu) / (ndu * ndu)),
             );
-            the_df.set_value(1, 2, self.my_dv.dot(&self.my_du) / ndu);
+            df.set_value(1, 2, self.dv.dot(&self.du) / ndu);
         }
 
-        if self.my_max_deriv_order_c2 != 0 && dv.magnitude() <= self.my_tol_c2 {
+        if self.max_deriv_order_c2 != 0 && dv.magnitude() <= self.tol_c2 {
             // `hxx:731-820`.
             let mut ff1 = MathVector::new(1, 2);
             let mut ff2 = MathVector::new(1, 2);
             let mut ff3 = MathVector::new(1, 2);
 
             let (v1a, v2a, v3a);
-            if my_v_old - self.my_vinfium < 2.0 * a_delta_v {
-                v1a = the_f2;
-                let uv2_2 = my_v_old + a_delta_v;
-                let uv3_2 = my_v_old + 2.0 * a_delta_v;
-                if !(self.value_impl(my_u_old, uv2_2, &mut ff2)
-                    && self.value_impl(my_u_old, uv3_2, &mut ff3))
+            if v_old - self.vinfium < 2.0 * delta_v {
+                v1a = f2;
+                let uv2_2 = v_old + delta_v;
+                let uv3_2 = v_old + 2.0 * delta_v;
+                if !(self.value_impl(u_old, uv2_2, &mut ff2)
+                    && self.value_impl(u_old, uv3_2, &mut ff3))
                 {
                     return false;
                 }
                 v2a = ff2.value(2);
                 v3a = ff3.value(2);
             } else {
-                v3a = the_f2;
-                let uv2_2 = my_v_old - a_delta_v;
-                let uv1_2 = my_v_old - 2.0 * a_delta_v;
-                if !(self.value_impl(my_u_old, uv2_2, &mut ff2)
-                    && self.value_impl(my_u_old, uv1_2, &mut ff1))
+                v3a = f2;
+                let uv2_2 = v_old - delta_v;
+                let uv1_2 = v_old - 2.0 * delta_v;
+                if !(self.value_impl(u_old, uv2_2, &mut ff2)
+                    && self.value_impl(u_old, uv1_2, &mut ff1))
                 {
                     return false;
                 }
                 v1a = ff1.value(2);
                 v2a = ff2.value(2);
             }
-            let d22 = if my_v_old - self.my_vinfium < 2.0 * a_delta_v {
-                (-3.0 * v1a + 4.0 * v2a - v3a) / (2.0 * a_delta_v)
+            let d22 = if v_old - self.vinfium < 2.0 * delta_v {
+                (-3.0 * v1a + 4.0 * v2a - v3a) / (2.0 * delta_v)
             } else {
-                (v1a - 4.0 * v2a + 3.0 * v3a) / (2.0 * a_delta_v)
+                (v1a - 4.0 * v2a + 3.0 * v3a) / (2.0 * delta_v)
             };
-            the_df.set_value(2, 2, d22);
+            df.set_value(2, 2, d22);
 
-            self.my_u = my_u_old;
-            self.my_v = my_v_old;
+            self.u = u_old;
+            self.v = v_old;
 
             let (w1, w2, w3);
-            if my_u_old - self.my_uinfium < 2.0 * a_delta_u {
-                w1 = the_f2;
-                let uv2_1 = my_u_old + a_delta_u;
-                let uv3_1 = my_u_old + 2.0 * a_delta_u;
-                if !(self.value_impl(uv2_1, my_v_old, &mut ff2)
-                    && self.value_impl(uv3_1, my_v_old, &mut ff3))
+            if u_old - self.uinfium < 2.0 * delta_u {
+                w1 = f2;
+                let uv2_1 = u_old + delta_u;
+                let uv3_1 = u_old + 2.0 * delta_u;
+                if !(self.value_impl(uv2_1, v_old, &mut ff2)
+                    && self.value_impl(uv3_1, v_old, &mut ff3))
                 {
                     return false;
                 }
                 w2 = ff2.value(2);
                 w3 = ff3.value(2);
             } else {
-                w3 = the_f2;
-                let uv2_1 = my_u_old - a_delta_u;
-                let uv1_1 = my_u_old - 2.0 * a_delta_u;
-                if !(self.value_impl(uv2_1, my_v_old, &mut ff2)
-                    && self.value_impl(uv1_1, my_v_old, &mut ff1))
+                w3 = f2;
+                let uv2_1 = u_old - delta_u;
+                let uv1_1 = u_old - 2.0 * delta_u;
+                if !(self.value_impl(uv2_1, v_old, &mut ff2)
+                    && self.value_impl(uv1_1, v_old, &mut ff1))
                 {
                     return false;
                 }
                 w1 = ff1.value(2);
                 w2 = ff2.value(2);
             }
-            let d21 = if my_u_old - self.my_uinfium < 2.0 * a_delta_u {
-                (-3.0 * w1 + 4.0 * w2 - w3) / (2.0 * a_delta_u)
+            let d21 = if u_old - self.uinfium < 2.0 * delta_u {
+                (-3.0 * w1 + 4.0 * w2 - w3) / (2.0 * delta_u)
             } else {
-                (w1 - 4.0 * w2 + 3.0 * w3) / (2.0 * a_delta_u)
+                (w1 - 4.0 * w2 + 3.0 * w3) / (2.0 * delta_u)
             };
-            the_df.set_value(2, 1, d21);
+            df.set_value(2, 1, d21);
 
-            self.my_u = my_u_old;
-            self.my_v = my_v_old;
-            self.my_p1 = my_p1_old;
-            self.my_p2 = my_p2_old;
-            self.my_du = my_du_old;
-            self.my_dv = my_dv_old;
+            self.u = u_old;
+            self.v = v_old;
+            self.p1 = p1_old;
+            self.p2 = p2_old;
+            self.du = du_old;
+            self.dv = dv_old;
         } else {
             // `hxx:822-827`.
-            let ndv = self.my_dv.magnitude();
-            the_df.set_value(
+            let ndv = self.dv.magnitude();
+            df.set_value(
                 2,
                 2,
                 ndv + (p1p2.dot(&dvv) / ndv)
-                    - the_f2 * (self.my_dv.dot(&dvv) / (ndv * ndv)),
+                    - f2 * (self.dv.dot(&dvv) / (ndv * ndv)),
             );
-            the_df.set_value(2, 1, -self.my_du.dot(&self.my_dv) / ndv);
+            df.set_value(2, 1, -self.du.dot(&self.dv) / ndv);
         }
 
         true
@@ -596,17 +596,17 @@ impl<'a> GFuncExtCC<'a> {
 
     /// `NbExt()` (`Extrema_GFuncExtCC.hxx:84-86`).
     pub(super) fn nb_ext(&self) -> usize {
-        self.my_sq_dist.len()
+        self.sq_dist.len()
     }
 
     /// `SquareDistance(theN)` (`Extrema_GFuncExtCC.hxx:88-89`), `the_n` 1-based.
     pub(super) fn square_distance(&self, the_n: usize) -> f64 {
-        self.my_sq_dist[the_n - 1]
+        self.sq_dist[the_n - 1]
     }
 
     /// `Points(theN, P1, P2)` (`Extrema_GFuncExtCC.hxx:885-895`).
     pub(super) fn points(&self, the_n: usize) -> (POnCurv, POnCurv) {
-        (self.my_points[2 * the_n - 2], self.my_points[2 * the_n - 1])
+        (self.points[2 * the_n - 2], self.points[2 * the_n - 1])
     }
 }
 
@@ -622,40 +622,40 @@ impl<'a> MathFunctionSetWithDerivatives for GFuncExtCC<'a> {
     }
 
     /// `Value(theUV, theF)` (`Extrema_GFuncExtCC.hxx:359-550`).
-    fn value(&mut self, the_uv: &MathVector, the_f: &mut MathVector) -> bool {
-        self.value_impl(the_uv.value(1), the_uv.value(2), the_f)
+    fn value(&mut self, uv: &MathVector, f: &mut MathVector) -> bool {
+        self.value_impl(uv.value(1), uv.value(2), f)
     }
 
     /// `Derivatives(theUV, theDF)` (`Extrema_GFuncExtCC.hxx:551-565`).
-    fn derivatives(&mut self, the_uv: &MathVector, the_df: &mut MathMatrix) -> bool {
+    fn derivatives(&mut self, uv: &MathVector, df: &mut MathMatrix) -> bool {
         let mut f = MathVector::new(1, 2);
-        self.values_impl(the_uv, &mut f, the_df)
+        self.values_impl(uv, &mut f, df)
     }
 
     /// `Values(theUV, theF, theDF)` (`Extrema_GFuncExtCC.hxx:568-827`).
-    fn values(&mut self, the_uv: &MathVector, the_f: &mut MathVector, the_df: &mut MathMatrix) -> bool {
-        self.values_impl(the_uv, the_f, the_df)
+    fn values(&mut self, uv: &MathVector, f: &mut MathVector, df: &mut MathMatrix) -> bool {
+        self.values_impl(uv, f, df)
     }
 
     /// `GetStateNumber()` (`Extrema_GFuncExtCC.hxx:832-870`).
     fn get_state_number(&mut self) -> i32 {
-        let mut du = self.my_du;
-        let mut dv = self.my_dv;
-        let p1p2 = GpVec::from_pnts(&self.my_p1, &self.my_p2);
+        let mut du = self.du;
+        let mut dv = self.dv;
+        let p1p2 = GpVec::from_pnts(&self.p1, &self.p2);
 
         let m = du.magnitude();
-        if m > self.my_tol_c1 {
+        if m > self.tol_c1 {
             du = du.multiplied_scalar(1.0 / m);
         }
         let m = dv.magnitude();
-        if m > self.my_tol_c2 {
+        if m > self.tol_c2 {
             dv = dv.multiplied_scalar(1.0 / m);
         }
 
-        if p1p2.dot(&du).abs() <= self.my_tol && p1p2.dot(&dv).abs() <= self.my_tol {
-            self.my_sq_dist.push(self.my_p1.square_distance(&self.my_p2));
-            self.my_points.push(POnCurv::new(self.my_u, self.my_p1));
-            self.my_points.push(POnCurv::new(self.my_v, self.my_p2));
+        if p1p2.dot(&du).abs() <= self.tol && p1p2.dot(&dv).abs() <= self.tol {
+            self.sq_dist.push(self.p1.square_distance(&self.p2));
+            self.points.push(POnCurv::new(self.u, self.p1));
+            self.points.push(POnCurv::new(self.v, self.p2));
         }
         0
     }

@@ -56,10 +56,10 @@ pub fn is_micro_edge(edge: &Edge, check_splittable: bool) -> bool {
 pub fn put_se_in_other_faces(f: &mut PaveFiller) -> Result<(), String> {
     let mut mpb_sc: Vec<BopdsPaveBlock> = Vec::new();
     let mut fence: HashSet<crate::pave_ff_exist::PbKey> = HashSet::new();
-    let a_nb_ff = f.ds().interf_ff().len();
-    for i in 0..a_nb_ff {
-        let a_nb_c = f.ds().interf_ff()[i].curves().len();
-        for j in 0..a_nb_c {
+    let nb_ff = f.ds().interf_ff().len();
+    for i in 0..nb_ff {
+        let nb_c = f.ds().interf_ff()[i].curves().len();
+        for j in 0..nb_c {
             for pb in f.ds().interf_ff()[i].curves()[j].pave_blocks() {
                 if fence.insert(pb_key(pb)) {
                     mpb_sc.push(pb.clone());
@@ -79,15 +79,15 @@ pub fn put_se_in_other_faces(f: &mut PaveFiller) -> Result<(), String> {
 /// block is collected so `PostTreatFF` can unify the bounding vertices.
 pub fn remove_micro_section_edges(
     f: &mut PaveFiller,
-    the_mscpb: &mut Vec<(TopoShape, CoupleOfPaveBlocks)>,
-    the_micro_pb: &mut Vec<BopdsPaveBlock>,
+    mscpb: &mut Vec<(TopoShape, CoupleOfPaveBlocks)>,
+    micro_pb: &mut Vec<BopdsPaveBlock>,
 ) {
-    if the_mscpb.is_empty() {
+    if mscpb.is_empty() {
         return;
     }
     let mut kept: Vec<(TopoShape, CoupleOfPaveBlocks)> = Vec::new();
     let mut drop: Vec<(usize, usize, BopdsPaveBlock)> = Vec::new();
-    for (shape, cpb) in the_mscpb.drain(..) {
+    for (shape, cpb) in mscpb.drain(..) {
         if shape.shape_type() != ShapeType::Edge {
             kept.push((shape, cpb));
             continue;
@@ -106,7 +106,7 @@ pub fn remove_micro_section_edges(
             continue;
         }
         drop.push((cpb.index_interf, cpb.index, pb.clone()));
-        the_micro_pb.push(pb.clone());
+        micro_pb.push(pb.clone());
     }
     for (i_ff, i_c, pb) in drop {
         if let Some(lpbc) = f
@@ -123,7 +123,7 @@ pub fn remove_micro_section_edges(
             });
         }
     }
-    *the_mscpb = kept;
+    *mscpb = kept;
 }
 
 /// `BOPAlgo_PaveFiller::RemoveMicroEdges` (`_6.cxx:4388`).
@@ -176,16 +176,16 @@ pub fn remove_micro_edges(f: &mut PaveFiller) {
 
 /// Raise the two bounding vertices of each micro section pave block so they
 /// cover each other, matching the `theMicroPB` loop in `PostTreatFF`
-/// (`_6.cxx:1318-1359`). The vertices are then appended to `a_ls` for the
+/// (`_6.cxx:1318-1359`). The vertices are then appended to `ls` for the
 /// nested filler.
 pub fn collect_micro_section_vertices(
     f: &mut PaveFiller,
-    the_micro_pb: &[BopdsPaveBlock],
+    micro_pb: &[BopdsPaveBlock],
     dm_new_sd: &std::collections::HashMap<usize, usize>,
     added_sd: &mut HashSet<usize>,
-    a_ls: &mut Vec<TopoShape>,
+    ls: &mut Vec<TopoShape>,
 ) {
-    for pb in the_micro_pb {
+    for pb in micro_pb {
         let (n0, n1) = pb.indices();
         let mut verts: [Option<TopoShape>; 2] = [None, None];
         for (i, n_raw) in [n0, n1].into_iter().enumerate() {
@@ -195,7 +195,7 @@ pub fn collect_micro_section_vertices(
             };
             verts[i] = Some(s.clone());
             if added_sd.insert(n) {
-                a_ls.push(s);
+                ls.push(s);
             }
         }
         let (Some(v0), Some(v1)) = (verts[0].take(), verts[1].take()) else {
@@ -206,16 +206,16 @@ pub fn collect_micro_section_vertices(
         }
         let p1 = BRepTool::vertex_point(&crate::shape::Vertex(v0.clone()));
         let p2 = BRepTool::vertex_point(&crate::shape::Vertex(v1.clone()));
-        let mut a_tol_v1 = BRepTool::vertex_tolerance(&crate::shape::Vertex(v0.clone()));
-        let mut a_tol_v2 = BRepTool::vertex_tolerance(&crate::shape::Vertex(v1.clone()));
-        let mut a_dist = p1.distance(&p2);
-        a_dist -= a_tol_v1 + a_tol_v2;
-        if a_dist > 0.0 {
-            a_dist *= 0.5;
-            a_tol_v1 += a_dist;
-            a_tol_v2 += a_dist;
-            crate::shape::Vertex(v0).set_tolerance(a_tol_v1);
-            crate::shape::Vertex(v1).set_tolerance(a_tol_v2);
+        let mut tol_v1 = BRepTool::vertex_tolerance(&crate::shape::Vertex(v0.clone()));
+        let mut tol_v2 = BRepTool::vertex_tolerance(&crate::shape::Vertex(v1.clone()));
+        let mut dist = p1.distance(&p2);
+        dist -= tol_v1 + tol_v2;
+        if dist > 0.0 {
+            dist *= 0.5;
+            tol_v1 += dist;
+            tol_v2 += dist;
+            crate::shape::Vertex(v0).set_tolerance(tol_v1);
+            crate::shape::Vertex(v1).set_tolerance(tol_v2);
         }
     }
 }

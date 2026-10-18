@@ -52,7 +52,7 @@ pub fn seg_pln(
     pln: &GpPln,
     tol_pln: f64,
 ) -> SegPlnResult {
-    let a_tol = tol_lin + tol_pln;
+    let tol = tol_lin + tol_pln;
     let dir_pln = pln.position().direction();
     let loc_pln = pln.position().location();
     let dir_lin = lin.direction();
@@ -75,12 +75,12 @@ pub fn seg_pln(
         + dir_pln.y() * (p2.y() - loc_pln.y())
         + dir_pln.z() * (p2.z() - loc_pln.z());
 
-    if dist1.abs() < a_tol && dist2.abs() < a_tol {
+    if dist1.abs() < tol && dist2.abs() < tol {
         return SegPlnResult {
             status: 1,
             point: p1,
             t: t_lin1,
-            tol_p: a_tol,
+            tol_p: tol,
             t_min: t_lin1,
             t_max: t_lin2,
         };
@@ -90,7 +90,7 @@ pub fn seg_pln(
             status: 2,
             point: p1,
             t: t_lin1,
-            tol_p: a_tol,
+            tol_p: tol,
             t_min: t_lin1,
             t_max: t_lin2,
         };
@@ -108,18 +108,18 @@ pub fn seg_pln(
             status: 2,
             point: p1,
             t: t_lin1,
-            tol_p: a_tol,
+            tol_p: tol,
             t_min: t_lin1,
             t_max: t_lin2,
         };
     }
     let tp = -e / h;
-    if tp < t_lin1 - a_tol || tp > t_lin2 + a_tol {
+    if tp < t_lin1 - tol || tp > t_lin2 + tol {
         return SegPlnResult {
             status: 3,
             point: p1,
             t: tp,
-            tol_p: a_tol,
+            tol_p: tol,
             t_min: tp,
             t_max: tp,
         };
@@ -133,7 +133,7 @@ pub fn seg_pln(
         status: 0,
         point: p,
         t: tp,
-        tol_p: a_tol,
+        tol_p: tol,
         t_min: tp - tol_pln,
         t_max: tp + tol_pln,
     }
@@ -174,12 +174,12 @@ pub fn compute_tolerance(
         CurveOnSurface::new(curve2d.clone(), surf.clone(), first, last);
 
     // `aCS.Init(aGeomAdaptorCurve, theTolRange)` (`cxx:759`).
-    let mut a_cs = CheckCurveOnSurface::with_curve(curve3d.as_ref(), PCONFUSION);
+    let mut cs = CheckCurveOnSurface::with_curve(curve3d.as_ref(), PCONFUSION);
     // `aCS.SetParallel(theToRunParallel)` (`cxx:760`) is left at its default
     // `false` (`cxx:293`).
-    a_cs.perform(&an_adaptor3d_curve_on_surface, curve2d.as_ref());
+    cs.perform(&an_adaptor3d_curve_on_surface, curve2d.as_ref());
 
-    if !a_cs.is_done() {
+    if !cs.is_done() {
         return None;
     }
 
@@ -187,16 +187,16 @@ pub fn compute_tolerance(
     // margin is applied; otherwise a later, more precise minimum point would
     // invalidate the tolerance computed here (`cxx:767-775`).
     let an_eps = 1.0 + 1.0e-5;
-    Some((an_eps * a_cs.max_distance(), a_cs.max_parameter()))
+    Some((an_eps * cs.max_distance(), cs.max_parameter()))
 }
 
 /// Correct `IsOnPave1` (`IntTools_Tools.cxx:627`): inside the range, or
 /// within `aTolerance` of either bound.
-pub fn is_on_pave1_occt(a_tr: f64, first: f64, last: f64, a_tolerance: f64) -> bool {
-    if a_tr >= first && a_tr <= last {
+pub fn is_on_pave1_occt(tr: f64, first: f64, last: f64, tolerance: f64) -> bool {
+    if tr >= first && tr <= last {
         return true;
     }
-    (a_tr - first).abs() <= a_tolerance || (a_tr - last).abs() <= a_tolerance
+    (tr - first).abs() <= tolerance || (tr - last).abs() <= tolerance
 }
 
 /// Correct `IsInRange` (`IntTools_Tools.cxx:650`).
@@ -205,9 +205,9 @@ pub fn is_in_range_occt(
     ref_last: f64,
     first: f64,
     last: f64,
-    a_tolerance: f64,
+    tolerance: f64,
 ) -> bool {
-    let a_t_ref1 = ref_first - a_tolerance;
-    let a_t_ref2 = ref_last + a_tolerance;
-    (first >= a_t_ref1 && first <= a_t_ref2) || (last >= a_t_ref1 && last <= a_t_ref2)
+    let t_ref1 = ref_first - tolerance;
+    let t_ref2 = ref_last + tolerance;
+    (first >= t_ref1 && first <= t_ref2) || (last >= t_ref1 && last <= t_ref2)
 }

@@ -93,8 +93,8 @@ impl IntAnaQuadric {
         let c = cone.coefficients();
         self.set_ten(c);
         self.special_points.clear();
-        let a_v = -cone.radius() / cone.semi_angle().sin();
-        self.special_points.push(slib::cone_value(cone, 0.0, a_v));
+        let v = -cone.radius() / cone.semi_angle().sin();
+        self.special_points.push(slib::cone_value(cone, 0.0, v));
     }
 
     pub fn set_sphere(&mut self, sph: &GpSphere) {

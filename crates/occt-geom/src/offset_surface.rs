@@ -101,11 +101,11 @@ impl GeomOffsetSurface {
 
     /// Extrusion arm of `UIso` (`cxx:607-623`).
     fn u_iso_extrusion(&self, uu: f64) -> Option<Arc<dyn Curve>> {
-        let a_l = self.basis.u_iso_curve(uu)?;
+        let l = self.basis.u_iso_curve(uu)?;
         let (_, d1u, d1v) = self.basis.d1(uu, 0.0);
         let mut dir = d1u.crossed(&d1v);
         if dir.square_magnitude() < RESOLUTION {
-            return Some(a_l);
+            return Some(l);
         }
         dir.normalize();
         dir = GpVec::new(
@@ -113,7 +113,7 @@ impl GeomOffsetSurface {
             dir.y() * self.offset,
             dir.z() * self.offset,
         );
-        Some(Arc::from(a_l.translated(&dir)))
+        Some(Arc::from(l.translated(&dir)))
     }
 
     fn approx_iso(&self, u_iso: bool, iso_par: f64) -> Option<Arc<dyn Curve>> {

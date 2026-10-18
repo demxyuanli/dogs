@@ -64,24 +64,24 @@ pub(crate) fn extended_tolerance(
     f: &PaveFiller,
     n_v: usize,
     mi: &HashSet<usize>,
-    a_tol_v_ext: &mut f64,
-    a_type: i32,
+    tol_v_ext: &mut f64,
+    kind: i32,
 ) -> bool {
     if !f.ds().is_new_shape(n_v) {
         return false;
     }
     let mut k = 0usize;
-    let mut a_nb_int = 2usize;
-    if a_type == 1 {
-        a_nb_int = 1;
-    } else if a_type == 2 {
+    let mut nb_int = 2usize;
+    if kind == 1 {
+        nb_int = 1;
+    } else if kind == 2 {
         k = 1;
     }
     let Some(v_shape) = f.ds().shape(n_v).cloned() else {
         return false;
     };
-    let a_pv = BRepTool::vertex_point(&Vertex(v_shape));
-    while k < a_nb_int {
+    let pv = BRepTool::vertex_point(&Vertex(v_shape));
+    while k < nb_int {
         let lines: Vec<(usize, usize, Option<usize>, f64, f64)> = if k == 0 {
             f.ds()
                 .interf_ee()
@@ -121,17 +121,17 @@ pub(crate) fn extended_tolerance(
             let Some(e1_shape) = f.ds().shape(i1).cloned() else {
                 continue;
             };
-            let Ok(a_p11) = AlgoTools::point_on_edge(&Edge(e1_shape.clone()), t11) else {
+            let Ok(p11) = AlgoTools::point_on_edge(&Edge(e1_shape.clone()), t11) else {
                 continue;
             };
-            let Ok(a_p12) = AlgoTools::point_on_edge(&Edge(e1_shape), t12) else {
+            let Ok(p12) = AlgoTools::point_on_edge(&Edge(e1_shape), t12) else {
                 continue;
             };
-            let a_d1 = a_pv.distance(&a_p11);
-            let a_d2 = a_pv.distance(&a_p12);
-            let a_d = a_d1.max(a_d2);
-            if a_d > *a_tol_v_ext {
-                *a_tol_v_ext = a_d;
+            let d1 = pv.distance(&p11);
+            let d2 = pv.distance(&p12);
+            let d = d1.max(d2);
+            if d > *tol_v_ext {
+                *tol_v_ext = d;
             }
             return true;
         }
@@ -162,7 +162,7 @@ fn get_ef_pnts_legacy(f: &PaveFiller, n_f1: usize, n_f2: usize) -> Vec<PntOn2s> 
             )
         })
         .collect();
-    for (n_e, n_f_opp, index_new, a_par) in efs {
+    for (n_e, n_f_opp, index_new, par) in efs {
         if index_new.is_none() {
             continue;
         }
@@ -175,9 +175,9 @@ fn get_ef_pnts_legacy(f: &PaveFiller, n_f1: usize, n_f2: usize) -> Vec<PntOn2s> 
         let Some(f_opp_shape) = f.ds().shape(n_f_opp).cloned() else {
             continue;
         };
-        let a_e = Edge(e_shape);
-        let a_f_opp = Face(f_opp_shape);
-        let Some(a_curve) = BRepTool::edge_curve(&a_e) else {
+        let e = Edge(e_shape);
+        let f_opp = Face(f_opp_shape);
+        let Some(curve) = BRepTool::edge_curve(&e) else {
             continue;
         };
         let n_f = if n_f_opp == n_f1 { n_f2 } else { n_f1 };
@@ -185,35 +185,35 @@ fn get_ef_pnts_legacy(f: &PaveFiller, n_f1: usize, n_f2: usize) -> Vec<PntOn2s> 
             continue;
         };
         let a_f = Face(f_shape);
-        let a_point = a_curve.d0(a_par);
+        let point = curve.d0(par);
         let ctx = f.context();
-        let pc = crate::boptools_2d::curve_on_surface(&a_e, &a_f);
-        let mut a_pnt = PntOn2s {
+        let pc = crate::boptools_2d::curve_on_surface(&e, &a_f);
+        let mut pnt = PntOn2s {
             u1: 0.0,
             v1: 0.0,
             u2: 0.0,
             v2: 0.0,
         };
-        if let Some(a_pcurve) = pc {
-            let a_p2d = a_pcurve.d0(a_par);
-            if let Ok((u1, v1)) = ctx.project_point_on_face(&a_f_opp, &a_point) {
+        if let Some(pcurve) = pc {
+            let p2d = pcurve.d0(par);
+            if let Ok((u1, v1)) = ctx.project_point_on_face(&f_opp, &point) {
                 if n_f == n_f1 {
-                    a_pnt.set_value(a_p2d.x(), a_p2d.y(), u1, v1);
+                    pnt.set_value(p2d.x(), p2d.y(), u1, v1);
                 } else {
-                    a_pnt.set_value(u1, v1, a_p2d.x(), a_p2d.y());
+                    pnt.set_value(u1, v1, p2d.x(), p2d.y());
                 }
-                out.push(a_pnt);
+                out.push(pnt);
             }
         } else if let (Ok((u1, v1)), Ok((u2, v2))) = (
-            ctx.project_point_on_face(&a_f, &a_point),
-            ctx.project_point_on_face(&a_f_opp, &a_point),
+            ctx.project_point_on_face(&a_f, &point),
+            ctx.project_point_on_face(&f_opp, &point),
         ) {
             if n_f == n_f1 {
-                a_pnt.set_value(u1, v1, u2, v2);
+                pnt.set_value(u1, v1, u2, v2);
             } else {
-                a_pnt.set_value(u2, v2, u1, v1);
+                pnt.set_value(u2, v2, u1, v1);
             }
-            out.push(a_pnt);
+            out.push(pnt);
         }
     }
     out
@@ -339,10 +339,10 @@ pub(crate) fn pave_paves_put_ef_paves_on_curve(
         let Some(v_shape) = f.ds().shape(n_v).cloned() else {
             continue;
         };
-        let a_pv = BRepTool::vertex_point(&Vertex(v_shape));
-        let t = inttools_roots::parameter(&|u| curve.d0(u), &a_pv, a, b);
-        let a_dist = a_pv.distance(&curve.d0(t));
-        pave_paves_put_pave_on_curve(f, i, j, n_v, a_dist, mi, mv_tol, dmvlv, 2);
+        let pv = BRepTool::vertex_point(&Vertex(v_shape));
+        let t = inttools_roots::parameter(&|u| curve.d0(u), &pv, a, b);
+        let dist = pv.distance(&curve.d0(t));
+        pave_paves_put_pave_on_curve(f, i, j, n_v, dist, mi, mv_tol, dmvlv, 2);
     }
 }
 
@@ -389,8 +389,8 @@ pub(crate) fn pave_paves_put_pave_on_curve(
                 tol_r3d,
                 fuzzy,
             ) {
-                let a_p_on_c = curve.d0(t);
-                a_tol_v = a_p_on_c.distance(&BRepTool::vertex_point(&Vertex(v_shape.clone())));
+                let p_on_c = curve.d0(t);
+                a_tol_v = p_on_c.distance(&BRepTool::vertex_point(&Vertex(v_shape.clone())));
                 t_on = Some(t);
             }
         }
@@ -398,12 +398,12 @@ pub(crate) fn pave_paves_put_pave_on_curve(
     let Some(t) = t_on else {
         return;
     };
-    let a_d_tol = D_TOLERANCE;
-    let a_p_tol = PCONFUSION.max(tol_r3d.max(a_tol_v));
+    let d_tol = D_TOLERANCE;
+    let p_tol = PCONFUSION.max(tol_r3d.max(a_tol_v));
     let existing = f.ds().interf_ff()[i].curves()[j]
         .pave_blocks()
         .first()
-        .and_then(|pb| pb.contains_parameter(t, a_p_tol));
+        .and_then(|pb| pb.contains_parameter(t, p_tol));
     if let Some(n_used) = existing {
         let list = dmvlv.entry(n_used).or_insert_with(|| vec![n_used]);
         if !list.contains(&n_v) {
@@ -425,12 +425,12 @@ pub(crate) fn pave_paves_put_pave_on_curve(
     let p2 = BRepTool::vertex_point(&Vertex(v_shape.clone()));
     let dist = p1.distance(&p2);
     let tol_v = BRepTool::vertex_tolerance(&Vertex(v_shape.clone()));
-    if tol_v < dist + a_d_tol {
+    if tol_v < dist + d_tol {
         if !mv_tol.contains_key(&n_v) {
             mv_tol.insert(n_v, tol_v);
         }
-        Vertex(v_shape).set_tolerance(dist + a_d_tol);
-        f.ds_mut().refresh_vertex_box(n_v, dist + a_d_tol);
+        Vertex(v_shape).set_tolerance(dist + d_tol);
+        f.ds_mut().refresh_vertex_box(n_v, dist + d_tol);
     }
 }
 

@@ -89,8 +89,8 @@ fn use_add_tol(
     if vt2.square_magnitude() < RESOLUTION {
         return None;
     }
-    let a_cos = vt1.dot(&vt2.normalized());
-    Some(a_cos.abs() >= 0.9063)
+    let cos = vt1.dot(&vt2.normalized());
+    Some(cos.abs() >= 0.9063)
 }
 
 struct EdgeEdgeForceTask {
@@ -107,9 +107,9 @@ struct EdgeEdgeForceTask {
 
 /// `BOPAlgo_PaveFiller::ForceInterfEE`.
 pub fn force_interf_ee(f: &mut PaveFiller) -> Result<(), String> {
-    let a_nb_s = f.ds().nb_source_shapes();
+    let nb_s = f.ds().nb_source_shapes();
     let mut verts: Vec<usize> = Vec::new();
-    for i in 0..a_nb_s {
+    for i in 0..nb_s {
         let Some(si) = f.ds().shape_info(i) else {
             continue;
         };
@@ -123,7 +123,7 @@ pub fn force_interf_ee(f: &mut PaveFiller) -> Result<(), String> {
 
     let mut pb_map: HashMap<(usize, usize), Vec<BopdsPaveBlock>> = HashMap::new();
     let mut fence: HashSet<(usize, u64, u64)> = HashSet::new();
-    for i in 0..a_nb_s {
+    for i in 0..nb_s {
         let Some(si) = f.ds().shape_info(i) else {
             continue;
         };
@@ -138,15 +138,15 @@ pub fn force_interf_ee(f: &mut PaveFiller) -> Result<(), String> {
         }
         let pbs = f.ds().pave_blocks(i).to_vec();
         for pb in pbs {
-            let a_pbr = f.ds().real_pave_block(&pb);
-            if !fence.insert(pb_key(&a_pbr)) {
+            let pbr = f.ds().real_pave_block(&pb);
+            if !fence.insert(pb_key(&pbr)) {
                 continue;
             }
-            let (n_v1, n_v2) = a_pbr.indices();
+            let (n_v1, n_v2) = pbr.indices();
             pb_map
                 .entry((n_v1.min(n_v2), n_v1.max(n_v2)))
                 .or_default()
-                .push(a_pbr);
+                .push(pbr);
         }
     }
     if pb_map.is_empty() {
@@ -159,7 +159,7 @@ pub fn force_interf_ee(f: &mut PaveFiller) -> Result<(), String> {
         if group.len() < 2 {
             continue;
         }
-        let a_tol_add = if b_si_check_mode {
+        let tol_add = if b_si_check_mode {
             f.fuzzy_value()
         } else {
             2.0 * vertex_tol(f, *n_v1).max(vertex_tol(f, *n_v2))
@@ -171,8 +171,8 @@ pub fn force_interf_ee(f: &mut PaveFiller) -> Result<(), String> {
             let Some(e1s) = f.ds().shape(n_e1).cloned() else {
                 continue;
             };
-            let a_e1 = Edge(e1s);
-            let Some(c1) = BRepTool::edge_curve(&a_e1) else {
+            let e1 = Edge(e1s);
+            let Some(c1) = BRepTool::edge_curve(&e1) else {
                 continue;
             };
             let mid = 0.5 * (t11 + t12);
@@ -203,18 +203,18 @@ pub fn force_interf_ee(f: &mut PaveFiller) -> Result<(), String> {
                 let Some(e2s) = f.ds().shape(n_e2).cloned() else {
                     continue;
                 };
-                let a_e2 = Edge(e2s);
-                let Some(c2) = BRepTool::edge_curve(&a_e2) else {
+                let e2 = Edge(e2s);
+                let Some(c2) = BRepTool::edge_curve(&e2) else {
                     continue;
                 };
                 let (t21, t22) = pb2.range();
                 let mut ctx = IntToolsContext::new();
-                let Some(b_use_add) = use_add_tol(&mut ctx, c1.as_ref(), c2.as_ref(), &a_e2, mid)
+                let Some(b_use_add) = use_add_tol(&mut ctx, c1.as_ref(), c2.as_ref(), &e2, mid)
                 else {
                     continue;
                 };
                 let fuzzy = if b_use_add {
-                    f.fuzzy_value() + a_tol_add
+                    f.fuzzy_value() + tol_add
                 } else {
                     f.fuzzy_value()
                 };

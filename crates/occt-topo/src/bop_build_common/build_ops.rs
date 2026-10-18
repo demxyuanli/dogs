@@ -377,49 +377,49 @@ pub(super) fn alone_vertices(ds: &BopdsDS, face_idx: usize) -> Vec<usize> {
 ///    yet split) solid first copies the solid so the input shape is preserved.
 pub fn fill_internal_shapes<B: BopBuildOps>(f: &mut B) -> Result<(), String> {
     // 1.1 — shapes from the pure arguments.
-    let mut a_lsc: Vec<TopoShape> = Vec::new();
-    let mut a_fence: Vec<TopoShape> = Vec::new();
+    let mut lsc: Vec<TopoShape> = Vec::new();
+    let mut fence: Vec<TopoShape> = Vec::new();
     for a in f.arguments() {
-        treat_compound(a, &mut a_lsc, &mut a_fence);
+        treat_compound(a, &mut lsc, &mut fence);
     }
-    let mut a_largs: Vec<TopoShape> = Vec::new();
-    a_fence.clear();
-    for s in &a_lsc {
+    let mut largs: Vec<TopoShape> = Vec::new();
+    fence.clear();
+    for s in &lsc {
         match s.shape_type() {
             ShapeType::Wire => {
                 for e in edges_of_wire(&Wire(s.clone())) {
-                    if set_add(&mut a_fence, e.0.clone()) {
-                        a_largs.push(e.0);
+                    if set_add(&mut fence, e.0.clone()) {
+                        largs.push(e.0);
                     }
                 }
             }
-            ShapeType::Vertex | ShapeType::Edge => a_largs.push(s.clone()),
+            ShapeType::Vertex | ShapeType::Edge => largs.push(s.clone()),
             _ => {}
         }
     }
-    a_fence.clear();
-    let mut a_msi: Vec<TopoShape> = Vec::new();
-    for s in &a_largs {
-        if !set_add(&mut a_fence, s.clone()) {
+    fence.clear();
+    let mut msi: Vec<TopoShape> = Vec::new();
+    for s in &largs {
+        if !set_add(&mut fence, s.clone()) {
             continue;
         }
         let t = s.shape_type();
         if t == ShapeType::Vertex || t == ShapeType::Edge || t == ShapeType::Wire {
             if f.history().has_image(s) {
                 for im in f.history().image(s).unwrap() {
-                    set_add(&mut a_msi, im.clone());
+                    set_add(&mut msi, im.clone());
                 }
             } else {
-                set_add(&mut a_msi, s.clone());
+                set_add(&mut msi, s.clone());
             }
         }
     }
 
     // 2. — internal vertices/edges from the source solids + ancestor map.
-    a_fence.clear();
-    let mut a_lsd: Vec<TopoShape> = Vec::new();
-    let mut a_msx: HashMap<ShapeMapKey, Vec<TopoShape>> = HashMap::new();
-    let mut a_msor: Vec<TopoShape> = Vec::new();
+    fence.clear();
+    let mut lsd: Vec<TopoShape> = Vec::new();
+    let mut msx: HashMap<ShapeMapKey, Vec<TopoShape>> = HashMap::new();
+    let mut msor: Vec<TopoShape> = Vec::new();
     let n = f.ds().nb_source_shapes();
     for i in 0..n {
         let Some(si) = f.ds().shape_info(i) else { continue };
@@ -431,47 +431,47 @@ pub fn fill_internal_shapes<B: BopBuildOps>(f: &mut B) -> Result<(), String> {
         for s in own_internal_shapes(&solid) {
             if f.history().has_image(&s) {
                 for im in f.history().image(&s).unwrap() {
-                    set_add(&mut a_msi, im.clone());
+                    set_add(&mut msi, im.clone());
                 }
             } else {
-                set_add(&mut a_msi, s);
+                set_add(&mut msi, s);
             }
         }
         // Ancestors of the splits (or of the solid itself when unsplit).
         if f.history().has_image(&solid) {
             for sp in f.history().image(&solid).unwrap() {
-                if set_add(&mut a_fence, sp.clone()) {
-                    map_ancestors_into(sp, &mut a_msx);
-                    a_lsd.push(sp.clone());
+                if set_add(&mut fence, sp.clone()) {
+                    map_ancestors_into(sp, &mut msx);
+                    lsd.push(sp.clone());
                 }
             }
-        } else if set_add(&mut a_fence, solid.clone()) {
-            map_ancestors_into(&solid, &mut a_msx);
-            a_lsd.push(solid.clone());
-            set_add(&mut a_msor, solid);
+        } else if set_add(&mut fence, solid.clone()) {
+            map_ancestors_into(&solid, &mut msx);
+            lsd.push(solid.clone());
+            set_add(&mut msor, solid);
         }
     }
 
     // 3. — keep only the candidates not already tied to a face of the solids.
-    let mut a_lsi: Vec<TopoShape> = Vec::new();
-    for s in &a_msi {
-        let tied = a_msx.contains_key(&shape_key(s));
+    let mut lsi: Vec<TopoShape> = Vec::new();
+    for s in &msi {
+        let tied = msx.contains_key(&shape_key(s));
         if !tied {
-            a_lsi.push(s.clone());
+            lsi.push(s.clone());
         }
     }
 
     // 4. — nothing to settle.
-    if a_lsi.is_empty() {
+    if lsi.is_empty() {
         return Ok(());
     }
 
     // 5. — settle the candidates into the split solids.
     let bld = TopoBuilder::new();
-    for sd in &mut a_lsd {
+    for sd in &mut lsd {
         let mut i = 0;
-        while i < a_lsi.len() {
-            let mut si_shape = a_lsi[i].clone();
+        while i < lsi.len() {
+            let mut si_shape = lsi[i].clone();
             si_shape.set_orientation(Orientation::Internal);
             let state =
                 compute_state_by_one_point(&si_shape, sd, 1e-11).unwrap_or(FaceState::Unknown);
@@ -479,7 +479,7 @@ pub fn fill_internal_shapes<B: BopBuildOps>(f: &mut B) -> Result<(), String> {
                 i += 1;
                 continue;
             }
-            if set_contains(&a_msor, sd) {
+            if set_contains(&msor, sd) {
                 // Make a copy of the original solid so the input stays intact.
                 let mut sdx = Solid::new();
                 for sh in direct_children(sd) {
@@ -491,12 +491,12 @@ pub fn fill_internal_shapes<B: BopBuildOps>(f: &mut B) -> Result<(), String> {
                     .entry(shape_key(&sdx.0))
                     .or_default()
                     .push(sd.clone());
-                a_msor.retain(|x| !same_shape(x, sd));
+                msor.retain(|x| !same_shape(x, sd));
                 *sd = sdx.0;
             } else {
                 bld.add(sd, &si_shape);
             }
-            a_lsi.remove(i);
+            lsi.remove(i);
         }
     }
     Ok(())

@@ -518,28 +518,28 @@ fn init2d(edge: &Edge, face: &Face, preci: f64) -> Option<(f64, f64, bool)> {
     // `None`, so the value itself has no further use.
     let (w1, _d1) = project_cons(pc.as_ref(), surf.as_ref(), &pt1, cf, cl)?;
     let (w2, _d2) = project_cons(pc.as_ref(), surf.as_ref(), &pt2, cf, cl)?;
-    let mut my_first = w1;
-    let mut my_last = w2;
+    let mut first = w1;
+    let mut last = w2;
     if (w1 - w2).abs() < PCONFUSION && !surf.is_u_periodic() && !surf.is_v_periodic() {
-        return Some((my_first, my_last, false));
+        return Some((first, last, false));
     }
-    if my_first == cf && my_last == cl {
-        return Some((my_first, my_last, false));
+    if first == cf && last == cl {
+        return Some((first, last, false));
     }
-    if my_first == cl && my_last == cf {
+    if first == cl && last == cf {
         // `cxx:455-457` Reverse — deferred until `B.Range` accepts this window.
-        my_first = reversed_parameter(pc.as_ref(), cl);
-        my_last = reversed_parameter(pc.as_ref(), cf);
-        return Some((my_first, my_last, true));
+        first = reversed_parameter(pc.as_ref(), cl);
+        last = reversed_parameter(pc.as_ref(), cf);
+        return Some((first, last, true));
     }
     if cons_d0(pc.as_ref(), surf.as_ref(), cf)
         .distance(&cons_d0(pc.as_ref(), surf.as_ref(), cl))
         < CONFUSION
     {
-        if (my_first - cf).abs() < PCONFUSION && (my_last - cf).abs() < PCONFUSION {
-            my_last = cl;
-        } else if (my_first - cl).abs() < PCONFUSION && (my_last - cl).abs() < PCONFUSION {
-            my_first = cf;
+        if (first - cf).abs() < PCONFUSION && (last - cf).abs() < PCONFUSION {
+            last = cl;
+        } else if (first - cl).abs() < PCONFUSION && (last - cl).abs() < PCONFUSION {
+            first = cf;
         }
     }
     if par_u || par_v {
@@ -547,8 +547,8 @@ fn init2d(edge: &Edge, face: &Face, preci: f64) -> Option<(f64, f64, bool)> {
         let (vf, vl) = surf.v_range();
         let period = if par_u { ul - uf } else { vl - vf };
         // `cxx:486-489` AdjustToPeriod(w, 0, period) == AdjustByPeriod(w, period/2, period).
-        my_first += adjust_by_period(my_first, 0.5 * period, period);
-        my_last += adjust_by_period(my_last, 0.5 * period, period);
+        first += adjust_by_period(first, 0.5 * period, period);
+        last += adjust_by_period(last, 0.5 * period, period);
         if let Some(c3d) = BRepTool::edge_curve(edge) {
             let (a, b) = BRepTool::edge_parameters(edge);
             let mid = c3d.d0((a + b) / 2.0);
@@ -564,38 +564,38 @@ fn init2d(edge: &Edge, face: &Face, preci: f64) -> Option<(f64, f64, bool)> {
                 // `(-pi, pi)`. Measured: `cf=0 cl=2pi w1=w2=pi wmid=0` -> window
                 // `(-pi,pi)`; u-seam: `cf=-2pi cl=-0 w1=w2=-2pi wmid=pi` ->
                 // `(-2pi,0)`. Both windows are written verbatim (see the caller).
-                if my_first >= my_last {
-                    if my_last > wmid {
-                        my_first -= period;
-                    } else if my_first > wmid {
-                        let _ = update_param2d(pc.as_ref(), &mut my_first, &mut my_last);
+                if first >= last {
+                    if last > wmid {
+                        first -= period;
+                    } else if first > wmid {
+                        let _ = update_param2d(pc.as_ref(), &mut first, &mut last);
                     } else {
-                        my_last += period;
+                        last += period;
                     }
-                } else if my_first > wmid {
-                    my_last -= period;
-                    let _ = update_param2d(pc.as_ref(), &mut my_first, &mut my_last);
-                } else if my_last < wmid {
-                    my_first += period;
-                    let _ = update_param2d(pc.as_ref(), &mut my_first, &mut my_last);
+                } else if first > wmid {
+                    last -= period;
+                    let _ = update_param2d(pc.as_ref(), &mut first, &mut last);
+                } else if last < wmid {
+                    first += period;
+                    let _ = update_param2d(pc.as_ref(), &mut first, &mut last);
                 }
             }
         } else {
-            let _ = update_param2d(pc.as_ref(), &mut my_first, &mut my_last);
-            return Some((my_first, my_last, false));
+            let _ = update_param2d(pc.as_ref(), &mut first, &mut last);
+            return Some((first, last, false));
         }
     }
     // `cxx:535` UpdateParam2d — Reverse deferred to caller (`cxx:673-682`).
-    let do_reverse = update_param2d(pc.as_ref(), &mut my_first, &mut my_last);
+    let do_reverse = update_param2d(pc.as_ref(), &mut first, &mut last);
     if do_reverse {
-        let tmp1 = my_first;
-        let tmp2 = my_last;
-        my_first = reversed_parameter(pc.as_ref(), tmp1);
-        my_last = reversed_parameter(pc.as_ref(), tmp2);
+        let tmp1 = first;
+        let tmp2 = last;
+        first = reversed_parameter(pc.as_ref(), tmp1);
+        last = reversed_parameter(pc.as_ref(), tmp2);
         // Reverse deferred — caller applies only when accepting this window.
-        return Some((my_first, my_last, true));
+        return Some((first, last, true));
     }
-    Some((my_first, my_last, false))
+    Some((first, last, false))
 }
 
 fn make_edge_on_curve(edge: &Edge) -> Option<Edge> {
@@ -704,7 +704,7 @@ pub(crate) fn edge_pcurve_check(edge: &Edge, face: &Face, preci: f64, is_seam: b
     reg.set_pcurve_range(&tmp.0, face_key, p1, p2);
     reg.set_same_range(&tmp.0, false);
     fix_same_parameter(&tmp, face);
-    let mut a_tol = BRepTool::edge_tolerance(&tmp);
+    let mut tol = BRepTool::edge_tolerance(&tmp);
     let mut same_range = reg.edge_geom(&tmp.0).map(|g| g.same_range).unwrap_or(true);
     let mut same_param = BRepTool::same_parameter(&tmp);
     if std::env::var("XPC").is_ok() {
@@ -716,21 +716,21 @@ pub(crate) fn edge_pcurve_check(edge: &Edge, face: &Face, preci: f64, is_seam: b
             Some(_) => "other",
         };
         eprintln!(
-            "XPC c3={k}[{a:.16e},{b:.16e}] preci={preci:.16e} a_tol={a_tol:.16e} same_range={same_range} geom={} is_seam={is_seam} prange=[{p1:.16e},{p2:.16e}]",
+            "XPC c3={k}[{a:.16e},{b:.16e}] preci={preci:.16e} tol={tol:.16e} same_range={same_range} geom={} is_seam={is_seam} prange=[{p1:.16e},{p2:.16e}]",
             reg.edge_geom(&tmp.0).map(|g| g.same_range.to_string()).unwrap_or_else(|| "none".into())
         );
     }
-    if a_tol > 1.0_f64.min(2.0 * preci) || !same_range {
+    if tol > 1.0_f64.min(2.0 * preci) || !same_range {
         if let Some(pr) = make_edge_on_curve(edge) {
             // `XSAlgo` drives its own `ShapeFix_Edge`, so this cache is fresh.
             let mut cache = crate::pcurve_full::ProjectorCache::new();
             let _ = fix_add_pcurve(&pr, face, is_seam, preci, &mut cache);
             fix_same_parameter(&pr, face);
             let tol_pr = BRepTool::edge_tolerance(&pr);
-            if tol_pr < a_tol || !same_range {
+            if tol_pr < tol || !same_range {
                 same_range = reg.edge_geom(&pr.0).map(|g| g.same_range).unwrap_or(true);
                 same_param = BRepTool::same_parameter(&pr);
-                a_tol = tol_pr;
+                tol = tol_pr;
                 tmp = pr;
             }
         }
@@ -762,15 +762,15 @@ pub(crate) fn edge_pcurve_check(edge: &Edge, face: &Face, preci: f64, is_seam: b
     // (`BRep_TEdge.lxx:33-37`: `if (T > myTolerance) myTolerance = T;`), so the
     // write cannot lower the edge tolerance.
     let tol_cur = BRepTool::edge_tolerance(edge);
-    reg.set_edge_tolerance(&edge.0, tol_cur.max(a_tol));
+    reg.set_edge_tolerance(&edge.0, tol_cur.max(tol));
     // `cxx:492-493` `aBuilder.UpdateVertex(aVertex1/aVertex2, aTolerance)`; the
     // vertex write is `ShapeFix_ShapeTolerance`-free raise-only in practice
     // because `UpdateVertex` also routes through `BRep_TVertex::UpdateTolerance`.
     if let Some(v) = first_vertex(edge) {
-        v.set_tolerance(BRepTool::vertex_tolerance(&v).max(a_tol));
+        v.set_tolerance(BRepTool::vertex_tolerance(&v).max(tol));
     }
     if let Some(v) = last_vertex(edge) {
-        v.set_tolerance(BRepTool::vertex_tolerance(&v).max(a_tol));
+        v.set_tolerance(BRepTool::vertex_tolerance(&v).max(tol));
     }
     // `cxx:494-503`.
     reg.set_pcurve_range(&edge.0, face_key, out_f, out_l);

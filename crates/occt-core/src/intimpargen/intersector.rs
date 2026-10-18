@@ -32,16 +32,16 @@ use super::gen;
 /// evaluates the signed distance from a point of the parametric curve to the
 /// implicit curve.
 pub struct MyImpParTool<'a> {
-    the_imp_tool: &'a IntCurveIConicTool,
-    the_par_curve: &'a IntCurvePConic,
+    imp_tool: &'a IntCurveIConicTool,
+    par_curve: &'a IntCurvePConic,
 }
 
 impl<'a> MyImpParTool<'a> {
     /// `IntCurve_MyImpParToolOfIntImpConicParConic(ITool, PC)` (`_0.cxx:26-31`).
-    pub fn new(the_imp_tool: &'a IntCurveIConicTool, the_par_curve: &'a IntCurvePConic) -> Self {
+    pub fn new(imp_tool: &'a IntCurveIConicTool, par_curve: &'a IntCurvePConic) -> Self {
         Self {
-            the_imp_tool,
-            the_par_curve,
+            imp_tool,
+            par_curve,
         }
     }
 }
@@ -50,8 +50,8 @@ impl MathFunction for MyImpParTool<'_> {
     /// `Value(Param, ApproxDistance)` (`_0.cxx:33-39`).
     fn value(&mut self, param: f64, approx_distance: &mut f64) -> bool {
         *approx_distance = self
-            .the_imp_tool
-            .distance(&pconic_tool::pconic_value(self.the_par_curve, param));
+            .imp_tool
+            .distance(&pconic_tool::pconic_value(self.par_curve, param));
         true
     }
 }
@@ -60,9 +60,9 @@ impl MathFunctionWithDerivative for MyImpParTool<'_> {
     /// `Derivative(Param, D)` (`_0.cxx:41-50`).
     fn derivative(&mut self, param: f64, d: &mut f64) -> bool {
         let grad = self
-            .the_imp_tool
-            .grad_distance(&pconic_tool::pconic_value(self.the_par_curve, param));
-        let (_pt, tan) = pconic_tool::pconic_d1(self.the_par_curve, param);
+            .imp_tool
+            .grad_distance(&pconic_tool::pconic_value(self.par_curve, param));
+        let (_pt, tan) = pconic_tool::pconic_d1(self.par_curve, param);
         *d = grad.dot(&tan);
         true
     }
@@ -100,19 +100,19 @@ impl IntImpParGenIntersector {
     /// TheParCurveDomain, TolConf, Tol)` (`gxx:233-242`).
     #[allow(clippy::too_many_arguments)]
     pub fn with_params(
-        the_imp_tool: &IntCurveIConicTool,
-        the_imp_curve_domain: &IntRes2dDomain,
-        the_par_curve: &IntCurvePConic,
-        the_par_curve_domain: &IntRes2dDomain,
+        imp_tool: &IntCurveIConicTool,
+        imp_curve_domain: &IntRes2dDomain,
+        par_curve: &IntCurvePConic,
+        par_curve_domain: &IntRes2dDomain,
         tol_conf: f64,
         tol: f64,
     ) -> Self {
         let mut s = Self::new();
         s.perform(
-            the_imp_tool,
-            the_imp_curve_domain,
-            the_par_curve,
-            the_par_curve_domain,
+            imp_tool,
+            imp_curve_domain,
+            par_curve,
+            par_curve_domain,
             tol_conf,
             tol,
         );
@@ -122,10 +122,10 @@ impl IntImpParGenIntersector {
     /// `And_Domaine_Objet1_Intersections` (`gxx:42-222`).
     #[allow(clippy::too_many_arguments)]
     fn and_domaine_objet1_intersections(
-        the_imp_tool: &IntCurveIConicTool,
-        the_imp_curve_domain: &IntRes2dDomain,
-        the_par_curve: &IntCurvePConic,
-        the_par_curve_domain: &IntRes2dDomain,
+        imp_tool: &IntCurveIConicTool,
+        imp_curve_domain: &IntRes2dDomain,
+        par_curve: &IntCurvePConic,
+        par_curve_domain: &IntRes2dDomain,
         nb_resultats: &mut i32,
         inter2_and_domain2: &[f64],
         inter1: &[f64],
@@ -150,45 +150,45 @@ impl IntImpParGenIntersector {
                 indice_2 = i;
             }
 
-            let pt1 = the_imp_tool.value(param1);
-            let pt2 = the_imp_tool.value(param2);
+            let pt1 = imp_tool.value(param1);
+            let pt2 = imp_tool.value(param2);
             let mut pt = GpPnt2d::new(0.0, 0.0);
 
             let mut is_on_the_imp_curve_domain1 = true;
             let mut is_on_the_imp_curve_domain2 = true;
 
-            if the_imp_curve_domain.has_first_point() {
-                if param1 < the_imp_curve_domain.first_parameter() {
-                    if pt1.distance(the_imp_curve_domain.first_point())
-                        > the_imp_curve_domain.first_tolerance()
+            if imp_curve_domain.has_first_point() {
+                if param1 < imp_curve_domain.first_parameter() {
+                    if pt1.distance(imp_curve_domain.first_point())
+                        > imp_curve_domain.first_tolerance()
                     {
                         is_on_the_imp_curve_domain1 = false;
                     }
                 }
             }
-            if is_on_the_imp_curve_domain1 && the_imp_curve_domain.has_last_point() {
-                if param1 > the_imp_curve_domain.last_parameter() {
-                    if pt1.distance(the_imp_curve_domain.last_point())
-                        > the_imp_curve_domain.last_tolerance()
+            if is_on_the_imp_curve_domain1 && imp_curve_domain.has_last_point() {
+                if param1 > imp_curve_domain.last_parameter() {
+                    if pt1.distance(imp_curve_domain.last_point())
+                        > imp_curve_domain.last_tolerance()
                     {
                         is_on_the_imp_curve_domain1 = false;
                     }
                 }
             }
 
-            if the_imp_curve_domain.has_first_point() {
-                if param2 < the_imp_curve_domain.first_parameter() {
-                    if pt2.distance(the_imp_curve_domain.first_point())
-                        > the_imp_curve_domain.first_tolerance()
+            if imp_curve_domain.has_first_point() {
+                if param2 < imp_curve_domain.first_parameter() {
+                    if pt2.distance(imp_curve_domain.first_point())
+                        > imp_curve_domain.first_tolerance()
                     {
                         is_on_the_imp_curve_domain2 = false;
                     }
                 }
             }
-            if is_on_the_imp_curve_domain2 && the_imp_curve_domain.has_last_point() {
-                if param2 > the_imp_curve_domain.last_parameter() {
-                    if pt2.distance(the_imp_curve_domain.last_point())
-                        > the_imp_curve_domain.last_tolerance()
+            if is_on_the_imp_curve_domain2 && imp_curve_domain.has_last_point() {
+                if param2 > imp_curve_domain.last_parameter() {
+                    if pt2.distance(imp_curve_domain.last_point())
+                        > imp_curve_domain.last_tolerance()
                     {
                         is_on_the_imp_curve_domain2 = false;
                     }
@@ -206,14 +206,14 @@ impl IntImpParGenIntersector {
                     resultat2.push(inter2_and_domain2[indice_2 as usize]);
                 } else {
                     *nb_resultats += 1;
-                    let t = the_imp_curve_domain.last_parameter();
+                    let t = imp_curve_domain.last_parameter();
                     resultat1.push(t);
                     resultat2.push(Self::find_v(
                         t,
                         &mut pt,
-                        the_imp_tool,
-                        the_par_curve,
-                        the_par_curve_domain,
+                        imp_tool,
+                        par_curve,
+                        par_curve_domain,
                         inter2_and_domain2[indice_1 as usize],
                         inter2_and_domain2[indice_2 as usize],
                         eps_nul,
@@ -221,14 +221,14 @@ impl IntImpParGenIntersector {
                 }
             } else if is_on_the_imp_curve_domain2 {
                 *nb_resultats += 1;
-                let t = the_imp_curve_domain.first_parameter();
+                let t = imp_curve_domain.first_parameter();
                 resultat1.push(t);
                 resultat2.push(Self::find_v(
                     t,
                     &mut pt,
-                    the_imp_tool,
-                    the_par_curve,
-                    the_par_curve_domain,
+                    imp_tool,
+                    par_curve,
+                    par_curve_domain,
                     inter2_and_domain2[indice_1 as usize],
                     inter2_and_domain2[indice_2 as usize],
                     eps_nul,
@@ -237,32 +237,32 @@ impl IntImpParGenIntersector {
                 *nb_resultats += 1;
                 resultat1.push(inter1[indice_2 as usize]);
                 resultat2.push(inter2_and_domain2[indice_2 as usize]);
-            } else if param1 < the_imp_curve_domain.first_parameter()
-                && param2 > the_imp_curve_domain.last_parameter()
+            } else if param1 < imp_curve_domain.first_parameter()
+                && param2 > imp_curve_domain.last_parameter()
             {
                 *nb_resultats += 1;
-                let t = the_imp_curve_domain.first_parameter();
+                let t = imp_curve_domain.first_parameter();
                 resultat1.push(t);
                 resultat2.push(Self::find_v(
                     t,
                     &mut pt,
-                    the_imp_tool,
-                    the_par_curve,
-                    the_par_curve_domain,
+                    imp_tool,
+                    par_curve,
+                    par_curve_domain,
                     inter2_and_domain2[indice_1 as usize],
                     inter2_and_domain2[indice_2 as usize],
                     eps_nul,
                 ));
 
                 *nb_resultats += 1;
-                let t = the_imp_curve_domain.last_parameter();
+                let t = imp_curve_domain.last_parameter();
                 resultat1.push(t);
                 resultat2.push(Self::find_v(
                     t,
                     &mut pt,
-                    the_imp_tool,
-                    the_par_curve,
-                    the_par_curve_domain,
+                    imp_tool,
+                    par_curve,
+                    par_curve_domain,
                     inter2_and_domain2[indice_1 as usize],
                     inter2_and_domain2[indice_2 as usize],
                     eps_nul,
@@ -277,11 +277,11 @@ impl IntImpParGenIntersector {
     fn find_u(
         parameter: f64,
         point: &mut GpPnt2d,
-        the_par_curve: &IntCurvePConic,
-        the_imp_tool: &IntCurveIConicTool,
+        par_curve: &IntCurvePConic,
+        imp_tool: &IntCurveIConicTool,
     ) -> f64 {
-        *point = pconic_tool::pconic_value(the_par_curve, parameter);
-        the_imp_tool.find_parameter(point)
+        *point = pconic_tool::pconic_value(par_curve, parameter);
+        imp_tool.find_parameter(point)
     }
 
     /// `FindV` (`gxx:790-822`).
@@ -289,17 +289,17 @@ impl IntImpParGenIntersector {
     fn find_v(
         parameter: f64,
         point: &mut GpPnt2d,
-        the_imp_tool: &IntCurveIConicTool,
-        the_par_curve: &IntCurvePConic,
-        the_par_curve_domain: &IntRes2dDomain,
+        imp_tool: &IntCurveIConicTool,
+        par_curve: &IntCurvePConic,
+        par_curve_domain: &IntRes2dDomain,
         v0: f64,
         v1: f64,
         tolerance: f64,
     ) -> f64 {
-        *point = the_imp_tool.value(parameter);
-        if the_par_curve_domain.is_closed() {
-            let v = project_on_pconic_tool::pconic_find_parameter(the_par_curve, point, tolerance);
-            gen::normalize_on_domain(v, the_par_curve_domain)
+        *point = imp_tool.value(parameter);
+        if par_curve_domain.is_closed() {
+            let v = project_on_pconic_tool::pconic_find_parameter(par_curve, point, tolerance);
+            gen::normalize_on_domain(v, par_curve_domain)
         } else {
             let mut vv0 = v0;
             let mut vv1 = v1;
@@ -308,7 +308,7 @@ impl IntImpParGenIntersector {
                 vv1 = v0;
             }
             let mut x = project_on_pconic_tool::find_parameter_bounded(
-                the_par_curve,
+                par_curve,
                 point,
                 vv0,
                 vv1,
@@ -326,10 +326,10 @@ impl IntImpParGenIntersector {
     /// `Perform` (`gxx:245-779`).
     pub fn perform(
         &mut self,
-        the_imp_tool: &IntCurveIConicTool,
-        the_imp_curve_domain: &IntRes2dDomain,
-        the_par_curve: &IntCurvePConic,
-        the_par_curve_domain: &IntRes2dDomain,
+        imp_tool: &IntCurveIConicTool,
+        imp_curve_domain: &IntRes2dDomain,
+        par_curve: &IntCurvePConic,
+        par_curve_domain: &IntRes2dDomain,
         tol_conf: f64,
         tol: f64,
     ) {
@@ -340,19 +340,19 @@ impl IntImpParGenIntersector {
 
         self.base.reset_fields();
 
-        let mut the_imp_par_tool = MyImpParTool::new(the_imp_tool, the_par_curve);
+        let mut imp_par_tool = MyImpParTool::new(imp_tool, par_curve);
 
-        if !(the_par_curve_domain.has_first_point() && the_par_curve_domain.has_last_point()) {
+        if !(par_curve_domain.has_first_point() && par_curve_domain.has_last_point()) {
             panic!("Standard_ConstructionError: Domaine sur courbe incorrect");
         }
 
         let nb_echantillons = pconic_tool::nb_samples_in_range(
-            the_par_curve,
-            the_par_curve_domain.first_parameter(),
-            the_par_curve_domain.last_parameter(),
+            par_curve,
+            par_curve_domain.first_parameter(),
+            par_curve_domain.last_parameter(),
         );
 
-        let mut eps_x = pconic_tool::pconic_eps_x(the_par_curve);
+        let mut eps_x = pconic_tool::pconic_eps_x(par_curve);
         if eps_x > 1.0e-10 {
             eps_x = 1.0e-10;
         }
@@ -361,21 +361,21 @@ impl IntImpParGenIntersector {
 
         let tolerance_angulaire = eps_dist;
 
-        if (the_par_curve_domain.last_parameter() - the_par_curve_domain.first_parameter())
+        if (par_curve_domain.last_parameter() - par_curve_domain.first_parameter())
             < 100.0 * eps_x
         {
-            eps_x = (the_par_curve_domain.last_parameter()
-                - the_par_curve_domain.first_parameter())
+            eps_x = (par_curve_domain.last_parameter()
+                - par_curve_domain.first_parameter())
                 * 0.01;
         }
 
         let sample2 = FunctionSample::new(
-            the_par_curve_domain.first_parameter(),
-            the_par_curve_domain.last_parameter(),
+            par_curve_domain.first_parameter(),
+            par_curve_domain.last_parameter(),
             nb_echantillons,
         );
 
-        let sol = FunctionAllRoots::new(&mut the_imp_par_tool, &sample2, eps_x, eps_dist, eps_nul);
+        let sol = FunctionAllRoots::new(&mut imp_par_tool, &sample2, eps_x, eps_dist, eps_nul);
 
         if !sol.is_done() {
             self.base.done = false;
@@ -389,26 +389,26 @@ impl IntImpParGenIntersector {
         for i in 1..=nb_points_solution {
             let param2 = sol.get_point(i);
             let mut pt = GpPnt2d::new(0.0, 0.0);
-            let mut param1 = Self::find_u(param2, &mut pt, the_par_curve, the_imp_tool);
+            let mut param1 = Self::find_u(param2, &mut pt, par_curve, imp_tool);
 
-            if the_imp_curve_domain.is_closed() {
-                param1 = gen::normalize_on_domain(param1, the_imp_curve_domain);
+            if imp_curve_domain.is_closed() {
+                param1 = gen::normalize_on_domain(param1, imp_curve_domain);
             }
 
             let mut is_on_the_imp_curve_domain = true;
-            if the_imp_curve_domain.has_first_point() {
-                if param1 < the_imp_curve_domain.first_parameter() {
-                    if pt.distance(the_imp_curve_domain.first_point())
-                        > the_imp_curve_domain.first_tolerance()
+            if imp_curve_domain.has_first_point() {
+                if param1 < imp_curve_domain.first_parameter() {
+                    if pt.distance(imp_curve_domain.first_point())
+                        > imp_curve_domain.first_tolerance()
                     {
                         is_on_the_imp_curve_domain = false;
                     }
                 }
             }
-            if is_on_the_imp_curve_domain && the_imp_curve_domain.has_last_point() {
-                if param1 > the_imp_curve_domain.last_parameter() {
-                    if pt.distance(the_imp_curve_domain.last_point())
-                        > the_imp_curve_domain.last_tolerance()
+            if is_on_the_imp_curve_domain && imp_curve_domain.has_last_point() {
+                if param1 > imp_curve_domain.last_parameter() {
+                    if pt.distance(imp_curve_domain.last_point())
+                        > imp_curve_domain.last_tolerance()
                     {
                         is_on_the_imp_curve_domain = false;
                     }
@@ -416,11 +416,11 @@ impl IntImpParGenIntersector {
             }
 
             if is_on_the_imp_curve_domain {
-                let (pt1, mut tan1, norm1) = the_imp_tool.d2(param1);
-                let (pt2, mut tan2, norm2) = pconic_tool::pconic_d2(the_par_curve, param2);
+                let (pt1, mut tan1, norm1) = imp_tool.d2(param1);
+                let (pt2, mut tan2, norm2) = pconic_tool::pconic_d2(par_curve, param2);
 
-                let pos1 = gen::determine_position(the_imp_curve_domain, &pt1, param1);
-                let pos2 = gen::determine_position(the_par_curve_domain, &pt2, param2);
+                let pos1 = gen::determine_position(imp_curve_domain, &pt1, param1);
+                let pos2 = gen::determine_position(par_curve_domain, &pt2, param2);
 
                 if pos1 == IntRes2dPosition::End {
                     end_on_imp = true;
@@ -469,11 +469,11 @@ impl IntImpParGenIntersector {
         for j in 1..=nb_segments_solution {
             let mut ptemp = GpPnt2d::new(0.0, 0.0);
             let (param2_inf, param2_sup) = sol.get_interval(j);
-            let mut param1_inf = Self::find_u(param2_inf, &mut ptemp, the_par_curve, the_imp_tool);
-            let mut param1_sup = Self::find_u(param2_sup, &mut ptemp, the_par_curve, the_imp_tool);
+            let mut param1_inf = Self::find_u(param2_inf, &mut ptemp, par_curve, imp_tool);
+            let mut param1_sup = Self::find_u(param2_sup, &mut ptemp, par_curve, imp_tool);
 
-            if the_imp_curve_domain.is_closed() {
-                let (param1_origine, param1_fin) = the_imp_curve_domain.equivalent_parameters();
+            if imp_curve_domain.is_closed() {
+                let (param1_origine, param1_fin) = imp_curve_domain.equivalent_parameters();
                 let periode = param1_fin - param1_origine;
 
                 while param1_inf < param1_origine {
@@ -483,8 +483,8 @@ impl IntImpParGenIntersector {
                     param1_sup += periode;
                 }
 
-                let (_p2, mut t2, n2) = pconic_tool::pconic_d2(the_par_curve, param2_inf);
-                let (_p1, mut t1, n1) = the_imp_tool.d2(param1_inf);
+                let (_p2, mut t2, n2) = pconic_tool::pconic_d2(par_curve, param2_inf);
+                let (_p1, mut t1, n1) = imp_tool.d2(param1_inf);
                 if t1.magnitude() <= crate::precision::RESOLUTION {
                     t1 = n1;
                 }
@@ -504,7 +504,7 @@ impl IntImpParGenIntersector {
                     }
                 }
 
-                if the_imp_curve_domain.last_parameter()
+                if imp_curve_domain.last_parameter()
                     > (if param1_inf > param1_sup {
                         param1_sup + periode
                     } else {
@@ -519,7 +519,7 @@ impl IntImpParGenIntersector {
                     nb_segments_crees += 1;
                 }
 
-                if the_imp_curve_domain.first_parameter()
+                if imp_curve_domain.first_parameter()
                     < (if param1_inf < param1_sup {
                         param1_sup - periode
                     } else {
@@ -548,10 +548,10 @@ impl IntImpParGenIntersector {
         let mut nb_resultats = nb_segments_solution * 2;
 
         Self::and_domaine_objet1_intersections(
-            the_imp_tool,
-            the_imp_curve_domain,
-            the_par_curve,
-            the_par_curve_domain,
+            imp_tool,
+            imp_curve_domain,
+            par_curve,
+            par_curve_domain,
             &mut nb_resultats,
             &inter2_and_domaine2,
             &inter1,
@@ -575,12 +575,12 @@ impl IntImpParGenIntersector {
                 let param2_on1 = resultat1[(ip1 - 1) as usize];
                 let param2_on2 = resultat2[(ip1 - 1) as usize];
 
-                let pt1_on1 = the_imp_tool.value(param1_on1);
-                let pt2_on1 = the_imp_tool.value(param2_on1);
-                let pt1_on2 = pconic_tool::pconic_value(the_par_curve, param1_on2);
-                let pt2_on2 = pconic_tool::pconic_value(the_par_curve, param2_on2);
+                let pt1_on1 = imp_tool.value(param1_on1);
+                let pt2_on1 = imp_tool.value(param2_on1);
+                let pt1_on2 = pconic_tool::pconic_value(par_curve, param1_on2);
+                let pt2_on2 = pconic_tool::pconic_value(par_curve, param2_on2);
 
-                if !the_imp_curve_domain.is_closed() {
+                if !imp_curve_domain.is_closed() {
                     if pt1_on1.distance(&pt2_on1) <= dist_mini_imp_curve
                         && pt1_on2.distance(&pt2_on2) <= dist_mini_imp_curve
                     {
@@ -588,14 +588,14 @@ impl IntImpParGenIntersector {
                     }
                 }
 
-                param1_on1 = gen::normalize_on_domain(param1_on1, the_imp_curve_domain);
-                param1_on2 = gen::normalize_on_domain(param1_on2, the_par_curve_domain);
+                param1_on1 = gen::normalize_on_domain(param1_on1, imp_curve_domain);
+                param1_on2 = gen::normalize_on_domain(param1_on2, par_curve_domain);
 
-                let (mut pt1_on1, mut tan1, norm1) = the_imp_tool.d2(param1_on1);
-                let (_pt1_on2, mut tan2, norm2) = pconic_tool::pconic_d2(the_par_curve, param1_on2);
+                let (mut pt1_on1, mut tan1, norm1) = imp_tool.d2(param1_on1);
+                let (_pt1_on2, mut tan2, norm2) = pconic_tool::pconic_d2(par_curve, param1_on2);
 
-                let pos1 = gen::determine_position(the_imp_curve_domain, &pt1_on1, param1_on1);
-                let pos2 = gen::determine_position(the_par_curve_domain, &pt1_on2, param1_on2);
+                let pos1 = gen::determine_position(imp_curve_domain, &pt1_on1, param1_on1);
+                let pos2 = gen::determine_position(par_curve_domain, &pt1_on2, param1_on2);
 
                 if pos1 == IntRes2dPosition::End {
                     end_on_imp = true;
@@ -642,14 +642,14 @@ impl IntImpParGenIntersector {
                 if !only_one_point {
                     let mut new_p2 = IntRes2dIntersectionPoint::new();
 
-                    let param2_on1 = gen::normalize_on_domain(param2_on1, the_imp_curve_domain);
-                    let param2_on2 = gen::normalize_on_domain(param2_on2, the_par_curve_domain);
+                    let param2_on1 = gen::normalize_on_domain(param2_on1, imp_curve_domain);
+                    let param2_on2 = gen::normalize_on_domain(param2_on2, par_curve_domain);
 
-                    let (mut pt2_on1, mut tan1, norm1) = the_imp_tool.d2(param2_on1);
-                    let (pt2_on2, mut tan2, norm2) = pconic_tool::pconic_d2(the_par_curve, param2_on2);
+                    let (mut pt2_on1, mut tan1, norm1) = imp_tool.d2(param2_on1);
+                    let (pt2_on2, mut tan2, norm2) = pconic_tool::pconic_d2(par_curve, param2_on2);
 
-                    let pos1 = gen::determine_position(the_imp_curve_domain, &pt2_on1, param2_on1);
-                    let pos2 = gen::determine_position(the_par_curve_domain, &pt2_on2, param2_on2);
+                    let pos1 = gen::determine_position(imp_curve_domain, &pt2_on1, param2_on1);
+                    let pos2 = gen::determine_position(par_curve_domain, &pt2_on2, param2_on2);
 
                     if pos1 == IntRes2dPosition::End {
                         end_on_imp = true;
@@ -710,19 +710,19 @@ impl IntImpParGenIntersector {
         }
 
         // On teste les points en bouts solutions
-        if !head_on_imp && the_imp_curve_domain.has_first_point() {
+        if !head_on_imp && imp_curve_domain.has_first_point() {
             if !head_on_par
-                && the_imp_curve_domain
+                && imp_curve_domain
                     .first_point()
-                    .distance(the_par_curve_domain.first_point())
-                    <= the_imp_curve_domain
+                    .distance(par_curve_domain.first_point())
+                    <= imp_curve_domain
                         .first_tolerance()
-                        .max(the_par_curve_domain.first_tolerance())
+                        .max(par_curve_domain.first_tolerance())
             {
-                let param1 = the_imp_curve_domain.first_parameter();
-                let param2 = the_par_curve_domain.first_parameter();
-                let (_pt1, mut tan1, norm1) = the_imp_tool.d2(param1);
-                let (_pt2, mut tan2, norm2) = pconic_tool::pconic_d2(the_par_curve, param2);
+                let param1 = imp_curve_domain.first_parameter();
+                let param2 = par_curve_domain.first_parameter();
+                let (_pt1, mut tan1, norm1) = imp_tool.d2(param1);
+                let (_pt2, mut tan2, norm2) = pconic_tool::pconic_d2(par_curve, param2);
                 let mut trans1 = crate::intres2d::IntRes2dTransition::new();
                 let mut trans2 = crate::intres2d::IntRes2dTransition::new();
                 gen::determine_transition_touch(
@@ -737,7 +737,7 @@ impl IntImpParGenIntersector {
                     tolerance_angulaire,
                 );
                 let ip = IntRes2dIntersectionPoint::with_transitions(
-                    the_imp_curve_domain.first_point(),
+                    imp_curve_domain.first_point(),
                     param1,
                     param2,
                     &trans1,
@@ -747,17 +747,17 @@ impl IntImpParGenIntersector {
                 self.base.insert(&ip);
             }
             if !end_on_par
-                && the_imp_curve_domain
+                && imp_curve_domain
                     .first_point()
-                    .distance(the_par_curve_domain.last_point())
-                    <= the_imp_curve_domain
+                    .distance(par_curve_domain.last_point())
+                    <= imp_curve_domain
                         .first_tolerance()
-                        .max(the_par_curve_domain.last_tolerance())
+                        .max(par_curve_domain.last_tolerance())
             {
-                let param1 = the_imp_curve_domain.first_parameter();
-                let param2 = the_par_curve_domain.last_parameter();
-                let (_pt1, mut tan1, norm1) = the_imp_tool.d2(param1);
-                let (_pt2, mut tan2, norm2) = pconic_tool::pconic_d2(the_par_curve, param2);
+                let param1 = imp_curve_domain.first_parameter();
+                let param2 = par_curve_domain.last_parameter();
+                let (_pt1, mut tan1, norm1) = imp_tool.d2(param1);
+                let (_pt2, mut tan2, norm2) = pconic_tool::pconic_d2(par_curve, param2);
                 let mut trans1 = crate::intres2d::IntRes2dTransition::new();
                 let mut trans2 = crate::intres2d::IntRes2dTransition::new();
                 gen::determine_transition_touch(
@@ -772,7 +772,7 @@ impl IntImpParGenIntersector {
                     tolerance_angulaire,
                 );
                 let ip = IntRes2dIntersectionPoint::with_transitions(
-                    the_imp_curve_domain.first_point(),
+                    imp_curve_domain.first_point(),
                     param1,
                     param2,
                     &trans1,
@@ -783,19 +783,19 @@ impl IntImpParGenIntersector {
             }
         }
 
-        if !end_on_imp && the_imp_curve_domain.has_last_point() {
+        if !end_on_imp && imp_curve_domain.has_last_point() {
             if !head_on_par
-                && the_imp_curve_domain
+                && imp_curve_domain
                     .last_point()
-                    .distance(the_par_curve_domain.first_point())
-                    <= the_imp_curve_domain
+                    .distance(par_curve_domain.first_point())
+                    <= imp_curve_domain
                         .last_tolerance()
-                        .max(the_par_curve_domain.first_tolerance())
+                        .max(par_curve_domain.first_tolerance())
             {
-                let param1 = the_imp_curve_domain.last_parameter();
-                let param2 = the_par_curve_domain.first_parameter();
-                let (_pt1, mut tan1, norm1) = the_imp_tool.d2(param1);
-                let (_pt2, mut tan2, norm2) = pconic_tool::pconic_d2(the_par_curve, param2);
+                let param1 = imp_curve_domain.last_parameter();
+                let param2 = par_curve_domain.first_parameter();
+                let (_pt1, mut tan1, norm1) = imp_tool.d2(param1);
+                let (_pt2, mut tan2, norm2) = pconic_tool::pconic_d2(par_curve, param2);
                 let mut trans1 = crate::intres2d::IntRes2dTransition::new();
                 let mut trans2 = crate::intres2d::IntRes2dTransition::new();
                 gen::determine_transition_touch(
@@ -810,7 +810,7 @@ impl IntImpParGenIntersector {
                     tolerance_angulaire,
                 );
                 let ip = IntRes2dIntersectionPoint::with_transitions(
-                    the_imp_curve_domain.last_point(),
+                    imp_curve_domain.last_point(),
                     param1,
                     param2,
                     &trans1,
@@ -820,17 +820,17 @@ impl IntImpParGenIntersector {
                 self.base.insert(&ip);
             }
             if !end_on_par
-                && the_imp_curve_domain
+                && imp_curve_domain
                     .last_point()
-                    .distance(the_par_curve_domain.last_point())
-                    <= the_imp_curve_domain
+                    .distance(par_curve_domain.last_point())
+                    <= imp_curve_domain
                         .last_tolerance()
-                        .max(the_par_curve_domain.last_tolerance())
+                        .max(par_curve_domain.last_tolerance())
             {
-                let param1 = the_imp_curve_domain.last_parameter();
-                let param2 = the_par_curve_domain.last_parameter();
-                let (_pt1, mut tan1, norm1) = the_imp_tool.d2(param1);
-                let (_pt2, mut tan2, norm2) = pconic_tool::pconic_d2(the_par_curve, param2);
+                let param1 = imp_curve_domain.last_parameter();
+                let param2 = par_curve_domain.last_parameter();
+                let (_pt1, mut tan1, norm1) = imp_tool.d2(param1);
+                let (_pt2, mut tan2, norm2) = pconic_tool::pconic_d2(par_curve, param2);
                 let mut trans1 = crate::intres2d::IntRes2dTransition::new();
                 let mut trans2 = crate::intres2d::IntRes2dTransition::new();
                 gen::determine_transition_touch(
@@ -845,7 +845,7 @@ impl IntImpParGenIntersector {
                     tolerance_angulaire,
                 );
                 let ip = IntRes2dIntersectionPoint::with_transitions(
-                    the_imp_curve_domain.last_point(),
+                    imp_curve_domain.last_point(),
                     param1,
                     param2,
                     &trans1,

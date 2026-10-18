@@ -61,7 +61,7 @@ pub fn make_split_edges(f: &mut PaveFiller) -> Result<(), String> {
     let n_pool = f.ds().pave_blocks_pool().len();
     for i in 0..n_pool {
         let list = f.ds().pave_blocks_pool()[i].clone();
-        let a_lpb_extent = list.len();
+        let lpb_extent = list.len();
         for pb in list {
             let n_e = pb.original_edge();
             let Some(si_e) = f.ds().shape_info(n_e) else {
@@ -100,12 +100,12 @@ pub fn make_split_edges(f: &mut PaveFiller) -> Result<(), String> {
                             if let Some(mut a_cb) = f.ds().common_block(&pb).cloned() {
                                 a_cb.set_real_pave_block(&pbr);
                                 a_cb.set_edge(n_e_real);
-                                let a_tol = compute_tolerance_of_cb(&a_cb, f.ds(), f.context());
+                                let tol = compute_tolerance_of_cb(&a_cb, f.ds(), f.context());
                                 f.ds_mut().set_common_block(&pb, a_cb);
-                                update_edge_tolerance(f, n_e_real, a_tol)?;
+                                update_edge_tolerance(f, n_e_real, tol)?;
                             }
                         }
-                    } else if a_lpb_extent == 1 {
+                    } else if lpb_extent == 1 {
                         b_to_split = false;
                         write_pb_edge(f, &pb, n_e);
                     }
@@ -159,11 +159,11 @@ pub fn make_split_edges(f: &mut PaveFiller) -> Result<(), String> {
         };
         let mut a_e = e_shape;
         a_e.set_orientation(Orientation::Forward);
-        let mut a_v1 = v1s;
-        a_v1.set_orientation(Orientation::Forward);
-        let mut a_v2 = v2s;
-        a_v2.set_orientation(Orientation::Reversed);
-        let sp = AlgoTools::make_split_edge(&Edge(a_e), Some(&a_v1), t.t1, Some(&a_v2), t.t2)
+        let mut v1 = v1s;
+        v1.set_orientation(Orientation::Forward);
+        let mut v2 = v2s;
+        v2.set_orientation(Orientation::Reversed);
+        let sp = AlgoTools::make_split_edge(&Edge(a_e), Some(&v1), t.t1, Some(&v2), t.t2)
             .map_err(|e| {
                 let msg = format!("make_split_edges: {e}");
                 f.add_error(msg.clone());
@@ -186,8 +186,8 @@ pub fn make_split_edges(f: &mut PaveFiller) -> Result<(), String> {
         }
         if let Some(key) = t.cb_key {
             if let Some(cb) = f.ds().common_block(&t.pb).cloned() {
-                let a_tol = compute_tolerance_of_cb(&cb, f.ds(), f.context());
-                update_edge_tolerance(f, n_sp, a_tol)?;
+                let tol = compute_tolerance_of_cb(&cb, f.ds(), f.context());
+                update_edge_tolerance(f, n_sp, tol)?;
                 if let Some(mut cb) = f.ds().common_block(&t.pb).cloned() {
                     let _ = key;
                     cb.set_edge(n_sp);
@@ -226,11 +226,11 @@ pub fn split_edge(
     };
     let mut a_e = e_shape;
     a_e.set_orientation(Orientation::Forward);
-    let mut a_v1 = v1s;
-    a_v1.set_orientation(Orientation::Forward);
-    let mut a_v2 = v2s;
-    a_v2.set_orientation(Orientation::Reversed);
-    let sp = AlgoTools::make_split_edge(&Edge(a_e), Some(&a_v1), a_t1, Some(&a_v2), a_t2)?;
+    let mut v1 = v1s;
+    v1.set_orientation(Orientation::Forward);
+    let mut v2 = v2s;
+    v2.set_orientation(Orientation::Reversed);
+    let sp = AlgoTools::make_split_edge(&Edge(a_e), Some(&v1), a_t1, Some(&v2), a_t2)?;
     let mut si = BopdsShapeInfo::new(sp.0);
     si.change_sub_shapes().extend_from_slice(&[n_v1, n_v2]);
     Ok(f.ds_mut().append_info(si))

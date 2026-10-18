@@ -156,8 +156,8 @@ pub(crate) fn extrema_locate_ext_pc_with_tol(
     if !an_ext.is_done() {
         return None;
     }
-    let a_p_on_curve = an_ext.point();
-    Some((a_p_on_curve.parameter(), a_p_on_curve.value()))
+    let p_on_curve = an_ext.point();
+    Some((p_on_curve.parameter(), p_on_curve.value()))
 }
 
 /// `Extrema_ExtPC` on `[first, last]` — pick min among `IsMin` solutions
@@ -271,68 +271,68 @@ pub fn is_vertex_on_line(vertex: &Vertex, curve: &dyn Curve, tol_c: f64) -> Opti
 /// Geometry-only form used by `EstimatePaveOnCurve` and tests that already
 /// hold the vertex point.
 pub fn is_point_on_line_tol(pv: &GpPnt, tol_v: f64, curve: &dyn Curve, tol_c: f64) -> Option<f64> {
-    let a_tol_sum = tol_sum_for_curve(curve, tol_v, tol_c);
-    let a_first = curve.first_parameter();
-    let a_last = curve.last_parameter();
+    let tol_sum = tol_sum_for_curve(curve, tol_v, tol_c);
+    let first = curve.first_parameter();
+    let last = curve.last_parameter();
 
     // Checking extremities first. It is necessary to choose the closest
     // bound to the point (`IntTools_Context.cxx:813-873`).
     let mut b_first_valid = false;
-    let mut a_t = 0.0;
-    let mut a_first_dist = INFINITE;
+    let mut t = 0.0;
+    let mut first_dist = INFINITE;
 
-    if !Precision::is_infinite(a_first) && a_first.is_finite() {
-        let a_pc_first = curve.d0(a_first);
-        a_first_dist = pv.distance(&a_pc_first);
-        if a_first_dist < a_tol_sum {
+    if !Precision::is_infinite(first) && first.is_finite() {
+        let pc_first = curve.d0(first);
+        first_dist = pv.distance(&pc_first);
+        if first_dist < tol_sum {
             b_first_valid = true;
-            a_t = a_first;
-            if a_first_dist > tol_v {
-                a_t = refine_end(
+            t = first;
+            if first_dist > tol_v {
+                t = refine_end(
                     curve,
                     pv,
-                    a_first,
-                    &a_pc_first,
-                    a_first,
-                    a_last,
-                    a_tol_sum,
+                    first,
+                    &pc_first,
+                    first,
+                    last,
+                    tol_sum,
                     true,
                 );
             }
         }
     }
 
-    if !Precision::is_infinite(a_last) && a_last.is_finite() {
-        let a_pc_last = curve.d0(a_last);
-        let a_dist = pv.distance(&a_pc_last);
-        if b_first_valid && a_first_dist < a_dist {
-            return Some(a_t);
+    if !Precision::is_infinite(last) && last.is_finite() {
+        let pc_last = curve.d0(last);
+        let dist = pv.distance(&pc_last);
+        if b_first_valid && first_dist < dist {
+            return Some(t);
         }
-        if a_dist < a_tol_sum {
-            a_t = a_last;
-            if a_dist > tol_v {
-                a_t = refine_end(
+        if dist < tol_sum {
+            t = last;
+            if dist > tol_v {
+                t = refine_end(
                     curve,
                     pv,
-                    a_last,
-                    &a_pc_last,
-                    a_first,
-                    a_last,
-                    a_tol_sum,
+                    last,
+                    &pc_last,
+                    first,
+                    last,
+                    tol_sum,
                     false,
                 );
             }
-            return Some(a_t);
+            return Some(t);
         }
     } else if b_first_valid {
-        return Some(a_t);
+        return Some(t);
     }
 
     // GeomAPI_ProjectPointOnCurve (`IntTools_Context.cxx:942-981`).
-    let Some((t_proj, a_dist)) = project_global(curve, pv, a_first, a_last) else {
-        return bounded_end_fallback(curve, pv, a_first, a_last, a_tol_sum);
+    let Some((t_proj, dist)) = project_global(curve, pv, first, last) else {
+        return bounded_end_fallback(curve, pv, first, last, tol_sum);
     };
-    if a_dist > a_tol_sum {
+    if dist > tol_sum {
         // OCCT still tries Start/End of a bounded curve when NbPoints == 0,
         // not when the projection is merely far. A far projection is a miss.
         return None;
@@ -344,20 +344,20 @@ pub fn is_point_on_line_tol(pv: &GpPnt, tol_v: f64, curve: &dyn Curve, tol_c: f6
 fn bounded_end_fallback(
     curve: &dyn Curve,
     pv: &GpPnt,
-    a_first: f64,
-    a_last: f64,
-    a_tol_sum: f64,
+    first: f64,
+    last: f64,
+    tol_sum: f64,
 ) -> Option<f64> {
     if !is_bounded_curve(curve) {
         return None;
     }
-    let a_p_start = curve.d0(a_first);
-    if pv.distance(&a_p_start) < a_tol_sum {
-        return Some(a_first);
+    let p_start = curve.d0(first);
+    if pv.distance(&p_start) < tol_sum {
+        return Some(first);
     }
-    let a_p_end = curve.d0(a_last);
-    if pv.distance(&a_p_end) < a_tol_sum {
-        return Some(a_last);
+    let p_end = curve.d0(last);
+    if pv.distance(&p_end) < tol_sum {
+        return Some(last);
     }
     None
 }
@@ -385,9 +385,9 @@ pub fn adaptor_resolution(curve: &dyn Curve, tol3d: f64) -> f64 {
 /// Used by `PutEFPavesOnCurve` (`GeomAPI_ProjectPointOnCurve::Perform`) when
 /// the section curve is a Bezier or BSpline.
 pub fn project_point_on_curve_dist(curve: &dyn Curve, p: &GpPnt) -> Option<(f64, f64)> {
-    let a_first = curve.first_parameter();
-    let a_last = curve.last_parameter();
-    project_global(curve, p, a_first, a_last)
+    let first = curve.first_parameter();
+    let last = curve.last_parameter();
+    project_global(curve, p, first, last)
 }
 
 /// `Extrema_ExtPC` on an explicit `[first, last]` (`ShapeAnalysis_Curve::ProjectAct`).

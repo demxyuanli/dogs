@@ -114,7 +114,7 @@ fn flags_for_candidate(
 fn tangent_probe(
     ctx: &IntToolsContext,
     curve: &dyn Curve,
-    a_sp: &Edge,
+    sp: &Edge,
     pm: &occt_core::gp::GpPnt,
     v_tgt1: &occt_core::gp::GpVec,
     is_vtgt1_valid: bool,
@@ -122,164 +122,164 @@ fn tangent_probe(
     n_v12: usize,
     n_v21: usize,
     n_v22: usize,
-    a_real_tol: f64,
-    a_tol_v1: f64,
-    a_tol_v2: f64,
-    a_max_tol_add: f64,
+    real_tol: f64,
+    tol_v1: f64,
+    tol_v2: f64,
+    max_tol_add: f64,
 ) -> (i32, f64, f64, f64) {
     let skip = (n_v11 == n_v12 && n_v21 != n_v22) || (n_v11 != n_v12 && n_v21 == n_v22);
     if skip || !is_vtgt1_valid {
-        return (1, 0.0, a_real_tol, 1.0);
+        return (1, 0.0, real_tol, 1.0);
     }
-    let edge_is_line = BRepTool::edge_curve(a_sp)
+    let edge_is_line = BRepTool::edge_curve(sp)
         .map(|c| is_geom_line(c.as_ref()))
         .unwrap_or(false);
     if is_geom_line(curve) && edge_is_line {
-        return (1, 0.0, a_real_tol, 1.0);
+        return (1, 0.0, real_tol, 1.0);
     }
-    let a_tol_add = 2.0 * a_max_tol_add.min(a_real_tol.max(a_tol_v1.max(a_tol_v2)));
-    let (st, tldp, dist) = ctx.compute_pe_pnt(pm, a_tol_add, a_sp);
+    let tol_add = 2.0 * max_tol_add.min(real_tol.max(tol_v1.max(tol_v2)));
+    let (st, tldp, dist) = ctx.compute_pe_pnt(pm, tol_add, sp);
     if st != 0 {
-        return (st, dist, a_real_tol, 1.0);
+        return (st, dist, real_tol, 1.0);
     }
-    if let Some(ec) = BRepTool::edge_curve(a_sp) {
+    if let Some(ec) = BRepTool::edge_curve(sp) {
         let (_, v_tgt2) = ec.d1(tldp);
         if v_tgt2.square_magnitude() > RESOLUTION {
-            let a_cos = v_tgt1.dot(&v_tgt2.normalized());
-            if a_cos.abs() >= 0.9063 {
-                return (st, dist, a_tol_add, 2.0);
+            let cos = v_tgt1.dot(&v_tgt2.normalized());
+            if cos.abs() >= 0.9063 {
+                return (st, dist, tol_add, 2.0);
             }
         }
     }
-    (st, dist, a_real_tol, 1.0)
+    (st, dist, real_tol, 1.0)
 }
 
 /// ON/IN `IsExistingPaveBlock` (`_6.cxx:2047`).
 pub fn is_existing_pave_block_on_in(
     ds: &BopdsDS,
     ctx: &IntToolsContext,
-    the_pb: &BopdsPaveBlock,
+    pb: &BopdsPaveBlock,
     curve: &dyn Curve,
-    the_tol_r3d: f64,
-    the_mpb_on_in: &[BopdsPaveBlock],
-    the_mpb_common: &[(usize, f64, f64)],
+    tol_r3d: f64,
+    mpb_on_in: &[BopdsPaveBlock],
+    mpb_common: &[(usize, f64, f64)],
     fuzzy: f64,
 ) -> Option<(BopdsPaveBlock, f64)> {
-    let (a_t1, a_t2) = the_pb.range();
-    let (n_v11, n_v12) = the_pb.indices();
-    let a_p1 = curve.d0(a_t1);
-    let mut a_box_p1 = BndBox::new();
-    a_box_p1.add_point(&a_p1);
-    let a_tol_v11 = vertex_tol(ds, n_v11);
-    a_box_p1.enlarge(a_tol_v11);
+    let (t1, t2) = pb.range();
+    let (n_v11, n_v12) = pb.indices();
+    let p1 = curve.d0(t1);
+    let mut box_p1 = BndBox::new();
+    box_p1.add_point(&p1);
+    let tol_v11 = vertex_tol(ds, n_v11);
+    box_p1.enlarge(tol_v11);
 
-    let candidates = first_point_candidates(ds, the_mpb_on_in, &a_box_p1);
+    let candidates = first_point_candidates(ds, mpb_on_in, &box_p1);
     if candidates.is_empty() {
         return None;
     }
 
-    let a_tm = intermediate_point(a_t1, a_t2);
-    let (a_pm, mut a_vtgt1) = curve.d1(a_tm);
-    let mut a_box_pm = BndBox::new();
-    a_box_pm.add_point(&a_pm);
-    let is_vtgt1_valid = a_vtgt1.square_magnitude() > RESOLUTION;
+    let tm = intermediate_point(t1, t2);
+    let (pm, mut vtgt1) = curve.d1(tm);
+    let mut box_pm = BndBox::new();
+    box_pm.add_point(&pm);
+    let is_vtgt1_valid = vtgt1.square_magnitude() > RESOLUTION;
     if is_vtgt1_valid {
-        a_vtgt1.normalize();
+        vtgt1.normalize();
     }
 
-    let a_p2 = curve.d0(a_t2);
-    let mut a_box_p2 = BndBox::new();
-    a_box_p2.add_point(&a_p2);
-    let a_tol_v12 = vertex_tol(ds, n_v12);
-    a_box_p2.enlarge(a_tol_v12);
+    let p2 = curve.d0(t2);
+    let mut box_p2 = BndBox::new();
+    box_p2.add_point(&p2);
+    let tol_v12 = vertex_tol(ds, n_v12);
+    box_p2.enlarge(tol_v12);
 
-    let a_tol_v1 = a_tol_v11.max(a_tol_v12) + fuzzy;
-    let a_tol_check = the_tol_r3d + fuzzy;
-    let a_max_tol_add = thin_face_max_tol_add(a_tol_check);
+    let tol_v1 = tol_v11.max(tol_v12) + fuzzy;
+    let tol_check = tol_r3d + fuzzy;
+    let max_tol_add = thin_face_max_tol_add(tol_check);
 
     let mut found: Option<(BopdsPaveBlock, f64)> = None;
-    let mut the_tol_new = f64::MAX;
+    let mut tol_new = f64::MAX;
 
     for a_pb in candidates {
         let (n_v21, n_v22) = a_pb.indices();
-        let a_tol_v21 = vertex_tol(ds, n_v21);
-        let a_tol_v22 = vertex_tol(ds, n_v22);
-        let a_tol_v2 = a_tol_v21.max(a_tol_v22) + fuzzy;
+        let tol_v21 = vertex_tol(ds, n_v21);
+        let tol_v22 = vertex_tol(ds, n_v22);
+        let tol_v2 = tol_v21.max(tol_v22) + fuzzy;
         let n_e = a_pb.edge();
         let Some(sp_shape) = ds.shape(n_e) else {
             continue;
         };
-        let a_sp = Edge(sp_shape.clone());
+        let sp = Edge(sp_shape.clone());
         let (mut i_flag1, mut i_flag2) =
-            flags_for_candidate(ds, n_v11, n_v12, n_v21, n_v22, n_e, &a_box_p2);
+            flags_for_candidate(ds, n_v11, n_v12, n_v21, n_v22, n_e, &box_p2);
         if i_flag2 == 0 {
             continue;
         }
 
         let mut a_coeff = 1.0;
-        let mut a_dist_m1m2 = 0.0;
-        let mut a_pe_status = 1i32;
-        let mut a_real_tol = a_tol_check;
+        let mut dist_m1m2 = 0.0;
+        let mut pe_status = 1i32;
+        let mut real_tol = tol_check;
         if ds.is_common_block(a_pb) {
-            a_real_tol = a_real_tol.max(a_tol_v1.max(a_tol_v2));
-            if pb_in_common(the_mpb_common, a_pb) {
-                a_real_tol *= 2.0;
+            real_tol = real_tol.max(tol_v1.max(tol_v2));
+            if pb_in_common(mpb_common, a_pb) {
+                real_tol *= 2.0;
             }
         } else if i_flag1 == 2 && i_flag2 == 2 {
             let (st, dist, real, coeff) = tangent_probe(
                 ctx,
                 curve,
-                &a_sp,
-                &a_pm,
-                &a_vtgt1,
+                &sp,
+                &pm,
+                &vtgt1,
                 is_vtgt1_valid,
                 n_v11,
                 n_v12,
                 n_v21,
                 n_v22,
-                a_real_tol,
-                a_tol_v1,
-                a_tol_v2,
-                a_max_tol_add,
+                real_tol,
+                tol_v1,
+                tol_v2,
+                max_tol_add,
             );
-            a_pe_status = st;
-            a_dist_m1m2 = dist;
-            a_real_tol = real;
+            pe_status = st;
+            dist_m1m2 = dist;
+            real_tol = real;
             a_coeff = coeff;
         }
 
-        let mut a_box_tmp = a_box_pm;
-        a_box_tmp.enlarge(a_real_tol);
-        let mut a_dist_to_sp = 0.0;
-        if edge_box_out(ds, n_e, &a_box_tmp) || a_pe_status < 0 {
+        let mut box_tmp = box_pm;
+        box_tmp.enlarge(real_tol);
+        let mut dist_to_sp = 0.0;
+        if edge_box_out(ds, n_e, &box_tmp) || pe_status < 0 {
             continue;
-        } else if a_pe_status == 0 {
-            a_dist_to_sp = a_dist_m1m2;
-        } else if a_pe_status == 1 {
-            let (st, _, dist) = ctx.compute_pe_pnt(&a_pm, a_real_tol, &a_sp);
-            a_pe_status = st;
-            if a_pe_status < 0 {
+        } else if pe_status == 0 {
+            dist_to_sp = dist_m1m2;
+        } else if pe_status == 1 {
+            let (st, _, dist) = ctx.compute_pe_pnt(&pm, real_tol, &sp);
+            pe_status = st;
+            if pe_status < 0 {
                 continue;
             }
-            a_dist_to_sp = dist;
+            dist_to_sp = dist;
         }
         if i_flag1 == 1 {
-            let (st, _, dist) = ctx.compute_pe_pnt(&a_p1, a_real_tol, &a_sp);
+            let (st, _, dist) = ctx.compute_pe_pnt(&p1, real_tol, &sp);
             i_flag1 = if st == 0 { 1 } else { 0 };
-            if i_flag1 != 0 && a_dist_to_sp < dist {
-                a_dist_to_sp = dist;
+            if i_flag1 != 0 && dist_to_sp < dist {
+                dist_to_sp = dist;
             }
         }
         if i_flag2 == 1 {
-            let (st, _, dist) = ctx.compute_pe_pnt(&a_p2, a_real_tol, &a_sp);
+            let (st, _, dist) = ctx.compute_pe_pnt(&p2, real_tol, &sp);
             i_flag2 = if st == 0 { 1 } else { 0 };
-            if i_flag2 != 0 && a_dist_to_sp < dist {
-                a_dist_to_sp = dist;
+            if i_flag2 != 0 && dist_to_sp < dist {
+                dist_to_sp = dist;
             }
         }
-        if i_flag1 != 0 && i_flag2 != 0 && a_dist_to_sp < the_tol_new {
-            the_tol_new = a_coeff * a_dist_to_sp;
-            found = Some((a_pb.clone(), the_tol_new));
+        if i_flag1 != 0 && i_flag2 != 0 && dist_to_sp < tol_new {
+            tol_new = a_coeff * dist_to_sp;
+            found = Some((a_pb.clone(), tol_new));
         }
     }
     found

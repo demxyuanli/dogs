@@ -258,7 +258,7 @@ impl ShapeFixFace {
                 nb_wires_new += 1;
             }
             // cxx:2973-2976.
-            if !self.my_fwd {
+            if !self.fwd {
                 tmp_face.0.set_orientation(Orientation::Reversed);
             }
             faces.push(tmp_face);

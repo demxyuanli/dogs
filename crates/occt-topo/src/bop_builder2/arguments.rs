@@ -433,8 +433,8 @@ impl BopBuilder {
                 if (pb.last - pb.first).abs() <= occt_core::precision::PCONFUSION {
                     continue;
                 }
-                let a_pbr = self.filler.ds().real_pave_block(pb);
-                let n_sp_r = a_pbr.edge();
+                let pbr = self.filler.ds().real_pave_block(pb);
+                let n_sp_r = pbr.edge();
                 if n_sp_r == 0 {
                     continue;
                 }
@@ -611,8 +611,8 @@ impl BopBuilder {
     /// ([`BopBuilder::prepare_history`]).
     pub(super) fn loc_generated(&self, s: &TopoShape) -> Vec<TopoShape> {
         let mut out: Vec<TopoShape> = Vec::new();
-        let a_type = s.shape_type();
-        if a_type != ShapeType::Edge && a_type != ShapeType::Face {
+        let kind = s.shape_type();
+        if kind != ShapeType::Edge && kind != ShapeType::Face {
             return out;
         }
         let ds = self.filler.ds();
@@ -620,7 +620,7 @@ impl BopBuilder {
         // Untouched shapes carry no generated elements — an edge without pave
         // blocks, a face without a face-info entry (the OCCT `HasReference`
         // guard).
-        let is_face = a_type == ShapeType::Face;
+        let is_face = kind == ShapeType::Face;
         if is_face {
             if !ds.face_info_pool().iter().any(|fi| fi.face_index == n_s) {
                 return out;

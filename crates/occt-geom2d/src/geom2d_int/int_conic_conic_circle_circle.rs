@@ -487,9 +487,9 @@ impl IntCurveIntConicConic {
 
             // `_1.cxx:1076-1087`: no solution inside the parametric range.
             if is_out_of_range {
-                let (a_p1, _v11, _v12) = clib2d::circle_d2_ax22d(c1inf, &axis2_c1, r1);
-                let (a_p2, _v21, _v22) = clib2d::circle_d2_ax22d(c2inf, &axis2_c2, r2);
-                if a_p1.square_distance(&a_p2) > tol2 * tol2 {
+                let (p1, _v11, _v12) = clib2d::circle_d2_ax22d(c1inf, &axis2_c1, r1);
+                let (p2, _v21, _v22) = clib2d::circle_d2_ax22d(c2inf, &axis2_c2, r2);
+                if p1.square_distance(&p2) > tol2 * tol2 {
                     continue;
                 }
             }

@@ -67,26 +67,26 @@ pub(crate) fn perform_gline(ctor: &mut LineConstructor, line: &GeomIntLine, tol:
     ctor.set_done(true);
 }
 
-fn treat_circle(ctor: &mut LineConstructor, line: &GeomIntLine, the_tol: f64) {
+fn treat_circle(ctor: &mut LineConstructor, line: &GeomIntLine, tol: f64) {
     let a_type = line.arc_type();
-    let Some(a_gline) = line.as_gline() else {
+    let Some(gline) = line.as_gline() else {
         return;
     };
-    if reject_micro_circle(a_gline, a_type, the_tol) {
+    if reject_micro_circle(gline, a_type, tol) {
         return;
     }
-    let a_nb_vtx = a_gline.nb_vertex();
-    if a_nb_vtx <= 0 {
+    let nb_vtx = gline.nb_vertex();
+    if nb_vtx <= 0 {
         ctor.seqp_mut().push(line_tool::line_tool_first_parameter(line));
         ctor.seqp_mut().push(line_tool::line_tool_last_parameter(line));
         return;
     }
-    let mut a_vtx: Vec<PatchPoint> = (1..=a_nb_vtx).map(|i| *a_gline.vertex(i)).collect();
+    let mut a_vtx: Vec<PatchPoint> = (1..=nb_vtx).map(|i| *gline.vertex(i)).collect();
     a_vtx.sort_by(|a, b| a.param_on_line.total_cmp(&b.param_on_line));
-    let a_min_prm = a_vtx.first().map(|v| v.param_on_line + TWO_PI).unwrap_or(TWO_PI);
+    let min_prm = a_vtx.first().map(|v| v.param_on_line + TWO_PI).unwrap_or(TWO_PI);
     a_vtx.push({
         let mut last = a_vtx[0];
-        last.param_on_line = a_min_prm;
+        last.param_on_line = min_prm;
         last
     });
     reject_duplicates(&mut a_vtx);
@@ -100,27 +100,27 @@ fn treat_circle(ctor: &mut LineConstructor, line: &GeomIntLine, the_tol: f64) {
     let s1 = s1.as_ref();
     let s2 = s2.as_ref();
     for i in 0..a_vtx.len().saturating_sub(1) {
-        let a_t1 = a_vtx[i].param_on_line;
-        let a_t2 = a_vtx[i + 1].param_on_line;
-        if a_t2 == f64::MAX {
+        let t1 = a_vtx[i].param_on_line;
+        let t2 = a_vtx[i + 1].param_on_line;
+        if t2 == f64::MAX {
             break;
         }
-        let a_tmid = (a_t1 + a_t2) * 0.5;
-        let Some(a_pmid) = gline_point(a_type, a_gline, a_tmid) else {
+        let tmid = (t1 + t2) * 0.5;
+        let Some(pmid) = gline_point(a_type, gline, tmid) else {
             continue;
         };
-        let Some((mut a_u1, mut a_v1)) = surface_parameters(s1, &a_pmid) else {
+        let Some((mut u1, mut v1)) = surface_parameters(s1, &pmid) else {
             continue;
         };
-        let Some((mut a_u2, mut a_v2)) = surface_parameters(s2, &a_pmid) else {
+        let Some((mut u2, mut v2)) = surface_parameters(s2, &pmid) else {
             continue;
         };
-        adjust_periodic_uv(s1, s2, &mut a_u1, &mut a_v1, &mut a_u2, &mut a_v2);
-        if d1.classify(GpPnt2d::new(a_u1, a_v1), the_tol) != FaceState::Out
-            && d2.classify(GpPnt2d::new(a_u2, a_v2), the_tol) != FaceState::Out
+        adjust_periodic_uv(s1, s2, &mut u1, &mut v1, &mut u2, &mut v2);
+        if d1.classify(GpPnt2d::new(u1, v1), tol) != FaceState::Out
+            && d2.classify(GpPnt2d::new(u2, v2), tol) != FaceState::Out
         {
-            ctor.seqp_mut().push(a_t1);
-            ctor.seqp_mut().push(a_t2);
+            ctor.seqp_mut().push(t1);
+            ctor.seqp_mut().push(t2);
         }
     }
 }
@@ -128,58 +128,58 @@ fn treat_circle(ctor: &mut LineConstructor, line: &GeomIntLine, the_tol: f64) {
 pub(crate) fn gline_point(
     typl: IntPatchIType,
     gline: &crate::geom_int::types::GLine,
-    a_t: f64,
+    t: f64,
 ) -> Option<GpPnt> {
     Some(match (&gline.kind, typl) {
-        (GLineKind::Lin(l), IntPatchIType::Lin) => clib::line_value(l, a_t),
-        (GLineKind::Circ(c), IntPatchIType::Circle) => clib::circle_value(c, a_t),
-        (GLineKind::Elips(e), IntPatchIType::Ellipse) => clib::ellipse_value(e, a_t),
-        (GLineKind::Hypr(h), IntPatchIType::Hyperbola) => clib::hyperbola_value(h, a_t),
-        (GLineKind::Parab(p), IntPatchIType::Parabola) => clib::parabola_value(p, a_t),
+        (GLineKind::Lin(l), IntPatchIType::Lin) => clib::line_value(l, t),
+        (GLineKind::Circ(c), IntPatchIType::Circle) => clib::circle_value(c, t),
+        (GLineKind::Elips(e), IntPatchIType::Ellipse) => clib::ellipse_value(e, t),
+        (GLineKind::Hypr(h), IntPatchIType::Hyperbola) => clib::hyperbola_value(h, t),
+        (GLineKind::Parab(p), IntPatchIType::Parabola) => clib::parabola_value(p, t),
         _ => return None,
     })
 }
 
 fn reject_micro_circle(
-    a_gline: &crate::geom_int::types::GLine,
+    gline: &crate::geom_int::types::GLine,
     a_type: IntPatchIType,
-    a_tol3d: f64,
+    tol3d: f64,
 ) -> bool {
-    match (a_type, &a_gline.kind) {
-        (IntPatchIType::Circle, GLineKind::Circ(c)) => c.radius() < a_tol3d,
-        (IntPatchIType::Ellipse, GLineKind::Elips(e)) => e.major_radius() < a_tol3d,
+    match (a_type, &gline.kind) {
+        (IntPatchIType::Circle, GLineKind::Circ(c)) => c.radius() < tol3d,
+        (IntPatchIType::Ellipse, GLineKind::Elips(e)) => e.major_radius() < tol3d,
         _ => false,
     }
 }
 
-fn reject_duplicates(the_vtx: &mut [PatchPoint]) {
-    let a_tol_pc = 1000.0 * PCONFUSION;
-    if the_vtx.len() < 2 {
+fn reject_duplicates(vtx: &mut [PatchPoint]) {
+    let tol_pc = 1000.0 * PCONFUSION;
+    if vtx.len() < 2 {
         return;
     }
-    let upper = the_vtx.len();
+    let upper = vtx.len();
     for i in 0..upper.saturating_sub(2) {
-        let a_prmi = the_vtx[i].param_on_line;
-        if a_prmi == f64::MAX {
+        let prmi = vtx[i].param_on_line;
+        if prmi == f64::MAX {
             continue;
         }
         for j in (i + 1)..(upper - 1) {
-            let a_prmj = the_vtx[j].param_on_line;
-            if a_prmj - a_prmi < a_tol_pc {
-                the_vtx[j].param_on_line = f64::MAX;
+            let prmj = vtx[j].param_on_line;
+            if prmj - prmi < tol_pc {
+                vtx[j].param_on_line = f64::MAX;
             } else {
                 break;
             }
         }
     }
-    let a_max_prm = the_vtx[upper - 1].param_on_line;
+    let max_prm = vtx[upper - 1].param_on_line;
     for i in (1..upper - 1).rev() {
-        let a_prmi = the_vtx[i].param_on_line;
-        if a_prmi == f64::MAX {
+        let prmi = vtx[i].param_on_line;
+        if prmi == f64::MAX {
             continue;
         }
-        if (a_max_prm - a_prmi) < a_tol_pc {
-            the_vtx[i].param_on_line = f64::MAX;
+        if (max_prm - prmi) < tol_pc {
+            vtx[i].param_on_line = f64::MAX;
         } else {
             break;
         }

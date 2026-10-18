@@ -57,9 +57,9 @@ fn weights_are_rational(weights: &[f64]) -> bool {
 /// `Geom2dConvert_CompCurveToBSplineCurve`
 /// (`Geom2dConvert_CompCurveToBSplineCurve.hxx:28-68`).
 pub struct CompCurveToBSplineCurve2d {
-    my_curve: Option<Geom2dBSplineCurve>,
-    my_tol: f64,
-    my_type: ParameterisationType,
+    curve: Option<Geom2dBSplineCurve>,
+    tol: f64,
+    kind: ParameterisationType,
 }
 
 impl CompCurveToBSplineCurve2d {
@@ -67,9 +67,9 @@ impl CompCurveToBSplineCurve2d {
     /// (`cxx:28-33`): `myTol = Precision::Confusion()`.
     pub fn new(parameterisation: ParameterisationType) -> Self {
         Self {
-            my_curve: None,
-            my_tol: occt_core::precision::CONFUSION,
-            my_type: parameterisation,
+            curve: None,
+            tol: occt_core::precision::CONFUSION,
+            kind: parameterisation,
         }
     }
 
@@ -79,7 +79,7 @@ impl CompCurveToBSplineCurve2d {
     /// Returns `None` where the conversion is UNPORTED.
     pub fn from_curve(basis: &dyn Curve2d, parameterisation: ParameterisationType) -> Option<Self> {
         let mut s = Self::new(parameterisation);
-        s.my_curve = Some(if basis.is_bspline2d() {
+        s.curve = Some(if basis.is_bspline2d() {
             basis.bspline_copy2d()?
         } else {
             curve_to_bspline_curve_bspl(basis, parameterisation)?
@@ -91,25 +91,25 @@ impl CompCurveToBSplineCurve2d {
     /// already owns a `Geom2d_BSplineCurve` (equivalent to `Copy()`).
     pub fn from_bspline(curve: Geom2dBSplineCurve, parameterisation: ParameterisationType) -> Self {
         Self {
-            my_curve: Some(curve),
-            my_tol: occt_core::precision::CONFUSION,
-            my_type: parameterisation,
+            curve: Some(curve),
+            tol: occt_core::precision::CONFUSION,
+            kind: parameterisation,
         }
     }
 
     /// `BSplineCurve()` (`cxx:232-235`).
     pub fn bspline_curve(&self) -> Option<&Geom2dBSplineCurve> {
-        self.my_curve.as_ref()
+        self.curve.as_ref()
     }
 
     /// `BSplineCurve()` by value.
     pub fn into_curve(self) -> Option<Geom2dBSplineCurve> {
-        self.my_curve
+        self.curve
     }
 
     /// `Clear()` (`cxx:239-243`).
     pub fn clear(&mut self) {
-        self.my_curve = None;
+        self.curve = None;
     }
 
     /// `Add(NewCurve, Tolerance, After)` (`cxx:56-126`). Returns `false` where
@@ -139,18 +139,18 @@ impl CompCurveToBSplineCurve2d {
         let mut bs = if new_curve.is_bspline2d() {
             new_curve.bspline_copy2d().ok_or("CompCurveToBSplineCurve2d::add")?
         } else {
-            curve_to_bspline_curve_bspl(new_curve, self.my_type)
+            curve_to_bspline_curve_bspl(new_curve, self.kind)
                 .ok_or("CompCurveToBSplineCurve2d::add")?
         };
-        if self.my_curve.is_none() {
-            self.my_curve = Some(bs);
+        if self.curve.is_none() {
+            self.curve = Some(bs);
             return Ok(true);
         }
-        self.my_tol = tolerance;
+        self.tol = tolerance;
         let sq_tol = tolerance * tolerance;
 
         // Pole-based G0 check (`cxx:80-92`).
-        let current = self.my_curve.as_ref().unwrap();
+        let current = self.curve.as_ref().unwrap();
         let (l_bs, l_cb) = (bs.nb_poles(), current.nb_poles());
         let mut d1 = pole(current, 1).square_distance(&pole(&bs, 1));
         let mut d2 = pole(current, 1).square_distance(&pole(&bs, l_bs));
@@ -180,7 +180,7 @@ impl CompCurveToBSplineCurve2d {
             if is_after_reversed {
                 bs.reverse();
             }
-            let mut first = self.my_curve.take().unwrap();
+            let mut first = self.curve.take().unwrap();
             self.add_pair(&mut first, &mut bs, true, with_ratio, min_m)?;
             Ok(true)
         } else if is_before {
@@ -189,7 +189,7 @@ impl CompCurveToBSplineCurve2d {
                 bs.reverse();
             }
             let mut first = bs;
-            let mut second = self.my_curve.take().unwrap();
+            let mut second = self.curve.take().unwrap();
             self.add_pair(&mut first, &mut second, false, with_ratio, min_m)?;
             Ok(true)
         } else {
@@ -311,11 +311,11 @@ impl CompCurveToBSplineCurve2d {
         while m > min_m && ok {
             m -= 1;
             ok = curve
-                .remove_knot(nb_k1 as i32, m, self.my_tol)
+                .remove_knot(nb_k1 as i32, m, self.tol)
                 .map_err(|_| "CompCurveToBSplineCurve2d::add_pair")?;
         }
 
-        self.my_curve = Some(curve);
+        self.curve = Some(curve);
         Ok(())
     }
 }

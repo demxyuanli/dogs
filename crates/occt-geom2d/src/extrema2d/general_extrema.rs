@@ -216,40 +216,40 @@ impl<'a> GGenExtCC<'a> {
 
         // --- Lipschitz constant (`hxx:543-616`) ---------------------------
         const A_MAX_LC: f64 = 10000.0; // `hxx:543`
-        let mut a_lc = 100.0f64; // `hxx:544`
-        let a_max_der1 = 1.0 / adaptor_resolution2d(c1, 1.0); // `hxx:545`
-        let a_max_der2 = 1.0 / adaptor_resolution2d(c2, 1.0); // `hxx:546`
-        let mut a_max_der = a_max_der1.max(a_max_der2) * std::f64::consts::SQRT_2; // `hxx:547`
-        if a_lc > a_max_der {
-            a_lc = a_max_der; // `hxx:548-549`
+        let mut lc = 100.0f64; // `hxx:544`
+        let max_der1 = 1.0 / adaptor_resolution2d(c1, 1.0); // `hxx:545`
+        let max_der2 = 1.0 / adaptor_resolution2d(c2, 1.0); // `hxx:546`
+        let mut max_der = max_der1.max(max_der2) * std::f64::consts::SQRT_2; // `hxx:547`
+        if lc > max_der {
+            lc = max_der; // `hxx:548-549`
         }
         let mut is_const_locked = false;
         const A_CR: f64 = 0.001; // `hxx:552`
-        if a_max_der1 / a_max_der < A_CR || a_max_der2 / a_max_der < A_CR {
+        if max_der1 / max_der < A_CR || max_der2 / max_der < A_CR {
             is_const_locked = true; // `hxx:553-556`
         }
-        if a_max_der > A_MAX_LC {
-            a_lc = A_MAX_LC;
+        if max_der > A_MAX_LC {
+            lc = A_MAX_LC;
             is_const_locked = true; // `hxx:557-561`
         }
         if c1.is_line() {
-            a_max_der = 1.0 / adaptor_resolution2d(c2, 1.0); // `hxx:562-564`
-            if a_lc > a_max_der {
+            max_der = 1.0 / adaptor_resolution2d(c2, 1.0); // `hxx:562-564`
+            if lc > max_der {
                 is_const_locked = true;
-                a_lc = a_max_der; // `hxx:565-569`
+                lc = max_der; // `hxx:565-569`
             }
         }
         if c2.is_line() {
-            a_max_der = 1.0 / adaptor_resolution2d(c1, 1.0); // `hxx:571-573`
-            if a_lc > a_max_der {
+            max_der = 1.0 / adaptor_resolution2d(c1, 1.0); // `hxx:571-573`
+            if lc > max_der {
                 is_const_locked = true;
-                a_lc = a_max_der; // `hxx:574-578`
+                lc = max_der; // `hxx:574-578`
             }
         }
 
         let func = GlobOptFuncCCC2::new(c1, c2); // `hxx:581`
-        if a_lc < A_MAX_LC || a_max_der > A_MAX_LC {
-            let mut a_max_g = 0.0f64;
+        if lc < A_MAX_LC || max_der > A_MAX_LC {
+            let mut max_g = 0.0f64;
             let n1 = 21; // `hxx:587`
             let n2 = 21;
             let dt1 = (c1.last_parameter() - c1.first_parameter()) / f64::from(n1 - 1);
@@ -260,21 +260,21 @@ impl<'a> GGenExtCC<'a> {
                 for _i2 in 1..=n2 {
                     if let Some((_f, (g1, g2))) = func.values_uv(t1, t2) {
                         let a_mod = g1 * g1 + g2 * g2;
-                        a_max_g = a_max_g.max(a_mod); // `hxx:597-598`
+                        max_g = max_g.max(a_mod); // `hxx:597-598`
                     }
                     t2 += dt2;
                 }
                 t1 += dt1;
             }
-            a_max_g = a_max_g.sqrt(); // `hxx:601`
-            if a_max_g > a_max_der {
-                a_lc = a_max_g.min(A_MAX_LC);
+            max_g = max_g.sqrt(); // `hxx:601`
+            if max_g > max_der {
+                lc = max_g.min(A_MAX_LC);
                 is_const_locked = true; // `hxx:602-606`
             }
-            if a_max_g > 100.0 * A_MAX_LC {
-                a_lc = 100.0 * A_MAX_LC;
+            if max_g > 100.0 * A_MAX_LC {
+                lc = 100.0 * A_MAX_LC;
                 is_const_locked = true; // `hxx:607-611`
-            } else if a_max_g < 0.1 * a_max_der {
+            } else if max_g < 0.1 * max_der {
                 is_const_locked = true; // `hxx:612-615`
             }
         }
@@ -283,10 +283,10 @@ impl<'a> GGenExtCC<'a> {
         let mut finder = GlobOptMin::new();
         finder.set_lip_const_state(is_const_locked); // `hxx:618`
         finder.set_continuity(if cont == GEOM_ABS_C2 { 2 } else { 1 }); // `hxx:619`
-        let a_disc_tol = 1.0e-2; // `hxx:620`
-        let a_value_tol = 1.0e-2; // `hxx:621`
-        let a_same_tol = self.curve_min_tol / a_disc_tol; // `hxx:622`
-        finder.set_tolerance(a_disc_tol, a_same_tol); // `hxx:623`
+        let disc_tol = 1.0e-2; // `hxx:620`
+        let value_tol = 1.0e-2; // `hxx:621`
+        let same_tol = self.curve_min_tol / disc_tol; // `hxx:622`
+        finder.set_tolerance(disc_tol, same_tol); // `hxx:623`
         finder.set_functional_minimal_value(0.0); // `hxx:624`
         finder.find_single_solution = self.single_solution;
         // `math_GlobOptMin aFinder(&aFunc, myLowBorder, myUppBorder, aLC)`
@@ -298,17 +298,17 @@ impl<'a> GGenExtCC<'a> {
         let up = [border(self.upp_border.0), border(self.upp_border.1)];
         let lower = MathVector::from_slice(&lo);
         let upper = MathVector::from_slice(&up);
-        finder.set_global_params(&func, &lower, &upper, a_lc)?;
+        finder.set_global_params(&func, &lower, &upper, lc)?;
 
         // `aCellSize` (`hxx:626-629`).
         let span = (iv1[iv1.len() - 1] - iv1[0]).max(iv2[iv2.len() - 1] - iv2[0]);
-        let a_cell_size = (span * PCONFUSION / (2.0 * std::f64::consts::SQRT_2)).max(PCONFUSION);
+        let cell_size = (span * PCONFUSION / (2.0 * std::f64::consts::SQRT_2)).max(PCONFUSION);
 
         // The cell filter's container: OCCT uses `NCollection_CellFilter`, the
         // port an accepted-point list; the acceptance test (`Inspect`,
         // `hxx:231-240`) is the same squared-distance comparison.
-        let mut a_pnts: Vec<(f64, f64)> = Vec::new();
-        let mut a_f = f64::MAX;
+        let mut pnts: Vec<(f64, f64)> = Vec::new();
+        let mut f = f64::MAX;
 
         for i in 0..nb1 as usize {
             for j in 0..nb2 as usize {
@@ -319,17 +319,17 @@ impl<'a> GGenExtCC<'a> {
                     .perform_local(&func) // `hxx:649`
                     .map_err(|e| format!("Extrema_GGenExtCC: {e}"))?;
 
-                let a_curr_f = finder.minimal_value(); // `hxx:651`
-                if a_curr_f >= a_f + a_same_tol * a_value_tol {
+                let curr_f = finder.minimal_value(); // `hxx:651`
+                if curr_f >= f + same_tol * value_tol {
                     continue; // `hxx:652-655`
                 }
-                if a_curr_f > a_f - a_same_tol * a_value_tol {
-                    if a_curr_f < a_f {
-                        a_f = a_curr_f; // `hxx:657-662`
+                if curr_f > f - same_tol * value_tol {
+                    if curr_f < f {
+                        f = curr_f; // `hxx:657-662`
                     }
                 } else {
-                    a_f = a_curr_f; // `hxx:663-667`
-                    a_pnts.clear();
+                    f = curr_f; // `hxx:663-667`
+                    pnts.clear();
                 }
 
                 for k in 0..finder.nb_extrema() {
@@ -337,74 +337,74 @@ impl<'a> GGenExtCC<'a> {
                     let pnt = (sol.value(1), sol.value(2));
                     // `PointsInspector::Inspect` (`hxx:231-240`).
                     let mut is_find = false;
-                    for &(x, y) in &a_pnts {
+                    for &(x, y) in &pnts {
                         let dx = pnt.0 - x;
                         let dy = pnt.1 - y;
-                        if dx * dx + dy * dy < a_cell_size * a_cell_size {
+                        if dx * dx + dy * dy < cell_size * cell_size {
                             is_find = true;
                             break;
                         }
                     }
                     if !is_find {
-                        a_pnts.push(pnt); // `hxx:681-685`
+                        pnts.push(pnt); // `hxx:681-685`
                     }
                 }
             }
         }
 
         // --- results (`hxx:690-802`) --------------------------------------
-        let nb_sol = a_pnts.len();
+        let nb_sol = pnts.len();
         if nb_sol == 0 {
             self.done = false; // `hxx:691-695`
             return Ok(());
         }
         self.done = true; // `hxx:697`
         if nb_sol == 1 {
-            self.points1.push(a_pnts[0].0); // `hxx:699-705`
-            self.points2.push(a_pnts[0].1);
+            self.points1.push(pnts[0].0); // `hxx:699-705`
+            self.points2.push(pnts[0].1);
             return Ok(());
         }
 
         // `Extrema_GGenExtCC_comp` (`hxx:135-150`): by X, then by Y.
-        a_pnts.sort_by(|a, b| {
+        pnts.sort_by(|a, b| {
             a.0.partial_cmp(&b.0)
                 .unwrap_or(Ordering::Equal)
                 .then(a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal))
         });
 
-        let mut a_solutions: Vec<usize> = Vec::new(); // `hxx:709`
+        let mut solutions: Vec<usize> = Vec::new(); // `hxx:709`
         let mut b_save_solution = true;
         let mut b_dirs_coinside = true;
         let mut b_different_solutions = false;
         let mut is_parallel = true;
         for an_idx in 0..nb_sol - 1 {
-            let a_current = a_pnts[an_idx];
-            let a_next = a_pnts[an_idx + 1];
-            let mid = ((a_current.0 + a_next.0) * 0.5, (a_current.1 + a_next.1) * 0.5);
-            let a_val = func.value_uv(mid.0, mid.1).unwrap_or(f64::MAX); // `hxx:727`
-            if (a_val - a_f).abs() < CONFUSION {
+            let current = pnts[an_idx];
+            let next = pnts[an_idx + 1];
+            let mid = ((current.0 + next.0) * 0.5, (current.1 + next.1) * 0.5);
+            let val = func.value_uv(mid.0, mid.1).unwrap_or(f64::MAX); // `hxx:727`
+            if (val - f).abs() < CONFUSION {
                 if b_save_solution {
-                    a_solutions.push(an_idx); // `hxx:728-735`
+                    solutions.push(an_idx); // `hxx:728-735`
                     b_save_solution = false;
                 }
             } else {
                 is_parallel = false; // `hxx:736-741`
-                a_solutions.push(an_idx);
+                solutions.push(an_idx);
                 b_save_solution = true;
             }
             if !b_different_solutions {
-                if a_next.0 > a_current.0 {
-                    if a_next.1 > a_current.1 {
+                if next.0 > current.0 {
+                    if next.1 > current.1 {
                         b_different_solutions = true;
                         b_dirs_coinside = true; // `hxx:743-758`
-                    } else if a_next.1 < a_current.1 {
+                    } else if next.1 < current.1 {
                         b_different_solutions = true;
                         b_dirs_coinside = false;
                     }
                 }
             }
         }
-        a_solutions.push(nb_sol - 1); // `hxx:760`
+        solutions.push(nb_sol - 1); // `hxx:760`
 
         if !b_different_solutions {
             is_parallel = false; // `hxx:762-763`
@@ -421,20 +421,20 @@ impl<'a> GGenExtCC<'a> {
                 if !is_parallel {
                     break;
                 }
-                let a_dist1 = proj_p_on_c(c2, &c1.d0(a_t1[i_t]), self.low_border.1, self.upp_border.1);
-                let a_dist2 = proj_p_on_c(c1, &c2.d0(a_t2[i_t]), self.low_border.0, self.upp_border.0);
-                is_parallel = (a_dist1.min(a_dist2) - a_f * a_f).abs() < CONFUSION; // `hxx:781`
+                let dist1 = proj_p_on_c(c2, &c1.d0(a_t1[i_t]), self.low_border.1, self.upp_border.1);
+                let dist2 = proj_p_on_c(c1, &c2.d0(a_t2[i_t]), self.low_border.0, self.upp_border.0);
+                is_parallel = (dist1.min(dist2) - f * f).abs() < CONFUSION; // `hxx:781`
             }
         }
 
         if is_parallel {
-            self.points1.push(a_pnts[0].0); // `hxx:787-790`
-            self.points2.push(a_pnts[0].1);
+            self.points1.push(pnts[0].0); // `hxx:787-790`
+            self.points2.push(pnts[0].1);
             self.parallel = true;
         } else {
-            for idx in a_solutions {
-                self.points1.push(a_pnts[idx].0); // `hxx:797-799`
-                self.points2.push(a_pnts[idx].1);
+            for idx in solutions {
+                self.points1.push(pnts[idx].0); // `hxx:797-799`
+                self.points2.push(pnts[idx].1);
             }
         }
         Ok(())
@@ -483,55 +483,55 @@ fn border(v: f64) -> f64 {
 }
 
 /// `Extrema_GGenExtCC_ChangeIntervals` (`Extrema_GGenExtCC.hxx:152-202`):
-/// re-subdivide `the_ints` into `the_nb_ints` intervals.
+/// re-subdivide `ints` into `nb_ints` intervals.
 ///
 /// OCCT allocates `NCollection_HArray1(1, theNbInts + 1)` up front (`hxx:157-158`)
 /// and copies `aNbLast` old values into it; the port sizes the working vector
 /// the same way, since the insertion loop writes one position past the current
 /// last index.
-fn change_intervals(the_ints: &mut Vec<f64>, the_nb_ints: i32) {
-    let a_nb_ints = (the_ints.len() - 1) as i32;
-    let mut a_nb_add = the_nb_ints - a_nb_ints;
+fn change_intervals(ints: &mut Vec<f64>, nb_ints: i32) {
+    let a_nb_ints = (ints.len() - 1) as i32;
+    let mut nb_add = nb_ints - a_nb_ints;
     if a_nb_ints == 1 {
-        let first = the_ints[0];
-        let last = the_ints[the_ints.len() - 1];
-        let dt = (last - first) / f64::from(the_nb_ints);
-        let mut out = Vec::with_capacity(the_nb_ints as usize + 1);
+        let first = ints[0];
+        let last = ints[ints.len() - 1];
+        let dt = (last - first) / f64::from(nb_ints);
+        let mut out = Vec::with_capacity(nb_ints as usize + 1);
         out.push(first); // `hxx:163`
         let mut t = first + dt;
-        for _i in 2..=the_nb_ints {
+        for _i in 2..=nb_ints {
             out.push(t); // `hxx:167-170`
             t += dt;
         }
         out.push(last); // `hxx:164`
-        *the_ints = out;
+        *ints = out;
         return;
     }
     // `aNewInts` has `theNbInts + 1` slots (`hxx:157-158`); `aNewInts(1..aNbLast)`
     // is the copy of `theInts` (`hxx:174-177`).
-    let mut out: Vec<f64> = the_ints.clone();
-    out.resize(the_nb_ints as usize + 1, f64::NAN);
-    let mut a_nb_last = the_ints.len() as i32;
-    while a_nb_add > 0 {
+    let mut out: Vec<f64> = ints.clone();
+    out.resize(nb_ints as usize + 1, f64::NAN);
+    let mut nb_last = ints.len() as i32;
+    while nb_add > 0 {
         let mut an_l_int_max = -1.0f64;
-        let mut a_max_ind = -1i32;
-        for i in 1..a_nb_last {
+        let mut max_ind = -1i32;
+        for i in 1..nb_last {
             let an_l = out[i as usize] - out[(i - 1) as usize]; // `hxx:182-190`
             if an_l > an_l_int_max {
                 an_l_int_max = an_l;
-                a_max_ind = i;
+                max_ind = i;
             }
         }
-        let t = (out[a_max_ind as usize] + out[(a_max_ind - 1) as usize]) / 2.0; // `hxx:192`
-        for i in (a_max_ind..a_nb_last).rev() {
+        let t = (out[max_ind as usize] + out[(max_ind - 1) as usize]) / 2.0; // `hxx:192`
+        for i in (max_ind..nb_last).rev() {
             out[(i + 1) as usize] = out[i as usize]; // `hxx:193-196`
         }
-        a_nb_last += 1;
-        a_nb_add -= 1;
-        out[a_max_ind as usize] = t; // `hxx:199`
+        nb_last += 1;
+        nb_add -= 1;
+        out[max_ind as usize] = t; // `hxx:199`
     }
-    the_ints.clear();
-    the_ints.extend_from_slice(&out[..a_nb_last as usize]);
+    ints.clear();
+    ints.extend_from_slice(&out[..nb_last as usize]);
 }
 
 /// `Extrema_GGenExtCC_ProjPOnC` (`Extrema_GGenExtCC.hxx:249-263`): builds the
@@ -540,14 +540,14 @@ fn change_intervals(the_ints: &mut Vec<f64>, the_nb_ints: i32) {
 /// or has none.
 fn proj_p_on_c(c: &dyn Curve2d, p: &GpPnt2d, u1: f64, u2: f64) -> f64 {
     let ext = ExtremaExtPC2d::new_range(c, p, u1, u2);
-    let mut a_dist = f64::MAX;
+    let mut dist = f64::MAX;
     if ext.is_done() && ext.nb_ext() > 0 {
         for i in 1..=ext.nb_ext() {
-            let a_d = ext.square_distance(i);
-            if a_d < a_dist {
-                a_dist = a_d;
+            let d = ext.square_distance(i);
+            if d < dist {
+                dist = d;
             }
         }
     }
-    a_dist
+    dist
 }

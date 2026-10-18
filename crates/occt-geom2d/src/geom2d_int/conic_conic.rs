@@ -169,15 +169,15 @@ pub(crate) fn compute_int_point(
     if (*res_sup - par_cur).abs() > (res_inf - par_cur).abs() {
         *res_sup = res_inf;
     }
-    let mut a_res2 = par_other + (*res_sup - par_cur) * cos_t1t2;
-    let (a_first2, a_last2, a_tol21, a_tol22) = get_domain_parameters(other_domain);
-    if a_res2 < a_first2 - a_tol21 || a_res2 > a_last2 + a_tol22 {
+    let mut res2 = par_other + (*res_sup - par_cur) * cos_t1t2;
+    let (first2, last2, tol21, tol22) = get_domain_parameters(other_domain);
+    if res2 < first2 - tol21 || res2 > last2 + tol22 {
         return None;
     }
-    let (_, _, a_tol11, a_tol12) = get_domain_parameters(cur_domain);
-    let (a_first1, a_last1, _, _) = get_domain_parameters(cur_domain);
-    let a_pos1a = find_position_ll(res_sup, cur_domain);
-    let a_pos2a = find_position_ll(&mut a_res2, other_domain);
+    let (_, _, tol11, tol12) = get_domain_parameters(cur_domain);
+    let (first1, last1, _, _) = get_domain_parameters(cur_domain);
+    let pos1a = find_position_ll(res_sup, cur_domain);
+    let pos2a = find_position_ll(&mut res2, other_domain);
     let an_other_trans = if cur_trans == IntRes2dTypeTrans::Out {
         IntRes2dTypeTrans::In
     } else if cur_trans == IntRes2dTypeTrans::In {
@@ -185,52 +185,52 @@ pub(crate) fn compute_int_point(
     } else {
         IntRes2dTypeTrans::Undecided
     };
-    let (a_t1, a_t2) = if cur_trans != IntRes2dTypeTrans::Undecided {
+    let (t1, t2) = if cur_trans != IntRes2dTypeTrans::Undecided {
         (
-            IntRes2dTransition::in_out(false, a_pos1a, cur_trans),
-            IntRes2dTransition::in_out(false, a_pos2a, an_other_trans),
+            IntRes2dTransition::in_out(false, pos1a, cur_trans),
+            IntRes2dTransition::in_out(false, pos2a, an_other_trans),
         )
     } else {
         let an_opposite = cos_t1t2 < 0.0;
         (
-            IntRes2dTransition::touch(false, a_pos1a, IntRes2dSituation::Unknown, an_opposite),
-            IntRes2dTransition::touch(false, a_pos2a, IntRes2dSituation::Unknown, an_opposite),
+            IntRes2dTransition::touch(false, pos1a, IntRes2dSituation::Unknown, an_opposite),
+            IntRes2dTransition::touch(false, pos2a, IntRes2dSituation::Unknown, an_opposite),
         )
     };
-    let mut a_res_u1 = par_cur;
-    let mut a_res_u2 = par_other;
-    let is_inside1 = par_cur >= a_first1 && par_cur <= a_last1;
-    let is_inside2 = par_other >= a_first2 && par_other <= a_last2;
+    let mut res_u1 = par_cur;
+    let mut res_u2 = par_other;
+    let is_inside1 = par_cur >= first1 && par_cur <= last1;
+    let is_inside2 = par_other >= first2 && par_other <= last2;
     if !is_inside1 || !is_inside2 {
         if is_inside1 {
-            let pt1 = clib2d::line_value_ax2d(a_res2, other_lin.position());
-            a_res_u2 = a_res2;
-            let a_par1 = clib2d::line_parameter_ax2d(cur_lin.position(), &pt1);
-            a_res_u1 = if a_par1 >= a_first1 && a_par1 <= a_last1 { a_par1 } else { *res_sup };
+            let pt1 = clib2d::line_value_ax2d(res2, other_lin.position());
+            res_u2 = res2;
+            let par1 = clib2d::line_parameter_ax2d(cur_lin.position(), &pt1);
+            res_u1 = if par1 >= first1 && par1 <= last1 { par1 } else { *res_sup };
         } else if is_inside2 {
             let a_pt1 = clib2d::line_value_ax2d(*res_sup, cur_lin.position());
-            a_res_u1 = *res_sup;
-            let a_par2 = clib2d::line_parameter_ax2d(other_lin.position(), &a_pt1);
-            a_res_u2 = if a_par2 >= a_first2 && a_par2 <= a_last2 { a_par2 } else { a_res2 };
+            res_u1 = *res_sup;
+            let par2 = clib2d::line_parameter_ax2d(other_lin.position(), &a_pt1);
+            res_u2 = if par2 >= first2 && par2 <= last2 { par2 } else { res2 };
         } else {
-            if par_cur < a_first1 - a_tol11
-                || par_cur > a_last1 + a_tol12
-                || par_other < a_first2 - a_tol21
-                || par_other > a_last2 + a_tol22
+            if par_cur < first1 - tol11
+                || par_cur > last1 + tol12
+                || par_other < first2 - tol21
+                || par_other > last2 + tol22
             {
                 return None;
             }
-            a_res_u1 = *res_sup;
-            a_res_u2 = a_res2;
+            res_u1 = *res_sup;
+            res_u2 = res2;
         }
     }
-    let p1 = clib2d::line_value_ax2d(a_res_u1, cur_lin.position());
-    let p2 = clib2d::line_value_ax2d(a_res_u2, other_lin.position());
-    let a_pres = GpPnt2d::new(0.5 * (p1.x() + p2.x()), 0.5 * (p1.y() + p2.y()));
+    let p1 = clib2d::line_value_ax2d(res_u1, cur_lin.position());
+    let p2 = clib2d::line_value_ax2d(res_u2, other_lin.position());
+    let pres = GpPnt2d::new(0.5 * (p1.x() + p2.x()), 0.5 * (p1.y() + p2.y()));
     let pt = if num == 1 {
-        IntRes2dIntersectionPoint::with_transitions(&a_pres, a_res_u1, a_res_u2, &a_t1, &a_t2, false)
+        IntRes2dIntersectionPoint::with_transitions(&pres, res_u1, res_u2, &t1, &t2, false)
     } else {
-        IntRes2dIntersectionPoint::with_transitions(&a_pres, a_res_u2, a_res_u1, &a_t2, &a_t1, false)
+        IntRes2dIntersectionPoint::with_transitions(&pres, res_u2, res_u1, &t2, &t1, false)
     };
     Some(pt)
 }

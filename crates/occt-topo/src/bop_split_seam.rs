@@ -163,54 +163,54 @@ fn clone_curve(c: &dyn Curve2d) -> Arc<dyn Curve2d> {
 
 /// First overload (`AlgoTools3D.cxx:58`): shift the split's p-curve by one
 /// period when the mid-point sits on a periodic bound, then store both.
-pub fn do_split_seam_on_face(a_split: &Edge, a_f: &Face) -> bool {
-    let mut a_sp = a_split.clone();
-    a_sp.0.set_orientation(Orientation::Forward);
-    let a_tol = BRepTool::edge_tolerance(&a_sp);
-    let Some(a_s) = BRepTool::face_surface(a_f) else {
+pub fn do_split_seam_on_face(split: &Edge, f: &Face) -> bool {
+    let mut sp = split.clone();
+    sp.0.set_orientation(Orientation::Forward);
+    let tol = BRepTool::edge_tolerance(&sp);
+    let Some(s) = BRepTool::face_surface(f) else {
         return false;
     };
-    let (a_umin, a_umax) = a_s.u_range();
-    let (a_vmin, a_vmax) = a_s.v_range();
+    let (umin, umax) = s.u_range();
+    let (vmin, vmax) = s.v_range();
     let (b_u, b_v, an_u_period, an_v_period) =
-        surface_closed_period(a_s.as_ref(), a_tol);
+        surface_closed_period(s.as_ref(), tol);
     if !b_u && !b_v {
         return false;
     }
-    let Some(c2d1) = curve_on_surface(&a_sp, a_f) else {
+    let Some(c2d1) = curve_on_surface(&sp, f) else {
         return false;
     };
-    let (a, b) = GeometryRegistry::global().edge_parameters(&a_sp.0);
+    let (a, b) = GeometryRegistry::global().edge_parameters(&sp.0);
     let a_t = intermediate_point(a, b);
-    let (a_p2d, a_vec2d) = c2d1.d1(a_t);
-    let a_dir2d1 = if a_vec2d.square_magnitude() <= RESOLUTION {
+    let (p2d, vec2d) = c2d1.d1(a_t);
+    let dir2d1 = if vec2d.square_magnitude() <= RESOLUTION {
         GpDir2d::default()
     } else {
-        GpDir2d::from_vec2d(&a_vec2d).unwrap_or_default()
+        GpDir2d::from_vec2d(&vec2d).unwrap_or_default()
     };
     // `AlgoTools3D.cxx:155`: `aDOX(gp_Dir2d::D::NX)` = (-1, 0), `aDOY(gp_Dir2d::D::Y)` = (0, 1).
-    let a_dox = GpDir2d::new(-1.0, 0.0).unwrap_or_else(|_| GpDir2d { x: -1.0, y: 0.0 });
-    let a_doy = GpDir2d::new(0.0, 1.0).unwrap_or_else(|_| GpDir2d { x: 0.0, y: 1.0 });
-    let an_u = a_p2d.x();
-    let an_v = a_p2d.y();
+    let dox = GpDir2d::new(-1.0, 0.0).unwrap_or_else(|_| GpDir2d { x: -1.0, y: 0.0 });
+    let doy = GpDir2d::new(0.0, 1.0).unwrap_or_else(|_| GpDir2d { x: 0.0, y: 1.0 });
+    let an_u = p2d.x();
+    let an_v = p2d.y();
     let mut an_u1 = an_u;
     let mut an_v1 = an_v;
-    let (d_u, d_v) = u_v_resolution(a_s.as_ref(), a_tol);
+    let (d_u, d_v) = u_v_resolution(s.as_ref(), tol);
     let mut b_is_left = false;
     if an_u_period > 0.0 {
-        if (an_u - a_umin).abs() < d_u {
+        if (an_u - umin).abs() < d_u {
             b_is_left = true;
             an_u1 = an_u + an_u_period;
-        } else if (an_u - a_umax).abs() < d_u {
+        } else if (an_u - umax).abs() < d_u {
             b_is_left = false;
             an_u1 = an_u - an_u_period;
         }
     }
     if an_v_period > 0.0 {
-        if (an_v - a_vmin).abs() < d_v {
+        if (an_v - vmin).abs() < d_v {
             b_is_left = true;
             an_v1 = an_v + an_v_period;
-        } else if (an_v - a_vmax).abs() < d_v {
+        } else if (an_v - vmax).abs() < d_v {
             b_is_left = false;
             an_v1 = an_v - an_v_period;
         }
@@ -219,95 +219,95 @@ pub fn do_split_seam_on_face(a_split: &Edge, a_f: &Face) -> bool {
         return false;
     }
     // `AlgoTools3D.cxx:199`: `aScPr = (anU1 == anU) ? aDir2D1 * aDOX : aDir2D1 * aDOY`.
-    let a_sc_pr = if (an_u1 - an_u).abs() <= PCONFUSION {
-        a_dir2d1.dot(&a_dox)
+    let sc_pr = if (an_u1 - an_u).abs() <= PCONFUSION {
+        dir2d1.dot(&dox)
     } else {
-        a_dir2d1.dot(&a_doy)
+        dir2d1.dot(&doy)
     };
-    let a_c1 = clone_curve(c2d1.as_ref());
-    let a_c2 = translate_curve(c2d1.as_ref(), a, b, an_u1 - an_u, an_v1 - an_v);
-    let fk = shape_key(&a_f.0);
+    let c1 = clone_curve(c2d1.as_ref());
+    let c2 = translate_curve(c2d1.as_ref(), a, b, an_u1 - an_u, an_v1 - an_v);
+    let fk = shape_key(&f.0);
     let (first, second) = if !b_is_left {
-        if a_sc_pr < 0.0 {
-            (a_c2, a_c1)
+        if sc_pr < 0.0 {
+            (c2, c1)
         } else {
-            (a_c1, a_c2)
+            (c1, c2)
         }
-    } else if a_sc_pr < 0.0 {
-        (a_c1, a_c2)
+    } else if sc_pr < 0.0 {
+        (c1, c2)
     } else {
-        (a_c2, a_c1)
+        (c2, c1)
     };
-    GeometryRegistry::global().set_edge_pcurves(&a_sp.0, fk, vec![first, second]);
+    GeometryRegistry::global().set_edge_pcurves(&sp.0, fk, vec![first, second]);
     let _ = (b_u, b_v, an_u, an_v);
     true
 }
 
 /// Origin/split overload (`AlgoTools3D.cxx:236`).
-pub fn do_split_seam_on_face_origin(the_e_origin: &Edge, the_e_split: &Edge, the_face: &Face) -> bool {
-    if !is_closed_on_face(the_e_origin, the_face) {
+pub fn do_split_seam_on_face_origin(e_origin: &Edge, e_split: &Edge, face: &Face) -> bool {
+    if !is_closed_on_face(e_origin, face) {
         return false;
     }
-    if is_closed_on_face(the_e_split, the_face) {
+    if is_closed_on_face(e_split, face) {
         return true;
     }
-    let mut a_e_split = the_e_split.clone();
+    let mut a_e_split = e_split.clone();
     a_e_split.0.set_orientation(Orientation::Forward);
-    let mut a_face = the_face.clone();
+    let mut a_face = face.clone();
     a_face.0.set_orientation(Orientation::Forward);
-    let Some(a_c2d_split) = curve_on_surface(&a_e_split, &a_face) else {
+    let Some(c2d_split) = curve_on_surface(&a_e_split, &a_face) else {
         return false;
     };
-    let (a_ts1, a_ts2) = GeometryRegistry::global().edge_parameters(&a_e_split.0);
-    let mut e_fwd = the_e_origin.clone();
+    let (ts1, ts2) = GeometryRegistry::global().edge_parameters(&a_e_split.0);
+    let mut e_fwd = e_origin.clone();
     e_fwd.0.set_orientation(Orientation::Forward);
-    let mut e_rev = the_e_origin.clone();
+    let mut e_rev = e_origin.clone();
     e_rev.0.set_orientation(Orientation::Reversed);
-    let Some(a_c2d1) = curve_on_surface(&e_fwd, &a_face) else {
+    let Some(c2d1) = curve_on_surface(&e_fwd, &a_face) else {
         return false;
     };
-    let Some(a_c2d2) = curve_on_surface(&e_rev, &a_face) else {
+    let Some(c2d2) = curve_on_surface(&e_rev, &a_face) else {
         return false;
     };
-    let (a_t1, a_t2) = GeometryRegistry::global().edge_parameters(&the_e_origin.0);
-    let a_t = intermediate_point(a_ts1, a_ts2);
-    let (a_p_mid, a_v_tgt) = a_c2d_split.d1(a_t);
-    let proj1 = project_2d_on_curve(&a_p_mid, a_c2d1.as_ref(), a_t1, a_t2);
-    let proj2 = project_2d_on_curve(&a_p_mid, a_c2d2.as_ref(), a_t1, a_t2);
+    let (t1, t2) = GeometryRegistry::global().edge_parameters(&e_origin.0);
+    let a_t = intermediate_point(ts1, ts2);
+    let (p_mid, v_tgt) = c2d_split.d1(a_t);
+    let proj1 = project_2d_on_curve(&p_mid, c2d1.as_ref(), t1, t2);
+    let proj2 = project_2d_on_curve(&p_mid, c2d2.as_ref(), t1, t2);
     if proj1.is_none() && proj2.is_none() {
         return false;
     }
-    let a_dist1 = proj1.map(|(_, d)| d).unwrap_or(f64::MAX);
-    let a_dist2 = proj2.map(|(_, d)| d).unwrap_or(f64::MAX);
-    if a_dist1 > PCONFUSION && a_dist2 > PCONFUSION {
+    let dist1 = proj1.map(|(_, d)| d).unwrap_or(f64::MAX);
+    let dist2 = proj2.map(|(_, d)| d).unwrap_or(f64::MAX);
+    if dist1 > PCONFUSION && dist2 > PCONFUSION {
         return false;
     }
-    let a_new_pnt = if a_dist1 < a_dist2 {
+    let new_pnt = if dist1 < dist2 {
         let t = proj1.map(|(t, _)| t).unwrap_or(a_t);
-        a_c2d2.d0(t)
+        c2d2.d0(t)
     } else {
         let t = proj2.map(|(t, _)| t).unwrap_or(a_t);
-        a_c2d1.d0(t)
+        c2d1.d0(t)
     };
-    let du = a_new_pnt.x() - a_p_mid.x();
-    let dv = a_new_pnt.y() - a_p_mid.y();
-    let a_c1 = clone_curve(a_c2d_split.as_ref());
-    let a_c2 = translate_curve(a_c2d_split.as_ref(), a_ts1, a_ts2, du, dv);
-    let (a_p_proj, a_v_tgt_origin) = if a_dist1 < a_dist2 {
+    let du = new_pnt.x() - p_mid.x();
+    let dv = new_pnt.y() - p_mid.y();
+    let c1 = clone_curve(c2d_split.as_ref());
+    let c2 = translate_curve(c2d_split.as_ref(), ts1, ts2, du, dv);
+    let (p_proj, v_tgt_origin) = if dist1 < dist2 {
         let t = proj1.map(|(t, _)| t).unwrap_or(a_t);
-        a_c2d1.d1(t)
+        c2d1.d1(t)
     } else {
         let t = proj2.map(|(t, _)| t).unwrap_or(a_t);
-        a_c2d2.d1(t)
+        c2d2.d1(t)
     };
-    let a_dot = a_v_tgt.x() * a_v_tgt_origin.x() + a_v_tgt.y() * a_v_tgt_origin.y();
+    let dot = v_tgt.x() * v_tgt_origin.x() + v_tgt.y() * v_tgt_origin.y();
     let fk = shape_key(&a_face.0);
-    if (a_dist1 < a_dist2) == (a_dot > 0.0) {
-        GeometryRegistry::global().set_edge_pcurves(&a_e_split.0, fk, vec![a_c1, a_c2]);
+    if (dist1 < dist2) == (dot > 0.0) {
+        GeometryRegistry::global().set_edge_pcurves(&a_e_split.0, fk, vec![c1, c2]);
     } else {
-        GeometryRegistry::global().set_edge_pcurves(&a_e_split.0, fk, vec![a_c2, a_c1]);
+        GeometryRegistry::global().set_edge_pcurves(&a_e_split.0, fk, vec![c2, c1]);
     }
-    let _ = a_p_proj;
+    let _ = p_proj;
     true
 }
 

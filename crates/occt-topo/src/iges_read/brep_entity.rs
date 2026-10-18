@@ -573,10 +573,10 @@ fn transfer_manifold_solid(
         }
         if !void_shells.is_empty() {
             for void in void_shells.iter().flatten() {
-                let a_sh = transfer_shell(session, *void)?;
-                if let Some(a_sh) = a_sh {
-                    if a_sh.is_shell() {
-                        let mut shell = Shell(a_sh);
+                let sh = transfer_shell(session, *void)?;
+                if let Some(sh) = sh {
+                    if sh.is_shell() {
+                        let mut shell = Shell(sh);
                         if !isoriented {
                             shell.0.reverse();
                         }

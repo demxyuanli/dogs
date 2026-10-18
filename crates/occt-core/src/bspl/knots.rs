@@ -238,19 +238,19 @@ pub fn is_uniform_knots(knots: &[f64]) -> bool {
         // `if (FromK1 + 1 > Knots.Upper()) return BSplCLib_Uniform;` (`cxx:606-609`).
         return true;
     }
-    let mut a_ui = knots[0].abs();
-    let mut a_uj = knots[1].abs();
-    let mut a_du0 = (a_uj - a_ui).abs();
-    let mut eps = epsilon(a_ui) + epsilon(a_uj) + epsilon(a_du0);
+    let mut ui = knots[0].abs();
+    let mut uj = knots[1].abs();
+    let mut du0 = (uj - ui).abs();
+    let mut eps = epsilon(ui) + epsilon(uj) + epsilon(du0);
     for i in 1..knots.len() - 1 {
-        a_ui = knots[i].abs();
-        a_uj = knots[i + 1].abs();
-        let a_du1 = (a_uj - a_ui).abs();
-        if (a_du1 - a_du0).abs() > eps {
+        ui = knots[i].abs();
+        uj = knots[i + 1].abs();
+        let du1 = (uj - ui).abs();
+        if (du1 - du0).abs() > eps {
             return false;
         }
-        a_du0 = a_du1;
-        eps = epsilon(a_ui) + epsilon(a_uj) + epsilon(a_du0);
+        du0 = du1;
+        eps = epsilon(ui) + epsilon(uj) + epsilon(du0);
     }
     true
 }

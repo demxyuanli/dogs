@@ -25,24 +25,24 @@ pub type PbFaceListMap = HashMap<PbKey, (BopdsPaveBlock, Vec<usize>)>;
 pub type PbPbListMap = HashMap<PbKey, (BopdsPaveBlock, Vec<BopdsPaveBlock>)>;
 
 /// `BOPAlgo_Tools::FillMap` (pave block, pave block).
-pub fn fill_map_pb_pb(a_pb1: &BopdsPaveBlock, a_pb2: &BopdsPaveBlock, a_mpblpb: &mut PbPbListMap) {
-    a_mpblpb
-        .entry(pb_key(a_pb1))
-        .or_insert_with(|| (a_pb1.clone(), Vec::new()))
+pub fn fill_map_pb_pb(pb1: &BopdsPaveBlock, pb2: &BopdsPaveBlock, mpblpb: &mut PbPbListMap) {
+    mpblpb
+        .entry(pb_key(pb1))
+        .or_insert_with(|| (pb1.clone(), Vec::new()))
         .1
-        .push(a_pb2.clone());
-    a_mpblpb
-        .entry(pb_key(a_pb2))
-        .or_insert_with(|| (a_pb2.clone(), Vec::new()))
+        .push(pb2.clone());
+    mpblpb
+        .entry(pb_key(pb2))
+        .or_insert_with(|| (pb2.clone(), Vec::new()))
         .1
-        .push(a_pb1.clone());
+        .push(pb1.clone());
 }
 
 /// `BOPAlgo_Tools::FillMap` (pave block, face).
-pub fn fill_map_pb_face(a_pb: &BopdsPaveBlock, n_f: usize, a_mpbli: &mut PbFaceListMap) {
-    let e = a_mpbli
-        .entry(pb_key(a_pb))
-        .or_insert_with(|| (a_pb.clone(), Vec::new()));
+pub fn fill_map_pb_face(pb: &BopdsPaveBlock, n_f: usize, mpbli: &mut PbFaceListMap) {
+    let e = mpbli
+        .entry(pb_key(pb))
+        .or_insert_with(|| (pb.clone(), Vec::new()));
     if !e.1.contains(&n_f) {
         e.1.push(n_f);
     }
@@ -115,34 +115,34 @@ pub fn perform_common_blocks_pb(
     ctx: &IntToolsContext,
 ) {
     let blocks = make_blocks_pb(mpblpb);
-    for a_lpb in blocks {
-        if a_lpb.len() < 2 {
+    for lpb in blocks {
+        if lpb.len() < 2 {
             continue;
         }
-        let mut a_m_faces: HashSet<usize> = HashSet::new();
-        let mut a_l_faces: Vec<usize> = Vec::new();
+        let mut m_faces: HashSet<usize> = HashSet::new();
+        let mut l_faces: Vec<usize> = Vec::new();
         let mut a_cb: Option<BopdsCommonBlock> = None;
-        for a_pb in &a_lpb {
-            if ds.is_common_block(a_pb) {
-                if let Some(a_cbx) = ds.common_block(a_pb) {
-                    for &n_f in a_cbx.faces() {
-                        if a_m_faces.insert(n_f) {
-                            a_l_faces.push(n_f);
+        for pb in &lpb {
+            if ds.is_common_block(pb) {
+                if let Some(cbx) = ds.common_block(pb) {
+                    for &n_f in cbx.faces() {
+                        if m_faces.insert(n_f) {
+                            l_faces.push(n_f);
                         }
                     }
                     if a_cb.is_none() {
-                        a_cb = Some(a_cbx.clone());
+                        a_cb = Some(cbx.clone());
                     }
                 }
             }
         }
         let mut a_cb = a_cb.unwrap_or_else(BopdsCommonBlock::new);
-        a_cb.set_pave_blocks(a_lpb.clone());
-        a_cb.set_faces(a_l_faces);
-        let a_tol = compute_tolerance_of_cb(&a_cb, ds, ctx);
-        a_cb.set_tolerance(a_tol);
-        for a_pb in &a_lpb {
-            ds.set_common_block(a_pb, a_cb.clone());
+        a_cb.set_pave_blocks(lpb.clone());
+        a_cb.set_faces(l_faces);
+        let tol = compute_tolerance_of_cb(&a_cb, ds, ctx);
+        a_cb.set_tolerance(tol);
+        for pb in &lpb {
+            ds.set_common_block(pb, a_cb.clone());
         }
     }
 }
@@ -153,31 +153,31 @@ pub fn perform_common_blocks_faces(
     ds: &mut BopdsDS,
     ctx: &IntToolsContext,
 ) {
-    for (_k, (a_pb, a_li)) in mpbli {
-        let mut a_cb = if ds.is_common_block(a_pb) {
-            ds.common_block(a_pb)
+    for (_k, (pb, li)) in mpbli {
+        let mut a_cb = if ds.is_common_block(pb) {
+            ds.common_block(pb)
                 .cloned()
                 .unwrap_or_else(BopdsCommonBlock::new)
         } else {
             let mut cb = BopdsCommonBlock::new();
-            cb.add_pave_block(a_pb.clone());
+            cb.add_pave_block(pb.clone());
             cb
         };
-        let mut a_new_faces: Vec<usize> = Vec::new();
+        let mut new_faces: Vec<usize> = Vec::new();
         let old = a_cb.faces().to_vec();
-        for &n_f in a_li {
+        for &n_f in li {
             if !old.contains(&n_f) {
-                a_new_faces.push(n_f);
+                new_faces.push(n_f);
             }
         }
-        a_cb.append_faces(&a_new_faces);
-        ds.set_common_block(a_pb, a_cb.clone());
-        if let Some(cb) = ds.common_block(a_pb).cloned() {
-            let a_tol = compute_tolerance_of_cb(&cb, ds, ctx);
-            if let Some(cbm) = ds.common_block(a_pb).cloned() {
+        a_cb.append_faces(&new_faces);
+        ds.set_common_block(pb, a_cb.clone());
+        if let Some(cb) = ds.common_block(pb).cloned() {
+            let tol = compute_tolerance_of_cb(&cb, ds, ctx);
+            if let Some(cbm) = ds.common_block(pb).cloned() {
                 let mut cbm = cbm;
-                cbm.set_tolerance(a_tol);
-                ds.set_common_block(a_pb, cbm);
+                cbm.set_tolerance(tol);
+                ds.set_common_block(pb, cbm);
             }
         }
     }
@@ -185,75 +185,75 @@ pub fn perform_common_blocks_faces(
 
 /// `BOPAlgo_Tools::ComputeToleranceOfCB` (`BOPAlgo_Tools.cxx:248`).
 pub fn compute_tolerance_of_cb(
-    the_cb: &BopdsCommonBlock,
-    the_ds: &BopdsDS,
-    the_ctx: &IntToolsContext,
+    cb: &BopdsCommonBlock,
+    ds: &BopdsDS,
+    ctx: &IntToolsContext,
 ) -> f64 {
-    let Some(a_pbr) = the_cb.pave_block1() else {
+    let Some(pbr) = cb.pave_block1() else {
         return 0.0;
     };
-    let n_e = a_pbr.original_edge();
-    let Some(e_or_shape) = the_ds.shape(n_e).cloned() else {
+    let n_e = pbr.original_edge();
+    let Some(e_or_shape) = ds.shape(n_e).cloned() else {
         return 0.0;
     };
-    let a_e_or = Edge(e_or_shape);
-    let mut a_tol_max = BRepTool::edge_tolerance(&a_e_or);
-    if the_cb.pave_blocks().len() < 2 && the_cb.faces().is_empty() {
-        return a_tol_max;
+    let e_or = Edge(e_or_shape);
+    let mut tol_max = BRepTool::edge_tolerance(&e_or);
+    if cb.pave_blocks().len() < 2 && cb.faces().is_empty() {
+        return tol_max;
     }
-    let Some(a_c3d) = BRepTool::edge_curve(&a_e_or) else {
-        return a_tol_max;
+    let Some(c3d) = BRepTool::edge_curve(&e_or) else {
+        return tol_max;
     };
-    let (a_t1, a_t2) = a_pbr.range();
+    let (t1, t2) = pbr.range();
     const A_NB_PNT: i32 = 11;
-    let a_dt = (a_t2 - a_t1) / (A_NB_PNT as f64 + 1.0);
-    if the_cb.pave_blocks().len() > 1 {
-        for a_pb in the_cb.pave_blocks() {
-            if pb_key(a_pb) == pb_key(a_pbr) && a_pb.original_edge() == a_pbr.original_edge() {
+    let dt = (t2 - t1) / (A_NB_PNT as f64 + 1.0);
+    if cb.pave_blocks().len() > 1 {
+        for pb in cb.pave_blocks() {
+            if pb_key(pb) == pb_key(pbr) && pb.original_edge() == pbr.original_edge() {
                 continue;
             }
-            let n_e2 = a_pb.original_edge();
-            let Some(e_shape) = the_ds.shape(n_e2).cloned() else {
+            let n_e2 = pb.original_edge();
+            let Some(e_shape) = ds.shape(n_e2).cloned() else {
                 continue;
             };
-            let a_e = Edge(e_shape);
-            let a_tol = BRepTool::edge_tolerance(&a_e);
-            let mut a_t = a_t1;
+            let e = Edge(e_shape);
+            let tol = BRepTool::edge_tolerance(&e);
+            let mut t = t1;
             for _i in 1..=A_NB_PNT {
-                a_t += a_dt;
-                let a_p = a_c3d.d0(a_t);
-                if let Some(t_proj) = the_ctx.project_point_on_edge(&a_e, &a_p) {
-                    if let Some(c2) = BRepTool::edge_curve(&a_e) {
-                        let a_tol_new = a_tol + a_p.distance(&c2.d0(t_proj));
-                        if a_tol_new > a_tol_max {
-                            a_tol_max = a_tol_new;
+                t += dt;
+                let p = c3d.d0(t);
+                if let Some(t_proj) = ctx.project_point_on_edge(&e, &p) {
+                    if let Some(c2) = BRepTool::edge_curve(&e) {
+                        let tol_new = tol + p.distance(&c2.d0(t_proj));
+                        if tol_new > tol_max {
+                            tol_max = tol_new;
                         }
                     }
                 }
             }
         }
     }
-    for &n_f in the_cb.faces() {
-        let Some(f_shape) = the_ds.shape(n_f).cloned() else {
+    for &n_f in cb.faces() {
+        let Some(f_shape) = ds.shape(n_f).cloned() else {
             continue;
         };
-        let a_f = Face(f_shape);
-        let a_tol = BRepTool::face_tolerance(&a_f);
-        let mut a_t = a_t1;
+        let f = Face(f_shape);
+        let tol = BRepTool::face_tolerance(&f);
+        let mut t = t1;
         for _i in 1..=A_NB_PNT {
-            a_t += a_dt;
-            let a_p = a_c3d.d0(a_t);
-            if let Ok((u, v)) = the_ctx.project_point_on_face(&a_f, &a_p) {
-                if let Some(surf) = BRepTool::face_surface(&a_f) {
-                    let a_tol_new = a_tol + a_p.distance(&surf.d0(u, v));
-                    if a_tol_new > a_tol_max {
-                        a_tol_max = a_tol_new;
+            t += dt;
+            let p = c3d.d0(t);
+            if let Ok((u, v)) = ctx.project_point_on_face(&f, &p) {
+                if let Some(surf) = BRepTool::face_surface(&f) {
+                    let tol_new = tol + p.distance(&surf.d0(u, v));
+                    if tol_new > tol_max {
+                        tol_max = tol_new;
                     }
                 }
             }
         }
     }
-    a_tol_max
+    tol_max
 }
 
 /// One vertex of the `IntersectVertices` input map, with its extra tolerance.
@@ -268,47 +268,47 @@ pub struct VertexTol {
 /// The BVH pair selector is a linear AABB + distance scan. Chains are the
 /// connected components of interfering vertices; isolated vertices form
 /// single-element chains.
-pub fn intersect_vertices(the_vertices: &[VertexTol], the_fuzzy: f64) -> Vec<Vec<TopoShape>> {
-    let a_nb_v = the_vertices.len();
-    if a_nb_v <= 1 {
-        return the_vertices
+pub fn intersect_vertices(vertices: &[VertexTol], fuzzy: f64) -> Vec<Vec<TopoShape>> {
+    let nb_v = vertices.len();
+    if nb_v <= 1 {
+        return vertices
             .iter()
             .map(|v| vec![v.shape.clone()])
             .collect();
     }
-    let a_tol_add = the_fuzzy / 2.0;
-    let mut boxes: Vec<BndBox> = Vec::with_capacity(a_nb_v);
-    let mut tols: Vec<f64> = Vec::with_capacity(a_nb_v);
-    for v in the_vertices {
+    let tol_add = fuzzy / 2.0;
+    let mut boxes: Vec<BndBox> = Vec::with_capacity(nb_v);
+    let mut tols: Vec<f64> = Vec::with_capacity(nb_v);
+    for v in vertices {
         let a_v = Vertex(v.shape.clone());
-        let mut a_tol = BRepTool::vertex_tolerance(&a_v);
-        if a_tol < v.extra_tol {
-            a_tol = v.extra_tol;
+        let mut tol = BRepTool::vertex_tolerance(&a_v);
+        if tol < v.extra_tol {
+            tol = v.extra_tol;
         }
-        let mut a_box = BndBox::new();
-        a_box.add_point(&BRepTool::vertex_point(&a_v));
-        a_box.enlarge(a_tol + a_tol_add);
-        boxes.push(a_box);
-        tols.push(a_tol);
+        let mut bnd_box = BndBox::new();
+        bnd_box.add_point(&BRepTool::vertex_point(&a_v));
+        bnd_box.enlarge(tol + tol_add);
+        boxes.push(bnd_box);
+        tols.push(tol);
     }
     let mut mili: HashMap<usize, Vec<usize>> = HashMap::new();
     let mut tree = crate::bop_aabb_faces::AabbTree::new();
-    tree.set_size(a_nb_v);
+    tree.set_size(nb_v);
     for (i, box_) in boxes.iter().enumerate() {
         tree.add(i, crate::bnd_tools::bnd2bvh3d(box_));
     }
     tree.build();
-    for i in 0..a_nb_v {
+    for i in 0..nb_v {
         for j in tree.select(&boxes[i]) {
             if j <= i {
                 continue;
             }
-            let a_v1 = Vertex(the_vertices[i].shape.clone());
-            let a_v2 = Vertex(the_vertices[j].shape.clone());
-            let a_p1 = BRepTool::vertex_point(&a_v1);
-            let a_p2 = BRepTool::vertex_point(&a_v2);
-            let a_sum = tols[i] + tols[j] + the_fuzzy;
-            if a_p1.distance(&a_p2) <= a_sum.max(CONFUSION) {
+            let v1 = Vertex(vertices[i].shape.clone());
+            let v2 = Vertex(vertices[j].shape.clone());
+            let p1 = BRepTool::vertex_point(&v1);
+            let p2 = BRepTool::vertex_point(&v2);
+            let sum = tols[i] + tols[j] + fuzzy;
+            if p1.distance(&p2) <= sum.max(CONFUSION) {
                 fill_map_pair(i, j, &mut mili);
             }
         }
@@ -316,17 +316,17 @@ pub fn intersect_vertices(the_vertices: &[VertexTol], the_fuzzy: f64) -> Vec<Vec
     let mut chains: Vec<Vec<TopoShape>> = Vec::new();
     let blocks = make_blocks_int(&mili);
     let mut used: HashSet<usize> = HashSet::new();
-    for a_li in blocks {
-        let mut a_chain = Vec::new();
-        for i in &a_li {
+    for li in blocks {
+        let mut chain = Vec::new();
+        for i in &li {
             used.insert(*i);
-            a_chain.push(the_vertices[*i].shape.clone());
+            chain.push(vertices[*i].shape.clone());
         }
-        chains.push(a_chain);
+        chains.push(chain);
     }
-    for i in 0..a_nb_v {
+    for i in 0..nb_v {
         if !used.contains(&i) && !mili.contains_key(&i) {
-            chains.push(vec![the_vertices[i].shape.clone()]);
+            chains.push(vec![vertices[i].shape.clone()]);
         }
     }
     chains
@@ -345,22 +345,22 @@ pub fn trsf_to_point(
 ) -> Option<GpTrsf> {
     let the_point = point.unwrap_or_else(GpPnt::zero);
     let the_criteria = criteria.unwrap_or(1.0e5);
-    let mut a_box = *box1;
-    a_box.add_box(box2);
-    let cmin = a_box.corner_min();
-    let cmax = a_box.corner_max();
+    let mut bnd_box = *box1;
+    bnd_box.add_box(box2);
+    let cmin = bnd_box.corner_min();
+    let cmax = bnd_box.corner_max();
     let cx = (cmin.x() + cmax.x()) * 0.5;
     let cy = (cmin.y() + cmax.y()) * 0.5;
     let cz = (cmin.z() + cmax.z()) * 0.5;
     let dx = the_point.x() - cx;
     let dy = the_point.y() - cy;
     let dz = the_point.z() - cz;
-    let a_pb_dist = (dx * dx + dy * dy + dz * dz).sqrt();
-    if a_pb_dist < the_criteria {
+    let pb_dist = (dx * dx + dy * dy + dz * dz).sqrt();
+    if pb_dist < the_criteria {
         return None;
     }
-    let a_b_size = a_box.square_extent().sqrt();
-    if a_b_size / a_pb_dist > 1.0 / the_criteria {
+    let b_size = bnd_box.square_extent().sqrt();
+    if b_size / pb_dist > 1.0 / the_criteria {
         return None;
     }
     let mut trsf = GpTrsf::identity();

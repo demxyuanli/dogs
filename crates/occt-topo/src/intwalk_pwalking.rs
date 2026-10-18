@@ -18,14 +18,14 @@ pub struct PWalking<'a> {
     pub(crate) close: bool,
     pub(crate) tgfirst: bool,
     pub(crate) tglast: bool,
-    pub(crate) my_tangent_idx: i32,
+    pub(crate) tangent_idx: i32,
     pub(crate) tgdir: GpDir,
     pub(crate) fleche: f64,
     pub(crate) pas_max: f64,
     pub(crate) tolconf: f64,
-    pub(crate) my_tol_tang: f64,
+    pub(crate) tol_tang: f64,
     pub(crate) pasuv: [f64; 4],
-    pub(crate) my_step_min: [f64; 4],
+    pub(crate) step_min: [f64; 4],
     pub(crate) pas_sav: [f64; 4],
     pub(crate) pas_init: [f64; 4],
     pub(crate) um1: f64,
@@ -107,7 +107,7 @@ impl<'a> PWalking<'a> {
         expand_periodic(s2.is_u_periodic(), &mut um2, &mut um_2, pasuv[2], KELARG);
         expand_periodic(s2.is_v_periodic(), &mut vm2, &mut vm_2, pasuv[3], KELARG);
 
-        let my_step_min = [
+        let step_min = [
             100.0 * reso_u1,
             100.0 * reso_v1,
             100.0 * reso_u2,
@@ -127,14 +127,14 @@ impl<'a> PWalking<'a> {
             close: false,
             tgfirst: false,
             tglast: false,
-            my_tangent_idx: 0,
+            tangent_idx: 0,
             tgdir: GpDir::default_dir(),
             fleche: deflection,
             pas_max,
             tolconf: epsilon,
-            my_tol_tang: tol_tangency,
+            tol_tang: tol_tangency,
             pasuv,
-            my_step_min,
+            step_min,
             pas_sav: pas_init,
             pas_init,
             um1,
@@ -185,13 +185,13 @@ impl<'a> PWalking<'a> {
             (self.um_2 - self.um2).abs(),
             (self.vm_2 - self.vm2).abs(),
         ];
-        let the_delta = [du1.abs(), dv1.abs(), du2.abs(), dv2.abs()];
+        let delta = [du1.abs(), dv1.abs(), du2.abs(), dv2.abs()];
         for i in 0..4 {
             if deltas[i].is_finite() {
                 self.pasuv[i] = self.pasuv[i]
-                    .max(increment * the_delta[i].max(RANGE_PART * deltas[i]));
+                    .max(increment * delta[i].max(RANGE_PART * deltas[i]));
             } else {
-                self.pasuv[i] = self.pasuv[i].max(increment * the_delta[i]);
+                self.pasuv[i] = self.pasuv[i].max(increment * delta[i]);
             }
         }
         let reso = [
@@ -201,8 +201,8 @@ impl<'a> PWalking<'a> {
             v_resolution(self.s2, self.tolconf),
         ];
         for i in 0..4 {
-            self.my_step_min[i] = self.my_step_min[i].max(2.0 * reso[i]);
-            self.pasuv[i] = self.pasuv[i].max(self.my_step_min[i]);
+            self.step_min[i] = self.step_min[i].max(2.0 * reso[i]);
+            self.pasuv[i] = self.pasuv[i].max(self.step_min[i]);
         }
     }
 
@@ -246,7 +246,7 @@ impl<'a> PWalking<'a> {
     }
 
     pub fn tangent_at_line(&self) -> (GpDir, i32) {
-        (self.tgdir, self.my_tangent_idx.max(1))
+        (self.tgdir, self.tangent_idx.max(1))
     }
 
     pub fn add_a_point(&mut self, p: PntOn2S) {

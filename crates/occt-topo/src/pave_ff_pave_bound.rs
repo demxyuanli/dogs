@@ -168,29 +168,29 @@ pub fn put_closing_pave_on_curve(f: &mut PaveFiller, i: usize, j: usize) {
         return;
     };
     let vtx = Vertex(v_shape);
-    let a_tol_v = BRepTool::vertex_tolerance(&vtx);
+    let tol_v = BRepTool::vertex_tolerance(&vtx);
     let pv = BRepTool::vertex_point(&vtx);
-    let a_tol_p = tol_r3d + CONFUSION;
+    let tol_p = tol_r3d + CONFUSION;
     let dist = pv.distance(&p_op);
-    if dist > a_tol_v + a_tol_p {
+    if dist > tol_v + tol_p {
         return;
     }
-    let a_new_tol_v = a_tol_v.max(dist + D_TOLERANCE);
+    let new_tol_v = tol_v.max(dist + D_TOLERANCE);
     if inttools_range::find_valid_range(
         curve.as_ref(),
         t0,
         t1,
         &ps[0],
-        a_new_tol_v,
+        new_tol_v,
         &ps[1],
-        a_new_tol_v,
+        new_tol_v,
     )
     .is_none()
     {
         return;
     }
-    if a_new_tol_v > a_tol_v {
-        if let Ok(n_vn) = pave_update_sd::update_vertex(f, n_v, a_new_tol_v) {
+    if new_tol_v > tol_v {
+        if let Ok(n_vn) = pave_update_sd::update_vertex(f, n_v, new_tol_v) {
             n_v = n_vn;
         }
     }

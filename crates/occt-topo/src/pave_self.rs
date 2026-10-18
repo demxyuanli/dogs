@@ -52,17 +52,17 @@ pub fn check_self_interference(f: &mut PaveFiller) -> Result<bool, String> {
         return Ok(false);
     }
     let mut detected = false;
-    let a_nb_r = f.ds().nb_ranges();
-    for i in 0..a_nb_r {
-        let Some(a_r) = f.ds().range(i) else {
+    let nb_r = f.ds().nb_ranges();
+    for i in 0..nb_r {
+        let Some(r) = f.ds().range(i) else {
             continue;
         };
         let mut mcsi: HashMap<usize, (TopoShape, Vec<TopoShape>)> = HashMap::new();
         let mut mcb_fence: HashSet<Vec<usize>> = HashSet::new();
-        let a_r_last = a_r.last();
-        let mut j = a_r.first();
-        while j <= a_r_last {
-            let Some(a_si) = f.ds().shape_info(j) else {
+        let r_last = r.last();
+        let mut j = r.first();
+        while j <= r_last {
+            let Some(si) = f.ds().shape_info(j) else {
                 j += 1;
                 continue;
             };
@@ -70,62 +70,62 @@ pub fn check_self_interference(f: &mut PaveFiller) -> Result<bool, String> {
                 j += 1;
                 continue;
             }
-            let Some(a_s) = f.ds().shape(j).cloned() else {
+            let Some(s) = f.ds().shape(j).cloned() else {
                 j += 1;
                 continue;
             };
-            match a_si.shape_type() {
+            match si.shape_type() {
                 ShapeType::Edge => {
-                    if a_si.has_flag() {
+                    if si.has_flag() {
                         j += 1;
                         continue;
                     }
-                    let mut a_m_sub: HashSet<usize> = HashSet::new();
-                    for &n_v in a_si.sub_shapes() {
+                    let mut m_sub: HashSet<usize> = HashSet::new();
+                    for &n_v in si.sub_shapes() {
                         let n_v = f.ds().has_shape_sd(n_v).unwrap_or(n_v);
-                        a_m_sub.insert(n_v);
+                        m_sub.insert(n_v);
                     }
-                    let a_lpb = f.ds().pave_blocks(j).to_vec();
-                    let b_analyze_v = a_lpb.len() > 1;
-                    for a_pb in &a_lpb {
+                    let lpb = f.ds().pave_blocks(j).to_vec();
+                    let b_analyze_v = lpb.len() > 1;
+                    for pb in &lpb {
                         if b_analyze_v {
-                            let (n0, n1) = a_pb.indices();
+                            let (n0, n1) = pb.indices();
                             for n_vk in [n0, n1] {
-                                if !a_r.contains(n_vk) && !a_m_sub.contains(&n_vk) {
-                                    if let Some(a_v) = f.ds().shape(n_vk).cloned() {
-                                        add_connection(&mut mcsi, &a_v, &a_s);
+                                if !r.contains(n_vk) && !m_sub.contains(&n_vk) {
+                                    if let Some(v) = f.ds().shape(n_vk).cloned() {
+                                        add_connection(&mut mcsi, &v, &s);
                                     }
                                 }
                             }
                         }
-                        if f.ds().is_common_block(a_pb) {
-                            if let Some(a_cb) = f.ds().common_block(a_pb) {
-                                let pbs = if a_cb.pave_blocks().is_empty() {
-                                    vec![a_pb.clone()]
+                        if f.ds().is_common_block(pb) {
+                            if let Some(cb) = f.ds().common_block(pb) {
+                                let pbs = if cb.pave_blocks().is_empty() {
+                                    vec![pb.clone()]
                                 } else {
-                                    a_cb.pave_blocks().to_vec()
+                                    cb.pave_blocks().to_vec()
                                 };
                                 let mut fence: Vec<usize> =
                                     pbs.iter().map(|p| p.original_edge()).collect();
                                 fence.sort_unstable();
                                 fence.dedup();
                                 if mcb_fence.insert(fence) {
-                                    let mut a_le: Vec<usize> = Vec::new();
-                                    for a_pbcb in &pbs {
-                                        let n_e_or = a_pbcb.original_edge();
-                                        if a_r.contains(n_e_or) {
-                                            a_le.push(n_e_or);
+                                    let mut le: Vec<usize> = Vec::new();
+                                    for pbcb in &pbs {
+                                        let n_e_or = pbcb.original_edge();
+                                        if r.contains(n_e_or) {
+                                            le.push(n_e_or);
                                         }
                                     }
-                                    if a_le.len() > 1 {
-                                        let mut a_wc: Vec<TopoShape> = Vec::new();
-                                        for n_e1 in a_le {
-                                            if let Some(a_e1) = f.ds().shape(n_e1).cloned() {
-                                                a_wc.push(a_e1);
+                                    if le.len() > 1 {
+                                        let mut wc: Vec<TopoShape> = Vec::new();
+                                        for n_e1 in le {
+                                            if let Some(e1) = f.ds().shape(n_e1).cloned() {
+                                                wc.push(e1);
                                             }
                                         }
                                         detected = true;
-                                        warn_compound(f, &a_wc);
+                                        warn_compound(f, &wc);
                                     }
                                 }
                             }
@@ -133,24 +133,24 @@ pub fn check_self_interference(f: &mut PaveFiller) -> Result<bool, String> {
                     }
                 }
                 ShapeType::Face => {
-                    if let Some(a_fi) = f.ds().face_info(j) {
-                        for &n_v in a_fi.verts_in.iter().chain(a_fi.verts_sc.iter()) {
-                            if let Some(a_v) = f.ds().shape(n_v).cloned() {
-                                add_connection(&mut mcsi, &a_v, &a_s);
+                    if let Some(fi) = f.ds().face_info(j) {
+                        for &n_v in fi.verts_in.iter().chain(fi.verts_sc.iter()) {
+                            if let Some(v) = f.ds().shape(n_v).cloned() {
+                                add_connection(&mut mcsi, &v, &s);
                             }
                         }
-                        let pbs: Vec<(usize, f64, f64)> = a_fi
+                        let pbs: Vec<(usize, f64, f64)> = fi
                             .paves_in()
                             .iter()
-                            .chain(a_fi.paves().iter())
+                            .chain(fi.paves().iter())
                             .copied()
                             .collect();
                         for (n_e, _, _) in pbs {
                             if n_e == 0 {
                                 continue;
                             }
-                            if let Some(a_e) = f.ds().shape(n_e).cloned() {
-                                add_connection(&mut mcsi, &a_e, &a_s);
+                            if let Some(e) = f.ds().shape(n_e).cloned() {
+                                add_connection(&mut mcsi, &e, &s);
                             }
                         }
                     }

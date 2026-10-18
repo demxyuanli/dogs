@@ -424,18 +424,18 @@ use super::*;
     pub(super) fn build_parallel_cylinders(d: f64) -> (Solid, Edge) {
         let b = TopoBuilder::new();
         let r = 1.0;
-        let a_half = d / 2.0;
-        let h_half = (r * r - a_half * a_half).sqrt();
-        // P1 = (a_half, +h_half), P2 = (a_half, −h_half) in the cross-section.
-        let p1 = GpPnt::new(a_half, h_half, 0.0);
-        let p2 = GpPnt::new(a_half, -h_half, 0.0);
-        let p1_top = GpPnt::new(a_half, h_half, 2.0);
-        let p2_top = GpPnt::new(a_half, -h_half, 2.0);
+        let half = d / 2.0;
+        let h_half = (r * r - half * half).sqrt();
+        // P1 = (half, +h_half), P2 = (half, −h_half) in the cross-section.
+        let p1 = GpPnt::new(half, h_half, 0.0);
+        let p2 = GpPnt::new(half, -h_half, 0.0);
+        let p1_top = GpPnt::new(half, h_half, 2.0);
+        let p2_top = GpPnt::new(half, -h_half, 2.0);
         // Angles on circle A (centre 0,0) and circle B (centre d,0).
-        let a1_p1 = h_half.atan2(a_half);
-        let a1_p2 = (-h_half).atan2(a_half);
-        let a2_p1 = h_half.atan2(a_half - d);
-        let a2_p2 = (-h_half).atan2(a_half - d);
+        let a1_p1 = h_half.atan2(half);
+        let a1_p2 = (-h_half).atan2(half);
+        let a2_p1 = h_half.atan2(half - d);
+        let a2_p2 = (-h_half).atan2(half - d);
         // Outer arc of A: P1 → P2 counter-clockwise through 180°.
         let arc_a_b = build_arc_xy(&b, GpPnt::zero(), r, a1_p1, a1_p2 + 2.0 * PI, 0.0);
         let arc_a_t = build_arc_xy(&b, GpPnt::zero(), r, a1_p1, a1_p2 + 2.0 * PI, 2.0);

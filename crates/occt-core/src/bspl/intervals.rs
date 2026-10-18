@@ -90,12 +90,12 @@ pub fn knot_intervals(
     if tk.len() < 2 {
         return vec![first, last];
     }
-    let a_cont = if continuity >= 6 {
+    let cont = if continuity >= 6 {
         degree as i32
     } else {
         continuity as i32
     };
-    let thresh = degree as i32 - a_cont;
+    let thresh = degree as i32 - cont;
     let mut kept = Vec::new();
     for i in 0..tk.len() {
         if tm[i] > thresh || i == 0 || i + 1 == tk.len() {

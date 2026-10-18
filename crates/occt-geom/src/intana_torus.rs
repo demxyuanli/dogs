@@ -98,11 +98,11 @@ pub fn quadric_quadric_plane_torus(pln: &GpPln, tor: &GpTorus, tol: f64) -> Toru
     if parallel {
         let (a, b, c, d) = plane_coeffs(pln);
         let dist = a * tor_loc.x() + b * tor_loc.y() + c * tor_loc.z() + d;
-        let a_dr = dist.abs() - r_min;
-        if a_dr > EPS_CYL_DELTA_RADIUS {
+        let dr = dist.abs() - r_min;
+        if dr > EPS_CYL_DELTA_RADIUS {
             return TorusIntersection::Empty;
         }
-        let dist = if a_dr.abs() < EPS_CYL_DELTA_RADIUS {
+        let dist = if dr.abs() < EPS_CYL_DELTA_RADIUS {
             if dist < 0.0 {
                 -r_min
             } else {
@@ -111,16 +111,16 @@ pub fn quadric_quadric_plane_torus(pln: &GpPln, tor: &GpTorus, tol: f64) -> Toru
         } else {
             dist
         };
-        let a_dt = (r_min * r_min - dist * dist).abs().sqrt();
+        let dt = (r_min * r_min - dist * dist).abs().sqrt();
         let pt1 = GpPnt::new(
             tor_loc.x() - dist * a,
             tor_loc.y() - dist * b,
             tor_loc.z() - dist * c,
         );
         let dir1 = *tor_ax.direction();
-        let mut circs = vec![circle_at(pt1, &dir1, r_maj + a_dt)];
-        if a_dr < -EPS_CYL_DELTA_RADIUS && a_dt > tol {
-            circs.push(circle_at(pt1, &dir1, r_maj - a_dt));
+        let mut circs = vec![circle_at(pt1, &dir1, r_maj + dt)];
+        if dr < -EPS_CYL_DELTA_RADIUS && dt > tol {
+            circs.push(circle_at(pt1, &dir1, r_maj - dt));
         }
         TorusIntersection::Circles(circs)
     } else {
@@ -128,11 +128,11 @@ pub fn quadric_quadric_plane_torus(pln: &GpPln, tor: &GpTorus, tol: f64) -> Toru
             return TorusIntersection::Fail;
         }
         let dir1 = *pln_ax.direction();
-        let a_dir = tor_ax.direction().crossed(&dir1);
-        let Ok(a_dir) = a_dir else {
+        let dir = tor_ax.direction().crossed(&dir1);
+        let Ok(dir) = dir else {
             return TorusIntersection::Fail;
         };
-        let offset = GpVec::from_xyz(a_dir.xyz()).multiplied_scalar(r_maj);
+        let offset = GpVec::from_xyz(dir.xyz()).multiplied_scalar(r_maj);
         let pt1 = tor_loc.translated_vec(&offset);
         let pt2 = tor_loc.translated_vec(&offset.reversed());
         TorusIntersection::Circles(vec![
@@ -165,13 +165,13 @@ pub fn quadric_quadric_cylinder_torus(
     if (r_cyl + tol) < (r_maj - r_min) || (r_cyl - tol) > (r_maj + r_min) {
         return TorusIntersection::Empty;
     }
-    let a_dist = (r_min * r_min - (r_cyl - r_maj) * (r_cyl - r_maj)).abs().sqrt();
+    let dist = (r_min * r_min - (r_cyl - r_maj) * (r_cyl - r_maj)).abs().sqrt();
     let dir1 = *tor_ax.direction();
     let tor_loc = tor_ax.location().coord;
-    let pt1 = pnt_from_xyz(&tor_loc.added(&dir1.xyz().multiplied(a_dist)));
+    let pt1 = pnt_from_xyz(&tor_loc.added(&dir1.xyz().multiplied(dist)));
     let mut circs = vec![circle_at(pt1, &dir1, r_cyl)];
-    if a_dist > tol && r_cyl > (r_maj - r_min) && r_cyl < (r_maj + r_min) {
-        let pt2 = pnt_from_xyz(&tor_loc.added(&dir1.xyz().multiplied(-a_dist)));
+    if dist > tol && r_cyl > (r_maj - r_min) && r_cyl < (r_maj + r_min) {
+        let pt2 = pnt_from_xyz(&tor_loc.added(&dir1.xyz().multiplied(-dist)));
         circs.push(circle_at(pt2, &dir1, r_cyl));
     }
     TorusIntersection::Circles(circs)
@@ -212,21 +212,21 @@ pub fn quadric_quadric_cone_torus(cone: &GpCone, tor: &GpTorus, tol: f64) -> Tor
             x_dir = x_dir.reversed();
         }
         let pct = tor_loc.translated_vec(&GpVec::from_xyz(x_dir.xyz()).multiplied_scalar(r_maj));
-        let a_dist = con_l.distance(&pct);
-        if a_dist > r_min + tol {
+        let dist = con_l.distance(&pct);
+        if dist > r_min + tol {
             continue;
         }
         let ph = pct
             .coord
-            .subtracted(&con_l.normal(&pct).direction().xyz().multiplied(a_dist));
-        let a_dt = (r_min * r_min - a_dist * a_dist).abs().sqrt();
-        let d_val = dl.xyz().multiplied(a_dt);
+            .subtracted(&con_l.normal(&pct).direction().xyz().multiplied(dist));
+        let dt = (r_min * r_min - dist * dist).abs().sqrt();
+        let d_val = dl.xyz().multiplied(dt);
         let p = pnt_from_xyz(&ph.added(&d_val));
         params.push(lin.distance(&p));
         pts.push(pnt_from_xyz(
             &p.coord.subtracted(&x_dir.xyz().multiplied(*params.last().unwrap())),
         ));
-        if a_dist < r_min && a_dt > tol {
+        if dist < r_min && dt > tol {
             let p = pnt_from_xyz(&ph.subtracted(&d_val));
             params.push(lin.distance(&p));
             pts.push(pnt_from_xyz(
@@ -269,12 +269,12 @@ pub fn quadric_quadric_sphere_torus(
         pnt_from_xyz(&tor_ax.location().coord.added(&x_dir.xyz().multiplied(r_maj)));
     let r_sph = sph.radius();
     let vec12 = GpVec::from_pnts(&tor_loc_tube, &sph_loc);
-    let a_dist = vec12.magnitude();
-    if (a_dist - tol) > (r_min + r_sph) || (a_dist + tol) < (r_min - r_sph).abs() {
+    let dist = vec12.magnitude();
+    if (dist - tol) > (r_min + r_sph) || (dist + tol) < (r_min - r_sph).abs() {
         return TorusIntersection::Empty;
     }
-    let an_alpha = 0.5 * (r_min * r_min - r_sph * r_sph + a_dist * a_dist) / a_dist;
-    let a_beta = (r_min * r_min - an_alpha * an_alpha).abs().sqrt();
+    let an_alpha = 0.5 * (r_min * r_min - r_sph * r_sph + dist * dist) / dist;
+    let beta = (r_min * r_min - an_alpha * an_alpha).abs().sqrt();
     // `IntAna_QuadQuadGeo.cxx:2542` constructs `gp_Dir aDir12(aVec12)`
     // unconditionally; a zero `aVec12` makes that constructor throw
     // `Standard_ConstructionError` (OCCT has no concentric special case in this
@@ -288,13 +288,13 @@ pub fn quadric_quadric_sphere_torus(
     let Ok(dc) = tor.y_axis().direction().crossed(&dir12) else {
         return TorusIntersection::Fail;
     };
-    let d_val = dc.xyz().multiplied(a_beta);
+    let d_val = dc.xyz().multiplied(beta);
     let p = pnt_from_xyz(&ph.added(&d_val));
     let param1 = lin.distance(&p);
     let pt1 = pnt_from_xyz(&p.coord.subtracted(&x_dir.xyz().multiplied(param1)));
     let dir1 = *tor_ax.direction();
     let mut circs = vec![circle_at(pt1, &dir1, param1)];
-    if a_dist < (r_sph + r_min) && a_dist > (r_sph - r_min).abs() && d_val.modulus() > tol {
+    if dist < (r_sph + r_min) && dist > (r_sph - r_min).abs() && d_val.modulus() > tol {
         let p = pnt_from_xyz(&ph.subtracted(&d_val));
         let param2 = lin.distance(&p);
         let pt2 = pnt_from_xyz(&p.coord.subtracted(&x_dir.xyz().multiplied(param2)));
@@ -331,12 +331,12 @@ pub fn quadric_quadric_torus_torus(t1: &GpTorus, t2: &GpTorus, tol: f64) -> Toru
     let p1 = pnt_from_xyz(&loc1.coord.added(&x_dir1.xyz().multiplied(r_maj1)));
     let p2 = pnt_from_xyz(&loc2.coord.added(&x_dir1.xyz().multiplied(r_maj2)));
     let v12 = GpVec::from_pnts(&p1, &p2);
-    let a_dist = v12.magnitude();
-    if (a_dist - tol) > (r_min1 + r_min2) || (a_dist + tol) < (r_min1 - r_min2).abs() {
+    let dist = v12.magnitude();
+    if (dist - tol) > (r_min1 + r_min2) || (dist + tol) < (r_min1 - r_min2).abs() {
         return TorusIntersection::Empty;
     }
-    let an_alpha = 0.5 * (r_min1 * r_min1 - r_min2 * r_min2 + a_dist * a_dist) / a_dist;
-    let a_beta = (r_min1 * r_min1 - an_alpha * an_alpha).abs().sqrt();
+    let an_alpha = 0.5 * (r_min1 * r_min1 - r_min2 * r_min2 + dist * dist) / dist;
+    let beta = (r_min1 * r_min1 - an_alpha * an_alpha).abs().sqrt();
     // `IntAna_QuadQuadGeo.cxx:2647` constructs `gp_Dir aDir12(aV12)`
     // unconditionally; a zero `aV12` makes that constructor throw
     // `Standard_ConstructionError` (OCCT has no concentric special case in this
@@ -348,13 +348,13 @@ pub fn quadric_quadric_torus_torus(t1: &GpTorus, t2: &GpTorus, tol: f64) -> Toru
     let Ok(dc) = t1.y_axis().direction().crossed(&dir12) else {
         return TorusIntersection::Fail;
     };
-    let d_val = dc.xyz().multiplied(a_beta);
+    let d_val = dc.xyz().multiplied(beta);
     let p = pnt_from_xyz(&ph.added(&d_val));
     let param1 = l1.distance(&p);
     let pt1 = pnt_from_xyz(&p.coord.subtracted(&x_dir1.xyz().multiplied(param1)));
     let dir1 = *ax1.direction();
     let mut circs = vec![circle_at(pt1, &dir1, param1)];
-    if a_dist < (r_min1 + r_min2) && a_dist > (r_min1 - r_min2).abs() && d_val.modulus() > tol {
+    if dist < (r_min1 + r_min2) && dist > (r_min1 - r_min2).abs() && d_val.modulus() > tol {
         let p = pnt_from_xyz(&ph.subtracted(&d_val));
         let param2 = l1.distance(&p);
         let pt2 = pnt_from_xyz(&p.coord.subtracted(&x_dir1.xyz().multiplied(param2)));

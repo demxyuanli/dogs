@@ -809,7 +809,7 @@ pub fn split_by_deflection2d(
     }
     let sq_def = lin_def * lin_def;
     let sq_min = sq_def.max(min_size * min_size);
-    let a_nodes_nb = params.len();
+    let nodes_nb = params.len();
     for (c2d, surf) in pcurves {
         // `BRepMesh_CurveTessellator.cxx:168-171`: skip only
         // `STANDARD_TYPE(Geom_Plane)`, not a sampled is_planar classify.
@@ -819,7 +819,7 @@ pub fn split_by_deflection2d(
         }
         params.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         params.dedup_by(|a, b| (*a - *b).abs() < PCONFUSION);
-        let n = a_nodes_nb.min(params.len());
+        let n = nodes_nb.min(params.len());
         let arr = params[..n].to_vec();
         for w in arr.windows(2) {
             split_segment_2d(
@@ -877,13 +877,13 @@ fn split_segment_2d(
     if v1.square_magnitude() < sq_min {
         return;
     }
-    let mut a_vec = GpVec::from_pnts(&p3df, &p3dl);
-    let mag = a_vec.magnitude();
+    let mut vec = GpVec::from_pnts(&p3df, &p3dl);
+    let mag = vec.magnitude();
     if mag < 1e-30 {
         return;
     }
-    a_vec = a_vec.multiplied_scalar(1.0 / mag);
-    let proj = a_vec.multiplied_scalar(v1.dot(&a_vec));
+    vec = vec.multiplied_scalar(1.0 / mag);
+    let proj = vec.multiplied_scalar(v1.dot(&vec));
     let dist = v1.subtracted(&proj);
     if dist.square_magnitude() < sq_def {
         return;

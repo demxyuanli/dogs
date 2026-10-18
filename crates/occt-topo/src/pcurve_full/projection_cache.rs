@@ -314,70 +314,70 @@ fn fix_periodicity_troubles(
     saved_point: i32,
     saved_param: f64,
 ) -> bool {
-    let mut a_min_param = 0.0;
-    let mut a_max_param = period;
+    let mut min_param = 0.0;
+    let mut max_param = period;
     // `cxx:295-315`: with no cached point the reference is the middle of the
     // period and the walk starts at index 0.
     let (a_saved_param, a_saved_point) = if saved_point < 0 {
         (0.5 * period, 0usize)
     } else {
-        while a_min_param > saved_param {
-            a_min_param -= period;
-            a_max_param -= period;
+        while min_param > saved_param {
+            min_param -= period;
+            max_param -= period;
         }
-        while a_max_param < saved_param {
-            a_min_param += period;
-            a_max_param += period;
+        while max_param < saved_param {
+            min_param += period;
+            max_param += period;
         }
         (saved_param, saved_point as usize)
     };
 
     // `cxx:317-324`: an iso line sits on the window border and is pinned there.
-    let mut a_fix_iso_param = a_min_param;
+    let mut fix_iso_param = min_param;
     let mut is_iso_line = false;
-    if a_max_param - a_saved_param < PCONFUSION || a_saved_param - a_min_param < PCONFUSION {
-        a_fix_iso_param = a_saved_param;
+    if max_param - a_saved_param < PCONFUSION || a_saved_param - min_param < PCONFUSION {
+        fix_iso_param = a_saved_param;
         is_iso_line = true;
     }
 
     for i in 0..4 {
-        let mut a_param = iso_coord(&pnt[i], idx);
-        a_param += adjust_to_period(a_param, a_min_param, a_max_param);
+        let mut param = iso_coord(&pnt[i], idx);
+        param += adjust_to_period(param, min_param, max_param);
         if is_iso_line {
-            if a_max_param - a_param < PCONFUSION || a_param - a_min_param < PCONFUSION {
-                a_param = a_fix_iso_param;
+            if max_param - param < PCONFUSION || param - min_param < PCONFUSION {
+                param = fix_iso_param;
             }
         } else {
-            if a_max_param - a_param < PCONFUSION {
-                a_param = a_max_param;
+            if max_param - param < PCONFUSION {
+                param = max_param;
             }
-            if a_param - a_min_param < PCONFUSION {
-                a_param = a_min_param;
+            if param - min_param < PCONFUSION {
+                param = min_param;
             }
         }
-        set_iso_coord(&mut pnt[i], idx, a_param);
+        set_iso_coord(&mut pnt[i], idx, param);
     }
 
     // `cxx:355-371`: a monotonicity break is a period jump.
     let mut is_jump = false;
-    let mut a_prev_diff = 0.0;
-    let mut a_sum_diff = 1.0;
+    let mut prev_diff = 0.0;
+    let mut sum_diff = 1.0;
     for i in 0..3 {
-        let a_diff = iso_coord(&pnt[i + 1], idx) - iso_coord(&pnt[i], idx);
-        if a_diff < -PCONFUSION {
-            a_sum_diff *= -1.0;
+        let diff = iso_coord(&pnt[i + 1], idx) - iso_coord(&pnt[i], idx);
+        if diff < -PCONFUSION {
+            sum_diff *= -1.0;
         }
-        if a_diff * a_prev_diff < -PCONFUSION {
+        if diff * prev_diff < -PCONFUSION {
             is_jump = true;
         }
-        a_prev_diff = a_diff;
+        prev_diff = diff;
     }
     if !is_jump {
         return false;
     }
 
     let sp = a_saved_point.min(3);
-    if a_sum_diff > 0.0 {
+    if sum_diff > 0.0 {
         for i in (1..=sp).rev() {
             if iso_coord(&pnt[i], idx) > iso_coord(&pnt[i - 1], idx) {
                 let v = iso_coord(&pnt[i - 1], idx) + period;
@@ -483,29 +483,29 @@ pub(super) fn get_line(
     cache: &ProjectorCache,
     out: &mut GetLineOut,
 ) -> Option<Arc<dyn Curve2d>> {
-    let a_nb = points.len();
-    if a_nb < 2 || params.len() != a_nb {
+    let nb = points.len();
+    if nb < 2 || params.len() != nb {
         return None;
     }
     // `cxx:911-916`: probes 1, 2, nb-1 and nb.
-    let a_p = [points[0], points[1], points[a_nb - 2], points[a_nb - 1]];
+    let p = [points[0], points[1], points[nb - 2], points[nb - 1]];
 
-    let mut a_tol2 = tol * tol;
-    let mut a_tol_working = tol;
+    let mut tol2 = tol * tol;
+    let mut tol_working = tol;
     let is_periodic_u = s.is_u_periodic();
     let is_periodic_v = s.is_v_periodic();
 
     // `cxx:925-936`: protection against bad tolerance shapes.
-    if a_tol2 > 1.0 {
-        a_tol_working = CONFUSION;
-        a_tol2 = a_tol_working * a_tol_working;
+    if tol2 > 1.0 {
+        tol_working = CONFUSION;
+        tol2 = tol_working * tol_working;
     }
-    if a_tol2 < SQUARE_CONFUSION {
-        a_tol2 = SQUARE_CONFUSION;
+    if tol2 < SQUARE_CONFUSION {
+        tol2 = SQUARE_CONFUSION;
     }
-    let an_old_tol2 = a_tol2;
+    let an_old_tol2 = tol2;
 
-    let mut a_p2d = [GpPnt2d::zero(); 4];
+    let mut p2d = [GpPnt2d::zero(); 4];
 
     // `cxx:941`: `SurfaceProjectorWithCache aProjector(mySurf)`.
     let projector = SurfaceProjectorWithCache::new(s);
@@ -515,31 +515,31 @@ pub(super) fn get_line(
     let mut saved_point_num: i32 = -1;
     let mut saved_point = GpPnt2d::zero();
     for i in [0usize, 3] {
-        let hit = (0..cache.len()).find(|&j| cache.get(j).first.square_distance(&a_p[i]) < a_tol2);
-        let a_gap;
+        let hit = (0..cache.len()).find(|&j| cache.get(j).first.square_distance(&p[i]) < tol2);
+        let gap;
         match hit {
             Some(j) => {
-                let a_cache_pnt = cache.get(j);
+                let cache_pnt = cache.get(j);
                 let (uv, g) = projector.next_value_of_uv(
                     s,
-                    &a_cache_pnt.second,
-                    &a_p[i],
-                    a_tol_working,
-                    a_tol2,
-                    a_tol_working,
+                    &cache_pnt.second,
+                    &p[i],
+                    tol_working,
+                    tol2,
+                    tol_working,
                 );
-                a_p2d[i] = uv;
-                a_gap = g;
+                p2d[i] = uv;
+                gap = g;
                 saved_point_num = i as i32;
-                saved_point = a_cache_pnt.second;
+                saved_point = cache_pnt.second;
                 if i == 0 {
                     out.is_from_cache = true;
                 }
             }
             None => {
-                let (uv, g) = projector.value_of_uv(s, &a_p[i], a_tol_working, a_tol2);
-                a_p2d[i] = uv;
-                a_gap = g;
+                let (uv, g) = projector.value_of_uv(s, &p[i], tol_working, tol2);
+                p2d[i] = uv;
+                gap = g;
             }
         }
         // `cxx:972-978`: `const double aDist = aProjector.Gap();` then
@@ -551,15 +551,15 @@ pub(super) fn get_line(
         // poor projection or the conic-extrusion arm (`cxx:1312`), which leaves
         // `myGap = -1.` (`cxx:1249`). `getLine` also leaves the value in
         // `SurfaceProjectorWithCache::Gap()` for the caller's sample loop.
-        out.last_gap = a_gap;
-        let a_cur_dist = a_gap * a_gap;
-        if a_tol2 < a_cur_dist {
-            a_tol2 = a_cur_dist;
+        out.last_gap = gap;
+        let cur_dist = gap * gap;
+        if tol2 < cur_dist {
+            tol2 = cur_dist;
         }
     }
     // `cxx:1020-1021`: `thePoints2d` is written before any failure return.
-    out.first2d = a_p2d[0];
-    out.last2d = a_p2d[3];
+    out.first2d = p2d[0];
+    out.last2d = p2d[3];
 
     // `cxx:982-1013`: on a periodic surface the second and last-but-one points
     // seed the period-jump fix, which is anchored on the cached point when the
@@ -568,35 +568,35 @@ pub(super) fn get_line(
     if is_periodic_u || is_periodic_v {
         for i in [1usize, 2] {
             let hit =
-                (0..cache.len()).find(|&j| cache.get(j).first.square_distance(&a_p[i]) < a_tol2);
-            let a_gap;
+                (0..cache.len()).find(|&j| cache.get(j).first.square_distance(&p[i]) < tol2);
+            let gap;
             match hit {
                 Some(j) => {
-                    let a_cache_pnt = cache.get(j);
+                    let cache_pnt = cache.get(j);
                     let (uv, g) = projector.next_value_of_uv(
                         s,
-                        &a_cache_pnt.second,
-                        &a_p[i],
-                        a_tol_working,
-                        a_tol2,
-                        a_tol_working,
+                        &cache_pnt.second,
+                        &p[i],
+                        tol_working,
+                        tol2,
+                        tol_working,
                     );
-                    a_p2d[i] = uv;
-                    a_gap = g;
+                    p2d[i] = uv;
+                    gap = g;
                     saved_point_num = i as i32;
-                    saved_point = a_cache_pnt.second;
+                    saved_point = cache_pnt.second;
                 }
                 None => {
-                    let (uv, g) = projector.value_of_uv(s, &a_p[i], a_tol_working, a_tol2);
-                    a_p2d[i] = uv;
-                    a_gap = g;
+                    let (uv, g) = projector.value_of_uv(s, &p[i], tol_working, tol2);
+                    p2d[i] = uv;
+                    gap = g;
                 }
             }
             // `cxx:987`: `aProjector.Gap()`, the value `getLine` leaves behind.
-            out.last_gap = a_gap;
-            let a_cur_dist = a_gap * a_gap;
-            if a_tol2 < a_cur_dist {
-                a_tol2 = a_cur_dist;
+            out.last_gap = gap;
+            let cur_dist = gap * gap;
+            if tol2 < cur_dist {
+                tol2 = cur_dist;
             }
         }
         // `cxx:996` / `cxx:1007`: both calls ASSIGN `theIsRecompute`, so on a
@@ -606,15 +606,15 @@ pub(super) fn get_line(
         // that reaches the spherical-surface guard below.
         if is_periodic_u {
             is_recompute =
-                fix_periodicity_troubles(&mut a_p2d, 0, s.u_period(), saved_point_num, saved_point.x());
+                fix_periodicity_troubles(&mut p2d, 0, s.u_period(), saved_point_num, saved_point.x());
         }
         if is_periodic_v {
             is_recompute =
-                fix_periodicity_troubles(&mut a_p2d, 1, s.v_period(), saved_point_num, saved_point.y());
+                fix_periodicity_troubles(&mut p2d, 1, s.v_period(), saved_point_num, saved_point.y());
         }
     }
     out.is_recompute = is_recompute;
-    out.probes2d = a_p2d;
+    out.probes2d = p2d;
 
     // `cxx:1015-1018`: a spherical surface with a periodicity jump is given up
     // (the caller's `fixPeriodicityTroubles` comment: `rln S4135 sphere is not
@@ -623,40 +623,40 @@ pub(super) fn get_line(
         return None;
     }
 
-    a_tol2 = an_old_tol2;
+    tol2 = an_old_tol2;
 
-    let d_par = params[a_nb - 1] - params[0];
+    let d_par = params[nb - 1] - params[0];
     if d_par.abs() < PCONFUSION {
         return None;
     }
 
     // `cxx:1032-1034`: the candidate pcurve is the straight 2D chord, linear in
     // the 3D parameter.
-    let a_vec0 = GpVec2d::new(a_p2d[3].x() - a_p2d[0].x(), a_p2d[3].y() - a_p2d[0].y());
-    let a_vec = GpVec2d::new(a_vec0.x() / d_par, a_vec0.y() / d_par);
+    let vec0 = GpVec2d::new(p2d[3].x() - p2d[0].x(), p2d[3].y() - p2d[0].y());
+    let vec = GpVec2d::new(vec0.x() / d_par, vec0.y() / d_par);
     let candidate = |t: f64| {
         let dt = t - params[0];
-        GpPnt2d::new(a_p2d[0].x() + a_vec.x() * dt, a_p2d[0].y() + a_vec.y() * dt)
+        GpPnt2d::new(p2d[0].x() + vec.x() * dt, p2d[0].y() + vec.y() * dt)
     };
 
     // `cxx:1036-1058`: on a C1 surface every sample must lie on the normal line
     // of its candidate `(u, v)`.
     let mut is_normal_check = is_cn_1(s);
     if is_normal_check {
-        for i in 0..a_nb {
+        for i in 0..nb {
             let cu = candidate(params[i]);
-            let (a_cur_p, a_du, a_dv) = s.d1(cu.x(), cu.y());
-            let a_normal_vec = a_du.crossed(&a_dv);
-            if a_normal_vec.square_magnitude() < SQUARE_CONFUSION {
+            let (cur_p, du, dv) = s.d1(cu.x(), cu.y());
+            let normal_vec = du.crossed(&dv);
+            if normal_vec.square_magnitude() < SQUARE_CONFUSION {
                 is_normal_check = false;
                 break;
             }
             // `gp_Lin(aCurP, gp_Dir(aNormalVec)).Distance(thePoints(i))`.
-            let a_dist = a_normal_vec
-                .crossed(&GpVec::from_pnts(&a_cur_p, &points[i]))
+            let dist = normal_vec
+                .crossed(&GpVec::from_pnts(&cur_p, &points[i]))
                 .magnitude()
-                / a_normal_vec.magnitude();
-            if a_dist > a_tol_working {
+                / normal_vec.magnitude();
+            if dist > tol_working {
                 return None;
             }
         }
@@ -664,34 +664,34 @@ pub(super) fn get_line(
 
     // `cxx:1060-1076`: otherwise the surface distance must stay constant.
     if !is_normal_check {
-        let a_first_point_dist = s
-            .value(a_p2d[0].x(), a_p2d[0].y())
+        let first_point_dist = s
+            .value(p2d[0].x(), p2d[0].y())
             .square_distance(&points[0]);
-        a_tol2 = a_tol2.max(a_tol2 * 2.0 * a_first_point_dist);
-        for i in 1..a_nb - 1 {
+        tol2 = tol2.max(tol2 * 2.0 * first_point_dist);
+        for i in 1..nb - 1 {
             let cu = candidate(params[i]);
-            let a_cur_p = s.d0(cu.x(), cu.y());
-            let a_dist1 = a_cur_p.square_distance(&points[i]);
-            if (a_first_point_dist - a_dist1).abs() > a_tol2 {
+            let cur_p = s.d0(cu.x(), cu.y());
+            let dist1 = cur_p.square_distance(&points[i]);
+            if (first_point_dist - dist1).abs() > tol2 {
                 return None;
             }
         }
     }
 
     // `cxx:1079-1086`: an exact `Geom2d_Line` when the 2D chord is unit speed.
-    let a_l_length = a_vec0.magnitude();
-    if (a_l_length - d_par).abs() <= PCONFUSION {
-        let a_dir_l = GpVec2d::new(a_vec0.x() / a_l_length, a_vec0.y() / a_l_length);
-        let dir2d = GpDir2d::from_vec2d(&a_dir_l).ok()?;
+    let l_length = vec0.magnitude();
+    if (l_length - d_par).abs() <= PCONFUSION {
+        let dir_l = GpVec2d::new(vec0.x() / l_length, vec0.y() / l_length);
+        let dir2d = GpDir2d::from_vec2d(&dir_l).ok()?;
         let loc = GpPnt2d::new(
-            a_p2d[0].x() - params[0] * a_dir_l.x(),
-            a_p2d[0].y() - params[0] * a_dir_l.y(),
+            p2d[0].x() - params[0] * dir_l.x(),
+            p2d[0].y() - params[0] * dir_l.y(),
         );
         return Some(Arc::new(Geom2dLine::new(GpAx2d::new(loc, dir2d))));
     }
 
     // `cxx:1088-1101`: a two-pole degree-1 B-spline for the rest.
-    let bs = bspline_from_samples(&[a_p2d[0], a_p2d[3]], params[0], params[a_nb - 1], 1).ok()?;
+    let bs = bspline_from_samples(&[p2d[0], p2d[3]], params[0], params[nb - 1], 1).ok()?;
     Some(Arc::new(bs))
 }
 

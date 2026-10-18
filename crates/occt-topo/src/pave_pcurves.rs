@@ -36,36 +36,36 @@ use crate::topo_tools_full::edge_vertices;
 
 /// `UpdateVertices` (`BOPAlgo_PaveFiller_7.cxx:808`).
 pub fn update_vertices_pcurve(a_e: &Edge, a_f: &Face) {
-    let mut a_ef = a_e.clone();
-    a_ef.0.set_orientation(Orientation::Forward);
-    let (v1, v2) = edge_vertices(&a_ef);
+    let mut ef = a_e.clone();
+    ef.0.set_orientation(Orientation::Forward);
+    let (v1, v2) = edge_vertices(&ef);
     let verts = [v1, v2];
-    let Some(a_s) = BRepTool::face_surface(a_f) else {
+    let Some(s) = BRepTool::face_surface(a_f) else {
         return;
     };
-    let Some(a_c3d) = BRepTool::edge_curve(&a_ef) else {
+    let Some(c3d) = BRepTool::edge_curve(&ef) else {
         return;
     };
-    let Some(a_c2d) = crate::boptools_2d::curve_on_surface(&a_ef, a_f) else {
+    let Some(c2d) = crate::boptools_2d::curve_on_surface(&ef, a_f) else {
         return;
     };
-    let (t0, t1) = BRepTool::edge_parameters(&a_ef);
+    let (t0, t1) = BRepTool::edge_parameters(&ef);
     let params = [t0, t1];
     for j in 0..2 {
-        let Some(ref a_v) = verts[j] else {
+        let Some(ref v) = verts[j] else {
             continue;
         };
-        let a_tol_v2 = {
-            let t = BRepTool::vertex_tolerance(a_v);
+        let tol_v2 = {
+            let t = BRepTool::vertex_tolerance(v);
             t * t
         };
-        let a_p3d = a_c3d.d0(params[j]);
-        let a_p2d = a_c2d.d0(params[j]);
-        let a_p3dx = a_s.d0(a_p2d.x(), a_p2d.y());
-        let a_d2 = a_p3d.square_distance(&a_p3dx);
-        if a_d2 > a_tol_v2 {
-            let a_d = a_d2.sqrt();
-            a_v.set_tolerance(a_d + D_TOLERANCE);
+        let p3d = c3d.d0(params[j]);
+        let p2d = c2d.d0(params[j]);
+        let p3dx = s.d0(p2d.x(), p2d.y());
+        let d2 = p3d.square_distance(&p3dx);
+        if d2 > tol_v2 {
+            let d = d2.sqrt();
+            v.set_tolerance(d + D_TOLERANCE);
         }
     }
 }
@@ -94,20 +94,20 @@ pub fn make_p_curves(f: &mut PaveFiller) -> Result<(), String> {
         let Some(fs) = f.ds().shape(n_f1).cloned() else {
             continue;
         };
-        let mut a_f1f = Face(fs);
-        a_f1f.0.set_orientation(Orientation::Forward);
+        let mut f1f = Face(fs);
+        f1f.0.set_orientation(Orientation::Forward);
         for &(n_e, _, _) in fi.paves_in() {
             let Some(es) = f.ds().shape(n_e).cloned() else {
                 continue;
             };
-            build_or_warn(f, &Edge(es), &a_f1f, n_e, n_f1);
+            build_or_warn(f, &Edge(es), &f1f, n_e, n_f1);
         }
         for &(n_e, t1, t2) in fi.paves_on() {
             let Some(es) = f.ds().shape(n_e).cloned() else {
                 continue;
             };
             let a_e = Edge(es);
-            if has_curve_on_surface(&a_e, &a_f1f) {
+            if has_curve_on_surface(&a_e, &f1f) {
                 continue;
             }
             let mut copied = false;
@@ -125,12 +125,12 @@ pub fn make_p_curves(f: &mut PaveFiller) -> Result<(), String> {
                             let Some(exs) = f.ds().shape(n_ex).cloned() else {
                                 continue;
                             };
-                            let a_ex = Edge(exs);
-                            if !has_curve_on_surface(&a_ex, &a_f1f) {
+                            let ex = Edge(exs);
+                            if !has_curve_on_surface(&ex, &f1f) {
                                 continue;
                             }
-                            if let Ok(pc) = crate::boptools_2d::make_2d(&a_ex, &a_f1f) {
-                                let _ = attach_existing_pcurve(&a_e, &a_f1f, pc);
+                            if let Ok(pc) = crate::boptools_2d::make_2d(&ex, &f1f) {
+                                let _ = attach_existing_pcurve(&a_e, &f1f, pc);
                                 copied = true;
                                 break;
                             }
@@ -139,9 +139,9 @@ pub fn make_p_curves(f: &mut PaveFiller) -> Result<(), String> {
                 }
             }
             if !copied {
-                build_or_warn(f, &a_e, &a_f1f, n_e, n_f1);
+                build_or_warn(f, &a_e, &f1f, n_e, n_f1);
             } else {
-                update_vertices_pcurve(&a_e, &a_f1f);
+                update_vertices_pcurve(&a_e, &f1f);
             }
         }
     }
@@ -206,7 +206,7 @@ pub fn prepare_pcurves_on_planes(f: &mut PaveFiller) -> Result<(), String> {
     if f.non_destructive() {
         return Ok(());
     }
-    let mut a_mf: Vec<TopoShape> = Vec::new();
+    let mut mf: Vec<TopoShape> = Vec::new();
     let mut seen: HashSet<usize> = HashSet::new();
     let types = [ShapeType::Vertex, ShapeType::Edge, ShapeType::Face];
     for t in types {
@@ -219,14 +219,14 @@ pub fn prepare_pcurves_on_planes(f: &mut PaveFiller) -> Result<(), String> {
             };
             let a_f = Face(fs.clone());
             if is_based_on_plane(&a_f) {
-                a_mf.push(fs);
+                mf.push(fs);
             }
         }
     }
-    if a_mf.is_empty() {
+    if mf.is_empty() {
         return Ok(());
     }
-    for a_f in a_mf {
+    for a_f in mf {
         let face = Face(a_f.clone());
         for sub in ShapeIterator::of_shape(&a_f) {
             if sub.shape_type() != ShapeType::Edge {

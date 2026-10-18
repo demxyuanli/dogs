@@ -99,7 +99,7 @@ impl TrigonometricFunctionRoots {
         let mut j = 0usize;
         let mut n_zer: i32;
         let nit = 10;
-        let my_borne_inf;
+        let borne_inf;
         let mut delta;
         let mod_;
         let mut teta;
@@ -116,19 +116,19 @@ impl TrigonometricFunctionRoots {
 
         let depi = TWO_PI;
         if inf_bound <= REAL_FIRST && sup_bound >= REAL_LAST {
-            my_borne_inf = 0.0;
+            borne_inf = 0.0;
             delta = depi;
             mod_ = 0.0;
         } else if sup_bound >= REAL_LAST {
-            my_borne_inf = inf_bound;
+            borne_inf = inf_bound;
             delta = depi;
-            mod_ = my_borne_inf / depi;
+            mod_ = borne_inf / depi;
         } else if inf_bound <= REAL_FIRST {
-            my_borne_inf = sup_bound - depi;
+            borne_inf = sup_bound - depi;
             delta = depi;
-            mod_ = my_borne_inf / depi;
+            mod_ = borne_inf / depi;
         } else {
-            my_borne_inf = inf_bound;
+            borne_inf = inf_bound;
             delta = sup_bound - inf_bound;
             mod_ = inf_bound / depi;
             if (sup_bound - inf_bound) > depi {
@@ -164,7 +164,7 @@ impl TrigonometricFunctionRoots {
                         }
                         // Bring the solutions between InfBound and SupBound.
                         zer[i - 1] += mod_.trunc() * depi;
-                        x = zer[i - 1] - my_borne_inf;
+                        x = zer[i - 1] - borne_inf;
                         if x > -epsilon(delta) && x < delta + epsilon(delta) {
                             self.nb_sol += 1;
                             self.sol[(self.nb_sol - 1) as usize] = zer[i - 1];
@@ -189,7 +189,7 @@ impl TrigonometricFunctionRoots {
                     }
                     // Bring the solutions between InfBound and SupBound.
                     zer[i - 1] += mod_.trunc() * TWO_PI;
-                    x = zer[i - 1] - my_borne_inf;
+                    x = zer[i - 1] - borne_inf;
                     if x >= -epsilon(delta) && x <= delta + epsilon(delta) {
                         self.nb_sol += 1;
                         self.sol[(self.nb_sol - 1) as usize] = zer[i - 1];
@@ -242,12 +242,12 @@ impl TrigonometricFunctionRoots {
 
                     self.nb_sol = 0;
                     for i in 1..=n_zer as usize {
-                        if zer[i - 1] <= my_borne_inf - eps {
+                        if zer[i - 1] <= borne_inf - eps {
                             zer[i - 1] += depi;
                         }
                         // Bring the solutions between InfBound and SupBound.
                         zer[i - 1] += mod_.trunc() * TWO_PI;
-                        x = zer[i - 1] - my_borne_inf;
+                        x = zer[i - 1] - borne_inf;
                         if x >= -PCONFUSION && x <= delta + PCONFUSION {
                             if zer[i - 1] < inf_bound {
                                 zer[i - 1] = inf_bound;
@@ -284,12 +284,12 @@ impl TrigonometricFunctionRoots {
 
                     self.nb_sol = 0;
                     for i in 1..=n_zer as usize {
-                        if zer[i - 1] <= my_borne_inf - eps {
+                        if zer[i - 1] <= borne_inf - eps {
                             zer[i - 1] += depi;
                         }
                         // Bring the solutions between InfBound and SupBound.
                         zer[i - 1] += mod_.trunc() * TWO_PI;
-                        x = zer[i - 1] - my_borne_inf;
+                        x = zer[i - 1] - borne_inf;
                         if x >= -PCONFUSION && x <= delta + PCONFUSION {
                             if zer[i - 1] < inf_bound {
                                 zer[i - 1] = inf_bound;
@@ -375,18 +375,18 @@ impl TrigonometricFunctionRoots {
                 teta = depi - teta.abs();
             }
             teta += mod_.trunc() * depi;
-            if teta - my_borne_inf < 0.0 {
+            if teta - borne_inf < 0.0 {
                 teta += depi;
             }
 
-            x = teta - my_borne_inf;
+            x = teta - borne_inf;
             if x >= -epsilon(delta) && x <= delta + epsilon(delta) {
                 x = teta;
 
                 // Newton call.
                 let mut teta_newton = teta;
-                let mut my_f = TrigonometricEquationFunction::new(a, b, c, d, e);
-                let resol = NewtonFunctionRoot::new(&mut my_f, x, tol1, eps, nit);
+                let mut f = TrigonometricEquationFunction::new(a, b, c, d, e);
+                let resol = NewtonFunctionRoot::new(&mut f, x, tol1, eps, nit);
                 if resol.is_done() {
                     teta_newton = resol.root();
                 }
@@ -423,7 +423,7 @@ impl TrigonometricFunctionRoots {
             let start_index = self.nb_sol + 1;
             for sol_it in start_index..=4 {
                 teta = std::f64::consts::PI + mod_.trunc() * TWO_PI;
-                x = teta - my_borne_inf;
+                x = teta - borne_inf;
                 if x >= -epsilon(delta) && x <= delta + epsilon(delta) {
                     if (a - c + e).abs() <= eps {
                         flag4 = false;

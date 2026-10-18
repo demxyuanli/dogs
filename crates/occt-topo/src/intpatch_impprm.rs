@@ -105,7 +105,7 @@ impl ImpPrmIntersection {
             (q, s1, d1, s2)
         };
 
-        let a_local_pas = get_local_step(prm, pas);
+        let local_pas = get_local_step(prm, pas);
         let mut func = SurfFunction::new(prm, &quad, quadric_tolerance(&quad));
         let solrst = search_on_bounds(prm, &quad, d_prm, tol_arc, tol_tang);
         if !solrst.done {
@@ -134,7 +134,7 @@ impl ImpPrmIntersection {
                 &mut func,
                 prm,
                 reversed,
-                a_local_pas,
+                local_pas,
                 fleche,
             );
             let converted = lines_to_wlines(&raw, &quad, quad_surf, prm, reversed);

@@ -47,14 +47,14 @@ impl GeomBSplineSurface {
         u2: f64,
         v1: f64,
         v2: f64,
-        the_u_tolerance: f64,
-        the_v_tolerance: f64,
+        u_tolerance: f64,
+        v_tolerance: f64,
     ) -> Result<(), String> {
         if u2 < u1 || v2 < v1 {
             return Err("Geom_BSplineSurface::Segment".into());
         }
-        let eps_u = epsilon(u1.abs().max(u2.abs())).max(the_u_tolerance);
-        let eps_v = epsilon(v1.abs().max(v2.abs())).max(the_v_tolerance);
+        let eps_u = epsilon(u1.abs().max(u2.abs())).max(u_tolerance);
+        let eps_v = epsilon(v1.abs().max(v2.abs())).max(v_tolerance);
         self.segment(u1, u2, v1, v2, eps_u, eps_v, true, true)
     }
 

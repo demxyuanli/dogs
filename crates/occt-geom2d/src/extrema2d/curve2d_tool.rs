@@ -38,8 +38,8 @@ pub(super) fn adaptor_resolution2d(c: &dyn Curve2d, ruv: f64) -> f64 {
     if base.is_line() {
         return ruv; // `:1190-1191`
     }
-    if let Some(a_circ) = base.gp_circ2d() {
-        let r = a_circ.radius();
+    if let Some(circ) = base.gp_circ2d() {
+        let r = circ.radius();
         return if r > ruv / 2.0 {
             2.0 * (ruv / (2.0 * r)).asin() // `:1194-1197`
         } else {

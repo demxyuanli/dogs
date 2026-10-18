@@ -29,7 +29,7 @@ impl<'a> PWalking<'a> {
         if dp * dp < 0.9998 * sq1 * sq2 {
             return false;
         }
-        let sq_tol = 4.0 * self.my_tol_tang * self.my_tol_tang;
+        let sq_tol = 4.0 * self.tol_tang * self.tol_tang;
         let par_u1 = [u1 + self.pasuv[0], u1 - self.pasuv[0], u1, u1];
         let par_v1 = [v1, v1, v1 + self.pasuv[1], v1 - self.pasuv[1]];
         let par_u2 = [u2 + self.pasuv[2], u2 - self.pasuv[2], u2, u2];
@@ -93,7 +93,7 @@ impl<'a> PWalking<'a> {
         self.previous_d1 = self.first_d1;
         self.previous_d2 = self.first_d2;
         self.previous_d = self.tgdir;
-        self.my_tangent_idx = self.line.len() as i32;
+        self.tangent_idx = self.line.len() as i32;
         self.tgdir.reverse();
         self.line.reverse();
         self.sens = -1;
@@ -213,7 +213,7 @@ impl<'a> PWalking<'a> {
             self.blocage = 0;
             self.precedent_inflexion = 0;
         }
-        let mut a_status = StatusDeflection::Ok;
+        let mut status = StatusDeflection::Ok;
         if self.inter.is_tangent() {
             return StatusDeflection::ArretSurPoint;
         }
@@ -240,15 +240,15 @@ impl<'a> PWalking<'a> {
             return StatusDeflection::Ok;
         }
 
-        let a_sq = self.previous_point.p.square_distance(&current.p);
-        if a_sq < SQUARE_CONFUSION {
+        let sq = self.previous_point.p.square_distance(&current.p);
+        if sq < SQUARE_CONFUSION {
             for i in 0..4 {
                 let reso = [self.reso_u1, self.reso_v1, self.reso_u2, self.reso_v2][i];
                 self.pas_init[i] = self.pas_init[i].max(5.0 * reso);
                 self.pasuv[i] = self.pasuv[i]
                     .max((1.5 * self.pasuv[i]).min(self.pas_init[i]));
             }
-            a_status = StatusDeflection::PointConfondu;
+            status = StatusDeflection::PointConfondu;
         }
 
         let (up1, vp1, up2, vp2) = self.previous_point.parameters();
@@ -299,7 +299,7 @@ impl<'a> PWalking<'a> {
         let tol_c2 = d2.exp();
         let cos_ref1 = COS_REF_2D / tol_c1;
         let cos_ref2 = COS_REF_2D / tol_c2;
-        if a_status != StatusDeflection::PointConfondu
+        if status != StatusDeflection::PointConfondu
             && (cosi1 * cosi1 < cos_ref1 * duv1 || cosi2 * cosi2 < cos_ref2 * duv2)
         {
             for p in &mut self.pasuv {
@@ -317,7 +317,7 @@ impl<'a> PWalking<'a> {
             }
             return StatusDeflection::PasTropGrand;
         }
-        if a_status != StatusDeflection::PointConfondu {
+        if status != StatusDeflection::PointConfondu {
             let tg1 = self.inter.direction_on_s1();
             let tg2 = self.inter.direction_on_s2();
             let c1 = du1 * tg1.x() + dv1 * tg1.y();
@@ -352,7 +352,7 @@ impl<'a> PWalking<'a> {
             prev_xyz.y() - tg_xyz.y(),
             prev_xyz.z() - tg_xyz.z(),
         );
-        let fleche_c = (dd.square_modulus() * a_sq).abs().sqrt() / 8.0;
+        let fleche_c = (dd.square_modulus() * sq).abs().sqrt() / 8.0;
         if fleche_c <= self.fleche * 0.5 {
             let mut ratio = if fleche_c > 1e-16 {
                 0.5 * (self.fleche / fleche_c)
@@ -381,10 +381,10 @@ impl<'a> PWalking<'a> {
                     return StatusDeflection::PasTropGrand;
                 }
             }
-            if a_status == StatusDeflection::Ok {
+            if status == StatusDeflection::Ok {
                 self.blocage = 0;
             }
-            return a_status;
+            return status;
         }
         if fleche_c > self.fleche {
             let ratio = self.fleche / fleche_c;
@@ -394,7 +394,7 @@ impl<'a> PWalking<'a> {
             return StatusDeflection::PasTropGrand;
         }
         let _ = choix;
-        a_status
+        status
     }
 }
 

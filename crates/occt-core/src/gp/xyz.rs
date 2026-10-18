@@ -34,8 +34,8 @@ impl GpXyz {
     #[inline] pub fn z(&self) -> f64 { self.z }
 
     /// `gp_XYZ::Coord(theIndex)` with a 0-based index (0..3).
-    #[inline] pub fn coord(&self, the_index: usize) -> f64 {
-        match the_index {
+    #[inline] pub fn coord(&self, index: usize) -> f64 {
+        match index {
             0 => self.x,
             1 => self.y,
             _ => self.z,

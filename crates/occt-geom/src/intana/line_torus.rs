@@ -150,27 +150,27 @@ pub fn quadric_quadric_cylinder_cylinder(
             QuadricIntersection::Line(GpLin::from_pnt_dir(pt1, dir_cyl))
         } else if dist > rmr {
             // Two generatrix lines (or one when the base circles are tangent).
-            let a_r1r1 = r1 * r1;
-            let a_cos = 0.5 * (a_r1r1 - r2 * r2 + dist * dist) / (r1 * dist);
-            let a_sin2 = 1.0 - a_cos * a_cos;
-            let is_tangent = 4.0 * a_r1r1 * a_sin2 < tol * tol;
+            let r1r1 = r1 * r1;
+            let cos = 0.5 * (r1r1 - r2 * r2 + dist * dist) / (r1 * dist);
+            let sin2 = 1.0 - cos * cos;
+            let is_tangent = 4.0 * r1r1 * sin2 < tol * tol;
             let dir_a1a2 = GpVec::from_pnts(&p1, &p2).divided(dist);
             if is_tangent {
-                let pt1 = p1.translated_vec(&dir_a1a2.multiplied_scalar(r1 * a_cos));
+                let pt1 = p1.translated_vec(&dir_a1a2.multiplied_scalar(r1 * cos));
                 QuadricIntersection::Line(GpLin::from_pnt_dir(pt1, dir_cyl))
             } else {
-                let a_sin = a_sin2.sqrt();
+                let a_sin = sin2.sqrt();
                 let axd = *c1.position().x_direction();
                 let ayd = *c1.position().y_direction();
                 let r1x = GpVec::from_xyz(axd.xyz()).multiplied_scalar(r1);
                 let r1y = GpVec::from_xyz(ayd.xyz()).multiplied_scalar(r1);
                 let adx = dir_a1a2.dot(&GpVec::from_xyz(axd.xyz()));
                 let ady = dir_a1a2.dot(&GpVec::from_xyz(ayd.xyz()));
-                let (ndx, ndy) = (adx * a_cos - ady * a_sin, ady * a_cos + adx * a_sin);
+                let (ndx, ndy) = (adx * cos - ady * a_sin, ady * cos + adx * a_sin);
                 let pt1 = p1
                     .translated_vec(&r1x.multiplied_scalar(ndx))
                     .translated_vec(&r1y.multiplied_scalar(ndy));
-                let (ndx, ndy) = (adx * a_cos + ady * a_sin, ady * a_cos - adx * a_sin);
+                let (ndx, ndy) = (adx * cos + ady * a_sin, ady * cos - adx * a_sin);
                 let pt2 = p1
                     .translated_vec(&r1x.multiplied_scalar(ndx))
                     .translated_vec(&r1y.multiplied_scalar(ndy));
@@ -448,15 +448,15 @@ pub fn cone_cone_analytic(c1: &GpCone, c2: &GpCone, tol: f64) -> ConeConeAnalyti
         axe_operator(&c1.axis(), &c2.axis(), 1e-14, ANGULAR);
 
     // `cxx:1458-1476`: relax the angular tolerance for parallel axes.
-    let mut a_tol_ang = ANGULAR;
+    let mut tol_ang = ANGULAR;
     if (tg1 - tg2).abs() < tol && parallel {
         if dist_axes > 100.0 * tol {
-            let a_min_sol_dist = estim_dist(c1, c2);
-            if a_min_sol_dist < REAL_EPSILON {
-                a_tol_ang = tol;
+            let min_sol_dist = estim_dist(c1, c2);
+            if min_sol_dist < REAL_EPSILON {
+                tol_ang = tol;
             } else {
-                a_tol_ang = ANGULAR.max(tol / a_min_sol_dist);
-                a_tol_ang = a_tol_ang.min(tol);
+                tol_ang = ANGULAR.max(tol / min_sol_dist);
+                tol_ang = tol_ang.min(tol);
             }
         }
     }
@@ -494,7 +494,7 @@ pub fn cone_cone_analytic(c1: &GpCone, c2: &GpCone, tol: f64) -> ConeConeAnalyti
     }
     // 2 — parallel axes with (nearly) equal semi-angles: the intersection lies
     // in the plane through the two apexes; reduce to the plane∩cone conic.
-    else if (tg1 - tg2).abs() < a_tol_ang && parallel {
+    else if (tg1 - tg2).abs() < tol_ang && parallel {
         let da1 = c1.position().direction();
         let o1o2 = GpVec::from_pnts(&ap1, &ap2);
         let o1o2n = o1o2.normalized();
@@ -608,7 +608,7 @@ fn cone_cone_common_generatrix(
     let ap2 = c2.apex();
     let a_gen = GpLin::from_pnt_dir(ap1, GpDir::from_vec(&GpVec::from_pnts(&ap1, &ap2)).ok()?);
     let u = clib::line_parameter(&a_gen, pt_axe_int);
-    let my_pchar = clib::line_value(&a_gen, u);
+    let pchar = clib::line_value(&a_gen, u);
     // `cxx:1795-1830`: the other generatrices of the two cones laying in the
     // maximal plane determine that plane's normal.
     let gen1 = a_gen.rotated(&c1.axis(), PI);
@@ -618,7 +618,7 @@ fn cone_cone_common_generatrix(
         &GpVec::from_xyz(a_d1.xyz()).crossed(&GpVec::from_xyz(a_gen.direction().xyz())),
     )
     .ok()?;
-    let a_n = if a_d1.is_parallel_tol(&gen2.direction(), ANGULAR) {
+    let n = if a_d1.is_parallel_tol(&gen2.direction(), ANGULAR) {
         a_d1.crossed(&a_d2).ok()?
     } else if lin_lin_square_distance(&gen1, &gen2) > tol2 {
         // `cxx:1805-1811`: "Something wrong ???" -> `typeres =
@@ -644,10 +644,10 @@ fn cone_cone_common_generatrix(
             .dot(&GpVec::from_xyz(d2.xyz()));
         u2 /= a_sin;
         let p_gint = clib::line_value(&gen2, u2);
-        let d1 = GpDir::from_vec(&GpVec::from_pnts(&p_gint, &my_pchar)).ok()?;
+        let d1 = GpDir::from_vec(&GpVec::from_pnts(&p_gint, &pchar)).ok()?;
         d1.crossed(&a_d2).ok()?
     };
-    let pln = plane_normal_at(my_pchar, a_n)?;
+    let pln = plane_normal_at(pchar, n)?;
     // `cxx:1833-1881`: the section lies in `anIntPln`; its nested plane∩cone
     // reduce keeps only the four conics — this switch has no `IntAna_Line` arm,
     // so a nested line (or point/empty/declined) is `IntAna_NoGeometricSolution`.
@@ -661,7 +661,7 @@ fn cone_cone_common_generatrix(
         QuadricIntersection::Hyperbola(h) => QuadricIntersection::Hyperbola(h),
         _ => QuadricIntersection::None,
     };
-    Some((inter, (a_gen, my_pchar)))
+    Some((inter, (a_gen, pchar)))
 }
 
 /// `gp_Lin::SquareDistance(const gp_Lin&)` (`gp_Lin.cxx:28-39` +

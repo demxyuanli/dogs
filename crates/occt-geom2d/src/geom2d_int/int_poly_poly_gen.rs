@@ -51,7 +51,7 @@ pub struct Geom2dIntIntPolyPolyGen {
     /// `DomainOnCurve2` (`hxx:97`).
     domain_on_curve2: IntRes2dDomain,
     /// `myMinPntNb` (`hxx:100`).
-    my_min_pnt_nb: usize,
+    min_pnt_nb: usize,
 }
 
 impl Default for Geom2dIntIntPolyPolyGen {
@@ -69,7 +69,7 @@ impl Geom2dIntIntPolyPolyGen {
             base: IntRes2dIntersection::new(),
             domain_on_curve1: IntRes2dDomain::new(),
             domain_on_curve2: IntRes2dDomain::new(),
-            my_min_pnt_nb: a_min_pnt_nb,
+            min_pnt_nb: a_min_pnt_nb,
         }
     }
 
@@ -86,12 +86,12 @@ impl Geom2dIntIntPolyPolyGen {
 
     /// `GetMinNbSamples()` (`gxx:1787-1790`).
     pub fn get_min_nb_samples(&self) -> usize {
-        self.my_min_pnt_nb
+        self.min_pnt_nb
     }
 
     /// `SetMinNbSamples(theMinNbSamples)` (`gxx:1794-1797`).
-    pub fn set_min_nb_samples(&mut self, the_min_nb_samples: usize) {
-        self.my_min_pnt_nb = the_min_nb_samples;
+    pub fn set_min_nb_samples(&mut self, min_nb_samples: usize) {
+        self.min_pnt_nb = min_nb_samples;
     }
 
     /// `Perform(C1, D1, C2, D2, TolConf, Tol)` (`gxx:94-292`).
@@ -101,16 +101,16 @@ impl Geom2dIntIntPolyPolyGen {
         d1: &IntRes2dDomain,
         c2: &dyn Curve2d,
         d2: &IntRes2dDomain,
-        the_tol_conf: f64,
-        the_tol: f64,
+        tol_conf: f64,
+        tol: f64,
     ) {
         self.reset_fields();
         self.domain_on_curve1 = *d1;
         self.domain_on_curve2 = *d2;
         let du = d1.last_parameter() - d1.first_parameter();
         let dv = d2.last_parameter() - d2.first_parameter();
-        let tl = if the_tol < TOL_MINI { TOL_MINI } else { the_tol };
-        let tl_conf = if the_tol_conf < TOL_CONF_MINI { TOL_CONF_MINI } else { the_tol_conf };
+        let tl = if tol < TOL_MINI { TOL_MINI } else { tol };
+        let tl_conf = if tol_conf < TOL_CONF_MINI { TOL_CONF_MINI } else { tol_conf };
         self.perform_poly(c1, d1, c2, d2, tl_conf, tl, 0, du, dv);
         //----------------------------------------------------------------------
         //-- Processing of end points
@@ -189,7 +189,7 @@ impl Geom2dIntIntPolyPolyGen {
 
         if d1.first_tolerance() != 0.0 || d2.first_tolerance() != 0.0 {
             if head_or_end_point(
-                d1, c1, u0, d2, c2, v0, the_tol_conf, &mut int_pt, &mut head_on1, &mut head_on2,
+                d1, c1, u0, d2, c2, v0, tol_conf, &mut int_pt, &mut head_on1, &mut head_on2,
                 &mut end_on1, &mut end_on2, pos_segment,
             ) {
                 self.base.insert(&int_pt);
@@ -197,7 +197,7 @@ impl Geom2dIntIntPolyPolyGen {
         }
         if d1.first_tolerance() != 0.0 || d2.last_tolerance() != 0.0 {
             if head_or_end_point(
-                d1, c1, u0, d2, c2, v1, the_tol_conf, &mut int_pt, &mut head_on1, &mut head_on2,
+                d1, c1, u0, d2, c2, v1, tol_conf, &mut int_pt, &mut head_on1, &mut head_on2,
                 &mut end_on1, &mut end_on2, pos_segment,
             ) {
                 self.base.insert(&int_pt);
@@ -205,7 +205,7 @@ impl Geom2dIntIntPolyPolyGen {
         }
         if d1.last_tolerance() != 0.0 || d2.first_tolerance() != 0.0 {
             if head_or_end_point(
-                d1, c1, u1, d2, c2, v0, the_tol_conf, &mut int_pt, &mut head_on1, &mut head_on2,
+                d1, c1, u1, d2, c2, v0, tol_conf, &mut int_pt, &mut head_on1, &mut head_on2,
                 &mut end_on1, &mut end_on2, pos_segment,
             ) {
                 self.base.insert(&int_pt);
@@ -213,7 +213,7 @@ impl Geom2dIntIntPolyPolyGen {
         }
         if d1.last_tolerance() != 0.0 || d2.last_tolerance() != 0.0 {
             if head_or_end_point(
-                d1, c1, u1, d2, c2, v1, the_tol_conf, &mut int_pt, &mut head_on1, &mut head_on2,
+                d1, c1, u1, d2, c2, v1, tol_conf, &mut int_pt, &mut head_on1, &mut head_on2,
                 &mut end_on1, &mut end_on2, pos_segment,
             ) {
                 self.base.insert(&int_pt);
@@ -227,15 +227,15 @@ impl Geom2dIntIntPolyPolyGen {
         &mut self,
         c1: &dyn Curve2d,
         d1: &IntRes2dDomain,
-        the_tol_conf: f64,
-        the_tol: f64,
+        tol_conf: f64,
+        tol: f64,
     ) {
         self.reset_fields();
         self.domain_on_curve1 = *d1;
         self.domain_on_curve2 = *d1;
         let du = d1.last_parameter() - d1.first_parameter();
-        let tl = if the_tol < TOL_MINI { TOL_MINI } else { the_tol };
-        let tl_conf = if the_tol_conf < TOL_CONF_MINI { TOL_CONF_MINI } else { the_tol_conf };
+        let tl = if tol < TOL_MINI { TOL_MINI } else { tol };
+        let tl_conf = if tol_conf < TOL_CONF_MINI { TOL_CONF_MINI } else { tol_conf };
         self.perform_self_poly(c1, d1, tl_conf, tl, 0, du, du);
 
         //--------------------------------------------------------------------
@@ -295,8 +295,8 @@ impl Geom2dIntIntPolyPolyGen {
 
         if nb_iter == 0 {
             // Minimal number of points.
-            nbsamples_on_c1 = nbsamples_on_c1.max(self.my_min_pnt_nb);
-            nbsamples_on_c2 = nbsamples_on_c2.max(self.my_min_pnt_nb);
+            nbsamples_on_c1 = nbsamples_on_c1.max(self.min_pnt_nb);
+            nbsamples_on_c2 = nbsamples_on_c2.max(self.min_pnt_nb);
         } else {
             // Increase number of samples in second and next iterations.
             nbsamples_on_c1 = (5 * (nbsamples_on_c1 * nb_iter as usize)) / 4;
@@ -309,16 +309,16 @@ impl Geom2dIntIntPolyPolyGen {
         if (a_poly1.deflection_over_estimation() > tol_conf)
             && (a_poly2.deflection_over_estimation() > tol_conf)
         {
-            let a_deflection_sum = a_poly1.deflection_over_estimation().max(tol_conf)
+            let deflection_sum = a_poly1.deflection_over_estimation().max(tol_conf)
                 + a_poly2.deflection_over_estimation().max(tol_conf);
 
             if nbsamples_on_c2 > nbsamples_on_c1 {
                 a_poly2.compute_with_box(c2, a_poly1.bounding());
-                a_poly1.set_deflection_over_estimation(a_deflection_sum);
+                a_poly1.set_deflection_over_estimation(deflection_sum);
                 a_poly1.compute_with_box(c1, a_poly2.bounding());
             } else {
                 a_poly1.compute_with_box(c1, a_poly2.bounding());
-                a_poly2.set_deflection_over_estimation(a_deflection_sum);
+                a_poly2.set_deflection_over_estimation(deflection_sum);
                 a_poly2.compute_with_box(c2, a_poly1.bounding());
             }
         }
@@ -849,11 +849,11 @@ impl Geom2dIntIntPolyPolyGen {
         nb_iter: i32,
         delta_u: f64,
         delta_v: f64,
-        the_poly1: &Geom2dIntPolygon2d,
-        the_poly2: &Geom2dIntPolygon2d,
+        poly1: &Geom2dIntPolygon2d,
+        poly2: &Geom2dIntPolygon2d,
         is_full_polygon: bool,
     ) -> bool {
-        let inter_pp = IntfInterferencePolygon2d::between(the_poly1, the_poly2);
+        let inter_pp = IntfInterferencePolygon2d::between(poly1, poly2);
         let mut eip = Geom2dIntExactIntersectionPoint::new(c1, c2, tol_conf);
         let mut u = 0.0;
         let mut v = 0.0;
@@ -868,8 +868,8 @@ impl Geom2dIntIntPolyPolyGen {
             let (_, mut seg_index2, mut param_on2) = spnt.info_second();
 
             eip.perform(
-                the_poly1,
-                the_poly2,
+                poly1,
+                poly2,
                 &mut seg_index1,
                 &mut seg_index2,
                 &mut param_on1,
@@ -896,12 +896,12 @@ impl Geom2dIntIntPolyPolyGen {
             let mut dist = p1.distance(&p2);
             if eip.nb_roots() == 0 && dist > tol_conf {
                 let mut trans = IntRes2dTransition::new();
-                let mut a_pint =
+                let mut pint =
                     IntRes2dIntersectionPoint::with_transitions(&p1, u, v, &trans, &trans, false);
-                let a_t1f = the_poly1.approx_param_on_curve(seg_index1 as usize, 0.0);
-                let a_t1l = the_poly1.approx_param_on_curve(seg_index1 as usize, 1.0);
-                let a_t2f = the_poly2.approx_param_on_curve(seg_index2 as usize, 0.0);
-                let a_t2l = the_poly2.approx_param_on_curve(seg_index2 as usize, 1.0);
+                let a_t1f = poly1.approx_param_on_curve(seg_index1 as usize, 0.0);
+                let a_t1l = poly1.approx_param_on_curve(seg_index1 as usize, 1.0);
+                let a_t2f = poly2.approx_param_on_curve(seg_index2 as usize, 0.0);
+                let a_t2l = poly2.approx_param_on_curve(seg_index2 as usize, 1.0);
                 //
                 let a_max_count = 16i32;
                 let mut a_count = 0i32;
@@ -914,12 +914,12 @@ impl Geom2dIntIntPolyPolyGen {
                     a_t2l,
                     tol_conf,
                     a_max_count,
-                    &mut a_pint,
+                    &mut pint,
                     &mut dist,
                     &mut a_count,
                 );
-                u = a_pint.param_on_first();
-                v = a_pint.param_on_second();
+                u = pint.param_on_first();
+                v = pint.param_on_second();
                 let r1 = curve_tool::geom2d_d1(c1, u);
                 p1 = r1.0;
                 tan1 = r1.1;
@@ -1020,7 +1020,7 @@ impl Geom2dIntIntPolyPolyGen {
             for qq in 1..=nb_pnts {
                 let spnt1 = zone.get_point(qq);
                 let (_, mut seg_index1on_p1, mut param_on_line) = spnt1.info_first();
-                if seg_index1on_p1 > the_poly1.nb_segments() as i32 {
+                if seg_index1on_p1 > poly1.nb_segments() as i32 {
                     seg_index1on_p1 -= 1;
                     param_on_line = 1.0;
                 }
@@ -1029,10 +1029,10 @@ impl Geom2dIntIntPolyPolyGen {
                     param_on_line = 0.0;
                 }
                 let poly_u_inf_seg =
-                    the_poly1.approx_param_on_curve(seg_index1on_p1 as usize, param_on_line);
+                    poly1.approx_param_on_curve(seg_index1on_p1 as usize, param_on_line);
 
                 let (_, mut seg_index1on_p2, mut param_on_line) = spnt1.info_second();
-                if seg_index1on_p2 > the_poly2.nb_segments() as i32 {
+                if seg_index1on_p2 > poly2.nb_segments() as i32 {
                     seg_index1on_p2 -= 1;
                     param_on_line = 1.0;
                 }
@@ -1041,7 +1041,7 @@ impl Geom2dIntIntPolyPolyGen {
                     param_on_line = 0.0;
                 }
                 let poly_v_inf_seg =
-                    the_poly2.approx_param_on_curve(seg_index1on_p2 as usize, param_on_line);
+                    poly2.approx_param_on_curve(seg_index1on_p2 as usize, param_on_line);
 
                 if param_inf_on_curve1 > poly_u_inf_seg {
                     param_inf_on_curve1 = poly_u_inf_seg;
@@ -1071,8 +1071,8 @@ impl Geom2dIntIntPolyPolyGen {
                 std::mem::swap(&mut poly_v_inf, &mut poly_v_sup);
             }
 
-            if ((the_poly1.deflection_over_estimation() > tol_conf)
-                || (the_poly2.deflection_over_estimation() > tol_conf))
+            if ((poly1.deflection_over_estimation() > tol_conf)
+                || (poly2.deflection_over_estimation() > tol_conf))
                 && (nb_iter < NBITER_MAX_POLYGON)
             {
                 let recurs_d1 = IntRes2dDomain::bounded(
@@ -1463,66 +1463,66 @@ fn head_or_end_point(
 #[allow(clippy::too_many_arguments)]
 fn get_intersection(
     the_c1: &dyn Curve2d,
-    the_t1f: f64,
-    the_t1l: f64,
-    the_c2: &dyn Curve2d,
-    the_t2f: f64,
-    the_t2l: f64,
-    the_tol_conf: f64,
-    the_max_count: i32,
-    the_p_int: &mut IntRes2dIntersectionPoint,
-    the_dist: &mut f64,
-    the_count: &mut i32,
+    t1f: f64,
+    t1l: f64,
+    c2: &dyn Curve2d,
+    t2f: f64,
+    t2l: f64,
+    tol_conf: f64,
+    max_count: i32,
+    p_int: &mut IntRes2dIntersectionPoint,
+    dist: &mut f64,
+    count: &mut i32,
 ) {
-    *the_count += 1;
+    *count += 1;
     //
-    let a_tol2 = the_tol_conf * the_tol_conf;
-    let a_p_tol1 = (100.0 * epsilon(the_t1f.abs().max(the_t1l.abs()))).max(PCONFUSION);
-    let a_p_tol2 = (100.0 * epsilon(the_t2f.abs().max(the_t2l.abs()))).max(PCONFUSION);
+    let tol2 = tol_conf * tol_conf;
+    let p_tol1 = (100.0 * epsilon(t1f.abs().max(t1l.abs()))).max(PCONFUSION);
+    let p_tol2 = (100.0 * epsilon(t2f.abs().max(t2l.abs()))).max(PCONFUSION);
     //
-    let a_p1f = curve_tool::geom2d_d0(the_c1, the_t1f);
-    let a_p1l = curve_tool::geom2d_d0(the_c1, the_t1l);
-    let mut a_b1 = BndBox2d::new();
-    a_b1.add_point(&a_p1f);
-    a_b1.add_point(&a_p1l);
-    a_b1.enlarge(the_tol_conf);
+    let p1f = curve_tool::geom2d_d0(the_c1, t1f);
+    let p1l = curve_tool::geom2d_d0(the_c1, t1l);
+    let mut b1 = BndBox2d::new();
+    b1.add_point(&p1f);
+    b1.add_point(&p1l);
+    b1.enlarge(tol_conf);
     //
-    let a_p2f = curve_tool::geom2d_d0(the_c2, the_t2f);
-    let a_p2l = curve_tool::geom2d_d0(the_c2, the_t2l);
-    let mut a_b2 = BndBox2d::new();
-    a_b2.add_point(&a_p2f);
-    a_b2.add_point(&a_p2l);
-    a_b2.enlarge(the_tol_conf);
+    let p2f = curve_tool::geom2d_d0(c2, t2f);
+    let p2l = curve_tool::geom2d_d0(c2, t2l);
+    let mut b2 = BndBox2d::new();
+    b2.add_point(&p2f);
+    b2.add_point(&p2l);
+    b2.enlarge(tol_conf);
     //
-    if a_b1.is_out_box(&a_b2) {
-        *the_count -= 1;
+    if b1.is_out_box(&b2) {
+        *count -= 1;
         return;
     }
     //
-    let is_small1 = (the_t1l - the_t1f) <= a_p_tol1
-        || a_p1f.square_distance(&a_p1l) / 4.0 <= a_tol2;
-    let is_small2 = (the_t2l - the_t2f) <= a_p_tol2
-        || a_p2f.square_distance(&a_p2l) / 4.0 <= a_tol2;
+    let is_small1 = (t1l - t1f) <= p_tol1
+        || p1f.square_distance(&p1l) / 4.0 <= tol2;
+    let is_small2 = (t2l - t2f) <= p_tol2
+        || p2f.square_distance(&p2l) / 4.0 <= tol2;
 
-    if (is_small1 && is_small2) || (*the_count > the_max_count) {
+    if (is_small1 && is_small2) || (*count > max_count) {
         // Seems to be intersection
         // Simple treatment of segment intersection
-        let a_pnts1 = [
-            *a_p1f.xy(),
-            a_p1f.xy().added(&a_p1l.xy()).divided(2.0),
-            *a_p1l.xy(),
+        let pnts1 = [
+            *p1f.xy(),
+            p1f.xy().added(&p1l.xy()).divided(2.0),
+            *p1l.xy(),
         ];
-        let a_pnts2 = [
-            *a_p2f.xy(),
-            a_p2f.xy().added(&a_p2l.xy()).divided(2.0),
-            *a_p2l.xy(),
+        let pnts2 = [
+            *p2f.xy(),
+            p2f.xy().added(&p2l.xy()).divided(2.0),
+            *p2l.xy(),
         ];
         let mut imin: i32 = -1;
         let mut jmin: i32 = -1;
         let mut dmin = f64::MAX;
         for i in 0..3 {
             for j in 0..3 {
-                let d: f64 = a_pnts1[i].subtracted(&a_pnts2[j]).square_modulus();
+                let d: f64 = pnts1[i].subtracted(&pnts2[j]).square_modulus();
                 if d < dmin {
                     dmin = d;
                     imin = i as i32;
@@ -1532,69 +1532,69 @@ fn get_intersection(
         }
         //
         dmin = dmin.sqrt();
-        if *the_dist > dmin {
-            *the_dist = dmin;
+        if *dist > dmin {
+            *dist = dmin;
             //
             let t1 = match imin {
-                0 => the_t1f,
-                1 => (the_t1f + the_t1l) / 2.0,
-                _ => the_t1l,
+                0 => t1f,
+                1 => (t1f + t1l) / 2.0,
+                _ => t1l,
             };
             //
             let t2 = match jmin {
-                0 => the_t2f,
-                1 => (the_t2f + the_t2l) / 2.0,
-                _ => the_t2l,
+                0 => t2f,
+                1 => (t2f + t2l) / 2.0,
+                _ => t2l,
             };
             //
-            let a_pint = GpPnt2d::from_xy(a_pnts1[imin as usize].added(&a_pnts2[jmin as usize]).divided(2.0));
+            let pint = GpPnt2d::from_xy(pnts1[imin as usize].added(&pnts2[jmin as usize]).divided(2.0));
             //
-            let a_trans1 = IntRes2dTransition::new();
-            let a_trans2 = IntRes2dTransition::new();
-            the_p_int.set_values(&a_pint, t1, t2, &a_trans1, &a_trans2, false);
+            let trans1 = IntRes2dTransition::new();
+            let trans2 = IntRes2dTransition::new();
+            p_int.set_values(&pint, t1, t2, &trans1, &trans2, false);
         }
-        *the_count -= 1;
+        *count -= 1;
         return;
     }
 
     if is_small1 {
-        let a_t2m = (the_t2l + the_t2f) / 2.0;
+        let t2m = (t2l + t2f) / 2.0;
         get_intersection(
-            the_c1, the_t1f, the_t1l, the_c2, the_t2f, a_t2m, the_tol_conf, the_max_count, the_p_int,
-            the_dist, the_count,
+            the_c1, t1f, t1l, c2, t2f, t2m, tol_conf, max_count, p_int,
+            dist, count,
         );
         get_intersection(
-            the_c1, the_t1f, the_t1l, the_c2, a_t2m, the_t2l, the_tol_conf, the_max_count, the_p_int,
-            the_dist, the_count,
+            the_c1, t1f, t1l, c2, t2m, t2l, tol_conf, max_count, p_int,
+            dist, count,
         );
     } else if is_small2 {
-        let a_t1m = (the_t1l + the_t1f) / 2.0;
+        let t1m = (t1l + t1f) / 2.0;
         get_intersection(
-            the_c1, the_t1f, a_t1m, the_c2, the_t2f, the_t2l, the_tol_conf, the_max_count, the_p_int,
-            the_dist, the_count,
+            the_c1, t1f, t1m, c2, t2f, t2l, tol_conf, max_count, p_int,
+            dist, count,
         );
         get_intersection(
-            the_c1, a_t1m, the_t1l, the_c2, the_t2f, the_t2l, the_tol_conf, the_max_count, the_p_int,
-            the_dist, the_count,
+            the_c1, t1m, t1l, c2, t2f, t2l, tol_conf, max_count, p_int,
+            dist, count,
         );
     } else {
-        let a_t1m = (the_t1l + the_t1f) / 2.0;
-        let a_t2m = (the_t2l + the_t2f) / 2.0;
+        let t1m = (t1l + t1f) / 2.0;
+        let t2m = (t2l + t2f) / 2.0;
         get_intersection(
-            the_c1, the_t1f, a_t1m, the_c2, the_t2f, a_t2m, the_tol_conf, the_max_count, the_p_int,
-            the_dist, the_count,
+            the_c1, t1f, t1m, c2, t2f, t2m, tol_conf, max_count, p_int,
+            dist, count,
         );
         get_intersection(
-            the_c1, the_t1f, a_t1m, the_c2, a_t2m, the_t2l, the_tol_conf, the_max_count, the_p_int,
-            the_dist, the_count,
+            the_c1, t1f, t1m, c2, t2m, t2l, tol_conf, max_count, p_int,
+            dist, count,
         );
         get_intersection(
-            the_c1, a_t1m, the_t1l, the_c2, the_t2f, a_t2m, the_tol_conf, the_max_count, the_p_int,
-            the_dist, the_count,
+            the_c1, t1m, t1l, c2, t2f, t2m, tol_conf, max_count, p_int,
+            dist, count,
         );
         get_intersection(
-            the_c1, a_t1m, the_t1l, the_c2, a_t2m, the_t2l, the_tol_conf, the_max_count, the_p_int,
-            the_dist, the_count,
+            the_c1, t1m, t1l, c2, t2m, t2l, tol_conf, max_count, p_int,
+            dist, count,
         );
     }
 }

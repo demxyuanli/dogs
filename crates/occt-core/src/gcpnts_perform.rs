@@ -134,13 +134,13 @@ pub fn perform_tangential_curve<C: CurveSecondDeriv>(
                     let l2 = v2.magnitude();
                     if l2 > CONFUSION {
                         let angle = v2.cross_magnitude(&v1) / (l1 * l2);
-                        let mut a_tol = 1.0e-2 * angular_deflection;
-                        if a_tol > 1.0e-2 {
-                            a_tol = 1.0e-2;
-                        } else if a_tol < 1.0e-7 {
-                            a_tol = 1.0e-7;
+                        let mut tol = 1.0e-2 * angular_deflection;
+                        if tol > 1.0e-2 {
+                            tol = 1.0e-2;
+                        } else if tol < 1.0e-7 {
+                            tol = 1.0e-7;
                         }
-                        is_line = angle < a_tol;
+                        is_line = angle < tol;
                     }
                     j += 1;
                 }

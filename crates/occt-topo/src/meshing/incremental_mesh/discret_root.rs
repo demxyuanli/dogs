@@ -800,7 +800,7 @@ impl IncrementalMesh {
     /// interiors, `MinSize = Confusion`, min points = previous `ParametersNb`
     /// (plus one when a face outer wire has at most two edges).
     fn amplify_one_edge(&self, model: &mut MeshModel, edge_index: usize) -> Result<(), String> {
-        let mut a_points_nb = model.edge(edge_index)?.discretization().parameters_nb();
+        let mut points_nb = model.edge(edge_index)?.discretization().parameters_nb();
         let n_pc = model.edge(edge_index)?.pcurves_nb();
         for p in 0..n_pc {
             let face_index = model.edge(edge_index)?.pcurve(p)?.face();
@@ -810,7 +810,7 @@ impl IncrementalMesh {
             }
             let wi = face.wire(0)?;
             if model.wire(wi)?.edges_nb() <= 2 {
-                a_points_nb += 1;
+                points_nb += 1;
                 break;
             }
         }
@@ -877,7 +877,7 @@ impl IncrementalMesh {
         } else {
             (curve.clone(), a, b)
         };
-        let min_pts = tessellator_min_points(tess_curve.as_ref()).max(a_points_nb.max(2));
+        let min_pts = tessellator_min_points(tess_curve.as_ref()).max(points_nb.max(2));
         let tess_edge = model.edge(edge_index)?.edge().clone();
         let mut tess = CurveTessellator::from_range_angular_min(
             tess_curve,

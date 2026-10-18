@@ -27,41 +27,41 @@ use crate::geom_bnd_lib_other_curve2d::box_other_2d;
 /// passes it explicitly (no default arguments in Rust).
 pub fn box_bspline_poles(
     curve: &Geom2dBSplineCurve,
-    the_u1: f64,
-    the_u2: f64,
-    the_tol: f64,
+    u1: f64,
+    u2: f64,
+    tol: f64,
 ) -> BndBox2d {
     let mut a_curve = curve.clone();
     let a_u1 = a_curve.first_parameter();
     let a_u2 = a_curve.last_parameter();
-    let mut a_trim1 = the_u1.max(a_u1);
-    let mut a_trim2 = the_u2.min(a_u2);
-    if a_trim2 < a_trim1 {
-        a_trim1 = a_u1;
-        a_trim2 = a_u2;
+    let mut trim1 = u1.max(a_u1);
+    let mut trim2 = u2.min(a_u2);
+    if trim2 < trim1 {
+        trim1 = a_u1;
+        trim2 = a_u2;
     }
-    if (a_u1 - a_trim1).abs() > PCONFUSION || (a_u2 - a_trim2).abs() > PCONFUSION {
-        if a_curve.segment(a_trim1, a_trim2, PCONFUSION).is_err() {
-            return box_other_2d(curve, a_trim1, a_trim2, the_tol);
+    if (a_u1 - trim1).abs() > PCONFUSION || (a_u2 - trim2).abs() > PCONFUSION {
+        if a_curve.segment(trim1, trim2, PCONFUSION).is_err() {
+            return box_other_2d(curve, trim1, trim2, tol);
         }
     }
-    let mut a_box = BndBox2d::new();
+    let mut bnd_box = BndBox2d::new();
     for i in 0..a_curve.nb_poles() {
-        a_box.add_point(&GpPnt2d::new(a_curve.xs[i], a_curve.ys[i]));
+        bnd_box.add_point(&GpPnt2d::new(a_curve.xs[i], a_curve.ys[i]));
     }
-    a_box.enlarge(the_tol);
-    a_box
+    bnd_box.enlarge(tol);
+    bnd_box
 }
 
 /// Pole hull from separate x/y arrays.
-pub fn box_bspline_xy(xs: &[f64], ys: &[f64], the_tol: f64) -> BndBox2d {
-    let mut a_box = BndBox2d::new();
+pub fn box_bspline_xy(xs: &[f64], ys: &[f64], tol: f64) -> BndBox2d {
+    let mut bnd_box = BndBox2d::new();
     let n = xs.len().min(ys.len());
     for i in 0..n {
-        a_box.add_point(&GpPnt2d::new(xs[i], ys[i]));
+        bnd_box.add_point(&GpPnt2d::new(xs[i], ys[i]));
     }
-    a_box.enlarge(the_tol);
-    a_box
+    bnd_box.enlarge(tol);
+    bnd_box
 }
 
 /// `GeomBndLib_BSplineCurve2d::Box(theU1, theU2, theTol)` from the `Curve2d`
@@ -74,9 +74,9 @@ pub fn box_bspline_xy(xs: &[f64], ys: &[f64], the_tol: f64) -> BndBox2d {
 /// exactly that curve; when it is `None`, OCCT picked a different evaluator
 /// (Line / Circle / ... / OtherCurve2d) and the port keeps the
 /// `GeomBndLib_OtherCurve2d::Box` fallback.
-pub fn box_bspline_as_curve(curve: &dyn Curve2d, the_u1: f64, the_u2: f64, the_tol: f64) -> BndBox2d {
+pub fn box_bspline_as_curve(curve: &dyn Curve2d, u1: f64, u2: f64, tol: f64) -> BndBox2d {
     match curve.bspline_copy2d() {
-        Some(a_curve) => box_bspline_poles(&a_curve, the_u1, the_u2, the_tol),
-        None => box_other_2d(curve, the_u1, the_u2, the_tol),
+        Some(a_curve) => box_bspline_poles(&a_curve, u1, u2, tol),
+        None => box_other_2d(curve, u1, u2, tol),
     }
 }

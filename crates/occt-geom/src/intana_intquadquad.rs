@@ -287,8 +287,8 @@ impl IntQuadQuad {
     }
 
     pub(crate) fn internal_set_next_and_previous(&mut self) {
-        let a_eps = 1.0e-7;
-        let a_dist = 1.0e-10;
+        let eps = 1.0e-7;
+        let dist = 1.0e-10;
         self.reset_links();
         for c1 in 0..self.nb_curves {
             let (d_inf1, d_sup1) = self.curves[c1].domain();
@@ -301,17 +301,17 @@ impl IntQuadQuad {
                 let (d_inf2, d_sup2) = self.curves[c2].domain();
                 if !self.curves[c1].is_first_open() {
                     if not_last2
-                        && (d_inf1 - d_sup2).abs() <= a_eps
+                        && (d_inf1 - d_sup2).abs() <= eps
                         && self.curves[c1].value(d_inf1).distance(&self.curves[c2].value(d_sup2))
-                            < a_dist
+                            < dist
                     {
                         self.previous[c1] = (c2 + 1) as i32;
                         self.next[c2] = (c1 + 1) as i32;
                     }
                     if not_first2
-                        && (d_inf1 - d_inf2).abs() <= a_eps
+                        && (d_inf1 - d_inf2).abs() <= eps
                         && self.curves[c1].value(d_inf1).distance(&self.curves[c2].value(d_inf2))
-                            < a_dist
+                            < dist
                     {
                         self.previous[c1] = -((c2 + 1) as i32);
                         self.previous[c2] = -((c1 + 1) as i32);
@@ -319,17 +319,17 @@ impl IntQuadQuad {
                 }
                 if !self.curves[c1].is_last_open() {
                     if not_last2
-                        && (d_sup1 - d_sup2).abs() <= a_eps
+                        && (d_sup1 - d_sup2).abs() <= eps
                         && self.curves[c1].value(d_sup1).distance(&self.curves[c2].value(d_sup2))
-                            < a_dist
+                            < dist
                     {
                         self.next[c1] = -((c2 + 1) as i32);
                         self.next[c2] = -((c1 + 1) as i32);
                     }
                     if not_first2
-                        && (d_sup1 - d_inf2).abs() <= a_eps
+                        && (d_sup1 - d_inf2).abs() <= eps
                         && self.curves[c1].value(d_sup1).distance(&self.curves[c2].value(d_inf2))
-                            < a_dist
+                            < dist
                     {
                         self.next[c1] = (c2 + 1) as i32;
                         self.previous[c2] = (c1 + 1) as i32;

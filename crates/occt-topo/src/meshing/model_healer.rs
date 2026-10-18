@@ -318,7 +318,7 @@ impl ModelHealer {
     ///
     /// The "major" edge is the current pcurve (`curr_first`/`curr_last`), the
     /// "minor" edge is a neighbour (`minor_first`/`minor_last`).
-    /// `a_side`/`b_val` are the major's closest-to-`prev`/`next` end and the
+    /// `side`/`b_val` are the major's closest-to-`prev`/`next` end and the
     /// value it takes; `c_side`/`d_val` are the other pairing. When both pairings
     /// select the **same** major end, that end is flipped to the other one and
     /// the minor-side value is recomputed by `closestPoint` (`hxx:143-148`).
@@ -329,7 +329,7 @@ impl ModelHealer {
         curr_pc: usize,
         curr_first: GpPnt2d,
         curr_last: GpPnt2d,
-        a_side: bool,
+        side: bool,
         b_val: GpPnt2d,
         c_side: bool,
         d_val: GpPnt2d,
@@ -338,7 +338,7 @@ impl ModelHealer {
     ) -> usize {
         let mut c_side = c_side;
         let mut d_val = d_val;
-        if c_side == a_side {
+        if c_side == side {
             c_side = !c_side;
             let flipped_val = if c_side { curr_first } else { curr_last };
             let (minor_side, _) = Self::closest_point(flipped_val, minor_first, minor_last);
@@ -346,7 +346,7 @@ impl ModelHealer {
         }
         let mut snapped = 0usize;
         // `*theMajorSamePnt1 = *theMinorSamePnt1`
-        snapped += usize::from(Self::set_pcurve_end(model, curr_edge, curr_pc, a_side, b_val));
+        snapped += usize::from(Self::set_pcurve_end(model, curr_edge, curr_pc, side, b_val));
         // `*theMajorSamePnt2 = *theMinorSamePnt2`
         snapped += usize::from(Self::set_pcurve_end(model, curr_edge, curr_pc, c_side, d_val));
         snapped
@@ -482,18 +482,18 @@ impl ModelHealer {
     }
 
     /// `closestPoints` (`BRepMesh_ModelHealer.hxx:109-129`): the closest pair of
-    /// endpoints across two segments, returning `(a_side, b_side, sq_dist)` where
-    /// `a_side` selects `a`'s first/last and `b_side` selects `b`'s. OCCT keeps the
+    /// endpoints across two segments, returning `(side, b_side, sq_dist)` where
+    /// `side` selects `a`'s first/last and `b_side` selects `b`'s. OCCT keeps the
     /// first endpoint of `a` unless its squared distance is clearly larger
     /// (`aSqDist1 - aSqDist2 < gp::Resolution()`).
     fn closest_pair(
-        a_first: GpPnt2d,
-        a_last: GpPnt2d,
+        first: GpPnt2d,
+        last: GpPnt2d,
         b_first: GpPnt2d,
         b_last: GpPnt2d,
     ) -> (bool, bool, f64) {
-        let (first_side, sq1) = Self::closest_point(a_first, b_first, b_last);
-        let (last_side, sq2) = Self::closest_point(a_last, b_first, b_last);
+        let (first_side, sq1) = Self::closest_point(first, b_first, b_last);
+        let (last_side, sq2) = Self::closest_point(last, b_first, b_last);
         if sq1 - sq2 < GP_RESOLUTION {
             (true, first_side, sq1)
         } else {
@@ -653,13 +653,13 @@ mod tests {
     #[test]
     fn closest_pair_picks_nearest_endpoints() {
         // a = (0,0)->(1,0); b = (1,0)->(1,1): a's last (1,0) meets b's first (1,0).
-        let (a_side, b_side, _) = ModelHealer::closest_pair(
+        let (side, b_side, _) = ModelHealer::closest_pair(
             GpPnt2d::new(0.0, 0.0),
             GpPnt2d::new(1.0, 0.0),
             GpPnt2d::new(1.0, 0.0),
             GpPnt2d::new(1.0, 1.0),
         );
-        assert_eq!(a_side, false); // a's last
+        assert_eq!(side, false); // a's last
         assert_eq!(b_side, true); // b's first
     }
 

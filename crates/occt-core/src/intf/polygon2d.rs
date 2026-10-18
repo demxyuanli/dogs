@@ -27,5 +27,5 @@ pub trait IntfPolygon2d {
 
     /// `Segment(Index, theBegin, theEnd)` (`Intf_Polygon2d.hxx:49-52`).
     /// OCCT uses 1-based indexing.
-    fn segment(&self, index: usize, the_begin: &mut GpPnt2d, the_end: &mut GpPnt2d);
+    fn segment(&self, index: usize, begin: &mut GpPnt2d, end: &mut GpPnt2d);
 }

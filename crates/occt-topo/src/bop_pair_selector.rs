@@ -78,8 +78,8 @@ impl Box2dPairSelector {
     }
 
     /// `SetSame`.
-    pub fn set_same(&mut self, the_is_same: bool) {
-        self.same_bvhs = the_is_same;
+    pub fn set_same(&mut self, is_same: bool) {
+        self.same_bvhs = is_same;
     }
 
     pub fn pairs(&self) -> &[PairIds] {
@@ -104,12 +104,12 @@ impl Box2dPairSelector {
     }
 
     /// `RejectElement(theID1, theID2)`.
-    pub fn reject_element(&self, the_id1: i32, the_id2: i32) -> bool {
-        if self.same_bvhs && the_id1 >= the_id2 {
+    pub fn reject_element(&self, id1: i32, id2: i32) -> bool {
+        if self.same_bvhs && id1 >= id2 {
             return true;
         }
-        let i1 = the_id1 as usize;
-        let i2 = the_id2 as usize;
+        let i1 = id1 as usize;
+        let i2 = id2 as usize;
         if i1 >= self.boxes1.len() || i2 >= self.boxes2.len() {
             return true;
         }
@@ -157,20 +157,20 @@ impl PairTraverse2d for Box2dPairSelector {
     /// extra Z axis is unused; 2D `IsOut` is the equivalent test.
     fn reject_node(
         &self,
-        the_c_min1: BvhVec2d,
-        the_c_max1: BvhVec2d,
-        the_c_min2: BvhVec2d,
-        the_c_max2: BvhVec2d,
+        c_min1: BvhVec2d,
+        c_max1: BvhVec2d,
+        c_min2: BvhVec2d,
+        c_max2: BvhVec2d,
         _metric: &mut f64,
     ) -> bool {
-        let a = BvhBox2d::from_corners(the_c_min1, the_c_max1);
-        a.is_out_corners(the_c_min2, the_c_max2)
+        let a = BvhBox2d::from_corners(c_min1, c_max1);
+        a.is_out_corners(c_min2, c_max2)
     }
 
-    fn accept(&mut self, the_id1: i32, the_id2: i32) -> bool {
-        if !self.reject_element(the_id1, the_id2) {
+    fn accept(&mut self, id1: i32, id2: i32) -> bool {
+        if !self.reject_element(id1, id2) {
             self.pairs
-                .push(PairIds::new(self.element1(the_id1), self.element2(the_id2)));
+                .push(PairIds::new(self.element1(id1), self.element2(id2)));
             true
         } else {
             false

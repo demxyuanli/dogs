@@ -95,13 +95,13 @@ pub fn put_pave_on_curve(
         .get(&n_v)
         .copied()
         .unwrap_or_else(|| BRepTool::vertex_tolerance(&Vertex(v_shape.clone())));
-    let a_ic_tol = tol_r3d + fuzzy;
+    let ic_tol = tol_r3d + fuzzy;
 
     let mut t_on = int_tools_vertex_line::is_vertex_on_line_tol(
         &Vertex(v_shape.clone()),
         a_tol_v,
         curve.as_ref(),
-        a_ic_tol,
+        ic_tol,
     );
     if t_on.is_none() && i_check_extend != 0 && !f.verts_to_avoid_extension().contains(&n_v) {
         let mut an_extra = a_tol_v;
@@ -110,10 +110,10 @@ pub fn put_pave_on_curve(
                 &Vertex(v_shape.clone()),
                 an_extra,
                 curve.as_ref(),
-                a_ic_tol,
+                ic_tol,
             ) {
-                let a_p_on_c = curve.d0(t);
-                a_tol_v = a_p_on_c.distance(&BRepTool::vertex_point(&Vertex(v_shape.clone())));
+                let p_on_c = curve.d0(t);
+                a_tol_v = p_on_c.distance(&BRepTool::vertex_point(&Vertex(v_shape.clone())));
                 t_on = Some(t);
             }
         }
@@ -122,12 +122,12 @@ pub fn put_pave_on_curve(
         return;
     };
 
-    let a_d_tol = D_TOLERANCE;
-    let a_p_tol = int_tools_vertex_line::adaptor_resolution(curve.as_ref(), tol_r3d.max(a_tol_v));
+    let d_tol = D_TOLERANCE;
+    let p_tol = int_tools_vertex_line::adaptor_resolution(curve.as_ref(), tol_r3d.max(a_tol_v));
     let existing = f.ds().interf_ff()[i].curves()[j]
         .pave_blocks()
         .first()
-        .and_then(|pb| pb.contains_parameter(t, a_p_tol));
+        .and_then(|pb| pb.contains_parameter(t, p_tol));
     if let Some(n_used) = existing {
         let list = dmvlv.entry(n_used).or_insert_with(|| vec![n_used]);
         if !list.contains(&n_v) {
@@ -150,12 +150,12 @@ pub fn put_pave_on_curve(
     let p2 = BRepTool::vertex_point(&Vertex(v_shape.clone()));
     let dist = p1.distance(&p2);
     let tol_v = BRepTool::vertex_tolerance(&Vertex(v_shape.clone()));
-    if tol_v < dist + a_d_tol {
+    if tol_v < dist + d_tol {
         if !mv_tol.contains_key(&n_v) {
             mv_tol.insert(n_v, tol_v);
         }
-        Vertex(v_shape).set_tolerance(dist + a_d_tol);
-        f.ds_mut().refresh_vertex_box(n_v, dist + a_d_tol);
+        Vertex(v_shape).set_tolerance(dist + d_tol);
+        f.ds_mut().refresh_vertex_box(n_v, dist + d_tol);
     }
 }
 

@@ -59,26 +59,26 @@ impl ComposeShell {
                 Some(s) => s,
                 None => return false,
             };
-            let a_vert = wire.get_vertex().cloned();
-            let a_vert = match a_vert {
+            let vert = wire.get_vertex().cloned();
+            let vert = match vert {
                 Some(v) => v,
                 None => return false,
             };
-            let a_p3d = BRepTool::vertex_point(&a_vert);
-            let a_p2d = surface_value_of_uv(surface.as_ref(), &a_p3d, CONFUSION);
-            let (code, _dev) = point_line_position(&a_p2d, line);
+            let p3d = BRepTool::vertex_point(&vert);
+            let p2d = surface_value_of_uv(surface.as_ref(), &p3d, CONFUSION);
+            let (code, _dev) = point_line_position(&p2d, line);
             if code != IOR_UNDEF {
                 return false;
             }
-            let par = param_point_on_line(&a_p2d, line);
+            let par = param_point_on_line(&p2d, line);
             split_line_par.push(par);
             split_line_code.push(ITP_TANG);
             let builder = TopoBuilder::new();
-            let mut a_vert_new = builder.make_vertex(a_p3d, BRepTool::vertex_tolerance(&a_vert));
-            a_vert_new.0.set_orientation(Orientation::Forward);
-            self.context_mut().replace(&a_vert.0, &a_vert_new.0);
-            split_line_vertex.push(a_vert_new.clone());
-            wire.set_vertex(Some(a_vert_new));
+            let mut vert_new = builder.make_vertex(p3d, BRepTool::vertex_tolerance(&vert));
+            vert_new.0.set_orientation(Orientation::Forward);
+            self.context_mut().replace(&vert.0, &vert_new.0);
+            split_line_vertex.push(vert_new.clone());
+            wire.set_vertex(Some(vert_new));
             return true;
         }
 
@@ -359,12 +359,12 @@ impl ComposeShell {
             segment_codes.push(code);
         }
 
-        let mut a_new_seg_codes: Vec<i32> = Vec::new();
+        let mut new_seg_codes: Vec<i32> = Vec::new();
 
         if wire.orientation() == Orientation::External {
             for i in 1..=n_par {
                 int_code.push(ITP_TANG | IOR_BOTH);
-                a_new_seg_codes.push(segment_codes[i - 1]);
+                new_seg_codes.push(segment_codes[i - 1]);
             }
         } else {
             if wire.orientation() != Orientation::Internal {
@@ -411,12 +411,12 @@ impl ComposeShell {
                     if (codei & IOR_BOTH) == IOR_BOTH {
                         codei = if codei & IOR_POS != 0 { IOR_LEFT } else { IOR_RIGHT };
                     }
-                    a_new_seg_codes.push(codei);
+                    new_seg_codes.push(codei);
                     if int_edge_ind[i - 1] == int_edge_ind[j - 1] {
-                        a_new_seg_codes.push(codej);
+                        new_seg_codes.push(codej);
                     }
                 } else {
-                    a_new_seg_codes.push(codei);
+                    new_seg_codes.push(codei);
                 }
                 let mut ipcode = codej | codei;
                 if codej == IOR_UNDEF {
@@ -456,7 +456,7 @@ impl ComposeShell {
             &mut indexes,
             &int_edge_par,
             &mut int_vertices,
-            &a_new_seg_codes,
+            &new_seg_codes,
             is_cut_by_u,
             cut_index,
         );
@@ -588,15 +588,15 @@ impl ComposeShell {
             let mut v1 = Vertex(tmp_v1);
             let mut v2 = Vertex(tmp_v2);
             let can_be_merged = i - 1 > 1 || i < split_line_par.len();
-            let mut a_max_tol = self.max_tolerance();
-            if a_max_tol <= 2.0 * CONFUSION {
-                a_max_tol = INFINITE;
+            let mut max_tol = self.max_tolerance();
+            if max_tol <= 2.0 * CONFUSION {
+                max_tol = INFINITE;
             }
-            let a_tol1 = BRepTool::vertex_tolerance(&v1).min(a_max_tol);
-            let a_tol2 = BRepTool::vertex_tolerance(&v2).min(a_max_tol);
-            let a_d = BRepTool::vertex_point(&v1).square_distance(&BRepTool::vertex_point(&v2));
+            let tol1 = BRepTool::vertex_tolerance(&v1).min(max_tol);
+            let tol2 = BRepTool::vertex_tolerance(&v2).min(max_tol);
+            let d = BRepTool::vertex_point(&v1).square_distance(&BRepTool::vertex_point(&v2));
             if split_line_par[i - 1] - split_line_par[i - 2] < PCONFUSION
-                || (can_be_merged && (a_d <= a_tol1 * a_tol1 || a_d <= a_tol2 * a_tol2))
+                || (can_be_merged && (d <= tol1 * tol1 || d <= tol2 * tol2))
             {
                 if !is_same(&v1.0, &v2.0) {
                     let v = crate::shhealing::combine_vertex(&v1, &v2, 1.0001);
@@ -639,14 +639,14 @@ impl ComposeShell {
                 } else {
                     0.0
                 };
-                let a_par = split_line_par[i - 2] + shift_u;
+                let par = split_line_par[i - 2] + shift_u;
                 seg.define_iu_min(
                     1,
-                    get_patch_index(a_par + PCONFUSION, self.grid.u_joint_values(), self.u_closed),
+                    get_patch_index(par + PCONFUSION, self.grid.u_joint_values(), self.u_closed),
                 );
                 seg.define_iu_max(
                     1,
-                    get_patch_index(a_par - PCONFUSION, self.grid.u_joint_values(), self.u_closed) + 1,
+                    get_patch_index(par - PCONFUSION, self.grid.u_joint_values(), self.u_closed) + 1,
                 );
             } else {
                 let shift_v = if self.closed_mode && self.v_closed {
@@ -658,14 +658,14 @@ impl ComposeShell {
                 } else {
                     0.0
                 };
-                let a_par = split_line_par[i - 2] + shift_v;
+                let par = split_line_par[i - 2] + shift_v;
                 seg.define_iv_min(
                     1,
-                    get_patch_index(a_par + PCONFUSION, self.grid.v_joint_values(), self.v_closed),
+                    get_patch_index(par + PCONFUSION, self.grid.v_joint_values(), self.v_closed),
                 );
                 seg.define_iv_max(
                     1,
-                    get_patch_index(a_par - PCONFUSION, self.grid.v_joint_values(), self.v_closed) + 1,
+                    get_patch_index(par - PCONFUSION, self.grid.v_joint_values(), self.v_closed) + 1,
                 );
             }
             wires.push(seg);

@@ -36,9 +36,9 @@ pub fn plane_equation(p1: &GpPnt, p2: &GpPnt, p3: &GpPnt) -> (GpXyz, f64) {
 ///
 /// True when `ThePnt` lies inside the triangle `(P1, P2, P3)` as
 /// seen from the three oriented edge cross products.
-pub fn contain(p1: &GpPnt, p2: &GpPnt, p3: &GpPnt, the_pnt: &GpPnt) -> bool {
-    let v1 = p2.xyz().subtracted(p1.xyz()).crossed(&the_pnt.xyz().subtracted(p1.xyz()));
-    let v2 = p3.xyz().subtracted(p2.xyz()).crossed(&the_pnt.xyz().subtracted(p2.xyz()));
-    let v3 = p1.xyz().subtracted(p3.xyz()).crossed(&the_pnt.xyz().subtracted(p3.xyz()));
+pub fn contain(p1: &GpPnt, p2: &GpPnt, p3: &GpPnt, pnt: &GpPnt) -> bool {
+    let v1 = p2.xyz().subtracted(p1.xyz()).crossed(&pnt.xyz().subtracted(p1.xyz()));
+    let v2 = p3.xyz().subtracted(p2.xyz()).crossed(&pnt.xyz().subtracted(p2.xyz()));
+    let v3 = p1.xyz().subtracted(p3.xyz()).crossed(&pnt.xyz().subtracted(p3.xyz()));
     v1.dot(&v2) >= 0.0 && v2.dot(&v3) >= 0.0 && v3.dot(&v1) >= 0.0
 }

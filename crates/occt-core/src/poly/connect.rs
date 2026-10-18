@@ -33,9 +33,9 @@ impl Default for EdgeRec {
 pub struct PolyConnect {
     triangulation: Option<PolyTriangulation>,
     /// Per-node: one triangle containing the node (`NONE` if none).
-    my_triangles: Vec<usize>,
+    triangles: Vec<usize>,
     /// Per-triangle: 3 adjacent triangles + 3 adjacent nodes (6 slots).
-    my_adjacents: Vec<usize>,
+    adjacents: Vec<usize>,
     // Iterator state.
     mytr: usize,
     myfirst: usize,
@@ -43,7 +43,7 @@ pub struct PolyConnect {
     myothernode: usize,
     mysense: bool,
     mymore: bool,
-    my_passed_tr: HashSet<usize>,
+    passed_tr: HashSet<usize>,
 }
 
 /// Sentinel for "no triangle / no node" (mirrors OCCT's 0 in 1-based tables).
@@ -58,15 +58,15 @@ impl PolyConnect {
     pub fn new() -> Self {
         Self {
             triangulation: None,
-            my_triangles: Vec::new(),
-            my_adjacents: Vec::new(),
+            triangles: Vec::new(),
+            adjacents: Vec::new(),
             mytr: 0,
             myfirst: 0,
             mynode: 0,
             myothernode: 0,
             mysense: false,
             mymore: false,
-            my_passed_tr: HashSet::new(),
+            passed_tr: HashSet::new(),
         }
     }
 
@@ -91,8 +91,8 @@ impl PolyConnect {
         let t = &self.triangulation.as_ref().expect("triangulation");
         let nb_nodes = t.nb_nodes();
         let nb_tris = t.nb_triangles();
-        self.my_triangles = vec![NONE; nb_nodes];
-        self.my_adjacents = vec![NONE; 6 * nb_tris];
+        self.triangles = vec![NONE; nb_nodes];
+        self.adjacents = vec![NONE; 6 * nb_tris];
 
         // Build an edge map (unordered node pair -> up to two triangles).
         let mut edges: std::collections::HashMap<(usize, usize), EdgeRec> = std::collections::HashMap::new();
@@ -100,9 +100,9 @@ impl PolyConnect {
             let tri = t.triangle(tri_iter);
             let n = [tri.n0, tri.n1, tri.n2];
             // Record one triangle per node (last one wins, matching OCCT).
-            self.my_triangles[n[0]] = tri_iter;
-            self.my_triangles[n[1]] = tri_iter;
-            self.my_triangles[n[2]] = tri_iter;
+            self.triangles[n[0]] = tri_iter;
+            self.triangles[n[1]] = tri_iter;
+            self.triangles[n[2]] = tri_iter;
             for node_in_tri in 0..3 {
                 let node_next = (node_in_tri + 1) % 3;
                 let (a, b) = (n[node_in_tri], n[node_next]);
@@ -131,8 +131,8 @@ impl PolyConnect {
                 let e = edges[&(mn, mx)];
                 // The other triangle (l = 0 if nt[0] is this one, else 1).
                 let l = if e.nt[0] == tri_iter { 1 } else { 0 };
-                self.my_adjacents[adj_index] = e.nt[l];
-                self.my_adjacents[adj_index + 3] = e.nn[l];
+                self.adjacents[adj_index] = e.nt[l];
+                self.adjacents[adj_index + 3] = e.nn[l];
                 adj_index += 1;
             }
             adj_index += 3;
@@ -145,7 +145,7 @@ impl PolyConnect {
     /// Returns the index of a triangle containing the node at index `n`
     /// (0-based), or `NONE` if the node is isolated.
     pub fn triangle(&self, n: usize) -> usize {
-        if n < self.my_triangles.len() { self.my_triangles[n] } else { NONE }
+        if n < self.triangles.len() { self.triangles[n] } else { NONE }
     }
 
     /// Returns the indices of the 3 triangles adjacent to the triangle at
@@ -153,7 +153,7 @@ impl PolyConnect {
     /// adjacent triangles.
     pub fn adjacent_triangles(&self, t: usize) -> [usize; 3] {
         let index = 6 * t;
-        [self.my_adjacents[index], self.my_adjacents[index + 1], self.my_adjacents[index + 2]]
+        [self.adjacents[index], self.adjacents[index + 1], self.adjacents[index + 2]]
     }
 
     /// Returns the indices of the 3 nodes adjacent to the triangle at index
@@ -161,7 +161,7 @@ impl PolyConnect {
     /// there are fewer than 3.
     pub fn adjacent_nodes(&self, t: usize) -> [usize; 3] {
         let index = 6 * t;
-        [self.my_adjacents[index + 3], self.my_adjacents[index + 4], self.my_adjacents[index + 5]]
+        [self.adjacents[index + 3], self.adjacents[index + 4], self.adjacents[index + 5]]
     }
 
     // ---- iterator over the triangles containing a node ----
@@ -174,8 +174,8 @@ impl PolyConnect {
         self.mytr = self.myfirst;
         self.mysense = true;
         self.mymore = self.myfirst != NONE;
-        self.my_passed_tr.clear();
-        self.my_passed_tr.insert(self.mytr);
+        self.passed_tr.clear();
+        self.passed_tr.insert(self.mytr);
         if self.mymore {
             let no = self.tri_nodes(self.myfirst);
             let mut i = 0;
@@ -198,8 +198,8 @@ impl PolyConnect {
                         if n[j] == self.mynode && n[(j + 1) % 3] == self.myothernode {
                             self.mytr = t[i];
                             self.myothernode = n[(j + 2) % 3];
-                            self.mymore = !self.my_passed_tr.contains(&self.mytr);
-                            self.my_passed_tr.insert(self.mytr);
+                            self.mymore = !self.passed_tr.contains(&self.mytr);
+                            self.passed_tr.insert(self.mytr);
                             return;
                         }
                     }
@@ -222,8 +222,8 @@ impl PolyConnect {
                         if n[j] == self.mynode && n[(j + 2) % 3] == self.myothernode {
                             self.mytr = t[i];
                             self.myothernode = n[(j + 1) % 3];
-                            self.mymore = !self.my_passed_tr.contains(&self.mytr);
-                            self.my_passed_tr.insert(self.mytr);
+                            self.mymore = !self.passed_tr.contains(&self.mytr);
+                            self.passed_tr.insert(self.mytr);
                             return;
                         }
                     }

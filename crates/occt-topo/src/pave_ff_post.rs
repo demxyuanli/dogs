@@ -198,25 +198,25 @@ fn bind_sd_from_pave(
     n_v_nested: usize,
     dm_new_sd: &mut HashMap<usize, usize>,
 ) {
-    let a_p1 = if j == 0 { pb1.pave1() } else { pb1.pave2() };
-    if a_p1.index() == i_v {
+    let p1 = if j == 0 { pb1.pave1() } else { pb1.pave2() };
+    if p1.index() == i_v {
         return;
     }
-    if (a_p1.parameter() - pave_j.parameter()).abs() <= PCONFUSION {
-        dm_new_sd.insert(a_p1.index(), i_v);
-        f.ds_mut().add_shape_sd(a_p1.index(), i_v);
+    if (p1.parameter() - pave_j.parameter()).abs() <= PCONFUSION {
+        dm_new_sd.insert(p1.index(), i_v);
+        f.ds_mut().add_shape_sd(p1.index(), i_v);
         return;
     }
-    let Some(a_v_pave) = f.ds().shape(a_p1.index()).cloned() else {
+    let Some(v_pave) = f.ds().shape(p1.index()).cloned() else {
         return;
     };
-    let Some(n_v_new) = nested.index(&a_v_pave) else {
+    let Some(n_v_new) = nested.index(&v_pave) else {
         return;
     };
     if let Some(n_v_new_sd) = nested.has_shape_sd(n_v_new) {
         if n_v_new_sd == n_v_nested {
-            dm_new_sd.insert(a_p1.index(), i_v);
-            f.ds_mut().add_shape_sd(a_p1.index(), i_v);
+            dm_new_sd.insert(p1.index(), i_v);
+            f.ds_mut().add_shape_sd(p1.index(), i_v);
         }
     }
 }
@@ -236,7 +236,7 @@ fn apply_cb_tolerance(
         return;
     };
     let key = (pbr.edge(), pbr.first.to_bits(), pbr.last.to_bits());
-    let a_tol = *mcb_tol.entry(key).or_insert_with(|| {
+    let tol = *mcb_tol.entry(key).or_insert_with(|| {
         compute_tolerance_of_cb(&cb, nested.ds(), nested.context())
     });
     if let Some(nc) = f
@@ -245,8 +245,8 @@ fn apply_cb_tolerance(
         .get_mut(i_x)
         .and_then(|ff| ff.change_curves().get_mut(i_c))
     {
-        if nc.tolerance() < a_tol {
-            nc.set_tolerance(a_tol);
+        if nc.tolerance() < tol {
+            nc.set_tolerance(tol);
         }
     }
 }
@@ -263,28 +263,28 @@ fn reuse_or_make_pb(
     if let Some(existing) = me_pb.get(&i_e) {
         return existing.clone();
     }
-    let mut a_pave_r1 = pbr.pave1();
-    let mut a_pave_r2 = pbr.pave2();
+    let mut pave_r1 = pbr.pave1();
+    let mut pave_r2 = pbr.pave2();
     let i_r1 = nested
-        .shape(a_pave_r1.index())
+        .shape(pave_r1.index())
         .and_then(|s| {
             let _ = s;
             Some(i0)
         })
         .unwrap_or(i0);
     let i_r2 = nested
-        .shape(a_pave_r2.index())
+        .shape(pave_r2.index())
         .and_then(|s| {
             let _ = s;
             Some(i1)
         })
         .unwrap_or(i1);
     let _ = pbx;
-    a_pave_r1.set_index(i_r1);
-    a_pave_r2.set_index(i_r2);
+    pave_r1.set_index(i_r1);
+    pave_r2.set_index(i_r2);
     let mut pb_new = BopdsPaveBlock::new();
-    pb_new.set_pave1(a_pave_r1);
-    pb_new.set_pave2(a_pave_r2);
+    pb_new.set_pave1(pave_r1);
+    pb_new.set_pave2(pave_r2);
     pb_new.set_edge(i_e);
     me_pb.insert(i_e, pb_new.clone());
     pb_new
@@ -293,34 +293,34 @@ fn reuse_or_make_pb(
 fn process_nested_vertex(
     f: &mut PaveFiller,
     nested: &BopdsDS,
-    a_sx: &TopoShape,
+    sx: &TopoShape,
     n_sx: usize,
     couples: &HashMap<usize, usize>,
     mscpb: &[(TopoShape, CoupleOfPaveBlocks)],
     dm_new_sd: &mut HashMap<usize, usize>,
 ) -> Result<(), String> {
-    let b_intersection_point = couples.contains_key(&shape_key(a_sx));
-    let a_v = if let Some(sd) = nested.has_shape_sd(n_sx) {
+    let b_intersection_point = couples.contains_key(&shape_key(sx));
+    let v = if let Some(sd) = nested.has_shape_sd(n_sx) {
         nested
             .shape(sd)
             .cloned()
             .ok_or_else(|| format!("post_treat_ff: nested SD {sd} missing"))?
     } else {
-        a_sx.clone()
+        sx.clone()
     };
-    let i_v = if let Some(i) = f.ds().index(&a_v) {
+    let i_v = if let Some(i) = f.ds().index(&v) {
         i
     } else {
-        f.ds_mut().append_info(BopdsShapeInfo::new(a_v.clone()))
+        f.ds_mut().append_info(BopdsShapeInfo::new(v.clone()))
     };
     if !b_intersection_point {
-        if let Some(n_main) = f.ds().index(a_sx) {
+        if let Some(n_main) = f.ds().index(sx) {
             if n_main != i_v {
                 dm_new_sd.insert(n_main, i_v);
                 f.ds_mut().add_shape_sd(n_main, i_v);
             }
         }
-    } else if let Some(&ci) = couples.get(&shape_key(a_sx)) {
+    } else if let Some(&ci) = couples.get(&shape_key(sx)) {
         let i_x = mscpb[ci].1.index_interf;
         let i_p = mscpb[ci].1.index;
         if let Some(np) = f
@@ -338,7 +338,7 @@ fn process_nested_vertex(
 fn process_nested_edge(
     f: &mut PaveFiller,
     nested: &PaveFiller,
-    a_sx: &TopoShape,
+    sx: &TopoShape,
     n_sx: usize,
     couples: &HashMap<usize, usize>,
     mscpb: &[(TopoShape, CoupleOfPaveBlocks)],
@@ -346,9 +346,9 @@ fn process_nested_edge(
     dm_ex: &mut DmExEdges,
     me_pb: &mut HashMap<usize, BopdsPaveBlock>,
     mcb_tol: &mut HashMap<(usize, u64, u64), f64>,
-    a_ls: &mut Vec<TopoShape>,
+    ls: &mut Vec<TopoShape>,
 ) -> Result<(), String> {
-    let Some(&ci) = couples.get(&shape_key(a_sx)) else {
+    let Some(&ci) = couples.get(&shape_key(sx)) else {
         return Ok(());
     };
     let cpb = &mscpb[ci].1;
@@ -366,20 +366,20 @@ fn process_nested_edge(
         if b_old {
             dm_ex.entry(pb_key(pb1)).or_default().push(pb1.clone());
         } else {
-            register_one_edge(f, a_sx, cpb)?;
+            register_one_edge(f, sx, cpb)?;
         }
         return Ok(());
     }
     let lpbx = nested.ds().pave_blocks(n_sx).to_vec();
-    let a_nb_lpbx = lpbx.len();
-    let micro = a_nb_lpbx == 0 || (a_nb_lpbx == 1 && !lpbx[0].has_shrunk_data());
+    let nb_lpbx = lpbx.len();
+    let micro = nb_lpbx == 0 || (nb_lpbx == 1 && !lpbx[0].has_shrunk_data());
     if micro {
         if !b_old {
             remove_curve_pb(f, i_x, i_c, pb1);
         }
-        for child in ShapeIterator::of_shape(a_sx) {
+        for child in ShapeIterator::of_shape(sx) {
             if child.shape_type() == ShapeType::Vertex {
-                a_ls.push(child);
+                ls.push(child);
             }
         }
         return Ok(());
@@ -437,17 +437,17 @@ fn prepare_arguments(
     _unused: &[TopoShape],
 ) -> (Vec<TopoShape>, HashSet<usize>) {
     let mut existing: Vec<TopoShape> = Vec::new();
-    let mut a_ls: Vec<TopoShape> = Vec::new();
+    let mut ls: Vec<TopoShape> = Vec::new();
     let mut added_sd: HashSet<usize> = HashSet::new();
     for (shape, cpb) in mscpb.iter().rev() {
         if let Some(pb) = cpb.pb.as_ref() {
             if pb_has_edge(pb) {
                 existing.push(shape.clone());
             } else {
-                a_ls.push(shape.clone());
+                ls.push(shape.clone());
             }
         } else {
-            a_ls.push(shape.clone());
+            ls.push(shape.clone());
         }
         for child in ShapeIterator::of_shape(shape) {
             if child.shape_type() != ShapeType::Vertex {
@@ -461,42 +461,42 @@ fn prepare_arguments(
             };
             if added_sd.insert(n_sd) {
                 if let Some(v_sd) = f.ds().shape(n_sd).cloned() {
-                    a_ls.push(v_sd);
+                    ls.push(v_sd);
                 }
             }
         }
     }
     if !existing.is_empty() {
-        a_ls.push(TopoBuilder::new().make_compound_of(&existing).0);
+        ls.push(TopoBuilder::new().make_compound_of(&existing).0);
     }
-    (a_ls, added_sd)
+    (ls, added_sd)
 }
 
 fn append_rejected_and_unused(
     f: &PaveFiller,
     dm_new_sd: &HashMap<usize, usize>,
     added_sd: &mut HashSet<usize>,
-    a_ls: &mut Vec<TopoShape>,
+    ls: &mut Vec<TopoShape>,
     verts_on_rejected: &[TopoShape],
     unused: &[TopoShape],
 ) {
     for src in [verts_on_rejected, unused] {
-        for a_ver in src {
-            let mut a_ver = a_ver.clone();
-            if let Some(i_ver) = f.ds().index(&a_ver) {
+        for ver in src {
+            let mut ver = ver.clone();
+            if let Some(i_ver) = f.ds().index(&ver) {
                 if let Some(&p_sd) = dm_new_sd.get(&i_ver) {
                     if let Some(s) = f.ds().shape(p_sd).cloned() {
-                        a_ver = s;
+                        ver = s;
                     }
                 }
                 let n = dm_new_sd.get(&i_ver).copied().unwrap_or(i_ver);
                 if !added_sd.insert(n) {
                     continue;
                 }
-            } else if !added_sd.insert(shape_key(&a_ver)) {
+            } else if !added_sd.insert(shape_key(&ver)) {
                 continue;
             }
-            a_ls.push(a_ver);
+            ls.push(ver);
         }
     }
 }
@@ -520,20 +520,20 @@ pub fn post_treat_ff(
         return fast_path_one(f, shape, cpb, dm_ex);
     }
 
-    let (mut a_ls, mut added_sd) =
+    let (mut ls, mut added_sd) =
         prepare_arguments(f, mscpb, dm_new_sd, micro_pb, verts_on_rejected, &unused);
 
-    collect_micro_section_vertices(f, micro_pb, dm_new_sd, &mut added_sd, &mut a_ls);
+    collect_micro_section_vertices(f, micro_pb, dm_new_sd, &mut added_sd, &mut ls);
     append_rejected_and_unused(
         f,
         dm_new_sd,
         &mut added_sd,
-        &mut a_ls,
+        &mut ls,
         verts_on_rejected,
         &unused,
     );
 
-    if a_ls.is_empty() {
+    if ls.is_empty() {
         return Ok(());
     }
 
@@ -541,7 +541,7 @@ pub fn post_treat_ff(
     nested.set_is_primary(false);
     nested.set_non_destructive(f.non_destructive());
     nested.set_fuzzy_value(f.fuzzy_value());
-    nested.set_arguments(&a_ls);
+    nested.set_arguments(&ls);
     if let Err(e) = nested.perform() {
         f.add_error("BOPAlgo_AlertPostTreatFF".into());
         return Err(e);
@@ -561,12 +561,12 @@ pub fn post_treat_ff(
     let mut mcb_tol: HashMap<(usize, u64, u64), f64> = HashMap::new();
 
     let mut k = 0;
-    while k < a_ls.len() {
-        let sx = a_ls[k].clone();
+    while k < ls.len() {
+        let sx = ls[k].clone();
         k += 1;
         if sx.shape_type() == ShapeType::Compound {
             for c in ShapeIterator::of_shape(&sx) {
-                a_ls.push(c);
+                ls.push(c);
             }
             continue;
         }
@@ -589,7 +589,7 @@ pub fn post_treat_ff(
                     dm_ex,
                     &mut me_pb,
                     &mut mcb_tol,
-                    &mut a_ls,
+                    &mut ls,
                 )?;
             }
             _ => {}

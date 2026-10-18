@@ -56,15 +56,15 @@ impl IntCurveIntConicConic {
 
         let mut pntinf = GpPnt2d::new(0.0, 0.0);
         let mut pntsup = GpPnt2d::new(0.0, 0.0);
-        let mut the_int_ana2d = IntAna2dAnaIntersection::new();
+        let mut int_ana2d = IntAna2dAnaIntersection::new();
 
         // `gp_Vec2d Offset(maxtol * L.Direction().Y(), maxtol * L.Direction().X())`
         // (`cxx:138`): the two components are swapped, as in OCCT.
         let offset = GpVec2d::new(maxtol * l.pos.vdir.y, maxtol * l.pos.vdir.x);
         let lp = l.translated_vec(&offset);
-        the_int_ana2d.perform_parab_conic(p, &IntAna2dConic::from_lin2d(&lp));
+        int_ana2d.perform_parab_conic(p, &IntAna2dConic::from_lin2d(&lp));
         set_binf_bsup_from_int_ana2d_parab(
-            &the_int_ana2d,
+            &int_ana2d,
             &mut binf,
             &mut pntinf,
             &mut bsup,
@@ -76,9 +76,9 @@ impl IntCurveIntConicConic {
 
         let offset = offset.reversed();
         let lm = l.translated_vec(&offset);
-        the_int_ana2d.perform_parab_conic(p, &IntAna2dConic::from_lin2d(&lm));
+        int_ana2d.perform_parab_conic(p, &IntAna2dConic::from_lin2d(&lm));
         set_binf_bsup_from_int_ana2d_parab(
-            &the_int_ana2d,
+            &int_ana2d,
             &mut binf,
             &mut pntinf,
             &mut bsup,
@@ -179,12 +179,12 @@ impl IntCurveIntConicConic {
         let maxtol = offset_tolerance(tol_conf, tol);
         let x_axis = h.x_axis();
         let offset = GpVec2d::new(maxtol * x_axis.vdir.x, maxtol * x_axis.vdir.y);
-        let mut the_int_ana2d = IntAna2dAnaIntersection::new();
+        let mut int_ana2d = IntAna2dAnaIntersection::new();
 
         let hp = h.translated_vec(&offset);
-        the_int_ana2d.perform_hypr_conic(&hp, &IntAna2dConic::from_lin2d(l));
+        int_ana2d.perform_hypr_conic(&hp, &IntAna2dConic::from_lin2d(l));
         set_binf_bsup_from_int_ana2d_hypr(
-            &the_int_ana2d,
+            &int_ana2d,
             &mut binf,
             &mut pntinf,
             &mut bsup,
@@ -196,9 +196,9 @@ impl IntCurveIntConicConic {
 
         let offset = offset.reversed();
         let hm = h.translated_vec(&offset);
-        the_int_ana2d.perform_hypr_conic(&hm, &IntAna2dConic::from_lin2d(l));
+        int_ana2d.perform_hypr_conic(&hm, &IntAna2dConic::from_lin2d(l));
         set_binf_bsup_from_int_ana2d_hypr(
-            &the_int_ana2d,
+            &int_ana2d,
             &mut binf,
             &mut pntinf,
             &mut bsup,

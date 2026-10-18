@@ -92,10 +92,10 @@ fn max_vertex_tolerance(f: &PaveFiller, n_e: usize) -> f64 {
 /// `BOPAlgo_PaveFiller::SplitPaveBlocks`.
 pub fn split_pave_blocks(
     f: &mut PaveFiller,
-    the_m_edges: &[usize],
-    the_add_interfs: bool,
+    m_edges: &[usize],
+    add_interfs: bool,
 ) -> Result<(), String> {
-    let mut edges: Vec<usize> = if the_m_edges.is_empty() {
+    let mut edges: Vec<usize> = if m_edges.is_empty() {
         (0..f.ds().nb_source_shapes())
             .filter(|&i| {
                 f.ds().shape_info(i).map(|s| s.shape_type()) == Some(ShapeType::Edge)
@@ -103,7 +103,7 @@ pub fn split_pave_blocks(
             })
             .collect()
     } else {
-        the_m_edges.to_vec()
+        m_edges.to_vec()
     };
     edges.sort_unstable();
     edges.dedup();
@@ -148,7 +148,7 @@ pub fn split_pave_blocks(
                     if unify {
                         let key = (n_v1.min(n_v2), n_v1.max(n_v2));
                         if pair_fence.insert(key) {
-                            if let Err(e) = intersect_make_sd_vertices(f.ds_mut(), &[n_v1, n_v2], the_add_interfs)
+                            if let Err(e) = intersect_make_sd_vertices(f.ds_mut(), &[n_v1, n_v2], add_interfs)
                             {
                                 f.add_error(e);
                             }
@@ -200,12 +200,12 @@ fn rebuild_common_blocks(
             let key = (n1.min(n2), n1.max(n2));
             by_bounds.entry(key).or_default().push(pb);
         }
-        for (_key, mut a_lpb) in by_bounds {
+        for (_key, mut lpb) in by_bounds {
             if !b_is_closed {
-                make_new_common_block(f, &a_lpb, &faces);
+                make_new_common_block(f, &lpb, &faces);
                 continue;
             }
-            cluster_closed_common_blocks(f, &mut a_lpb, &faces);
+            cluster_closed_common_blocks(f, &mut lpb, &faces);
         }
     }
 }
@@ -217,51 +217,51 @@ fn rebuild_common_blocks(
 /// Each coincidence group becomes a new common block with the original faces.
 fn cluster_closed_common_blocks(
     f: &mut PaveFiller,
-    a_lpb: &mut Vec<BopdsPaveBlock>,
+    lpb: &mut Vec<BopdsPaveBlock>,
     faces: &[usize],
 ) {
     let ctx = IntToolsContext::new();
     let fuzzy = f.fuzzy_value();
-    while !a_lpb.is_empty() {
-        let mut a_lpb_cb: Vec<BopdsPaveBlock> = Vec::new();
-        let mut a_pm_first = occt_core::gp::GpPnt::new(0.0, 0.0, 0.0);
-        let mut a_tol_e_first = 0.0_f64;
+    while !lpb.is_empty() {
+        let mut lpb_cb: Vec<BopdsPaveBlock> = Vec::new();
+        let mut pm_first = occt_core::gp::GpPnt::new(0.0, 0.0, 0.0);
+        let mut tol_e_first = 0.0_f64;
         let mut rest: Vec<BopdsPaveBlock> = Vec::new();
-        for a_pb in a_lpb.drain(..) {
-            if a_lpb_cb.is_empty() {
-                a_lpb_cb.push(a_pb.clone());
-                let n_e = a_pb.original_edge();
-                a_tol_e_first = max_vertex_tolerance(f, n_e);
+        for pb in lpb.drain(..) {
+            if lpb_cb.is_empty() {
+                lpb_cb.push(pb.clone());
+                let n_e = pb.original_edge();
+                tol_e_first = max_vertex_tolerance(f, n_e);
                 if let Some(es) = f.ds().shape(n_e).cloned() {
                     let e_first = Edge(es);
-                    let a_tm = 0.5 * (a_pb.pave1().parameter() + a_pb.pave2().parameter());
-                    if let Some(p) = point_on_edge(&e_first, a_tm) {
-                        a_pm_first = p;
-                    } else if let Ok(p) = AlgoTools::point_on_edge(&e_first, a_tm) {
-                        a_pm_first = p;
+                    let tm = 0.5 * (pb.pave1().parameter() + pb.pave2().parameter());
+                    if let Some(p) = point_on_edge(&e_first, tm) {
+                        pm_first = p;
+                    } else if let Ok(p) = AlgoTools::point_on_edge(&e_first, tm) {
+                        pm_first = p;
                     }
                 }
                 continue;
             }
-            let n_e = a_pb.original_edge();
-            let a_tol_e = max_vertex_tolerance(f, n_e);
+            let n_e = pb.original_edge();
+            let tol_e = max_vertex_tolerance(f, n_e);
             let Some(es) = f.ds().shape(n_e).cloned() else {
-                rest.push(a_pb);
+                rest.push(pb);
                 continue;
             };
-            let a_e = Edge(es);
-            let (i_err, a_t_out, _dist) =
-                ctx.compute_pe_pnt(&a_pm_first, a_tol_e_first + a_tol_e + fuzzy, &a_e);
-            let t1 = a_pb.pave1().parameter();
-            let t2 = a_pb.pave2().parameter();
-            if i_err == 0 && a_t_out > t1 && a_t_out < t2 {
-                a_lpb_cb.push(a_pb);
+            let e = Edge(es);
+            let (i_err, t_out, _dist) =
+                ctx.compute_pe_pnt(&pm_first, tol_e_first + tol_e + fuzzy, &e);
+            let t1 = pb.pave1().parameter();
+            let t2 = pb.pave2().parameter();
+            if i_err == 0 && t_out > t1 && t_out < t2 {
+                lpb_cb.push(pb);
             } else {
-                rest.push(a_pb);
+                rest.push(pb);
             }
         }
-        make_new_common_block(f, &a_lpb_cb, faces);
-        *a_lpb = rest;
+        make_new_common_block(f, &lpb_cb, faces);
+        *lpb = rest;
     }
 }
 

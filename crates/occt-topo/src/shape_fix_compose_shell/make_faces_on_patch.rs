@@ -75,11 +75,11 @@ impl ComposeShell {
 
         // cxx:3021-3143: find roots.
         for i in 0..loops.len() {
-            let a_shape = loops[i].clone();
-            if a_shape.shape_type() != ShapeType::Wire || !is_fwd_or_rev(a_shape.orientation()) {
+            let shape = loops[i].clone();
+            if shape.shape_type() != ShapeType::Wire || !is_fwd_or_rev(shape.orientation()) {
                 continue;
             }
-            let wr = Wire(a_shape.clone());
+            let wr = Wire(shape.clone());
             let ew = edges_of_wire(&wr);
             let mut k = 0usize;
             while k < ew.len() && !is_fwd_or_rev(ew[k].0.orientation()) {
@@ -104,12 +104,12 @@ impl ComposeShell {
                     j += 1;
                     continue;
                 }
-                let a_shape2 = loops[j].clone();
-                if a_shape2.shape_type() != ShapeType::Wire || !is_fwd_or_rev(a_shape2.orientation()) {
+                let shape2 = loops[j].clone();
+                if shape2.shape_type() != ShapeType::Wire || !is_fwd_or_rev(shape2.orientation()) {
                     j += 1;
                     continue;
                 }
-                let w1 = Wire(a_shape2);
+                let w1 = Wire(shape2);
                 let w1_edges: Vec<Edge> = edges_of_wire(&w1)
                     .into_iter()
                     .filter(|e| is_fwd_or_rev(e.0.orientation()))
@@ -177,7 +177,7 @@ impl ComposeShell {
                 j += 1;
             }
             if j >= loops.len() {
-                roots.push(a_shape);
+                roots.push(shape);
             }
         }
 
@@ -264,9 +264,9 @@ impl ComposeShell {
             for h in &holes {
                 if h.shape_type() == ShapeType::Vertex {
                     let a_v = Vertex(h.clone());
-                    if let Some(a_new_v) = copy_nm_vertex_face(&a_v, &new_face, &my_face) {
-                        self.context_mut().replace(&a_v.0, &a_new_v.0);
-                        builder.add(&mut new_face.0, &a_new_v.0);
+                    if let Some(new_v) = copy_nm_vertex_face(&a_v, &new_face, &my_face) {
+                        self.context_mut().replace(&a_v.0, &new_v.0);
+                        builder.add(&mut new_face.0, &new_v.0);
                     }
                 } else {
                     builder.add(&mut new_face.0, h);

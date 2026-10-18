@@ -75,9 +75,9 @@ impl BFGS {
 
     /// `math_BFGS::SetBoundary(theLeftBorder, theRightBorder)`
     /// (`math_BFGS.cxx:505-510`).
-    pub fn set_boundary(&mut self, the_left_border: &MathVector, the_right_border: &MathVector) {
-        self.left = the_left_border.clone();
-        self.right = the_right_border.clone();
+    pub fn set_boundary(&mut self, left_border: &MathVector, right_border: &MathVector) {
+        self.left = left_border.clone();
+        self.right = right_border.clone();
         self.bounds_defined = true;
     }
 
@@ -223,8 +223,8 @@ impl BFGS {
         }
 
         // by default the scaling range is unlimited — cxx:219-221
-        let mut a_min_lambda = -INFINITE;
-        let mut a_max_lambda = INFINITE;
+        let mut min_lambda = -INFINITE;
+        let mut max_lambda = INFINITE;
         if self.bounds_defined {
             // limit the scaling range taking into account the bounds — cxx:222-228
             if !compute_min_max_scale(
@@ -232,13 +232,13 @@ impl BFGS {
                 dir,
                 &self.left,
                 &self.right,
-                &mut a_min_lambda,
-                &mut a_max_lambda,
+                &mut min_lambda,
+                &mut max_lambda,
             ) {
                 return false;
             }
 
-            if a_min_lambda > -P_CONFUSION && a_max_lambda < P_CONFUSION {
+            if min_lambda > -P_CONFUSION && max_lambda < P_CONFUSION {
                 // Point is on the border and the direction shows outside.
                 // Make direction to go along the border. — cxx:230-241
                 for an_idx in 1..=n {
@@ -260,14 +260,14 @@ impl BFGS {
                     dir,
                     &self.left,
                     &self.right,
-                    &mut a_min_lambda,
-                    &mut a_max_lambda,
+                    &mut min_lambda,
+                    &mut max_lambda,
                 ) {
                     return false;
                 }
             }
-            lambda = lambda.min(a_max_lambda);
-            lambda = lambda.max(a_min_lambda);
+            lambda = lambda.min(max_lambda);
+            lambda = lambda.max(min_lambda);
         }
 
         // F.Initialize(P, Dir); F.Value(lambda, F1) — cxx:257-262
@@ -284,7 +284,7 @@ impl BFGS {
         let mut bracket = BracketMinimum::new(0.0, lambda);
         if self.bounds_defined {
             // Bracket.SetLimits(aMinLambda, aMaxLambda); — cxx:265-268
-            bracket.set_limits(a_min_lambda, a_max_lambda);
+            bracket.set_limits(min_lambda, max_lambda);
         }
         bracket.set_fa(f0);
         bracket.set_fb(f1);
@@ -306,17 +306,17 @@ impl BFGS {
         } else if self.bounds_defined {
             // Bracket definition is failure. If the bounds are defined then
             // set current point to intersection with bounds. — cxx:292-319
-            let a_f_min = eval(a_min_lambda);
-            let a_f_max = eval(a_max_lambda);
-            let a_best_lambda;
-            if a_f_min < a_f_max {
-                a_best_lambda = a_min_lambda;
-                *result = a_f_min;
+            let f_min = eval(min_lambda);
+            let f_max = eval(max_lambda);
+            let best_lambda;
+            if f_min < f_max {
+                best_lambda = min_lambda;
+                *result = f_min;
             } else {
-                a_best_lambda = a_max_lambda;
-                *result = a_f_max;
+                best_lambda = max_lambda;
+                *result = f_max;
             }
-            dir.multiply_scalar(a_best_lambda);
+            dir.multiply_scalar(best_lambda);
             p.add(dir);
             return true;
         }
@@ -338,9 +338,9 @@ fn compute_init_scale(f0: f64, dir: &MathVector, gr: &MathVector, scale: &mut f6
         return false;
     }
 
-    let a_hnr1 = dir.norm2();
+    let hnr1 = dir.norm2();
     let alfa = 0.7 * (-f0) / dy1;
-    *scale = 0.015 / a_hnr1.sqrt();
+    *scale = 0.015 / hnr1.sqrt();
     if *scale > alfa {
         *scale = alfa;
     }
@@ -364,20 +364,20 @@ fn compute_min_max_scale(
         if dir.value(an_idx).abs() > REAL_SMALL {
             // Use PConfusion to get off a little from the bounds to prevent
             // possible refuse in Value function.
-            let a_l_scale = (a_left + P_CONFUSION) / dir.value(an_idx);
-            let a_r_scale = (a_right - P_CONFUSION) / dir.value(an_idx);
+            let l_scale = (a_left + P_CONFUSION) / dir.value(an_idx);
+            let r_scale = (a_right - P_CONFUSION) / dir.value(an_idx);
             if a_left.abs() < P_CONFUSION {
                 // Point is on the left border. — cxx:161-166
-                *max_scale = (*max_scale).min(0.0f64.max(a_r_scale));
-                *min_scale = (*min_scale).max(0.0f64.min(a_r_scale));
+                *max_scale = (*max_scale).min(0.0f64.max(r_scale));
+                *min_scale = (*min_scale).max(0.0f64.min(r_scale));
             } else if a_right.abs() < P_CONFUSION {
                 // Point is on the right border. — cxx:167-172
-                *max_scale = (*max_scale).min(0.0f64.max(a_l_scale));
-                *min_scale = (*min_scale).max(0.0f64.min(a_l_scale));
+                *max_scale = (*max_scale).min(0.0f64.max(l_scale));
+                *min_scale = (*min_scale).max(0.0f64.min(l_scale));
             } else if a_left * a_right < 0.0 {
                 // Point is inside allowed range. — cxx:173-178
-                *max_scale = (*max_scale).min(a_l_scale.max(a_r_scale));
-                *min_scale = (*min_scale).max(a_l_scale.min(a_r_scale));
+                *max_scale = (*max_scale).min(l_scale.max(r_scale));
+                *min_scale = (*min_scale).max(l_scale.min(r_scale));
             } else {
                 // point is out of bounds — cxx:179-183
                 return false;

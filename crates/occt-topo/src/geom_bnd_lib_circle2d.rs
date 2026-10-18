@@ -13,59 +13,59 @@ use crate::geom_bnd_lib_elclib2d::{circ_value, in_period};
 const TWO_PI: f64 = 2.0 * std::f64::consts::PI;
 
 /// `GeomBndLib_Circle2d::Box(theCirc, theTol)` — full circle.
-pub fn box_circ(the_circ: &GpCirc2d, the_tol: f64) -> BndBox2d {
-    let mut a_box = BndBox2d::new();
-    let a_r = the_circ.radius();
-    let a_o = the_circ.location();
-    let a_xd = *the_circ.position().x_direction();
-    let a_yd = *the_circ.position().y_direction();
-    let mut a_min = [0.0; 2];
-    let mut a_max = [0.0; 2];
+pub fn box_circ(circ: &GpCirc2d, tol: f64) -> BndBox2d {
+    let mut bnd_box = BndBox2d::new();
+    let r = circ.radius();
+    let o = circ.location();
+    let xd = *circ.position().x_direction();
+    let yd = *circ.position().y_direction();
+    let mut min = [0.0; 2];
+    let mut max = [0.0; 2];
     for k in 1..=2 {
-        let a_xk = if k == 1 { a_xd.x() } else { a_xd.y() };
-        let a_yk = if k == 1 { a_yd.x() } else { a_yd.y() };
-        let a_amp = (a_r * a_r * a_xk * a_xk + a_r * a_r * a_yk * a_yk).sqrt();
-        let ok = if k == 1 { a_o.x() } else { a_o.y() };
-        a_min[k - 1] = ok - a_amp;
-        a_max[k - 1] = ok + a_amp;
+        let xk = if k == 1 { xd.x() } else { xd.y() };
+        let yk = if k == 1 { yd.x() } else { yd.y() };
+        let amp = (r * r * xk * xk + r * r * yk * yk).sqrt();
+        let ok = if k == 1 { o.x() } else { o.y() };
+        min[k - 1] = ok - amp;
+        max[k - 1] = ok + amp;
     }
-    a_box.update(a_min[0], a_min[1], a_max[0], a_max[1]);
-    a_box.enlarge(the_tol);
-    a_box
+    bnd_box.update(min[0], min[1], max[0], max[1]);
+    bnd_box.enlarge(tol);
+    bnd_box
 }
 
 /// `GeomBndLib_Circle2d::Box(theCirc, theU1, theU2, theTol)` — arc or full.
-pub fn box_circ_range_2d(the_circ: &GpCirc2d, the_u1: f64, the_u2: f64, the_tol: f64) -> BndBox2d {
-    if the_u2 - the_u1 >= TWO_PI - PCONFUSION {
-        return box_circ(the_circ, the_tol);
+pub fn box_circ_range_2d(circ: &GpCirc2d, u1: f64, u2: f64, tol: f64) -> BndBox2d {
+    if u2 - u1 >= TWO_PI - PCONFUSION {
+        return box_circ(circ, tol);
     }
-    let mut a_box = BndBox2d::new();
-    a_box.add_point(&circ_value(the_u1, the_circ));
-    a_box.add_point(&circ_value(the_u2, the_circ));
-    let a_xd = *the_circ.position().x_direction();
-    let a_yd = *the_circ.position().y_direction();
+    let mut bnd_box = BndBox2d::new();
+    bnd_box.add_point(&circ_value(u1, circ));
+    bnd_box.add_point(&circ_value(u2, circ));
+    let xd = *circ.position().x_direction();
+    let yd = *circ.position().y_direction();
     for k in 1..=2 {
-        let a_xk = if k == 1 { a_xd.x() } else { a_xd.y() };
-        let a_yk = if k == 1 { a_yd.x() } else { a_yd.y() };
-        let a_t_extr_min = if a_xk.abs() > RESOLUTION {
-            in_period((a_yk / a_xk).atan(), 0.0, TWO_PI)
+        let xk = if k == 1 { xd.x() } else { xd.y() };
+        let yk = if k == 1 { yd.x() } else { yd.y() };
+        let t_extr_min = if xk.abs() > RESOLUTION {
+            in_period((yk / xk).atan(), 0.0, TWO_PI)
         } else {
             std::f64::consts::FRAC_PI_2
         };
-        let a_t_extr_max = if a_t_extr_min <= std::f64::consts::PI {
-            a_t_extr_min + std::f64::consts::PI
+        let t_extr_max = if t_extr_min <= std::f64::consts::PI {
+            t_extr_min + std::f64::consts::PI
         } else {
-            a_t_extr_min - std::f64::consts::PI
+            t_extr_min - std::f64::consts::PI
         };
-        let mut a_tk = in_period(a_t_extr_min, the_u1, the_u1 + TWO_PI);
-        if a_tk >= the_u1 && a_tk <= the_u2 {
-            a_box.add_point(&circ_value(a_t_extr_min, the_circ));
+        let mut tk = in_period(t_extr_min, u1, u1 + TWO_PI);
+        if tk >= u1 && tk <= u2 {
+            bnd_box.add_point(&circ_value(t_extr_min, circ));
         }
-        a_tk = in_period(a_t_extr_max, the_u1, the_u1 + TWO_PI);
-        if a_tk >= the_u1 && a_tk <= the_u2 {
-            a_box.add_point(&circ_value(a_t_extr_max, the_circ));
+        tk = in_period(t_extr_max, u1, u1 + TWO_PI);
+        if tk >= u1 && tk <= u2 {
+            bnd_box.add_point(&circ_value(t_extr_max, circ));
         }
     }
-    a_box.enlarge(the_tol);
-    a_box
+    bnd_box.enlarge(tol);
+    bnd_box
 }

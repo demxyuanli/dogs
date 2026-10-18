@@ -222,28 +222,28 @@ impl BndBox2d {
     /// directions become transformed `gp_Dir2d`s via `Add(Dir)`, remaining
     /// finite corners are transformed as points, gap is preserved.
     pub fn transformed(&self, t: &GpTrsf2d) -> Self {
-        let a_f = t.form();
+        let f = t.form();
         let mut a_new = *self;
         if self.is_void() {
             return a_new;
         }
-        if a_f == crate::gp::trsf_form::TrsfForm::Identity {
+        if f == crate::gp::trsf_form::TrsfForm::Identity {
             return a_new;
         }
-        if a_f == crate::gp::trsf_form::TrsfForm::Translation {
-            let a_dx = t.translation_part().x();
-            let a_dy = t.translation_part().y();
+        if f == crate::gp::trsf_form::TrsfForm::Translation {
+            let dx = t.translation_part().x();
+            let dy = t.translation_part().y();
             if self.flags & V2_XO == 0 {
-                a_new.xmin += a_dx;
+                a_new.xmin += dx;
             }
             if self.flags & V2_X1 == 0 {
-                a_new.xmax += a_dx;
+                a_new.xmax += dx;
             }
             if self.flags & V2_YO == 0 {
-                a_new.ymin += a_dy;
+                a_new.ymin += dy;
             }
             if self.flags & V2_Y1 == 0 {
-                a_new.ymax += a_dy;
+                a_new.ymax += dy;
             }
             return a_new;
         }
@@ -251,47 +251,47 @@ impl BndBox2d {
         let dir_xmax = GpDir2d { x: 1.0, y: 0.0 };
         let dir_ymin = GpDir2d { x: 0.0, y: -1.0 };
         let dir_ymax = GpDir2d { x: 0.0, y: 1.0 };
-        let mut a_vertex = [true; 4];
+        let mut vertex = [true; 4];
         let mut a_d: [GpDir2d; 6] = [dir_xmax; 6];
-        let mut a_nb_dirs = 0usize;
+        let mut nb_dirs = 0usize;
         if self.flags & V2_XO != 0 {
-            a_d[a_nb_dirs] = dir_xmin;
-            a_nb_dirs += 1;
-            a_vertex[0] = false;
-            a_vertex[2] = false;
+            a_d[nb_dirs] = dir_xmin;
+            nb_dirs += 1;
+            vertex[0] = false;
+            vertex[2] = false;
         }
         if self.flags & V2_X1 != 0 {
-            a_d[a_nb_dirs] = dir_xmax;
-            a_nb_dirs += 1;
-            a_vertex[1] = false;
-            a_vertex[3] = false;
+            a_d[nb_dirs] = dir_xmax;
+            nb_dirs += 1;
+            vertex[1] = false;
+            vertex[3] = false;
         }
         if self.flags & V2_YO != 0 {
-            a_d[a_nb_dirs] = dir_ymin;
-            a_nb_dirs += 1;
-            a_vertex[0] = false;
-            a_vertex[1] = false;
+            a_d[nb_dirs] = dir_ymin;
+            nb_dirs += 1;
+            vertex[0] = false;
+            vertex[1] = false;
         }
         if self.flags & V2_Y1 != 0 {
-            a_d[a_nb_dirs] = dir_ymax;
-            a_nb_dirs += 1;
-            a_vertex[2] = false;
-            a_vertex[3] = false;
+            a_d[nb_dirs] = dir_ymax;
+            nb_dirs += 1;
+            vertex[2] = false;
+            vertex[3] = false;
         }
         a_new.set_void();
-        for i in 0..a_nb_dirs {
+        for i in 0..nb_dirs {
             let d = a_d[i].transformed(t);
             a_new.add_dir(&d);
         }
-        let a_p = [
+        let p = [
             GpPnt2d::new(self.xmin, self.ymin),
             GpPnt2d::new(self.xmax, self.ymin),
             GpPnt2d::new(self.xmin, self.ymax),
             GpPnt2d::new(self.xmax, self.ymax),
         ];
         for i in 0..4 {
-            if a_vertex[i] {
-                a_new.add_point(&a_p[i].transformed(t));
+            if vertex[i] {
+                a_new.add_point(&p[i].transformed(t));
             }
         }
         a_new.gap = self.gap;

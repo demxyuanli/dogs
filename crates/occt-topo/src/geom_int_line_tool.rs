@@ -146,34 +146,34 @@ pub fn line_tool_last_parameter(l: &GeomIntLine) -> f64 {
 /// `GeomInt_LineTool::DecompositionOfWLine` — constructor parts become the
 /// `line_parts` argument of `IntTools_WLineTool::DecompositionOfWLine`.
 pub fn decomposition_from_constructor(
-    the_wline: &WLine,
-    the_surface1: &dyn Surface,
-    the_surface2: &dyn Surface,
-    a_tol_sum: f64,
-    the_l_constructor: &LineConstructor,
-    the_new_lines: &mut Vec<WLine>,
+    wline: &WLine,
+    surface1: &dyn Surface,
+    surface2: &dyn Surface,
+    tol_sum: f64,
+    l_constructor: &LineConstructor,
+    new_lines: &mut Vec<WLine>,
 ) -> bool {
-    let a_nb_parts = the_l_constructor.nb_parts();
-    let a_nb_pnts = the_wline.nb_pnts();
+    let a_nb_parts = l_constructor.nb_parts();
+    let a_nb_pnts = wline.nb_pnts();
     if a_nb_pnts == 0 || a_nb_parts <= 0 {
         return false;
     }
     let mut line_parts = Vec::with_capacity(a_nb_parts as usize);
     for i in 1..=a_nb_parts {
-        if let Some((f, l)) = the_l_constructor.part(i) {
+        if let Some((f, l)) = l_constructor.part(i) {
             line_parts.push((f as i32, l as i32));
         }
     }
     let dummy = Face::new();
     crate::int_tools_wline::decomposition_of_wline(
-        the_wline,
-        the_surface1,
-        the_surface2,
+        wline,
+        surface1,
+        surface2,
         &dummy,
         &dummy,
         &line_parts,
         false,
-        a_tol_sum,
-        the_new_lines,
+        tol_sum,
+        new_lines,
     )
 }

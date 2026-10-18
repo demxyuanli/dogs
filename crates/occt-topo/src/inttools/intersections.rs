@@ -598,15 +598,15 @@ pub(super) fn circle_plane_hits(
     let s = np.dot(&GpVec::from_pnts(&center, &q)) / denom;
     let p0 = center.translated_vec(&v.multiplied_scalar(s));
     let w = GpVec::from_pnts(&center, &p0);
-    let a_coef = d.dot(&d);
+    let coef = d.dot(&d);
     let b_coef = 2.0 * d.dot(&w);
     let c_coef = w.square_magnitude() - radius * radius;
-    let disc = b_coef * b_coef - 4.0 * a_coef * c_coef;
+    let disc = b_coef * b_coef - 4.0 * coef * c_coef;
     if disc < -etol * radius.max(1.0) {
         return;
     }
     let sq = if disc > 0.0 { disc.sqrt() } else { 0.0 };
-    for t in [(-b_coef - sq) / (2.0 * a_coef), (-b_coef + sq) / (2.0 * a_coef)] {
+    for t in [(-b_coef - sq) / (2.0 * coef), (-b_coef + sq) / (2.0 * coef)] {
         out.push(p0.translated_vec(&d.multiplied_scalar(t)));
     }
 }

@@ -185,21 +185,21 @@ pub(crate) fn plane_torus_circles(
 
     if (n_par.abs() - 1.0).abs() <= 1e-12 {
         // Axis ∥ plane normal → perpendicular cut.
-        let a_dr = dist.abs() - minor;
-        if a_dr > 1e-13 {
+        let dr = dist.abs() - minor;
+        if dr > 1e-13 {
             return None; // plane misses the tube → IntAna_Empty
         }
-        let dist = if a_dr.abs() < 1e-13 {
+        let dist = if dr.abs() < 1e-13 {
             if dist < 0.0 { -minor } else { minor }
         } else {
             dist
         };
-        let a_dt = (minor * minor - dist * dist).max(0.0).sqrt();
+        let dt = (minor * minor - dist * dist).max(0.0).sqrt();
         let center_on_plane = center.translated_vec(&n.multiplied_scalar(-dist));
         let normal = GpDir::from_vec(&n).ok()?;
-        let mut out = vec![circle_gp(center_on_plane, normal, major + a_dt)?];
-        if a_dr < -1e-13 && a_dt > tol {
-            out.push(circle_gp(center_on_plane, normal, (major - a_dt).max(0.0))?);
+        let mut out = vec![circle_gp(center_on_plane, normal, major + dt)?];
+        if dr < -1e-13 && dt > tol {
+            out.push(circle_gp(center_on_plane, normal, (major - dt).max(0.0))?);
         }
         return Some(out);
     }
@@ -211,9 +211,9 @@ pub(crate) fn plane_torus_circles(
     if dist.abs() > 1e-14 {
         return None;
     }
-    let a_dir = GpDir::from_vec(&az).ok()?;
+    let dir = GpDir::from_vec(&az).ok()?;
     let normal = GpDir::from_vec(&n).ok()?;
-    let e = a_dir.cross(&normal).ok()?;
+    let e = dir.cross(&normal).ok()?;
     let c1 = center.translated_vec(&GpVec::from_xyz(e.xyz()).multiplied_scalar(major));
     let c2 = center.translated_vec(&GpVec::from_xyz(e.xyz()).multiplied_scalar(-major));
     Some(vec![

@@ -19,7 +19,7 @@ use super::pconic::IntCurvePConic;
 /// but only clamps when they differ (`cxx:78`), which is reproduced here. The
 /// tolerance is unnamed in OCCT and unused.
 pub fn find_parameter_bounded(
-    the_p_conic: &IntCurvePConic,
+    p_conic: &IntCurvePConic,
     p: &GpPnt2d,
     low_parameter: f64,
     high_parameter: f64,
@@ -31,7 +31,7 @@ pub fn find_parameter_bounded(
         (high_parameter, low_parameter)
     };
 
-    let param = raw_parameter(the_p_conic, p);
+    let param = raw_parameter(p_conic, p);
 
     if param_inf != param_sup {
         if param < param_inf {
@@ -47,17 +47,17 @@ pub fn find_parameter_bounded(
 /// `IntCurve_ProjectOnPConicTool::FindParameter(C, Pnt, Tol)` (`cxx:92-140`):
 /// the unbounded overload. The research runs on the natural parametric domain
 /// of the curve. The tolerance is unnamed in OCCT and unused.
-pub fn pconic_find_parameter(the_p_conic: &IntCurvePConic, p: &GpPnt2d, _tol: f64) -> f64 {
-    raw_parameter(the_p_conic, p)
+pub fn pconic_find_parameter(p_conic: &IntCurvePConic, p: &GpPnt2d, _tol: f64) -> f64 {
+    raw_parameter(p_conic, p)
 }
 
 /// The shared body of both overloads (`cxx:40-75` / `cxx:101-135`).
-fn raw_parameter(the_p_conic: &IntCurvePConic, p: &GpPnt2d) -> f64 {
+fn raw_parameter(p_conic: &IntCurvePConic, p: &GpPnt2d) -> f64 {
     let two_pi = 2.0 * std::f64::consts::PI;
-    match the_p_conic.type_curve() {
-        CurveType::Line => clib2d::line_parameter_ax2d(&the_p_conic.axis2().x_axis(), p),
+    match p_conic.type_curve() {
+        CurveType::Line => clib2d::line_parameter_ax2d(&p_conic.axis2().x_axis(), p),
         CurveType::Circle => {
-            let mut param = clib2d::circle_parameter_ax22d(the_p_conic.axis2(), p);
+            let mut param = clib2d::circle_parameter_ax22d(p_conic.axis2(), p);
             if param < 0.0 {
                 param += two_pi;
             }
@@ -65,9 +65,9 @@ fn raw_parameter(the_p_conic: &IntCurvePConic, p: &GpPnt2d) -> f64 {
         }
         CurveType::Ellipse => {
             let mut param = clib2d::ellipse_parameter_ax22d(
-                the_p_conic.axis2(),
-                the_p_conic.param1(),
-                the_p_conic.param2(),
+                p_conic.axis2(),
+                p_conic.param1(),
+                p_conic.param2(),
                 p,
             );
             if param < 0.0 {
@@ -75,11 +75,11 @@ fn raw_parameter(the_p_conic: &IntCurvePConic, p: &GpPnt2d) -> f64 {
             }
             param
         }
-        CurveType::Parabola => clib2d::parabola_parameter_ax22d(the_p_conic.axis2(), p),
+        CurveType::Parabola => clib2d::parabola_parameter_ax22d(p_conic.axis2(), p),
         CurveType::Hyperbola => clib2d::hyperbola_parameter_ax22d(
-            the_p_conic.axis2(),
-            the_p_conic.param1(),
-            the_p_conic.param2(),
+            p_conic.axis2(),
+            p_conic.param1(),
+            p_conic.param2(),
             p,
         ),
         _ => 0.0,

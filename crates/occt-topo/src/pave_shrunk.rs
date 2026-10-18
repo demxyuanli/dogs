@@ -51,21 +51,21 @@ pub fn is_valid_shrunk_data(f: &PaveFiller, n_e: usize, pb: &crate::bopds::Bopds
 /// `BOPAlgo_PaveFiller::FillShrunkData(aType1, aType2)`.
 pub fn fill_shrunk_data_typed(
     f: &mut PaveFiller,
-    a_type1: ShapeType,
-    a_type2: ShapeType,
+    type1: ShapeType,
+    type2: ShapeType,
 ) -> Result<(), String> {
-    let pairs = collect_pairs(f.ds(), a_type1, a_type2);
+    let pairs = collect_pairs(f.ds(), type1, type2);
     if pairs.is_empty() {
         return Ok(());
     }
-    let a_type = [a_type1, a_type2];
-    let mut a_mi: std::collections::HashSet<usize> = std::collections::HashSet::new();
+    let kind = [type1, type2];
+    let mut mi: std::collections::HashSet<usize> = std::collections::HashSet::new();
     let mut jobs: Vec<(usize, usize)> = Vec::new();
     for (n0, n1) in pairs {
         let n_s = [n0, n1];
         for i in 0..2 {
             let n_e = n_s[i];
-            if a_type[i] != ShapeType::Edge || !a_mi.insert(n_e) {
+            if kind[i] != ShapeType::Edge || !mi.insert(n_e) {
                 continue;
             }
             let Some(si_e) = f.ds().shape_info(n_e).cloned() else {
@@ -89,9 +89,9 @@ pub fn fill_shrunk_data_typed(
         let Some(es) = f.ds().shape(n_e).cloned() else {
             continue;
         };
-        let a_e = Edge(es);
+        let e = Edge(es);
         let mut pb = f.ds().pave_blocks(n_e)[slot].clone();
-        fill_shrunk_data_for_block(f, &a_e, tol, &mut pb);
+        fill_shrunk_data_for_block(f, &e, tol, &mut pb);
         if let Some(slot_mut) = f.ds_mut().change_pave_blocks_mut(n_e).get_mut(slot) {
             *slot_mut = pb;
         }
@@ -133,9 +133,9 @@ pub fn analyze_shrunk_data_full(
     sr: &crate::inttools_range::ShrunkRange,
     edge: &Edge,
 ) {
-    let (a_e_first, a_e_last) = BRepTool::edge_parameters(edge);
-    let (a_pb_first, a_pb_last) = pb.range();
-    let b_whole_edge = a_pb_first <= a_e_first && a_pb_last >= a_e_last;
+    let (e_first, e_last) = BRepTool::edge_parameters(edge);
+    let (pb_first, pb_last) = pb.range();
+    let b_whole_edge = pb_first <= e_first && pb_last >= e_last;
     let done = sr.is_done();
     let splittable = sr.is_splittable();
     if !done || !splittable {

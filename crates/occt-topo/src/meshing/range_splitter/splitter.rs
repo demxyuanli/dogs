@@ -284,10 +284,10 @@ impl RangeSplitter for CylinderRangeSplitter {
 
         let su = range_u.1 - range_u.0;
         let sv = range_v.1 - range_v.0;
-        let a_arc_len = su * radius;
+        let arc_len = su * radius;
         let mut nb_u = 0i32;
         let nb_v = 0i32;
-        if a_arc_len > deflection {
+        if arc_len > deflection {
             nb_u = (su / self.du) as i32;
             // `BRepMesh_CylinderRangeSplitter.cxx:52-64`: OCCT's own V-step /
             // nbV block is commented out in the reference, so nbV stays 0 here
@@ -338,7 +338,7 @@ impl ConeRangeSplitter {
         let deflection = self.deflection();
         // `BRepMesh_ConeRangeSplitter::GetSplitSteps`:
         // `aRadius = max(|RefR + V0*sin(ang)|, |RefR + V1*sin(ang)|)`.
-        let a_radius = if let Some((ref_r, sang)) = surface.cone_ref() {
+        let radius = if let Some((ref_r, sang)) = surface.cone_ref() {
             (ref_r + range_v.0 * sang.sin())
                 .abs()
                 .max((ref_r + range_v.1 * sang.sin()).abs())
@@ -347,17 +347,17 @@ impl ConeRangeSplitter {
                 .max(cone_radius_at(surface.as_ref(), range_v.1))
         };
 
-        let mut du = arc_angular_step(a_radius, deflection, params.angle, params.min_size);
+        let mut du = arc_angular_step(radius, deflection, params.angle, params.min_size);
 
-        let a_diff_u = range_u.1 - range_u.0;
-        let a_diff_v = range_v.1 - range_v.0;
-        let a_scale = du * a_radius;
-        let a_ratio = (a_diff_v / a_scale).ln().max(1.0);
-        let nb_u = (a_diff_u / du) as i32;
-        let nb_v = (a_diff_v / a_scale / a_ratio) as i32;
+        let diff_u = range_u.1 - range_u.0;
+        let diff_v = range_v.1 - range_v.0;
+        let scale = du * radius;
+        let ratio = (diff_v / scale).ln().max(1.0);
+        let nb_u = (diff_u / du) as i32;
+        let nb_v = (diff_v / scale / ratio) as i32;
 
-        du = a_diff_u / (nb_u + 1) as f64;
-        let dv = a_diff_v / (nb_v + a_ratio as i32) as f64;
+        du = diff_u / (nb_u + 1) as f64;
+        let dv = diff_v / (nb_v + ratio as i32) as f64;
 
         steps_nb.0 = nb_u;
         steps_nb.1 = nb_v;
@@ -430,10 +430,10 @@ impl RangeSplitter for SphereRangeSplitter {
         let range_u = self.base().range_u();
         let radius = self.surface().map(|s| sphere_radius(s.as_ref())).unwrap_or(0.0);
         let deflection = self.deflection();
-        let a_step = 0.7 * arc_angular_step(radius, deflection, params.angle, params.min_size);
+        let step = 0.7 * arc_angular_step(radius, deflection, params.angle, params.min_size);
 
-        let (step_v, max_v) = self.compute_step(range_v, a_step);
-        let (step_u, max_u) = self.compute_step(range_u, a_step);
+        let (step_v, max_v) = self.compute_step(range_v, step);
+        let (step_u, max_u) = self.compute_step(range_u, step);
         let half_du = step_u * 0.5;
 
         let mut shift = false;

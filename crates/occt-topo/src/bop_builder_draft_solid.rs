@@ -74,75 +74,75 @@ pub struct DraftSolidResult {
 /// `BOPAlgo_Builder::BuildDraftSolid` (`_3.cxx:267`).
 pub fn build_draft_solid_occt<B: BopSolidHost>(
     f: &B,
-    the_solid: &TopoShape,
+    solid: &TopoShape,
     ctx: &mut IntToolsContext,
     add_warning: &mut dyn FnMut(String),
 ) -> DraftSolidResult {
-    let a_or_sd = the_solid.orientation();
-    let mut the_draft = make_empty_solid(a_or_sd);
-    let mut the_lif: Vec<TopoShape> = Vec::new();
+    let or_sd = solid.orientation();
+    let mut the_draft = make_empty_solid(or_sd);
+    let mut lif: Vec<TopoShape> = Vec::new();
 
-    let shells = if the_solid.shape_type() == ShapeType::Solid {
-        shells_of_solid(the_solid)
-    } else if the_solid.shape_type() == ShapeType::Shell {
-        vec![Shell(the_solid.clone())]
+    let shells = if solid.shape_type() == ShapeType::Solid {
+        shells_of_solid(solid)
+    } else if solid.shape_type() == ShapeType::Shell {
+        vec![Shell(solid.clone())]
     } else {
         Vec::new()
     };
 
-    for a_sh in shells {
-        let a_or_sh = a_sh.0.orientation();
-        let mut a_sh_d = make_empty_shell(a_or_sh);
+    for sh in shells {
+        let or_sh = sh.0.orientation();
+        let mut sh_d = make_empty_shell(or_sh);
         let mut i_flag = false;
 
-        for a_f in iter_children(&a_sh.0) {
+        for a_f in iter_children(&sh.0) {
             if a_f.shape_type() != ShapeType::Face {
                 continue;
             }
-            let a_or_f = a_f.orientation();
+            let or_f = a_f.orientation();
             if images_bound(f.history(), &a_f) {
-                for a_fx_src in images_of(f.history(), &a_f) {
-                    let mut a_fx = a_fx_src.clone();
-                    if shapes_sd_bound(f, &a_fx) {
-                        if is_internal(a_or_f) {
-                            a_fx.set_orientation(a_or_f);
-                            the_lif.push(a_fx);
-                        } else if let Some(w) = orient_split_with_warn(&mut a_fx, &a_f, ctx) {
+                for fx_src in images_of(f.history(), &a_f) {
+                    let mut fx = fx_src.clone();
+                    if shapes_sd_bound(f, &fx) {
+                        if is_internal(or_f) {
+                            fx.set_orientation(or_f);
+                            lif.push(fx);
+                        } else if let Some(w) = orient_split_with_warn(&mut fx, &a_f, ctx) {
                             add_warning(w.message);
-                            if add_draft_face_once(&mut a_sh_d, &a_fx) {
+                            if add_draft_face_once(&mut sh_d, &fx) {
                                 i_flag = true;
                             }
-                        } else if add_draft_face_once(&mut a_sh_d, &a_fx) {
+                        } else if add_draft_face_once(&mut sh_d, &fx) {
                             i_flag = true;
                         }
                     } else {
-                        a_fx.set_orientation(a_or_f);
-                        if is_internal(a_or_f) {
-                            the_lif.push(a_fx);
-                        } else if add_draft_face_once(&mut a_sh_d, &a_fx) {
+                        fx.set_orientation(or_f);
+                        if is_internal(or_f) {
+                            lif.push(fx);
+                        } else if add_draft_face_once(&mut sh_d, &fx) {
                             i_flag = true;
                         }
                     }
                 }
-            } else if is_internal(a_or_f) {
-                the_lif.push(a_f);
-            } else if add_draft_face_once(&mut a_sh_d, &a_f) {
+            } else if is_internal(or_f) {
+                lif.push(a_f);
+            } else if add_draft_face_once(&mut sh_d, &a_f) {
                 i_flag = true;
             }
         }
 
         if i_flag {
             // `BOPAlgo_Builder_3.cxx:364`: `aShD.Closed(BRep_Tool::IsClosed(aShD))`.
-            a_sh_d
+            sh_d
                 .0
-                .set_closed(crate::brep_tool::BRepTool::is_closed(&a_sh_d.0));
-            add_shell_to_solid(&mut the_draft, &a_sh_d);
+                .set_closed(crate::brep_tool::BRepTool::is_closed(&sh_d.0));
+            add_shell_to_solid(&mut the_draft, &sh_d);
         }
     }
 
     DraftSolidResult {
         draft: the_draft.0,
-        internal_faces: the_lif,
+        internal_faces: lif,
     }
 }
 
@@ -150,51 +150,51 @@ pub fn build_draft_solid_occt<B: BopSolidHost>(
 /// Same-domain splits are treated as unbound (`else` branch of `_3.cxx:332`).
 pub fn build_draft_solid_from_history(
     history: &crate::bop_hist::BopHistory,
-    the_solid: &TopoShape,
+    solid: &TopoShape,
 ) -> DraftSolidResult {
-    let a_or_sd = the_solid.orientation();
-    let mut the_draft = make_empty_solid(a_or_sd);
-    let mut the_lif: Vec<TopoShape> = Vec::new();
-    let shells = if the_solid.shape_type() == ShapeType::Solid {
-        shells_of_solid(the_solid)
+    let or_sd = solid.orientation();
+    let mut the_draft = make_empty_solid(or_sd);
+    let mut lif: Vec<TopoShape> = Vec::new();
+    let shells = if solid.shape_type() == ShapeType::Solid {
+        shells_of_solid(solid)
     } else {
         Vec::new()
     };
-    for a_sh in shells {
-        let mut a_sh_d = make_empty_shell(a_sh.0.orientation());
+    for sh in shells {
+        let mut sh_d = make_empty_shell(sh.0.orientation());
         let mut i_flag = false;
-        for a_f in iter_children(&a_sh.0) {
+        for a_f in iter_children(&sh.0) {
             if a_f.shape_type() != ShapeType::Face {
                 continue;
             }
-            let a_or_f = a_f.orientation();
+            let or_f = a_f.orientation();
             if images_bound(history, &a_f) {
-                for a_fx_src in images_of(history, &a_f) {
-                    let mut a_fx = a_fx_src.clone();
-                    a_fx.set_orientation(a_or_f);
-                    if is_internal(a_or_f) {
-                        the_lif.push(a_fx);
-                    } else if add_draft_face_once(&mut a_sh_d, &a_fx) {
+                for fx_src in images_of(history, &a_f) {
+                    let mut fx = fx_src.clone();
+                    fx.set_orientation(or_f);
+                    if is_internal(or_f) {
+                        lif.push(fx);
+                    } else if add_draft_face_once(&mut sh_d, &fx) {
                         i_flag = true;
                     }
                 }
-            } else if is_internal(a_or_f) {
-                the_lif.push(a_f);
-            } else if add_draft_face_once(&mut a_sh_d, &a_f) {
+            } else if is_internal(or_f) {
+                lif.push(a_f);
+            } else if add_draft_face_once(&mut sh_d, &a_f) {
                 i_flag = true;
             }
         }
         if i_flag {
             // `BOPAlgo_Builder_3.cxx:364`: `aShD.Closed(BRep_Tool::IsClosed(aShD))`.
-            a_sh_d
+            sh_d
                 .0
-                .set_closed(crate::brep_tool::BRepTool::is_closed(&a_sh_d.0));
-            add_shell_to_solid(&mut the_draft, &a_sh_d);
+                .set_closed(crate::brep_tool::BRepTool::is_closed(&sh_d.0));
+            add_shell_to_solid(&mut the_draft, &sh_d);
         }
     }
     DraftSolidResult {
         draft: the_draft.0,
-        internal_faces: the_lif,
+        internal_faces: lif,
     }
 }
 

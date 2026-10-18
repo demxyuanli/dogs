@@ -44,13 +44,13 @@ pub fn cut_edge(edge: &Edge, pend: f64, cut: f64, face: &Face, is_cut_line: &mut
     if (cut - pend).abs() < ten_pconfusion() {
         return false;
     }
-    let a_range = (cut - pend).abs();
+    let range = (cut - pend).abs();
     let reg = GeometryRegistry::global();
     // `cxx:218`: `BRep_Tool::Range(edge, a, b)`, the edge's own 3D range.
     let (a, b) = reg.edge_parameters(&edge.0);
     *is_cut_line = false;
     // `cxx:220-223`.
-    if a_range < ten_pconfusion() {
+    if range < ten_pconfusion() {
         return false;
     }
 
@@ -87,10 +87,10 @@ pub fn cut_edge(edge: &Edge, pend: f64, cut: f64, face: &Face, is_cut_line: &mut
     }
 
     // `cxx:267-277`: the det-study guard and the re-read of the 3D range.
-    if ((a - b).abs() - a_range).abs() < PCONFUSION {
+    if ((a - b).abs() - range).abs() < PCONFUSION {
         return false;
     }
-    if a_range < ten_pconfusion() {
+    if range < ten_pconfusion() {
         return false;
     }
     let curve = reg.edge_curve(&edge.0);

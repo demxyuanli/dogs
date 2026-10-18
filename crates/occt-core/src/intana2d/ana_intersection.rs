@@ -591,18 +591,18 @@ impl IntAna2dAnaIntersection {
         let axe_rep = GpAx2d::new(h.pos.point, h.pos.vxdir);
         let (a, b, c, d, e, f) = conic.new_coefficients(&axe_rep);
 
-        let a_major_radius_p2 = a * major_radius * major_radius;
+        let major_radius_p2 = a * major_radius * major_radius;
         let b_minor_radius_p2 = b * minor_radius * minor_radius;
         let c_2_major_minor_radius = c * 2.0 * major_radius * minor_radius;
 
         // Parameter t with x = MajorRadius*Ch(t), y = MinorRadius*Sh(t). The
         // polynomial is rewritten in Exp(t); the coefficients below are those
         // of P multiplied by 4*Exp(t)^2.
-        let px0 = a_major_radius_p2 - c_2_major_minor_radius + b_minor_radius_p2;
+        let px0 = major_radius_p2 - c_2_major_minor_radius + b_minor_radius_p2;
         let px1 = 4.0 * (d * major_radius - e * minor_radius);
-        let px2 = 2.0 * (a_major_radius_p2 + 2.0 * f - b_minor_radius_p2);
+        let px2 = 2.0 * (major_radius_p2 + 2.0 * f - b_minor_radius_p2);
         let px3 = 4.0 * (d * major_radius + e * minor_radius);
-        let px4 = a_major_radius_p2 + c_2_major_minor_radius + b_minor_radius_p2;
+        let px4 = major_radius_p2 + c_2_major_minor_radius + b_minor_radius_p2;
 
         let sol = MyDirectPolynomialRoots::new5(px4, px3, px2, px1, px0);
 

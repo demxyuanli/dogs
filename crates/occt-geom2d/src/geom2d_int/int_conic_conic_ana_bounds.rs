@@ -61,7 +61,7 @@ pub(crate) fn set_bounded_domain(
 /// `SetBinfBsupFromIntAna2d(..., const gp_Parab2d&, Maxtol, LIMITE)`
 /// (`IntCurve_IntConicConic.cxx:1170-1216`).
 pub(crate) fn set_binf_bsup_from_int_ana2d_parab(
-    the_int_ana2d: &IntAna2dAnaIntersection,
+    int_ana2d: &IntAna2dAnaIntersection,
     binf: &mut f64,
     pntinf: &mut GpPnt2d,
     bsup: &mut f64,
@@ -70,11 +70,11 @@ pub(crate) fn set_binf_bsup_from_int_ana2d_parab(
     maxtol: f64,
     limite: f64,
 ) {
-    if !the_int_ana2d.is_done() || the_int_ana2d.is_empty() {
+    if !int_ana2d.is_done() || int_ana2d.is_empty() {
         return;
     }
-    for p in 1..=the_int_ana2d.nb_points() {
-        let mut param = the_int_ana2d.point(p).param_on_first();
+    for p in 1..=int_ana2d.nb_points() {
+        let mut param = int_ana2d.point(p).param_on_first();
         if param.abs() >= limite {
             continue;
         }
@@ -100,7 +100,7 @@ pub(crate) fn set_binf_bsup_from_int_ana2d_parab(
 /// `SetBinfBsupFromIntAna2d(..., const gp_Hypr2d&, Maxtol, LIMITE)`
 /// (`IntCurve_IntConicConic.cxx:1218-1266`).
 pub(crate) fn set_binf_bsup_from_int_ana2d_hypr(
-    the_int_ana2d: &IntAna2dAnaIntersection,
+    int_ana2d: &IntAna2dAnaIntersection,
     binf: &mut f64,
     pntinf: &mut GpPnt2d,
     bsup: &mut f64,
@@ -109,11 +109,11 @@ pub(crate) fn set_binf_bsup_from_int_ana2d_hypr(
     maxtol: f64,
     limite: f64,
 ) {
-    if !the_int_ana2d.is_done() || the_int_ana2d.is_empty() {
+    if !int_ana2d.is_done() || int_ana2d.is_empty() {
         return;
     }
-    for p in 1..=the_int_ana2d.nb_points() {
-        let mut param = the_int_ana2d.point(p).param_on_first();
+    for p in 1..=int_ana2d.nb_points() {
+        let mut param = int_ana2d.point(p).param_on_first();
         if param.abs() >= limite {
             continue;
         }

@@ -65,8 +65,8 @@ fn write_edge_on_pb(ds: &mut BopdsDS, pb: &BopdsPaveBlock, n_sp: usize) {
 }
 
 /// `BOPAlgo_PaveFiller::RemovePaveBlocks` (`_6.cxx:3815`).
-pub fn remove_pave_blocks(ds: &mut BopdsDS, the_edges: &HashSet<usize>) {
-    ds.remove_pave_blocks(the_edges);
+pub fn remove_pave_blocks(ds: &mut BopdsDS, edges: &HashSet<usize>) {
+    ds.remove_pave_blocks(edges);
 }
 
 /// `BOPAlgo_PaveFiller::UpdatePaveBlocks` (`_6.cxx:3679`).
@@ -78,38 +78,38 @@ pub fn update_pave_blocks(f: &mut PaveFiller, dm_new_sd: &std::collections::Hash
     let mut fence: HashSet<PbKey> = HashSet::new();
     let mut micro: HashSet<usize> = HashSet::new();
     let mut rebuilt: Vec<(BopdsPaveBlock, usize, bool)> = Vec::new();
-    for mut a_pb in all {
-        let b_cb = f.ds().is_common_block(&a_pb);
+    for mut pb in all {
+        let b_cb = f.ds().is_common_block(&pb);
         if b_cb {
-            if let Some(cb) = f.ds().common_block(&a_pb) {
+            if let Some(cb) = f.ds().common_block(&pb) {
                 if let Some(first) = cb.pave_block1() {
-                    a_pb = first.clone();
+                    pb = first.clone();
                 }
             }
         }
-        if !fence.insert(pb_fence_key(&a_pb)) {
+        if !fence.insert(pb_fence_key(&pb)) {
             continue;
         }
-        let (mut n_v0, mut n_v1) = a_pb.indices();
-        let (a_t0, a_t1) = a_pb.range();
+        let (mut n_v0, mut n_v1) = pb.indices();
+        let (t0, t1) = pb.range();
         let was_regular = n_v0 != n_v1;
         let mut b_rebuild = false;
         if let Some(&n) = dm_new_sd.get(&n_v0) {
             n_v0 = n;
-            a_pb.set_pave1(BopdsPave::new(n_v0, a_t0));
+            pb.set_pave1(BopdsPave::new(n_v0, t0));
             b_rebuild = true;
         }
         if let Some(&n) = dm_new_sd.get(&n_v1) {
             n_v1 = n;
-            a_pb.set_pave2(BopdsPave::new(n_v1, a_t1));
+            pb.set_pave2(BopdsPave::new(n_v1, t1));
             b_rebuild = true;
         }
         if !b_rebuild {
             continue;
         }
-        let mut n_e = a_pb.edge();
+        let mut n_e = pb.edge();
         if n_e == 0 {
-            n_e = a_pb.original_edge();
+            n_e = pb.original_edge();
         }
         let is_deg = f.ds().shape_info(n_e).map(|s| s.has_flag()).unwrap_or(false)
             || f
@@ -121,26 +121,26 @@ pub fn update_pave_blocks(f: &mut PaveFiller, dm_new_sd: &std::collections::Hash
             if let Some(e_shape) = f.ds().shape(n_e).cloned() {
                 let edge = Edge(e_shape);
                 let tol = BRepTool::edge_tolerance(&edge);
-                fill_shrunk_data_for_block(f, &edge, tol, &mut a_pb);
+                fill_shrunk_data_for_block(f, &edge, tol, &mut pb);
             }
-            if !a_pb.has_shrunk_data() {
+            if !pb.has_shrunk_data() {
                 micro.insert(n_e);
                 continue;
             }
         }
-        rebuilt.push((a_pb, n_e, b_cb));
+        rebuilt.push((pb, n_e, b_cb));
     }
-    for (a_pb, n_e, b_cb) in rebuilt {
-        let (n_v0, n_v1) = a_pb.indices();
-        let (a_t0, a_t1) = a_pb.range();
-        let n_sp = make_split_edge(f, n_e, n_v0, a_t0, n_v1, a_t1)?;
+    for (pb, n_e, b_cb) in rebuilt {
+        let (n_v0, n_v1) = pb.indices();
+        let (t0, t1) = pb.range();
+        let n_sp = make_split_edge(f, n_e, n_v0, t0, n_v1, t1)?;
         if b_cb {
-            if let Some(mut cb) = f.ds().common_block(&a_pb).cloned() {
+            if let Some(mut cb) = f.ds().common_block(&pb).cloned() {
                 cb.set_edge(n_sp);
-                f.ds_mut().set_common_block(&a_pb, cb);
+                f.ds_mut().set_common_block(&pb, cb);
             }
         } else {
-            write_edge_on_pb(f.ds_mut(), &a_pb, n_sp);
+            write_edge_on_pb(f.ds_mut(), &pb, n_sp);
         }
     }
     if !micro.is_empty() {

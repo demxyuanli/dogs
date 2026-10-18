@@ -58,12 +58,12 @@ impl IntCurveIntConicConic {
         let maxtol = offset_tolerance(tol_conf, tol);
         let mirror_axis = p2.mirror_axis();
         let offset = GpVec2d::new(maxtol * mirror_axis.vdir.x, maxtol * mirror_axis.vdir.y);
-        let mut the_int_ana2d = IntAna2dAnaIntersection::new();
+        let mut int_ana2d = IntAna2dAnaIntersection::new();
 
         let pp = p2.translated_vec(&offset);
-        the_int_ana2d.perform_parab_conic(&pp, &IntAna2dConic::from_parab2d(p1));
+        int_ana2d.perform_parab_conic(&pp, &IntAna2dConic::from_parab2d(p1));
         set_binf_bsup_from_int_ana2d_parab(
-            &the_int_ana2d,
+            &int_ana2d,
             &mut binf,
             &mut pntinf,
             &mut bsup,
@@ -75,9 +75,9 @@ impl IntCurveIntConicConic {
 
         let offset = offset.reversed();
         let pm = p2.translated_vec(&offset);
-        the_int_ana2d.perform_parab_conic(&pm, &IntAna2dConic::from_parab2d(p1));
+        int_ana2d.perform_parab_conic(&pm, &IntAna2dConic::from_parab2d(p1));
         set_binf_bsup_from_int_ana2d_parab(
-            &the_int_ana2d,
+            &int_ana2d,
             &mut binf,
             &mut pntinf,
             &mut bsup,
@@ -146,10 +146,10 @@ impl IntCurveIntConicConic {
         let mut ep = *e;
         ep.set_major_radius(e.major_radius + maxtol);
         ep.set_minor_radius(e.minor_radius + maxtol);
-        let mut the_int_ana2d = IntAna2dAnaIntersection::new();
-        the_int_ana2d.perform_parab_conic(p, &IntAna2dConic::from_elips2d(&ep));
+        let mut int_ana2d = IntAna2dAnaIntersection::new();
+        int_ana2d.perform_parab_conic(p, &IntAna2dConic::from_elips2d(&ep));
         set_binf_bsup_from_int_ana2d_parab(
-            &the_int_ana2d,
+            &int_ana2d,
             &mut binf,
             &mut pntinf,
             &mut bsup,
@@ -162,9 +162,9 @@ impl IntCurveIntConicConic {
         if e.minor_radius > maxtol {
             ep.set_minor_radius(e.minor_radius - maxtol);
             ep.set_major_radius(e.major_radius - maxtol);
-            the_int_ana2d.perform_parab_conic(p, &IntAna2dConic::from_elips2d(&ep));
+            int_ana2d.perform_parab_conic(p, &IntAna2dConic::from_elips2d(&ep));
             set_binf_bsup_from_int_ana2d_parab(
-                &the_int_ana2d,
+                &int_ana2d,
                 &mut binf,
                 &mut pntinf,
                 &mut bsup,
@@ -228,12 +228,12 @@ impl IntCurveIntConicConic {
         let maxtol = offset_tolerance(tol_conf, tol);
         let x_axis = h.x_axis();
         let offset = GpVec2d::new(maxtol * x_axis.vdir.x, maxtol * x_axis.vdir.y);
-        let mut the_int_ana2d = IntAna2dAnaIntersection::new();
+        let mut int_ana2d = IntAna2dAnaIntersection::new();
 
         let hp = h.translated_vec(&offset);
-        the_int_ana2d.perform_hypr_conic(&hp, &IntAna2dConic::from_parab2d(p));
+        int_ana2d.perform_hypr_conic(&hp, &IntAna2dConic::from_parab2d(p));
         set_binf_bsup_from_int_ana2d_hypr(
-            &the_int_ana2d,
+            &int_ana2d,
             &mut binf,
             &mut pntinf,
             &mut bsup,
@@ -245,9 +245,9 @@ impl IntCurveIntConicConic {
 
         let offset = offset.reversed();
         let hm = h.translated_vec(&offset);
-        the_int_ana2d.perform_hypr_conic(&hm, &IntAna2dConic::from_parab2d(p));
+        int_ana2d.perform_hypr_conic(&hm, &IntAna2dConic::from_parab2d(p));
         set_binf_bsup_from_int_ana2d_hypr(
-            &the_int_ana2d,
+            &int_ana2d,
             &mut binf,
             &mut pntinf,
             &mut bsup,

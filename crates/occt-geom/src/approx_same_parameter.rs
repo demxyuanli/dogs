@@ -260,22 +260,22 @@ fn check_same_parameter(
 
 fn compute_tangents(c3d: &dyn Curve, c2d: &dyn Curve2d, s: &dyn Surface) -> Option<(f64, f64)> {
     const SMALL: f64 = 1.0e-12;
-    let a_param_first = c3d.first_parameter();
-    let (_, a_vec_cons) = cons_d1(c2d, s, a_param_first);
-    let (_, a_vec) = c3d.d1(a_param_first);
-    let mag = a_vec_cons.magnitude();
+    let param_first = c3d.first_parameter();
+    let (_, vec_cons) = cons_d1(c2d, s, param_first);
+    let (_, vec) = c3d.d1(param_first);
+    let mag = vec_cons.magnitude();
     if mag <= SMALL {
         return None;
     }
-    let first_t = a_vec.magnitude() / mag;
-    let a_param_last = c3d.last_parameter();
-    let (_, a_vec_cons) = cons_d1(c2d, s, a_param_last);
-    let (_, a_vec) = c3d.d1(a_param_last);
-    let mag = a_vec_cons.magnitude();
+    let first_t = vec.magnitude() / mag;
+    let param_last = c3d.last_parameter();
+    let (_, vec_cons) = cons_d1(c2d, s, param_last);
+    let (_, vec) = c3d.d1(param_last);
+    let mag = vec_cons.magnitude();
     if mag <= SMALL {
         return None;
     }
-    let last_t = a_vec.magnitude() / mag;
+    let last_t = vec.magnitude() / mag;
     Some((first_t, last_t))
 }
 
@@ -331,27 +331,27 @@ fn check_reparam(
     tol: &mut f64,
     oldtol: f64,
 ) -> bool {
-    let mut a_param_first = 3.0 * pc3d[0] - 2.0 * pc3d[nbp - 1];
-    let mut a_param_last = 3.0 * pc3d[nbp - 1] - 2.0 * pc3d[0];
+    let mut param_first = 3.0 * pc3d[0] - 2.0 * pc3d[nbp - 1];
+    let mut param_last = 3.0 * pc3d[nbp - 1] - 2.0 * pc3d[0];
     let first_par = c2d.first_parameter();
     let last_par = c2d.last_parameter();
-    if a_param_first < first_par {
-        a_param_first = first_par;
+    if param_first < first_par {
+        param_first = first_par;
     }
-    if a_param_last > last_par {
-        a_param_last = last_par;
+    if param_last > last_par {
+        param_last = last_par;
     }
     let d = *tol;
     let nn = 2 * nbp;
     let unsurnn = 1.0 / nn as f64;
-    let mut tprev = a_param_first;
+    let mut tprev = param_first;
     let mut d2: f64 = 0.0;
     for i in 0..=nn {
         let t = unsurnn * i as f64;
         let tc3d = pc3d[0] * (1.0 - t) + pc3d[nbp - 1] * t;
         let pc3d_pt = c3d.d0(tc3d);
         let tcons = eval_1d_d0(flat, poles, tc3d);
-        if tcons < tprev || tcons > a_param_last {
+        if tcons < tprev || tcons > param_last {
             *tol = INFINITE;
             return false;
         }

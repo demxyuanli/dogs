@@ -192,11 +192,11 @@ pub(crate) fn prepare_post_treat_ff(
 /// First `ProcessExistingPaveBlocks` overload (`_6.cxx:3072`).
 pub(crate) fn process_existing_pave_blocks(
     ds: &BopdsDS,
-    the_int: usize,
-    the_cur: usize,
+    int: usize,
+    cur: usize,
     n_f1: usize,
     n_f2: usize,
-    the_es: &TopoShape,
+    es: &TopoShape,
     on_in: &[BopdsPaveBlock],
     on1: &[(usize, f64, f64)],
     in1: &[(usize, f64, f64)],
@@ -208,52 +208,52 @@ pub(crate) fn process_existing_pave_blocks(
     mpb_add: &mut HashSet<PbKey>,
     pb_faces: &mut HashMap<PbKey, Vec<usize>>,
 ) {
-    let box_es = shape_bbox(the_es);
-    let a_tol_es = BRepTool::edge_tolerance(&Edge(the_es.clone()));
-    for a_pbf in on_in {
-        if a_pbf.edge() == 0 {
+    let box_es = shape_bbox(es);
+    let tol_es = BRepTool::edge_tolerance(&Edge(es.clone()));
+    for pbf in on_in {
+        if pbf.edge() == 0 {
             continue;
         }
-        if edge_box_out(ds, a_pbf.edge(), &box_es) {
+        if edge_box_out(ds, pbf.edge(), &box_es) {
             continue;
         }
-        if mpb_add.contains(&pb_key(a_pbf)) {
+        if mpb_add.contains(&pb_key(pbf)) {
             continue;
         }
-        let b_in_f1 = pb_in_face(on1, in1, a_pbf);
-        let b_in_f2 = pb_in_face(on2, in2, a_pbf);
+        let b_in_f1 = pb_in_face(on1, in1, pbf);
+        let b_in_f2 = pb_in_face(on2, in2, pbf);
         if b_in_f1 && b_in_f2 {
-            mpb_add.insert(pb_key(a_pbf));
-            prepare_post_treat_ff(ds, the_int, the_cur, a_pbf, mscpb, lpbc);
+            mpb_add.insert(pb_key(pbf));
+            prepare_post_treat_ff(ds, int, cur, pbf, mscpb, lpbc);
             continue;
         }
         let n_f = if b_in_f1 { n_f2 } else { n_f1 };
-        let Some(p_list) = distances.get(&(a_pbf.original_edge(), n_f)) else {
+        let Some(p_list) = distances.get(&(pbf.original_edge(), n_f)) else {
             continue;
         };
-        let (a_t1, a_t2) = a_pbf.range();
-        let mut a_dist = f64::MAX;
+        let (t1, t2) = pbf.range();
+        let mut dist = f64::MAX;
         for a_range in p_list {
-            if (a_t1 <= a_range.first && a_range.first <= a_t2)
-                || (a_t1 <= a_range.last && a_range.last <= a_t2)
-                || (a_range.first <= a_t1 && a_t1 <= a_range.last)
-                || (a_range.first <= a_t2 && a_t2 <= a_range.last)
+            if (t1 <= a_range.first && a_range.first <= t2)
+                || (t1 <= a_range.last && a_range.last <= t2)
+                || (a_range.first <= t1 && t1 <= a_range.last)
+                || (a_range.first <= t2 && t2 <= a_range.last)
             {
-                a_dist = a_range.distance;
+                dist = a_range.distance;
                 break;
             }
         }
-        if a_dist >= f64::MAX {
+        if dist >= f64::MAX {
             continue;
         }
-        let a_tol_ef = ds
-            .shape(a_pbf.edge())
+        let tol_ef = ds
+            .shape(pbf.edge())
             .map(|s| BRepTool::edge_tolerance(&Edge(s.clone())))
             .unwrap_or(0.0);
-        if a_dist <= a_tol_es + a_tol_ef {
-            mpb_add.insert(pb_key(a_pbf));
-            prepare_post_treat_ff(ds, the_int, the_cur, a_pbf, mscpb, lpbc);
-            let faces = pb_faces.entry(pb_key(a_pbf)).or_default();
+        if dist <= tol_es + tol_ef {
+            mpb_add.insert(pb_key(pbf));
+            prepare_post_treat_ff(ds, int, cur, pbf, mscpb, lpbc);
+            let faces = pb_faces.entry(pb_key(pbf)).or_default();
             if !faces.contains(&n_f) {
                 faces.push(n_f);
             }
@@ -264,7 +264,7 @@ pub(crate) fn process_existing_pave_blocks(
 /// Bound-vertex `ProcessExistingPaveBlocks` overload (`_6.cxx:3171`).
 pub(crate) fn process_existing_pave_blocks_bound(
     f: &mut PaveFiller,
-    the_int: usize,
+    int: usize,
     n_f1: usize,
     n_f2: usize,
     on_in: &[BopdsPaveBlock],
@@ -286,23 +286,23 @@ pub(crate) fn process_existing_pave_blocks_bound(
         None => (Vec::new(), Vec::new()),
     };
     let ctx = f.context().clone();
-    for (&i_c, a_lbv) in dmbv {
+    for (&i_c, lbv) in dmbv {
         let mut kept_extra: Vec<BopdsPaveBlock> = Vec::new();
-        for &n_v in a_lbv {
+        for &n_v in lbv {
             let Some(v_shape) = f.ds().shape(n_v).cloned() else {
                 continue;
             };
             if let Some(bv) = f.ds().box_of(n_v) {
                 let _ = bv;
             }
-            for a_pb in on_in {
-                if a_pb.pave1().index() == n_v || a_pb.pave2().index() == n_v {
+            for pb in on_in {
+                if pb.pave1().index() == n_v || pb.pave2().index() == n_v {
                     continue;
                 }
-                if mpb_add.contains(&pb_key(a_pb)) {
+                if mpb_add.contains(&pb_key(pb)) {
                     continue;
                 }
-                let n_e = a_pb.edge();
+                let n_e = pb.edge();
                 if n_e == 0 {
                     continue;
                 }
@@ -314,13 +314,13 @@ pub(crate) fn process_existing_pave_blocks_bound(
                 else {
                     continue;
                 };
-                mpb_add.insert(pb_key(a_pb));
-                prepare_post_treat_ff(f.ds(), the_int, i_c, a_pb, mscpb, &mut kept_extra);
-                let b_in_f1 = pb_in_face(&on1, &in1, a_pb);
-                let b_in_f2 = pb_in_face(&on2, &in2, a_pb);
+                mpb_add.insert(pb_key(pb));
+                prepare_post_treat_ff(f.ds(), int, i_c, pb, mscpb, &mut kept_extra);
+                let b_in_f1 = pb_in_face(&on1, &in1, pb);
+                let b_in_f2 = pb_in_face(&on2, &in2, pb);
                 if !b_in_f1 || !b_in_f2 {
                     let n_f = if b_in_f1 { n_f2 } else { n_f1 };
-                    let faces = pb_faces.entry(pb_key(a_pb)).or_default();
+                    let faces = pb_faces.entry(pb_key(pb)).or_default();
                     if !faces.contains(&n_f) {
                         faces.push(n_f);
                     }
@@ -331,7 +331,7 @@ pub(crate) fn process_existing_pave_blocks_bound(
             if let Some(lpbc) = f
                 .ds_mut()
                 .interf_ff_mut()
-                .get_mut(the_int)
+                .get_mut(int)
                 .and_then(|ff| ff.change_curves().get_mut(i_c))
                 .map(|nc| nc.change_pave_blocks())
             {
@@ -355,8 +355,8 @@ pub(crate) fn correct_tolerance_of_se(f: &mut PaveFiller) {
     for i in 0..nb_ff {
         let nb_c = f.ds().interf_ff()[i].curves().len();
         for k in 0..nb_c {
-            let a_tol_c = f.ds().interf_ff()[i].curves()[k].tolerance();
-            let a_tol_tang = f.ds().interf_ff()[i].curves()[k].tangential_tolerance();
+            let tol_c = f.ds().interf_ff()[i].curves()[k].tolerance();
+            let tol_tang = f.ds().interf_ff()[i].curves()[k].tangential_tolerance();
             let mut j = 0;
             while j < f.ds().interf_ff()[i].curves()[k].pave_blocks().len() {
                 let pb = f.ds().interf_ff()[i].curves()[k].pave_blocks()[j].clone();
@@ -373,13 +373,13 @@ pub(crate) fn correct_tolerance_of_se(f: &mut PaveFiller) {
                     continue;
                 }
                 let mut b_is_reduced = false;
-                if pb.original_edge() == 0 && a_tol_c < a_tol_tang {
+                if pb.original_edge() == 0 && tol_c < tol_tang {
                     let n_e = pb.edge();
                     if let Some(e_shape) = f.ds().shape(n_e).cloned() {
-                        let a_tol_e = BRepTool::edge_tolerance(&Edge(e_shape.clone()));
-                        if a_tol_c < a_tol_e {
+                        let tol_e = BRepTool::edge_tolerance(&Edge(e_shape.clone()));
+                        if tol_c < tol_e {
                             if let Some(mut g) = GeometryRegistry::global().edge_geom(&e_shape) {
-                                g.tolerance = a_tol_c;
+                                g.tolerance = tol_c;
                                 GeometryRegistry::global().set_edge(&e_shape, g);
                             }
                             b_is_reduced = true;
@@ -404,15 +404,15 @@ pub(crate) fn correct_tolerance_of_se(f: &mut PaveFiller) {
 
     let mut mvi_tol: HashMap<usize, f64> = HashMap::new();
     let pool: Vec<Vec<BopdsPaveBlock>> = f.ds().pave_blocks_pool().to_vec();
-    for a_lpb in &pool {
-        for pb in a_lpb {
+    for lpb in &pool {
+        for pb in lpb {
             if pb.edge() == 0 {
                 continue;
             }
             let Some(e_shape) = f.ds().shape(pb.edge()).cloned() else {
                 continue;
             };
-            let a_tol_e = BRepTool::edge_tolerance(&Edge(e_shape));
+            let tol_e = BRepTool::edge_tolerance(&Edge(e_shape));
             let (n_v1, n_v2) = pb.indices();
             for n_v in [n_v1, n_v2] {
                 if !mvi_to_reduce.contains(&n_v) {
@@ -421,11 +421,11 @@ pub(crate) fn correct_tolerance_of_se(f: &mut PaveFiller) {
                 mvi_tol
                     .entry(n_v)
                     .and_modify(|t| {
-                        if a_tol_e > *t {
-                            *t = a_tol_e;
+                        if tol_e > *t {
+                            *t = tol_e;
                         }
                     })
-                    .or_insert(a_tol_e);
+                    .or_insert(tol_e);
                 mvi_pbs.entry(n_v).or_default().push(pb.clone());
             }
         }
@@ -439,16 +439,16 @@ pub(crate) fn correct_tolerance_of_se(f: &mut PaveFiller) {
         let Some(v_shape) = f.ds().shape(n_v).cloned() else {
             continue;
         };
-        let a_v = Vertex(v_shape);
-        let a_tol_v = BRepTool::vertex_tolerance(&a_v);
-        let mut a_max_tol = mvi_tol.get(&n_v).copied().unwrap_or(0.0);
-        if a_tol_v - a_max_tol < 0.001 * a_tol_v {
+        let v = Vertex(v_shape);
+        let tol_v = BRepTool::vertex_tolerance(&v);
+        let mut max_tol = mvi_tol.get(&n_v).copied().unwrap_or(0.0);
+        if tol_v - max_tol < 0.001 * tol_v {
             continue;
         }
-        let a_p = BRepTool::vertex_point(&a_v);
+        let p = BRepTool::vertex_point(&v);
         let mut mpb_fence: HashSet<PbKey> = HashSet::new();
-        let a_lpb = mvi_pbs.get(&n_v).cloned().unwrap_or_default();
-        for pb in &a_lpb {
+        let lpb = mvi_pbs.get(&n_v).cloned().unwrap_or_default();
+        for pb in &lpb {
             if !mpb_fence.insert(pb_key(pb)) {
                 continue;
             }
@@ -456,25 +456,25 @@ pub(crate) fn correct_tolerance_of_se(f: &mut PaveFiller) {
             let Some(e_shape) = f.ds().shape(n_e).cloned() else {
                 continue;
             };
-            let a_e = Edge(e_shape);
-            let Some(a_c) = BRepTool::edge_curve(&a_e) else {
+            let e = Edge(e_shape);
+            let Some(c) = BRepTool::edge_curve(&e) else {
                 continue;
             };
-            let a_tol_e = BRepTool::edge_tolerance(&a_e);
-            for a_pave in [pb.pave1(), pb.pave2()] {
-                let n_vsd = f.ds().get_same_domain_index(a_pave.index());
+            let tol_e = BRepTool::edge_tolerance(&e);
+            for pave in [pb.pave1(), pb.pave2()] {
+                let n_vsd = f.ds().get_same_domain_index(pave.index());
                 if n_vsd != n_v {
                     continue;
                 }
-                let a_pon_e = a_c.d0(a_pave.parameter());
-                let a_dist = a_p.distance(&a_pon_e) + a_tol_e;
-                if a_dist > a_max_tol {
-                    a_max_tol = a_dist;
+                let pon_e = c.d0(pave.parameter());
+                let dist = p.distance(&pon_e) + tol_e;
+                if dist > max_tol {
+                    max_tol = dist;
                 }
             }
         }
-        if a_max_tol < a_tol_v {
-            a_v.set_tolerance(a_max_tol);
+        if max_tol < tol_v {
+            v.set_tolerance(max_tol);
         }
     }
 }

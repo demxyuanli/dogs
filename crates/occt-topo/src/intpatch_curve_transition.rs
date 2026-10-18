@@ -17,9 +17,9 @@ const LOWER: i32 = -1;
 
 /// `TopTrans_CurveTransition` (`TopTrans_CurveTransition.hxx:45-109`).
 pub(crate) struct CurveTransition {
-    my_tgt: GpDir,
-    my_norm: GpDir,
-    my_curv: f64,
+    tgt: GpDir,
+    norm: GpDir,
+    curv: f64,
     init: bool,
     tgt_first: GpDir,
     norm_first: GpDir,
@@ -36,9 +36,9 @@ impl CurveTransition {
     /// `Init = false`, both transitions FORWARD, curvatures 0.
     pub(crate) fn new() -> Self {
         Self {
-            my_tgt: GpDir::default_dir(),
-            my_norm: GpDir::default_dir(),
-            my_curv: 0.0,
+            tgt: GpDir::default_dir(),
+            norm: GpDir::default_dir(),
+            curv: 0.0,
             init: false,
             tgt_first: GpDir::default_dir(),
             norm_first: GpDir::default_dir(),
@@ -61,9 +61,9 @@ impl CurveTransition {
             // (`StateBefore`/`StateAfter` return `TopAbs_UNKNOWN`).
             return;
         };
-        self.my_tgt = tgt;
-        self.my_norm = *norm;
-        self.my_curv = curv;
+        self.tgt = tgt;
+        self.norm = *norm;
+        self.curv = curv;
         self.init = true;
     }
 
@@ -71,8 +71,8 @@ impl CurveTransition {
     /// clears the curvature and marks the transition initialised. The normal
     /// is left unchanged, as in OCCT.
     pub(crate) fn reset_tgt(&mut self, tgt: &GpDir) {
-        self.my_tgt = *tgt;
-        self.my_curv = 0.0;
+        self.tgt = *tgt;
+        self.curv = 0.0;
         self.init = true;
     }
 
@@ -97,7 +97,7 @@ impl CurveTransition {
 
         // adjustment for INTERNAL transition (`:82-92`)
         if s == Orientation::Internal {
-            if t.dot(&self.my_tgt) < 0.0 {
+            if t.dot(&self.tgt) < 0.0 {
                 s = o.reversed();
             } else {
                 s = o;
@@ -124,7 +124,7 @@ impl CurveTransition {
                 Orientation::Internal => {
                     // Interference en milieu d'arete il faut inverser en
                     // fonction de la position de la tangente de reference
-                    if self.my_tgt.dot(&t) > 0.0 {
+                    if self.tgt.dot(&t) > 0.0 {
                         self.tgt_first.reverse();
                     } else {
                         self.tgt_last.reverse();
@@ -135,7 +135,7 @@ impl CurveTransition {
         } else {
             // Compare with the existent first and last transition (`:132-272`)
             let mut first_set = false;
-            let mut cos_ang_with_t = self.my_tgt.dot(&t);
+            let mut cos_ang_with_t = self.tgt.dot(&t);
             match o {
                 Orientation::Reversed => cos_ang_with_t = -cos_ang_with_t,
                 Orientation::Internal => {
@@ -145,7 +145,7 @@ impl CurveTransition {
                 }
                 Orientation::Forward | Orientation::External => {}
             }
-            let cos_ang_with_1 = self.my_tgt.dot(&self.tgt_first);
+            let cos_ang_with_1 = self.tgt.dot(&self.tgt_first);
 
             match compare_angles(cos_ang_with_t, cos_ang_with_1, tole) {
                 LOWER => {
@@ -155,7 +155,7 @@ impl CurveTransition {
                     match o {
                         Orientation::Reversed => self.tgt_first.reverse(),
                         Orientation::Internal => {
-                            if self.my_tgt.dot(&t) > 0.0 {
+                            if self.tgt.dot(&t) > 0.0 {
                                 self.tgt_first.reverse();
                             }
                         }
@@ -174,7 +174,7 @@ impl CurveTransition {
                         match o {
                             Orientation::Reversed => self.tgt_first.reverse(),
                             Orientation::Internal => {
-                                if self.my_tgt.dot(&t) > 0.0 {
+                                if self.tgt.dot(&t) > 0.0 {
                                     self.tgt_first.reverse();
                                 }
                             }
@@ -193,7 +193,7 @@ impl CurveTransition {
                 if o == Orientation::Internal {
                     cos_ang_with_t = -cos_ang_with_t;
                 }
-                let cos_ang_with_2 = self.my_tgt.dot(&self.tgt_last);
+                let cos_ang_with_2 = self.tgt.dot(&self.tgt_last);
 
                 match compare_angles(cos_ang_with_t, cos_ang_with_2, tole) {
                     GREATER => {
@@ -202,7 +202,7 @@ impl CurveTransition {
                         match o {
                             Orientation::Reversed => self.tgt_last.reverse(),
                             Orientation::Internal => {
-                                if self.my_tgt.dot(&t) < 0.0 {
+                                if self.tgt.dot(&t) < 0.0 {
                                     self.tgt_last.reverse();
                                 }
                             }
@@ -220,7 +220,7 @@ impl CurveTransition {
                             match o {
                                 Orientation::Reversed => self.tgt_last.reverse(),
                                 Orientation::Internal => {
-                                    if self.my_tgt.dot(&t) < 0.0 {
+                                    if self.tgt.dot(&t) < 0.0 {
                                         self.tgt_last.reverse();
                                     }
                                 }
@@ -270,14 +270,14 @@ impl CurveTransition {
         n2: &GpDir,
         c2: f64,
     ) -> bool {
-        let tn1 = self.my_tgt.dot(n1);
-        let tn2 = self.my_tgt.dot(n2);
+        let tn1 = self.tgt.dot(n1);
+        let tn2 = self.tgt.dot(n2);
         let mut one_before = false;
 
         if tn1.abs() <= tole || tn2.abs() <= tole {
             // Tangent : The first is the interference which have the nearest
             // curvature from the reference.
-            if self.my_curv == 0.0 {
+            if self.curv == 0.0 {
                 // The reference is straight
                 // The first is the interference which have the lowest curvature.
                 if c1 < c2 {
@@ -290,15 +290,15 @@ impl CurveTransition {
                 // The reference is curv
                 // The first is the interference which have the nearest curvature
                 // in the direction
-                let delta_c1 = if c1 == 0.0 || self.my_curv == 0.0 {
-                    c1 - self.my_curv
+                let delta_c1 = if c1 == 0.0 || self.curv == 0.0 {
+                    c1 - self.curv
                 } else {
-                    (c1 - self.my_curv) * n1.dot(&self.my_norm)
+                    (c1 - self.curv) * n1.dot(&self.norm)
                 };
-                let delta_c2 = if c2 == 0.0 || self.my_curv == 0.0 {
-                    c2 - self.my_curv
+                let delta_c2 = if c2 == 0.0 || self.curv == 0.0 {
+                    c2 - self.curv
                 } else {
-                    (c2 - self.my_curv) * n2.dot(&self.my_norm)
+                    (c2 - self.curv) * n2.dot(&self.norm)
                 };
                 if delta_c1 < delta_c2 {
                     one_before = true;

@@ -22,42 +22,42 @@ use crate::shape::{Face, Vertex};
 pub fn fill_internal_vertices_occt<B: BopBuilderLike>(f: &mut B) -> Result<(), String> {
     let n = nb_source(f.ds());
     let fuzzy = f.fuzzy_value();
-    let mut a_vvfi: Vec<VertexFaceInternal> = Vec::new();
+    let mut vvfi: Vec<VertexFaceInternal> = Vec::new();
     for i in 0..n {
-        let Some(a_si) = f.ds().shape_info(i) else { continue };
-        if a_si.shape_type() != ShapeType::Face {
+        let Some(si) = f.ds().shape_info(i) else { continue };
+        if si.shape_type() != ShapeType::Face {
             continue;
         }
-        let a_f = a_si.shape();
+        let a_f = si.shape();
         let Some(p_lf_im) = f.history().image(a_f) else { continue };
         if p_lf_im.is_empty() {
             continue;
         }
-        let a_liav = alone_vertices(f.ds(), i);
-        for v_idx in a_liav {
+        let liav = alone_vertices(f.ds(), i);
+        for v_idx in liav {
             let Some(v_shape) = f.ds().shape(v_idx).cloned() else { continue };
-            let mut a_v = Vertex(v_shape);
-            a_v.0.set_orientation(Orientation::Internal);
-            for a_f_im in p_lf_im {
-                a_vvfi.push(VertexFaceInternal::from_parts(
-                    a_v.clone(),
-                    Face(a_f_im.clone()),
+            let mut v = Vertex(v_shape);
+            v.0.set_orientation(Orientation::Internal);
+            for f_im in p_lf_im {
+                vvfi.push(VertexFaceInternal::from_parts(
+                    v.clone(),
+                    Face(f_im.clone()),
                     fuzzy,
                 ));
             }
         }
     }
     let mut ctx = IntToolsContext::new();
-    perform_vfi_vector(&mut a_vvfi, &mut ctx);
+    perform_vfi_vector(&mut vvfi, &mut ctx);
     let bld = TopoBuilder::new();
-    for a_vfi in &mut a_vvfi {
-        if !a_vfi.is_internal() {
+    for vfi in &mut vvfi {
+        if !vfi.is_internal() {
             continue;
         }
         // `BRep_Builder().Add(aF, aV)` — the image TShape is shared, so the
         // add is visible on every view of that face (`_2.cxx:1003-1006`).
-        let mut face = a_vfi.face().0.clone();
-        let vertex = a_vfi.vertex().0.clone();
+        let mut face = vfi.face().0.clone();
+        let vertex = vfi.vertex().0.clone();
         bld.add(&mut face, &vertex);
     }
     Ok(())

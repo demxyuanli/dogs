@@ -235,8 +235,8 @@ impl SClassifier {
         for _itry in 0..NB_MAX_POINTS_PER_FACE {
             for iface in 0..expl.faces.len() {
                 // `aParam = 0.1 + 0.8 * NextReal()` (`cxx:134`).
-                let a_param = 0.1 + 0.8 * rng.next_real();
-                let Some(lin) = probe_line(&expl.faces[iface], a_param) else {
+                let param = 0.1 + 0.8 * rng.next_real();
+                let Some(lin) = probe_line(&expl.faces[iface], param) else {
                     continue;
                 };
                 let mut state = FaceState::Out;
@@ -283,10 +283,10 @@ impl SClassifier {
 }
 
 /// `BRepClass3d_SClassifier::PerformInfinitePoint` probe (`cxx:134-141`):
-/// `FindAPointInTheFace` with parameter `a_param`, then `gp_Lin(aPoint, -aDN)`
+/// `FindAPointInTheFace` with parameter `param`, then `gp_Lin(aPoint, -aDN)`
 /// where `aDN` is `FaceNormal` (`cxx:606-627`). Returns `None` where OCCT
 /// `continue`s.
-fn probe_line(face: &Face, a_param: f64) -> Option<GpLin> {
+fn probe_line(face: &Face, param: f64) -> Option<GpLin> {
     let mut ap = GpPnt::new(0.0, 0.0, 0.0);
     let mut u = 0.0_f64;
     let mut v = 0.0_f64;
@@ -294,7 +294,7 @@ fn probe_line(face: &Face, a_param: f64) -> Option<GpLin> {
     let mut d1v = GpVec::new(0.0, 0.0, 0.0);
     if !other_segment::find_a_point_in_the_face(
         face,
-        a_param,
+        param,
         &mut ap,
         &mut u,
         &mut v,

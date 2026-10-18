@@ -791,7 +791,7 @@ impl<'a> ExtremaGenExtPs<'a> {
         is_u_edge: bool,
         param0: &ExtremaPOnSurfParams,
         param1: &ExtremaPOnSurfParams,
-        the_point: &GpPnt,
+        point: &GpPnt,
         diff_tol: f64,
     ) -> ExtremaPOnSurfParams {
         let s = self.s.expect("Extrema_GenExtPS: surface not set");
@@ -811,7 +811,7 @@ impl<'a> ExtremaGenExtPs<'a> {
             };
         }
         // cxx:493-524: the shortest distance is inside the edge.
-        let pop = GpVec::from_pnts(&param0.value(), the_point);
+        let pop = GpVec::from_pnts(&param0.value(), point);
         let pop1 = GpVec::from_pnts(&param0.value(), &param1.value());
         let ratio = pop.dot(&pop1) / sqr_dist01;
         let (au0, av0) = param0.parameter();
@@ -830,13 +830,13 @@ impl<'a> ExtremaGenExtPs<'a> {
             ExtremaElementType::VIsoEdge
         });
         self.grid_param
-            .set_sqr_distance(the_point.square_distance(&self.grid_param.value()));
+            .set_sqr_distance(point.square_distance(&self.grid_param.value()));
         self.grid_param.set_indices(i0, j0);
         self.grid_param
     }
 
     /// Extrema_GenExtPS::BuildGrid (cxx:528-753).
-    fn build_grid(&mut self, the_point: &GpPnt) {
+    fn build_grid(&mut self, point: &GpPnt) {
         let s = self.s.expect("Extrema_GenExtPS: surface not set");
 
         if !self.init {
@@ -886,11 +886,11 @@ impl<'a> ExtremaGenExtPs<'a> {
             for no_u in 1..=self.usample as usize {
                 for no_v in 1..=self.vsample as usize {
                     let p1 = s.d0(u_params[no_u - 1], v_params[no_v - 1]);
-                    let mut a_param =
+                    let mut param =
                         ExtremaPOnSurfParams::new(u_params[no_u - 1], v_params[no_v - 1], p1);
-                    a_param.set_element_type(ExtremaElementType::Node);
-                    a_param.set_indices(no_u as i32, no_v as i32);
-                    self.points[no_u][no_v] = a_param;
+                    param.set_element_type(ExtremaElementType::Node);
+                    param.set_indices(no_u as i32, no_v as i32);
+                    self.points[no_u][no_v] = param;
                 }
             }
 
@@ -921,7 +921,7 @@ impl<'a> ExtremaGenExtPs<'a> {
         // cxx:612-622: step 1, distances to the nodes.
         for no_u in 1..=usample {
             for no_v in 1..=vsample {
-                let d = the_point.square_distance(&self.points[no_u][no_v].value());
+                let d = point.square_distance(&self.points[no_u][no_v].value());
                 self.points[no_u][no_v].set_sqr_distance(d);
             }
         }
@@ -938,13 +938,13 @@ impl<'a> ExtremaGenExtPs<'a> {
                     if no_u < usample {
                         let param1 = self.points[no_u + 1][no_v];
                         let edge =
-                            self.compute_edge_parameters(true, &param0, &param1, the_point, diff_tol);
+                            self.compute_edge_parameters(true, &param0, &param1, point, diff_tol);
                         self.u_edge_pnt_params[no_u][no_v] = edge;
                     }
                     if no_v < vsample {
                         let param1 = self.points[no_u][no_v + 1];
                         let edge = self.compute_edge_parameters(
-                            false, &param0, &param1, the_point, diff_tol,
+                            false, &param0, &param1, point, diff_tol,
                         );
                         self.v_edge_pnt_params[no_u][no_v] = edge;
                     }
@@ -1000,12 +1000,12 @@ impl<'a> ExtremaGenExtPs<'a> {
                         let (_bu1, bv1) = ve1.parameter();
                         let v_par = 0.5 * (bv0 + bv1);
 
-                        let mut a_param =
+                        let mut param =
                             ExtremaPOnSurfParams::new(u_par, v_par, s.d0(u_par, v_par));
-                        a_param.set_element_type(ExtremaElementType::Face);
-                        a_param.set_sqr_distance(the_point.square_distance(&a_param.value()));
-                        a_param.set_indices(no_u as i32, no_v as i32);
-                        self.face_pnt_params[no_u][no_v] = a_param;
+                        param.set_element_type(ExtremaElementType::Face);
+                        param.set_sqr_distance(point.square_distance(&param.value()));
+                        param.set_indices(no_u as i32, no_v as i32);
+                        self.face_pnt_params[no_u][no_v] = param;
                     }
                 }
             }
@@ -1042,13 +1042,13 @@ impl<'a> ExtremaGenExtPs<'a> {
                 .bspline_surface_vknots()
                 .map(distinct_knots)
                 .unwrap_or_default();
-            let a_u_value = s.u_degree() * uk.len() as i32;
-            let a_v_value = s.v_degree() * vk.len() as i32;
-            if a_u_value > self.usample {
-                self.usample = a_u_value.min(300);
+            let u_value = s.u_degree() * uk.len() as i32;
+            let v_value = s.v_degree() * vk.len() as i32;
+            if u_value > self.usample {
+                self.usample = u_value.min(300);
             }
-            if a_v_value > self.vsample {
-                self.vsample = a_v_value.min(300);
+            if v_value > self.vsample {
+                self.vsample = v_value.min(300);
             }
         }
         // cxx:880.
@@ -1105,13 +1105,13 @@ impl<'a> ExtremaGenExtPs<'a> {
     }
 
     /// Extrema_GenExtPS::FindSolution (cxx:933-952).
-    fn find_solution(&mut self, _p: &GpPnt, the_params: &ExtremaPOnSurfParams) {
+    fn find_solution(&mut self, _p: &GpPnt, params: &ExtremaPOnSurfParams) {
         let mut tol = MathVector::new(1, 2);
         tol.set_value(1, self.tolu);
         tol.set_value(2, self.tolv);
 
         let mut uv = MathVector::new(1, 2);
-        let (u, v) = the_params.parameter();
+        let (u, v) = params.parameter();
         uv.set_value(1, u);
         uv.set_value(2, v);
 
@@ -1166,14 +1166,14 @@ impl<'a> ExtremaGenExtPs<'a> {
                 // cxx:978-1079 - minimums over the faces.
                 for no_u in 1..usample as usize {
                     for no_v in 1..vsample as usize {
-                        let a_param = self.face_pnt_params[no_u][no_v];
+                        let param = self.face_pnt_params[no_u][no_v];
                         let mut is_min = false;
-                        let an_elem_type = a_param.get_element_type();
+                        let an_elem_type = param.get_element_type();
 
                         if an_elem_type == ExtremaElementType::Face {
                             is_min = true;
                         } else {
-                            let (i_u, i_v) = a_param.get_indices();
+                            let (i_u, i_v) = param.get_indices();
                             if an_elem_type == ExtremaElementType::UIsoEdge {
                                 is_min = i_v == 1 || i_v == vsample;
                             } else if an_elem_type == ExtremaElementType::VIsoEdge {
@@ -1228,7 +1228,7 @@ impl<'a> ExtremaGenExtPs<'a> {
                         }
 
                         if is_min {
-                            self.find_solution(p, &a_param);
+                            self.find_solution(p, &param);
                         }
                     }
                 }
@@ -1270,10 +1270,10 @@ impl<'a> ExtremaGenExtPs<'a> {
             if self.flag == ExtremaExtFlag::Min || self.flag == ExtremaExtFlag::MinMax {
                 let idx = self.select_sphere(p, true);
                 let (nu, nv) = self.sphere_uv[idx];
-                let a_u = self.u_params.as_ref().unwrap()[(nu - 1) as usize];
-                let a_v = self.v_params.as_ref().unwrap()[(nv - 1) as usize];
+                let u = self.u_params.as_ref().unwrap()[(nu - 1) as usize];
+                let v = self.v_params.as_ref().unwrap()[(nv - 1) as usize];
                 let s = self.s.expect("Extrema_GenExtPS: surface not set");
-                let mut a_params = ExtremaPOnSurfParams::new(a_u, a_v, s.d0(a_u, a_v));
+                let mut a_params = ExtremaPOnSurfParams::new(u, v, s.d0(u, v));
                 a_params.set_sqr_distance(p.square_distance(&a_params.value()));
                 a_params.set_indices(nu, nv);
                 self.find_solution(p, &a_params);
@@ -1281,10 +1281,10 @@ impl<'a> ExtremaGenExtPs<'a> {
             if self.flag == ExtremaExtFlag::Max || self.flag == ExtremaExtFlag::MinMax {
                 let idx = self.select_sphere(p, false);
                 let (nu, nv) = self.sphere_uv[idx];
-                let a_u = self.u_params.as_ref().unwrap()[(nu - 1) as usize];
-                let a_v = self.v_params.as_ref().unwrap()[(nv - 1) as usize];
+                let u = self.u_params.as_ref().unwrap()[(nu - 1) as usize];
+                let v = self.v_params.as_ref().unwrap()[(nv - 1) as usize];
                 let s = self.s.expect("Extrema_GenExtPS: surface not set");
-                let mut a_params = ExtremaPOnSurfParams::new(a_u, a_v, s.d0(a_u, a_v));
+                let mut a_params = ExtremaPOnSurfParams::new(u, v, s.d0(u, v));
                 a_params.set_sqr_distance(p.square_distance(&a_params.value()));
                 a_params.set_indices(nu, nv);
                 self.find_solution(p, &a_params);

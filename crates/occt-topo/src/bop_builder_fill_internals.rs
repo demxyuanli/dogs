@@ -39,50 +39,50 @@ fn compute_state_by_one_point(shape: &TopoShape, solid: &TopoShape, tol: f64) ->
 /// `BOPAlgo_Builder::FillInternalShapes` (`_3.cxx:622`).
 pub fn fill_internal_shapes_occt<B: BopSolidHost>(f: &mut B) -> Result<(), String> {
     // 1. Shapes to process from the pure arguments.
-    let mut a_lsc: Vec<TopoShape> = Vec::new();
-    let mut a_fence: HashSet<ShapeMapKey> = HashSet::new();
+    let mut lsc: Vec<TopoShape> = Vec::new();
+    let mut fence: HashSet<ShapeMapKey> = HashSet::new();
     for a in f.arguments() {
-        treat_compound(a, &mut a_lsc, &mut a_fence);
+        treat_compound(a, &mut lsc, &mut fence);
     }
-    let mut a_largs: Vec<TopoShape> = Vec::new();
-    a_fence.clear();
-    for s in &a_lsc {
+    let mut largs: Vec<TopoShape> = Vec::new();
+    fence.clear();
+    for s in &lsc {
         match s.shape_type() {
             ShapeType::Wire => {
                 for e in edges_of(s) {
-                    if a_fence.insert(shape_key(&e.0)) {
-                        a_largs.push(e.0);
+                    if fence.insert(shape_key(&e.0)) {
+                        largs.push(e.0);
                     }
                 }
             }
-            ShapeType::Vertex | ShapeType::Edge => a_largs.push(s.clone()),
+            ShapeType::Vertex | ShapeType::Edge => largs.push(s.clone()),
             _ => {}
         }
     }
-    a_fence.clear();
-    let mut a_msi: Vec<TopoShape> = Vec::new();
-    for s in &a_largs {
+    fence.clear();
+    let mut msi: Vec<TopoShape> = Vec::new();
+    for s in &largs {
         let t = s.shape_type();
         if t != ShapeType::Vertex && t != ShapeType::Edge && t != ShapeType::Wire {
             continue;
         }
-        if !a_fence.insert(shape_key(s)) {
+        if !fence.insert(shape_key(s)) {
             continue;
         }
         if images_bound(f.history(), s) {
             for im in images_of(f.history(), s) {
-                a_msi.push(im.clone());
+                msi.push(im.clone());
             }
         } else {
-            a_msi.push(s.clone());
+            msi.push(s.clone());
         }
     }
 
     // 2. Internal vertices/edges from source solids + ancestor map of splits.
-    a_fence.clear();
-    let mut a_lsd: Vec<TopoShape> = Vec::new();
-    let mut a_msx: HashMap<ShapeMapKey, Vec<TopoShape>> = HashMap::new();
-    let mut a_msor: HashSet<ShapeMapKey> = HashSet::new();
+    fence.clear();
+    let mut lsd: Vec<TopoShape> = Vec::new();
+    let mut msx: HashMap<ShapeMapKey, Vec<TopoShape>> = HashMap::new();
+    let mut msor: HashSet<ShapeMapKey> = HashSet::new();
     let n = nb_source(f.ds());
     for i in 0..n {
         let Some(si) = f.ds().shape_info(i) else { continue };
@@ -93,69 +93,69 @@ pub fn fill_internal_shapes_occt<B: BopSolidHost>(f: &mut B) -> Result<(), Strin
         for a_si in own_internal_shapes(&a_s) {
             if images_bound(f.history(), &a_si) {
                 for sp in images_of(f.history(), &a_si) {
-                    a_msi.push(sp.clone());
+                    msi.push(sp.clone());
                 }
             } else {
-                a_msi.push(a_si);
+                msi.push(a_si);
             }
         }
         if images_bound(f.history(), &a_s) {
             for a_sp in images_of(f.history(), &a_s) {
-                if a_fence.insert(shape_key(a_sp)) {
-                    map_shapes_and_ancestors_into(a_sp, ShapeType::Vertex, ShapeType::Edge, &mut a_msx);
-                    map_shapes_and_ancestors_into(a_sp, ShapeType::Vertex, ShapeType::Face, &mut a_msx);
-                    map_shapes_and_ancestors_into(a_sp, ShapeType::Edge, ShapeType::Face, &mut a_msx);
-                    a_lsd.push(a_sp.clone());
+                if fence.insert(shape_key(a_sp)) {
+                    map_shapes_and_ancestors_into(a_sp, ShapeType::Vertex, ShapeType::Edge, &mut msx);
+                    map_shapes_and_ancestors_into(a_sp, ShapeType::Vertex, ShapeType::Face, &mut msx);
+                    map_shapes_and_ancestors_into(a_sp, ShapeType::Edge, ShapeType::Face, &mut msx);
+                    lsd.push(a_sp.clone());
                 }
             }
-        } else if a_fence.insert(shape_key(&a_s)) {
-            map_shapes_and_ancestors_into(&a_s, ShapeType::Vertex, ShapeType::Edge, &mut a_msx);
-            map_shapes_and_ancestors_into(&a_s, ShapeType::Vertex, ShapeType::Face, &mut a_msx);
-            map_shapes_and_ancestors_into(&a_s, ShapeType::Edge, ShapeType::Face, &mut a_msx);
-            a_lsd.push(a_s.clone());
-            a_msor.insert(shape_key(&a_s));
+        } else if fence.insert(shape_key(&a_s)) {
+            map_shapes_and_ancestors_into(&a_s, ShapeType::Vertex, ShapeType::Edge, &mut msx);
+            map_shapes_and_ancestors_into(&a_s, ShapeType::Vertex, ShapeType::Face, &mut msx);
+            map_shapes_and_ancestors_into(&a_s, ShapeType::Edge, ShapeType::Face, &mut msx);
+            lsd.push(a_s.clone());
+            msor.insert(shape_key(&a_s));
         }
     }
 
     // 3. Drop candidates already tied to a split-solid ancestor.
-    let mut a_lsi: Vec<TopoShape> = Vec::new();
-    for a_si in &a_msi {
-        match a_msx.get(&shape_map_key(a_si)) {
-            Some(a_lsx) if !a_lsx.is_empty() => {}
-            _ => a_lsi.push(a_si.clone()),
+    let mut lsi: Vec<TopoShape> = Vec::new();
+    for a_si in &msi {
+        match msx.get(&shape_map_key(a_si)) {
+            Some(lsx) if !lsx.is_empty() => {}
+            _ => lsi.push(a_si.clone()),
         }
     }
-    if a_lsi.is_empty() {
+    if lsi.is_empty() {
         return Ok(());
     }
 
     // 5. Settle internal vertices and edges into solids.
     let bld = TopoBuilder::new();
-    for a_sd in &a_lsd {
-        let mut a_sd_cur = a_sd.clone();
+    for sd in &lsd {
+        let mut sd_cur = sd.clone();
         let mut i = 0;
-        while i < a_lsi.len() {
-            let mut a_si = a_lsi[i].clone();
+        while i < lsi.len() {
+            let mut a_si = lsi[i].clone();
             a_si.set_orientation(Orientation::Internal);
-            let a_state = compute_state_by_one_point(&a_si, &a_sd_cur, 1e-11);
-            if a_state != FaceState::In {
+            let state = compute_state_by_one_point(&a_si, &sd_cur, 1e-11);
+            if state != FaceState::In {
                 i += 1;
                 continue;
             }
-            if a_msor.contains(&shape_key(&a_sd_cur)) {
-                let mut a_sdx = Solid::new();
-                for a_sh in iter_children(&a_sd_cur) {
-                    bld.add(&mut a_sdx.0, &a_sh);
+            if msor.contains(&shape_key(&sd_cur)) {
+                let mut sdx = Solid::new();
+                for sh in iter_children(&sd_cur) {
+                    bld.add(&mut sdx.0, &sh);
                 }
-                bld.add(&mut a_sdx.0, &a_si);
-                f.history_mut().add_image(&a_sd_cur, a_sdx.0.clone());
-                origins_append(f.origins_mut(), &a_sdx.0, a_sd_cur.clone());
-                a_msor.remove(&shape_key(&a_sd_cur));
-                a_sd_cur = a_sdx.0;
+                bld.add(&mut sdx.0, &a_si);
+                f.history_mut().add_image(&sd_cur, sdx.0.clone());
+                origins_append(f.origins_mut(), &sdx.0, sd_cur.clone());
+                msor.remove(&shape_key(&sd_cur));
+                sd_cur = sdx.0;
             } else {
-                bld.add(&mut a_sd_cur, &a_si);
+                bld.add(&mut sd_cur, &a_si);
             }
-            a_lsi.remove(i);
+            lsi.remove(i);
         }
     }
     Ok(())
@@ -163,56 +163,56 @@ pub fn fill_internal_shapes_occt<B: BopSolidHost>(f: &mut B) -> Result<(), Strin
 
 /// `BOPAlgo_Tools::FillInternals` (`BOPAlgo_Tools.cxx:1751`).
 ///
-/// Classifies `the_parts` (and their images) against `the_solids`. Vertices
+/// Classifies `parts` (and their images) against `solids`. Vertices
 /// and edges classified IN are added as INTERNAL immediately. IN faces are
 /// grouped into connexity blocks and each block becomes an INTERNAL shell
 /// (`_cxx:1867-1907`).
 pub fn fill_internals_tools(
-    the_solids: &mut [TopoShape],
-    the_parts: &[TopoShape],
-    the_images: &HashMap<ShapeMapKey, Vec<TopoShape>>,
+    solids: &mut [TopoShape],
+    parts: &[TopoShape],
+    images: &HashMap<ShapeMapKey, Vec<TopoShape>>,
     _the_ctx: &crate::int_tools_full::IntToolsContext,
 ) {
-    if the_solids.is_empty() || the_parts.is_empty() {
+    if solids.is_empty() || parts.is_empty() {
         return;
     }
-    let mut a_ms_solids: HashSet<ShapeMapKey> = HashSet::new();
-    for a_solid in the_solids.iter() {
-        if a_solid.shape_type() != ShapeType::Solid {
+    let mut ms_solids: HashSet<ShapeMapKey> = HashSet::new();
+    for solid in solids.iter() {
+        if solid.shape_type() != ShapeType::Solid {
             continue;
         }
-        for v in crate::topo_tools_full::vertices_of(a_solid) {
-            a_ms_solids.insert(shape_key(&v.0));
+        for v in crate::topo_tools_full::vertices_of(solid) {
+            ms_solids.insert(shape_key(&v.0));
         }
-        for e in edges_of(a_solid) {
-            a_ms_solids.insert(shape_key(&e.0));
+        for e in edges_of(solid) {
+            ms_solids.insert(shape_key(&e.0));
         }
-        for f in crate::topo_tools_full::faces_of(a_solid) {
-            a_ms_solids.insert(shape_key(&f.0));
+        for f in crate::topo_tools_full::faces_of(solid) {
+            ms_solids.insert(shape_key(&f.0));
         }
     }
 
-    let mut a_l_parts: Vec<TopoShape> = Vec::new();
-    let mut a_l_input: Vec<TopoShape> = the_parts.to_vec();
+    let mut l_parts: Vec<TopoShape> = Vec::new();
+    let mut l_input: Vec<TopoShape> = parts.to_vec();
     let mut ii = 0;
-    while ii < a_l_input.len() {
-        let a_part = a_l_input[ii].clone();
+    while ii < l_input.len() {
+        let part = l_input[ii].clone();
         ii += 1;
-        match a_part.shape_type() {
+        match part.shape_type() {
             ShapeType::Vertex | ShapeType::Edge | ShapeType::Face => {
-                if let Some(p_im) = the_images.get(&shape_key(&a_part)) {
-                    for a_part_im in p_im {
-                        if !a_ms_solids.contains(&shape_key(a_part_im)) {
-                            a_l_parts.push(a_part_im.clone());
+                if let Some(p_im) = images.get(&shape_key(&part)) {
+                    for part_im in p_im {
+                        if !ms_solids.contains(&shape_key(part_im)) {
+                            l_parts.push(part_im.clone());
                         }
                     }
-                } else if !a_ms_solids.contains(&shape_key(&a_part)) {
-                    a_l_parts.push(a_part);
+                } else if !ms_solids.contains(&shape_key(&part)) {
+                    l_parts.push(part);
                 }
             }
             _ => {
-                for c in iter_children(&a_part) {
-                    a_l_input.push(c);
+                for c in iter_children(&part) {
+                    l_input.push(c);
                 }
             }
         }
@@ -220,36 +220,36 @@ pub fn fill_internals_tools(
 
     let mut an_in_faces: HashMap<ShapeMapKey, Vec<TopoShape>> = HashMap::new();
     let bld = TopoBuilder::new();
-    for a_sd in the_solids.iter_mut() {
-        if a_sd.shape_type() != ShapeType::Solid {
+    for sd in solids.iter_mut() {
+        if sd.shape_type() != ShapeType::Solid {
             continue;
         }
         let mut keep: Vec<TopoShape> = Vec::new();
-        for a_part in a_l_parts.drain(..) {
-            let a_state = compute_state_by_one_point(&a_part, a_sd, occt_core::precision::CONFUSION);
-            if a_state == FaceState::In {
-                if a_part.shape_type() == ShapeType::Face {
+        for part in l_parts.drain(..) {
+            let state = compute_state_by_one_point(&part, sd, occt_core::precision::CONFUSION);
+            if state == FaceState::In {
+                if part.shape_type() == ShapeType::Face {
                     an_in_faces
-                        .entry(shape_key(a_sd))
+                        .entry(shape_key(sd))
                         .or_default()
-                        .push(a_part);
+                        .push(part);
                 } else {
-                    let mut p = a_part;
+                    let mut p = part;
                     p.set_orientation(Orientation::Internal);
-                    bld.add(a_sd, &p);
+                    bld.add(sd, &p);
                 }
             } else {
-                keep.push(a_part);
+                keep.push(part);
             }
         }
-        a_l_parts = keep;
+        l_parts = keep;
     }
 
     for (k, faces) in an_in_faces {
-        let Some(a_sd) = the_solids.iter_mut().find(|s| shape_key(s) == k) else {
+        let Some(sd) = solids.iter_mut().find(|s| shape_key(s) == k) else {
             continue;
         };
-        crate::bop_connexity_faces::add_internal_face_shells(a_sd, &faces);
+        crate::bop_connexity_faces::add_internal_face_shells(sd, &faces);
     }
 }
 

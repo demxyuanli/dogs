@@ -136,167 +136,167 @@ pub trait PairTraverse2d {
 }
 
 /// `BVH_Traverse::Select(theBVH)` (`BVH_Traverse.lxx:21`).
-pub fn select_tree<S: BoxTraverse2d>(the_bvh: &BvhTree2d, sel: &mut S) -> i32 {
-    if the_bvh.is_empty() {
+pub fn select_tree<S: BoxTraverse2d>(bvh: &BvhTree2d, sel: &mut S) -> i32 {
+    if bvh.is_empty() {
         return 0;
     }
     let mut stack = [NodeInStack {
         node_id: 0,
         metric: false,
     }; MAX_TREE_DEPTH];
-    let mut a_node = NodeInStack {
+    let mut node = NodeInStack {
         node_id: 0,
         metric: false,
     };
-    let mut a_prev = a_node;
-    let mut a_head: i32 = -1;
-    let mut a_nb_accepted: i32 = 0;
+    let mut prev = node;
+    let mut head: i32 = -1;
+    let mut nb_accepted: i32 = 0;
     loop {
-        let a_data = the_bvh.nodes[a_node.node_id as usize];
-        if a_data.is_inner() {
-            if !sel.accept_metric(a_node.metric) {
-                let mut a_metric_lft = false;
+        let data = bvh.nodes[node.node_id as usize];
+        if data.is_inner() {
+            if !sel.accept_metric(node.metric) {
+                let mut metric_lft = false;
                 let is_good_lft = !sel.reject_node(
-                    the_bvh.min_point(a_data.y),
-                    the_bvh.max_point(a_data.y),
-                    &mut a_metric_lft,
+                    bvh.min_point(data.y),
+                    bvh.max_point(data.y),
+                    &mut metric_lft,
                 );
                 if sel.stop() {
-                    return a_nb_accepted;
+                    return nb_accepted;
                 }
-                let mut a_metric_rgh = false;
+                let mut metric_rgh = false;
                 let is_good_rgh = !sel.reject_node(
-                    the_bvh.min_point(a_data.z),
-                    the_bvh.max_point(a_data.z),
-                    &mut a_metric_rgh,
+                    bvh.min_point(data.z),
+                    bvh.max_point(data.z),
+                    &mut metric_rgh,
                 );
                 if sel.stop() {
-                    return a_nb_accepted;
+                    return nb_accepted;
                 }
                 if is_good_lft && is_good_rgh {
-                    if sel.is_metric_better(a_metric_lft, a_metric_rgh) {
-                        a_node = NodeInStack {
-                            node_id: a_data.y,
-                            metric: a_metric_lft,
+                    if sel.is_metric_better(metric_lft, metric_rgh) {
+                        node = NodeInStack {
+                            node_id: data.y,
+                            metric: metric_lft,
                         };
-                        a_head += 1;
-                        stack[a_head as usize] = NodeInStack {
-                            node_id: a_data.z,
-                            metric: a_metric_rgh,
+                        head += 1;
+                        stack[head as usize] = NodeInStack {
+                            node_id: data.z,
+                            metric: metric_rgh,
                         };
                     } else {
-                        a_node = NodeInStack {
-                            node_id: a_data.z,
-                            metric: a_metric_rgh,
+                        node = NodeInStack {
+                            node_id: data.z,
+                            metric: metric_rgh,
                         };
-                        a_head += 1;
-                        stack[a_head as usize] = NodeInStack {
-                            node_id: a_data.y,
-                            metric: a_metric_lft,
+                        head += 1;
+                        stack[head as usize] = NodeInStack {
+                            node_id: data.y,
+                            metric: metric_lft,
                         };
                     }
                 } else if is_good_lft || is_good_rgh {
-                    a_node = if is_good_lft {
+                    node = if is_good_lft {
                         NodeInStack {
-                            node_id: a_data.y,
-                            metric: a_metric_lft,
+                            node_id: data.y,
+                            metric: metric_lft,
                         }
                     } else {
                         NodeInStack {
-                            node_id: a_data.z,
-                            metric: a_metric_rgh,
+                            node_id: data.z,
+                            metric: metric_rgh,
                         }
                     };
                 }
             } else {
-                a_node = NodeInStack {
-                    node_id: a_data.y,
-                    metric: a_node.metric,
+                node = NodeInStack {
+                    node_id: data.y,
+                    metric: node.metric,
                 };
-                a_head += 1;
-                stack[a_head as usize] = NodeInStack {
-                    node_id: a_data.z,
-                    metric: a_node.metric,
+                head += 1;
+                stack[head as usize] = NodeInStack {
+                    node_id: data.z,
+                    metric: node.metric,
                 };
             }
         } else {
-            let mut i_n = a_data.y;
-            while i_n <= a_data.z {
-                if sel.accept(i_n, a_node.metric) {
-                    a_nb_accepted += 1;
+            let mut i_n = data.y;
+            while i_n <= data.z {
+                if sel.accept(i_n, node.metric) {
+                    nb_accepted += 1;
                 }
                 if sel.stop() {
-                    return a_nb_accepted;
+                    return nb_accepted;
                 }
                 i_n += 1;
             }
         }
-        if a_node.node_id == a_prev.node_id {
-            if a_head < 0 {
-                return a_nb_accepted;
+        if node.node_id == prev.node_id {
+            if head < 0 {
+                return nb_accepted;
             }
-            a_node = stack[a_head as usize];
-            a_head -= 1;
-            while sel.reject_metric(a_node.metric) {
-                if a_head < 0 {
-                    return a_nb_accepted;
+            node = stack[head as usize];
+            head -= 1;
+            while sel.reject_metric(node.metric) {
+                if head < 0 {
+                    return nb_accepted;
                 }
-                a_node = stack[a_head as usize];
-                a_head -= 1;
+                node = stack[head as usize];
+                head -= 1;
             }
         }
-        a_prev = a_node;
+        prev = node;
     }
 }
 
 /// `BVH_PairTraverse::Select` (`BVH_Traverse.lxx:135`).
 pub fn select_pair_tree<S: PairTraverse2d>(
-    the_bvh1: &BvhTree2d,
-    the_bvh2: &BvhTree2d,
+    bvh1: &BvhTree2d,
+    bvh2: &BvhTree2d,
     sel: &mut S,
 ) -> i32 {
-    if the_bvh1.is_empty() || the_bvh2.is_empty() {
+    if bvh1.is_empty() || bvh2.is_empty() {
         return 0;
     }
-    let a_max = 3 * MAX_TREE_DEPTH;
+    let max = 3 * MAX_TREE_DEPTH;
     let mut stack = vec![
         PairInStack {
             node_id1: 0,
             node_id2: 0,
             metric: 0.0,
         };
-        a_max
+        max
     ];
-    let mut a_node = PairInStack {
+    let mut node = PairInStack {
         node_id1: 0,
         node_id2: 0,
         metric: 0.0,
     };
-    let mut a_prev = a_node;
-    let mut a_head: i32 = -1;
-    let mut a_nb_accepted: i32 = 0;
+    let mut prev = node;
+    let mut head: i32 = -1;
+    let mut nb_accepted: i32 = 0;
     loop {
-        let a_data1 = the_bvh1.nodes[a_node.node_id1 as usize];
-        let a_data2 = the_bvh2.nodes[a_node.node_id2 as usize];
-        if !a_data1.is_inner() && !a_data2.is_inner() {
+        let data1 = bvh1.nodes[node.node_id1 as usize];
+        let data2 = bvh2.nodes[node.node_id2 as usize];
+        if !data1.is_inner() && !data2.is_inner() {
             let mut a_metric = 0.0;
             let is_rejected = sel.reject_node(
-                the_bvh1.min_point(a_node.node_id1),
-                the_bvh1.max_point(a_node.node_id1),
-                the_bvh2.min_point(a_node.node_id2),
-                the_bvh2.max_point(a_node.node_id2),
+                bvh1.min_point(node.node_id1),
+                bvh1.max_point(node.node_id1),
+                bvh2.min_point(node.node_id2),
+                bvh2.max_point(node.node_id2),
                 &mut a_metric,
             );
             if !is_rejected {
-                let mut i_n1 = a_data1.y;
-                while i_n1 <= a_data1.z {
-                    let mut i_n2 = a_data2.y;
-                    while i_n2 <= a_data2.z {
+                let mut i_n1 = data1.y;
+                while i_n1 <= data1.z {
+                    let mut i_n2 = data2.y;
+                    while i_n2 <= data2.z {
                         if sel.accept(i_n1, i_n2) {
-                            a_nb_accepted += 1;
+                            nb_accepted += 1;
                         }
                         if sel.stop() {
-                            return a_nb_accepted;
+                            return nb_accepted;
                         }
                         i_n2 += 1;
                     }
@@ -304,113 +304,113 @@ pub fn select_pair_tree<S: PairTraverse2d>(
                 }
             }
         } else {
-            let mut a_pairs = [PairInStack {
+            let mut pairs = [PairInStack {
                 node_id1: 0,
                 node_id2: 0,
                 metric: 0.0,
             }; 4];
-            let mut a_nb_pairs = 0;
-            if a_data1.is_inner() && a_data2.is_inner() {
-                a_pairs[a_nb_pairs] = PairInStack {
-                    node_id1: a_data1.y,
-                    node_id2: a_data2.y,
+            let mut nb_pairs = 0;
+            if data1.is_inner() && data2.is_inner() {
+                pairs[nb_pairs] = PairInStack {
+                    node_id1: data1.y,
+                    node_id2: data2.y,
                     metric: 0.0,
                 };
-                a_nb_pairs += 1;
-                a_pairs[a_nb_pairs] = PairInStack {
-                    node_id1: a_data1.y,
-                    node_id2: a_data2.z,
+                nb_pairs += 1;
+                pairs[nb_pairs] = PairInStack {
+                    node_id1: data1.y,
+                    node_id2: data2.z,
                     metric: 0.0,
                 };
-                a_nb_pairs += 1;
-                a_pairs[a_nb_pairs] = PairInStack {
-                    node_id1: a_data1.z,
-                    node_id2: a_data2.y,
+                nb_pairs += 1;
+                pairs[nb_pairs] = PairInStack {
+                    node_id1: data1.z,
+                    node_id2: data2.y,
                     metric: 0.0,
                 };
-                a_nb_pairs += 1;
-                a_pairs[a_nb_pairs] = PairInStack {
-                    node_id1: a_data1.z,
-                    node_id2: a_data2.z,
+                nb_pairs += 1;
+                pairs[nb_pairs] = PairInStack {
+                    node_id1: data1.z,
+                    node_id2: data2.z,
                     metric: 0.0,
                 };
-                a_nb_pairs += 1;
-            } else if a_data1.is_inner() {
-                a_pairs[a_nb_pairs] = PairInStack {
-                    node_id1: a_data1.y,
-                    node_id2: a_node.node_id2,
+                nb_pairs += 1;
+            } else if data1.is_inner() {
+                pairs[nb_pairs] = PairInStack {
+                    node_id1: data1.y,
+                    node_id2: node.node_id2,
                     metric: 0.0,
                 };
-                a_nb_pairs += 1;
-                a_pairs[a_nb_pairs] = PairInStack {
-                    node_id1: a_data1.z,
-                    node_id2: a_node.node_id2,
+                nb_pairs += 1;
+                pairs[nb_pairs] = PairInStack {
+                    node_id1: data1.z,
+                    node_id2: node.node_id2,
                     metric: 0.0,
                 };
-                a_nb_pairs += 1;
-            } else if a_data2.is_inner() {
-                a_pairs[a_nb_pairs] = PairInStack {
-                    node_id1: a_node.node_id1,
-                    node_id2: a_data2.y,
+                nb_pairs += 1;
+            } else if data2.is_inner() {
+                pairs[nb_pairs] = PairInStack {
+                    node_id1: node.node_id1,
+                    node_id2: data2.y,
                     metric: 0.0,
                 };
-                a_nb_pairs += 1;
-                a_pairs[a_nb_pairs] = PairInStack {
-                    node_id1: a_node.node_id1,
-                    node_id2: a_data2.z,
+                nb_pairs += 1;
+                pairs[nb_pairs] = PairInStack {
+                    node_id1: node.node_id1,
+                    node_id2: data2.z,
                     metric: 0.0,
                 };
-                a_nb_pairs += 1;
+                nb_pairs += 1;
             }
-            let mut a_kept = [PairInStack {
+            let mut kept = [PairInStack {
                 node_id1: 0,
                 node_id2: 0,
                 metric: 0.0,
             }; 4];
-            let mut a_nb_kept = 0;
-            for i_pair in 0..a_nb_pairs {
+            let mut nb_kept = 0;
+            for i_pair in 0..nb_pairs {
                 let is_pair_rejected = sel.reject_node(
-                    the_bvh1.min_point(a_pairs[i_pair].node_id1),
-                    the_bvh1.max_point(a_pairs[i_pair].node_id1),
-                    the_bvh2.min_point(a_pairs[i_pair].node_id2),
-                    the_bvh2.max_point(a_pairs[i_pair].node_id2),
-                    &mut a_pairs[i_pair].metric,
+                    bvh1.min_point(pairs[i_pair].node_id1),
+                    bvh1.max_point(pairs[i_pair].node_id1),
+                    bvh2.min_point(pairs[i_pair].node_id2),
+                    bvh2.max_point(pairs[i_pair].node_id2),
+                    &mut pairs[i_pair].metric,
                 );
                 if !is_pair_rejected {
-                    let mut i_sort = a_nb_kept;
+                    let mut i_sort = nb_kept;
                     while i_sort > 0
-                        && sel.is_metric_better(a_pairs[i_pair].metric, a_kept[i_sort - 1].metric)
+                        && sel.is_metric_better(pairs[i_pair].metric, kept[i_sort - 1].metric)
                     {
-                        a_kept[i_sort] = a_kept[i_sort - 1];
+                        kept[i_sort] = kept[i_sort - 1];
                         i_sort -= 1;
                     }
-                    a_kept[i_sort] = a_pairs[i_pair];
-                    a_nb_kept += 1;
+                    kept[i_sort] = pairs[i_pair];
+                    nb_kept += 1;
                 }
             }
-            if a_nb_kept > 0 {
-                a_node = a_kept[0];
-                for i_pair in 1..a_nb_kept {
-                    a_head += 1;
-                    stack[a_head as usize] = a_kept[i_pair];
+            if nb_kept > 0 {
+                node = kept[0];
+                for i_pair in 1..nb_kept {
+                    head += 1;
+                    stack[head as usize] = kept[i_pair];
                 }
             }
         }
-        if a_node.node_id1 == a_prev.node_id1 && a_node.node_id2 == a_prev.node_id2 {
-            if a_head < 0 {
-                return a_nb_accepted;
+        if node.node_id1 == prev.node_id1 && node.node_id2 == prev.node_id2 {
+            if head < 0 {
+                return nb_accepted;
             }
-            a_node = stack[a_head as usize];
-            a_head -= 1;
-            while sel.reject_metric(a_node.metric) {
-                if a_head < 0 {
-                    return a_nb_accepted;
+            node = stack[head as usize];
+            head -= 1;
+            while sel.reject_metric(node.metric) {
+                if head < 0 {
+                    return nb_accepted;
                 }
-                a_node = stack[a_head as usize];
-                a_head -= 1;
+                node = stack[head as usize];
+                head -= 1;
             }
         }
-        a_prev = a_node;
+        prev = node;
     }
 }
 

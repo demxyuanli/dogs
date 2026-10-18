@@ -34,20 +34,20 @@ pub fn knot_form(knots: &[f64]) -> KnotDistribution {
     if from_k1 + 1 > knots.len() {
         return KnotDistribution::Uniform;
     }
-    let mut a_ui = knots[from_k1 - 1].abs();
-    let mut a_uj = knots[from_k1].abs();
-    let mut a_du0 = (a_uj - a_ui).abs();
-    let mut an_eps = epsilon(a_ui) + epsilon(a_uj) + epsilon(a_du0);
+    let mut ui = knots[from_k1 - 1].abs();
+    let mut uj = knots[from_k1].abs();
+    let mut du0 = (uj - ui).abs();
+    let mut an_eps = epsilon(ui) + epsilon(uj) + epsilon(du0);
     let mut i = from_k1 + 1;
     while i < knots.len() {
-        a_ui = knots[i - 1].abs();
-        a_uj = knots[i].abs();
-        let a_du1 = (a_uj - a_ui).abs();
-        if (a_du1 - a_du0).abs() > an_eps {
+        ui = knots[i - 1].abs();
+        uj = knots[i].abs();
+        let du1 = (uj - ui).abs();
+        if (du1 - du0).abs() > an_eps {
             return KnotDistribution::NonUniform;
         }
-        a_du0 = a_du1;
-        an_eps = epsilon(a_ui) + epsilon(a_uj) + epsilon(a_du0);
+        du0 = du1;
+        an_eps = epsilon(ui) + epsilon(uj) + epsilon(du0);
         i += 1;
     }
     KnotDistribution::Uniform
@@ -56,37 +56,37 @@ pub fn knot_form(knots: &[f64]) -> KnotDistribution {
 /// `BSplCLib::MultForm(Mults, FromK1, ToK2)` (`BSplCLib.cxx:636-688`) with
 /// `FromK1 = 1`, `ToK2 = Mults.Length()` (`cxx:705`).
 pub fn mult_form(mults: &[i32]) -> MultDistribution {
-    let a_first = 1usize;
-    let a_last = mults.len();
-    if a_first + 1 > mults.len() {
+    let first = 1usize;
+    let last = mults.len();
+    if first + 1 > mults.len() {
         return MultDistribution::Constant;
     }
-    let a_first_mult = mults[a_first - 1];
-    let mut a_form = MultDistribution::Constant;
-    let mut a_mult = mults[a_first];
-    let mut i = a_first + 1;
-    while i <= a_last && a_form != MultDistribution::NonConstant {
-        if i == a_first + 1 {
-            if a_mult != a_first_mult {
-                a_form = MultDistribution::QuasiConstant;
+    let first_mult = mults[first - 1];
+    let mut form = MultDistribution::Constant;
+    let mut mult = mults[first];
+    let mut i = first + 1;
+    while i <= last && form != MultDistribution::NonConstant {
+        if i == first + 1 {
+            if mult != first_mult {
+                form = MultDistribution::QuasiConstant;
             }
-        } else if i == a_last {
-            if a_form == MultDistribution::QuasiConstant {
-                if a_first_mult != mults[i - 1] {
-                    a_form = MultDistribution::NonConstant;
+        } else if i == last {
+            if form == MultDistribution::QuasiConstant {
+                if first_mult != mults[i - 1] {
+                    form = MultDistribution::NonConstant;
                 }
-            } else if a_mult != mults[i - 1] {
-                a_form = MultDistribution::NonConstant;
+            } else if mult != mults[i - 1] {
+                form = MultDistribution::NonConstant;
             }
         } else {
-            if a_mult != mults[i - 1] {
-                a_form = MultDistribution::NonConstant;
+            if mult != mults[i - 1] {
+                form = MultDistribution::NonConstant;
             }
-            a_mult = mults[i - 1];
+            mult = mults[i - 1];
         }
         i += 1;
     }
-    a_form
+    form
 }
 
 /// `BSplCLib::KnotAnalysis(Degree, Periodic, CKnots, CMults, KnotForm,

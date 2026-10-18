@@ -30,13 +30,13 @@ pub fn mult_num_and_denom(
     let end_value = bs_knots[bs_knots.len() - 1];
     let tolerance = 10.0 * occt_core::precision::epsilon(end_value.abs());
 
-    let (mut a_knots, a_mults) = a.distinct_knots_and_mults();
+    let (mut a_knots, mults) = a.distinct_knots_and_mults();
     reparametrize(bs.first_parameter(), bs.last_parameter(), &mut a_knots);
     let ancore = Geom2dBSplineCurve::from_flat(
         a.xs.clone(),
         a.ys.clone(),
         None,
-        knot_sequence(&a_knots, &a_mults, a.degree() as i32),
+        knot_sequence(&a_knots, &mults, a.degree() as i32),
         a.degree(),
         false,
     )
@@ -48,7 +48,7 @@ pub fn mult_num_and_denom(
         end_value,
         a.degree() as i32,
         &a_knots,
-        &a_mults,
+        &mults,
         bs.degree() as i32,
         &bs_knots,
         &bs_mults,

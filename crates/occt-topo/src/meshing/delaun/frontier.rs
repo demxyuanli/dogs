@@ -105,19 +105,19 @@ impl Delaun {
         let ref_edge = self.mesh_data.get_link(start_edge_id);
 
         let mut polygon: Vec<i32> = Vec::new();
-        let (mut a_start_node, mut a_pivot_node);
+        let (mut start_node, mut pivot_node);
         if is_forward {
             polygon.push(start_edge_id);
-            a_start_node = ref_edge.first_node();
-            a_pivot_node = ref_edge.last_node();
+            start_node = ref_edge.first_node();
+            pivot_node = ref_edge.last_node();
         } else {
             polygon.push(-start_edge_id);
-            a_start_node = ref_edge.last_node();
-            a_pivot_node = ref_edge.first_node();
+            start_node = ref_edge.last_node();
+            pivot_node = ref_edge.first_node();
         }
-        let start_edge_vertex_s = self.mesh_data.get_node(a_start_node).location.coord;
-        let mut a_pivot_vertex = self.mesh_data.get_node(a_pivot_node).location.coord;
-        let mut ref_link_dir = GpVec2d::from_xy(a_pivot_vertex.subtracted(&start_edge_vertex_s));
+        let start_edge_vertex_s = self.mesh_data.get_node(start_node).location.coord;
+        let mut pivot_vertex = self.mesh_data.get_node(pivot_node).location.coord;
+        let mut ref_link_dir = GpVec2d::from_xy(pivot_vertex.subtracted(&start_edge_vertex_s));
         if ref_link_dir.square_magnitude() < PREC2 {
             self.diag_stage(&format!("mesh_left_polygon_of e={start_edge_id} fwd={is_forward} DEGENERATE"));
             return true;
@@ -125,7 +125,7 @@ impl Delaun {
 
         let mut boxes: Vec<BndB2> = Vec::new();
         let mut b0 = BndB2::void();
-        update_bnd_box(start_edge_vertex_s, a_pivot_vertex, &mut b0);
+        update_bnd_box(start_edge_vertex_s, pivot_vertex, &mut b0);
         boxes.push(b0);
 
         let mut dead_links: BTreeSet<i32> = BTreeSet::new();
@@ -136,12 +136,12 @@ impl Delaun {
         // OCCT `BRepMesh_Delaun.cxx:1116-1140`: `aFirstNode` is the loop-close
         // target and `findNextPolygonLink`'s endpoint check; it never updates.
         // `aStartNode` walks with the polygon and is the origin of `aRefLinkDir`.
-        let a_first_node = a_start_node;
-        while a_pivot_node != a_first_node {
+        let a_first_node = start_node;
+        while pivot_node != a_first_node {
             let result = self.find_next_polygon_link(
                 a_first_node,
-                a_pivot_node,
-                a_pivot_vertex,
+                pivot_node,
+                pivot_vertex,
                 ref_link_dir,
                 &boxes,
                 &polygon,
@@ -151,10 +151,10 @@ impl Delaun {
                 &mut dead_links,
             );
             if let Some((next_link_id, next_pivot_node, next_link_dir, next_link_bbox)) = result {
-                a_start_node = a_pivot_node;
+                start_node = pivot_node;
                 ref_link_dir = next_link_dir;
-                a_pivot_node = next_pivot_node;
-                a_pivot_vertex = self.mesh_data.get_node(next_pivot_node).location.coord;
+                pivot_node = next_pivot_node;
+                pivot_vertex = self.mesh_data.get_node(next_pivot_node).location.coord;
                 boxes.push(next_link_bbox);
                 polygon.push(next_link_id);
                 is_skip_leprous = true;
@@ -172,15 +172,15 @@ impl Delaun {
                 let prev_link_info = *polygon.last().unwrap();
                 let prev_link = self.mesh_data.get_link(prev_link_info.abs());
                 if prev_link_info > 0 {
-                    a_start_node = prev_link.first_node();
-                    a_pivot_node = prev_link.last_node();
+                    start_node = prev_link.first_node();
+                    pivot_node = prev_link.last_node();
                 } else {
-                    a_start_node = prev_link.last_node();
-                    a_pivot_node = prev_link.first_node();
+                    start_node = prev_link.last_node();
+                    pivot_node = prev_link.first_node();
                 }
-                a_pivot_vertex = self.mesh_data.get_node(a_pivot_node).location.coord;
-                let sn = self.mesh_data.get_node(a_start_node).location.coord;
-                ref_link_dir = GpVec2d::from_xy(a_pivot_vertex.subtracted(&sn));
+                pivot_vertex = self.mesh_data.get_node(pivot_node).location.coord;
+                let sn = self.mesh_data.get_node(start_node).location.coord;
+                ref_link_dir = GpVec2d::from_xy(pivot_vertex.subtracted(&sn));
                 is_skip_leprous = false;
             }
         }
@@ -262,7 +262,7 @@ impl Delaun {
             }
 
             let is_check_end_points = other_node != first_node;
-            let mut a_box = BndB2::void();
+            let mut bnd_box = BndB2::void();
             let is_not_intersect = self.check_intersection(
                 neighbor_id,
                 polygon,
@@ -270,13 +270,13 @@ impl Delaun {
                 is_check_end_points,
                 is_check_point_on_edge,
                 true,
-                &mut a_box,
+                &mut bnd_box,
             );
             if is_not_intersect {
                 max_angle = angle;
                 next_link_dir = cur_link_dir;
                 next_pivot_node = other_node;
-                next_link_bbox = a_box;
+                next_link_bbox = bnd_box;
                 next_link_id = if neighbor_link.first_node() == pivot_node { neighbor_id } else { -neighbor_id };
             }
         }
@@ -339,8 +339,8 @@ impl Delaun {
         self.add_triangle(edges, oris, nodes)
     }
 
-    pub(super) fn cleanup_polygon(&mut self, the_polygon: &[i32], the_poly_boxes: &[BndB2]) {
-        let poly_len = the_polygon.len();
+    pub(super) fn cleanup_polygon(&mut self, polygon: &[i32], poly_boxes: &[BndB2]) {
+        let poly_len = polygon.len();
         if poly_len < 3 {
             return;
         }
@@ -350,7 +350,7 @@ impl Delaun {
         let mut poly_vertices: Vec<i32> = Vec::new();
 
         for poly_it in 1..=poly_len {
-            let poly_edge_info = the_polygon[poly_it - 1];
+            let poly_edge_info = polygon[poly_it - 1];
             let poly_edge_id = poly_edge_info.abs();
             ignored_edges.insert(poly_edge_id);
             let is_forward = poly_edge_info > 0;
@@ -409,8 +409,8 @@ impl Delaun {
                     current_victim,
                     &poly_vertices,
                     &poly_vertices_find_map,
-                    the_polygon,
-                    the_poly_boxes,
+                    polygon,
+                    poly_boxes,
                     &mut survived_links,
                     &mut loop_edges,
                     &mut stack_data,
@@ -443,8 +443,8 @@ impl Delaun {
         zombie_node_id: i32,
         poly_vertices: &[i32],
         poly_vertices_find_map: &BTreeSet<i32>,
-        the_polygon: &[i32],
-        the_poly_boxes: &[BndB2],
+        polygon: &[i32],
+        poly_boxes: &[BndB2],
         survived_links: &mut BTreeSet<i32>,
         loop_edges: &mut IntBoolDataMap,
         victim_nodes: &mut Vec<i32>,
@@ -458,7 +458,7 @@ impl Delaun {
             if self.mesh_data.link_movability(neighbor_link_id) == VertexState::Frontier {
                 let mut b = BndB2::void();
                 let is_not_intersect =
-                    self.check_intersection(neighbor_link_id, the_polygon, the_poly_boxes, false, true, false, &mut b);
+                    self.check_intersection(neighbor_link_id, polygon, poly_boxes, false, true, false, &mut b);
                 if is_not_intersect {
                     survived_links.insert(neighbor_link_id);
                     continue;
@@ -475,8 +475,8 @@ impl Delaun {
                         self.kill_triangles_on_intersecting_links(
                             neighbor_link_id,
                             other_node,
-                            the_polygon,
-                            the_poly_boxes,
+                            polygon,
+                            poly_boxes,
                             survived_links,
                             loop_edges,
                         );
@@ -518,8 +518,8 @@ impl Delaun {
         &mut self,
         link_to_check_id: i32,
         end_point: i32,
-        the_polygon: &[i32],
-        the_poly_boxes: &[BndB2],
+        polygon: &[i32],
+        poly_boxes: &[BndB2],
         survived_links: &mut BTreeSet<i32>,
         loop_edges: &mut IntBoolDataMap,
     ) {
@@ -528,7 +528,7 @@ impl Delaun {
         }
         let mut b = BndB2::void();
         let is_not_intersect =
-            self.check_intersection(link_to_check_id, the_polygon, the_poly_boxes, false, false, false, &mut b);
+            self.check_intersection(link_to_check_id, polygon, poly_boxes, false, false, false, &mut b);
         survived_links.insert(link_to_check_id);
         if is_not_intersect {
             return;
@@ -541,7 +541,7 @@ impl Delaun {
             if other_node == end_point {
                 other_node = neighbor_link.last_node();
             }
-            self.kill_triangles_on_intersecting_links(neighbor_id, other_node, the_polygon, the_poly_boxes, survived_links, loop_edges);
+            self.kill_triangles_on_intersecting_links(neighbor_id, other_node, polygon, poly_boxes, survived_links, loop_edges);
         }
     }
 

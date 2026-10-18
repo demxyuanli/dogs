@@ -163,12 +163,12 @@ use super::*;
         // H1: S --modified--> [A, B] ; H2: A --modified--> A'.
         // Merge: S --modified--> [A', B], and A exposed with its modification.
         let (s, a, b) = fixtures();
-        let a_prime = unit_box().faces[1].0.clone();
+        let prime = unit_box().faces[1].0.clone();
         let mut h1 = BopHistory::new();
         h1.add_modified(&s, a.clone()).unwrap();
         h1.add_modified(&s, b.clone()).unwrap();
         let mut h2 = BopHistory::new();
-        h2.add_modified(&a, a_prime.clone()).unwrap();
+        h2.add_modified(&a, prime.clone()).unwrap();
 
         h1.merge(&h2);
         // Surviving members keep their order, then the replacement additions
@@ -176,7 +176,7 @@ use super::*;
         let m = h1.modified(&s).expect("S modified after merge");
         assert_eq!(m.len(), 2, "A replaced by A', B kept");
         assert!(m[0].same_tshape(&b), "survivor B kept first");
-        assert!(m[1].same_tshape(&a_prime), "replacement A' appended");
+        assert!(m[1].same_tshape(&prime), "replacement A' appended");
         // A was reached from S's list, so it is not re-exposed as a key.
         assert!(!h1.has_modified(&a));
     }
@@ -269,17 +269,17 @@ use super::*;
         // H1.images: S -> [A, B]; H2.images: A -> [A'].
         // Merge: S -> [A', B].
         let (s, a, b) = fixtures();
-        let a_prime = unit_box().faces[1].0.clone();
+        let prime = unit_box().faces[1].0.clone();
         let mut h1 = BopHistory::new();
         h1.add_image(&s, a.clone());
         h1.add_image(&s, b.clone());
         let mut h2 = BopHistory::new();
-        h2.add_image(&a, a_prime.clone());
+        h2.add_image(&a, prime.clone());
 
         h1.merge(&h2);
         let img = h1.image(&s).expect("S images after merge");
         assert_eq!(img.len(), 2);
-        assert!(img[0].same_tshape(&a_prime));
+        assert!(img[0].same_tshape(&prime));
         assert!(img[1].same_tshape(&b));
         assert!(h1.has_image(&a), "A-only image key bound as-is");
     }

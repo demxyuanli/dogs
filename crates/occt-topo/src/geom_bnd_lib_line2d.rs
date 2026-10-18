@@ -19,48 +19,48 @@ use crate::geom_bnd_lib_elclib2d::line_value_2d;
 use crate::geom_bnd_lib_inf2d::{open_max_2d, open_min_2d, open_min_max_2d};
 
 /// `GeomBndLib_Line2d::Box(theLin, theU1, theU2, theTol)`.
-pub fn box_lin_2d(the_lin: &GpLin2d, the_u1: f64, the_u2: f64, the_tol: f64) -> Result<BndBox2d, String> {
-    let mut a_box = BndBox2d::new();
-    if Precision::is_negative_infinite(the_u1) {
-        if Precision::is_negative_infinite(the_u2) {
+pub fn box_lin_2d(lin: &GpLin2d, u1: f64, u2: f64, tol: f64) -> Result<BndBox2d, String> {
+    let mut bnd_box = BndBox2d::new();
+    if Precision::is_negative_infinite(u1) {
+        if Precision::is_negative_infinite(u2) {
             return Err("GeomBndLib_Line2d::Box - bad parameter".into());
-        } else if Precision::is_positive_infinite(the_u2) {
-            open_min_max_2d(the_lin.direction(), &mut a_box);
-            a_box.add_point(&line_value_2d(0.0, the_lin));
+        } else if Precision::is_positive_infinite(u2) {
+            open_min_max_2d(lin.direction(), &mut bnd_box);
+            bnd_box.add_point(&line_value_2d(0.0, lin));
         } else {
-            open_min_2d(the_lin.direction(), &mut a_box);
-            a_box.add_point(&line_value_2d(the_u2, the_lin));
+            open_min_2d(lin.direction(), &mut bnd_box);
+            bnd_box.add_point(&line_value_2d(u2, lin));
         }
-    } else if Precision::is_positive_infinite(the_u1) {
-        if Precision::is_negative_infinite(the_u2) {
-            open_min_max_2d(the_lin.direction(), &mut a_box);
-            a_box.add_point(&line_value_2d(0.0, the_lin));
-        } else if Precision::is_positive_infinite(the_u2) {
+    } else if Precision::is_positive_infinite(u1) {
+        if Precision::is_negative_infinite(u2) {
+            open_min_max_2d(lin.direction(), &mut bnd_box);
+            bnd_box.add_point(&line_value_2d(0.0, lin));
+        } else if Precision::is_positive_infinite(u2) {
             return Err("GeomBndLib_Line2d::Box - bad parameter".into());
         } else {
-            open_max_2d(the_lin.direction(), &mut a_box);
-            a_box.add_point(&line_value_2d(the_u2, the_lin));
+            open_max_2d(lin.direction(), &mut bnd_box);
+            bnd_box.add_point(&line_value_2d(u2, lin));
         }
     } else {
-        a_box.add_point(&line_value_2d(the_u1, the_lin));
-        if Precision::is_negative_infinite(the_u2) {
-            open_min_2d(the_lin.direction(), &mut a_box);
-        } else if Precision::is_positive_infinite(the_u2) {
-            open_max_2d(the_lin.direction(), &mut a_box);
+        bnd_box.add_point(&line_value_2d(u1, lin));
+        if Precision::is_negative_infinite(u2) {
+            open_min_2d(lin.direction(), &mut bnd_box);
+        } else if Precision::is_positive_infinite(u2) {
+            open_max_2d(lin.direction(), &mut bnd_box);
         } else {
-            a_box.add_point(&line_value_2d(the_u2, the_lin));
+            bnd_box.add_point(&line_value_2d(u2, lin));
         }
     }
-    a_box.enlarge(the_tol);
-    Ok(a_box)
+    bnd_box.enlarge(tol);
+    Ok(bnd_box)
 }
 
 /// `GeomBndLib_Line2d::BoxOptimal` — identical to [`box_lin`].
 pub fn box_lin_optimal(
-    the_lin: &GpLin2d,
-    the_u1: f64,
-    the_u2: f64,
-    the_tol: f64,
+    lin: &GpLin2d,
+    u1: f64,
+    u2: f64,
+    tol: f64,
 ) -> Result<BndBox2d, String> {
-    box_lin_2d(the_lin, the_u1, the_u2, the_tol)
+    box_lin_2d(lin, u1, u2, tol)
 }

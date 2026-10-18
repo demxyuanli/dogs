@@ -58,9 +58,9 @@ fn is_analytic_ff(kind: SurfaceKind) -> bool {
 /// `max(Tol1, Tol2)`, then floored at `5.e-6` when either surface is not
 /// plane/cylinder/cone/sphere/torus.
 pub fn tolerance_ff(face1: &Face, face2: &Face) -> f64 {
-    let a_tol1 = BRepTool::face_tolerance(face1);
-    let a_tol2 = BRepTool::face_tolerance(face2);
-    let mut a_tol_ff = a_tol1.max(a_tol2);
+    let tol1 = BRepTool::face_tolerance(face1);
+    let tol2 = BRepTool::face_tolerance(face2);
+    let mut a_tol_ff = tol1.max(tol2);
     let k1 = BRepTool::face_surface(face1)
         .map(|s| classify_surface(s.as_ref()))
         .unwrap_or(SurfaceKind::Other);
@@ -279,8 +279,8 @@ fn shift_closed_faces(
             let Some(verts) = ee_vertices(ee_map, an_edge_index1, an_edge_index2) else {
                 continue;
             };
-            for &a_vertex_index in verts {
-                let Some(vs) = ds.shape(a_vertex_index).cloned() else {
+            for &vertex_index in verts {
+                let Some(vs) = ds.shape(vertex_index).cloned() else {
                     continue;
                 };
                 let vertex = Vertex(vs);
@@ -290,29 +290,29 @@ fn shift_closed_faces(
                 if t1.is_none() && t2.is_none() {
                     continue;
                 }
-                let a_p1 = if let (Some(t), Some(c)) = (t1, BRepTool::edge_curve(&edge1)) {
+                let p1 = if let (Some(t), Some(c)) = (t1, BRepTool::edge_curve(&edge1)) {
                     c.d0(t)
                 } else {
                     a_vertex_point
                 };
-                let a_p2 = if let (Some(t), Some(c)) = (t2, BRepTool::edge_curve(&edge2)) {
+                let p2 = if let (Some(t), Some(c)) = (t2, BRepTool::edge_curve(&edge2)) {
                     c.d0(t)
                 } else {
                     a_vertex_point
                 };
-                let a_shift_dist = a_p1.distance(&a_p2);
-                if a_shift_dist > BRepTool::vertex_tolerance(&vertex) {
+                let shift_dist = p1.distance(&p2);
+                if shift_dist > BRepTool::vertex_tolerance(&vertex) {
                     let vec = if closed1 {
-                        GpVec::from_pnts(&a_p1, &a_p2)
+                        GpVec::from_pnts(&p1, &p2)
                     } else {
-                        GpVec::from_pnts(&a_p2, &a_p1)
+                        GpVec::from_pnts(&p2, &p1)
                     };
                     if closed1 {
                         shifted1 = Face(translated(&shifted1.0, &vec));
                     } else {
                         shifted2 = Face(translated(&shifted2.0, &vec));
                     }
-                    shift_value = a_shift_dist;
+                    shift_value = shift_dist;
                     found = true;
                     break;
                 }
@@ -450,21 +450,21 @@ pub fn perform_ff(f: &mut PaveFiller) -> Result<(), String> {
         let a_tol_ff = job.tol_ff;
         let res = ff.result();
         let a_nb_curves = res.nb_curves();
-        let a_nb_points = 0usize;
+        let nb_points = 0usize;
 
-        if a_nb_curves > 0 || a_nb_points > 0 {
+        if a_nb_curves > 0 || nb_points > 0 {
             f.ds_mut().add_interf(n_f1, n_f2);
         }
 
         let mut rec = BopdsInterfFf::new(n_f1, n_f2);
         rec.set_tangent_faces(b_tangent);
-        rec.init(a_nb_curves, a_nb_points);
+        rec.init(a_nb_curves, nb_points);
 
-        let mut a_box_expand = a_tol_ff;
+        let mut box_expand = a_tol_ff;
         if a_nb_curves > 0 {
             let max_v = max_vertex_tolerance_of_face(f.ds(), n_f1)
                 .max(max_vertex_tolerance_of_face(f.ds(), n_f2));
-            a_box_expand += max_v;
+            box_expand += max_v;
         }
 
         let tang_default = int_tools_curve_box::curve_tangential_tolerance(
@@ -489,7 +489,7 @@ pub fn perform_ff(f: &mut PaveFiller) -> Result<(), String> {
             if !b_valid {
                 continue;
             }
-            int_tools_curve_box::enlarge_box(&mut box_, a_box_expand);
+            int_tools_curve_box::enlarge_box(&mut box_, box_expand);
             let mut nc = BopdsCurve::new();
             nc.set_curve(c.curve.clone());
             nc.set_pcurves(c.pcurve1.clone(), c.pcurve2.clone());

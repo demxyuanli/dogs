@@ -126,7 +126,7 @@ fn value_on_gline(kind: &GLineKind, t: f64) -> GpPnt {
 
 /// Sort / dedup GLine and RLine vertices (`ComputeVertexParameters` core).
 pub(crate) fn compute_vertex_parameters(slin: &mut [GeomIntLine], _tol: f64) {
-    let a_tol_pc = 1000.0 * PCONFUSION;
+    let tol_pc = 1000.0 * PCONFUSION;
     for line in slin.iter_mut() {
         let vertices = match line {
             GeomIntLine::Geometric(g) => &mut g.vertices,
@@ -137,7 +137,7 @@ pub(crate) fn compute_vertex_parameters(slin: &mut [GeomIntLine], _tol: f64) {
         vertices.sort_by(|a, b| a.param_on_line.total_cmp(&b.param_on_line));
         let mut i = 1;
         while i < vertices.len() {
-            if (vertices[i].param_on_line - vertices[i - 1].param_on_line).abs() <= a_tol_pc {
+            if (vertices[i].param_on_line - vertices[i - 1].param_on_line).abs() <= tol_pc {
                 vertices.remove(i);
             } else {
                 i += 1;

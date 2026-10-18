@@ -30,8 +30,8 @@ impl MyDirectPolynomialRoots {
             same: false,
         };
 
-        let a_a = [a0.abs(), a1.abs(), a2.abs(), a3.abs(), a4.abs()];
-        if a_a[0] + a_a[1] + a_a[2] + a_a[3] + a_a[4] < epsilon(10000.0) {
+        let a = [a0.abs(), a1.abs(), a2.abs(), a3.abs(), a4.abs()];
+        if a[0] + a[1] + a[2] + a[3] + a[4] < epsilon(10000.0) {
             r.same = true;
             return r;
         }
@@ -65,7 +65,7 @@ impl MyDirectPolynomialRoots {
             let mut an_a_min = REAL_LAST;
             let mut an_a_max = -1.0f64;
             let an_eps0 = f64::EPSILON;
-            for &c in a_a.iter() {
+            for &c in a.iter() {
                 an_a_min = an_a_min.min(c.max(an_eps0));
                 an_a_max = an_a_max.max(c.max(an_eps0));
             }

@@ -31,13 +31,13 @@ const REAL_LAST: f64 = f64::MAX;
 /// results are what the three members below hold.
 pub(super) struct GenLocateExtCC {
     /// `myDone` (`hxx:139`).
-    my_done: bool,
+    done: bool,
     /// `mySqDist` (`hxx:140`).
-    my_sq_dist: f64,
+    sq_dist: f64,
     /// `myPoint1` (`hxx:141`).
-    my_point1: POnCurv,
+    point1: POnCurv,
     /// `myPoint2` (`hxx:142`).
-    my_point2: POnCurv,
+    point2: POnCurv,
 }
 
 impl GenLocateExtCC {
@@ -51,8 +51,8 @@ impl GenLocateExtCC {
         tol_u: f64,
         tol_v: f64,
     ) -> Self {
-        let mut my_done = false;
-        let mut my_sq_dist = REAL_LAST;
+        let mut done = false;
+        let mut sq_dist = REAL_LAST;
 
         // `hxx:59-77`: the axis-aligned bounds, each swapped when reversed.
         let mut u_inf = c1.first_parameter();
@@ -80,47 +80,47 @@ impl GenLocateExtCC {
         let mut s = MathFunctionSetRoot::new(&f, &tol, 100);
         s.perform_with_bounds(&mut f, &start, &uu_inf, &uu_sup, false);
 
-        let mut my_point1 = POnCurv::new(0.0, GpPnt::zero());
-        let mut my_point2 = POnCurv::new(0.0, GpPnt::zero());
+        let mut point1 = POnCurv::new(0.0, GpPnt::zero());
+        let mut point2 = POnCurv::new(0.0, GpPnt::zero());
 
         if s.is_done() && f.nb_ext() > 0 {
             // `hxx:99-109`.
-            my_sq_dist = f.square_distance(1);
+            sq_dist = f.square_distance(1);
             let (p1, p2) = f.points(1);
-            my_point1 = p1;
-            my_point2 = p2;
+            point1 = p1;
+            point2 = p2;
 
-            start.set_value(1, my_point1.parameter());
-            start.set_value(2, my_point2.parameter());
+            start.set_value(1, point1.parameter());
+            start.set_value(2, point2.parameter());
             let mut ff = MathVector::new(1, 2);
             f.value(&start, &mut ff);
             if ff.value(1) < tol_f && ff.value(2) < tol_f {
-                my_done = true;
+                done = true;
             }
         }
 
         Self {
-            my_done,
-            my_sq_dist,
-            my_point1,
-            my_point2,
+            done,
+            sq_dist,
+            point1,
+            point2,
         }
     }
 
     /// `IsDone()` (`hxx:113`).
     pub(super) fn is_done(&self) -> bool {
-        self.my_done
+        self.done
     }
 
     /// `SquareDistance()` (`hxx:116-123`); OCCT throws `StdFail_NotDone` when
     /// not done, the port reports the raw value.
     pub(super) fn square_distance(&self) -> f64 {
-        self.my_sq_dist
+        self.sq_dist
     }
 
     /// `Point(theP1, theP2)` (`hxx:128-136`); same not-done convention.
     pub(super) fn point(&self) -> (POnCurv, POnCurv) {
-        (self.my_point1, self.my_point2)
+        (self.point1, self.point2)
     }
 }
 
@@ -129,13 +129,13 @@ impl GenLocateExtCC {
 /// `Extrema_CurveTool::Resolution(.., Precision::Confusion())`.
 pub struct ExtremaLocateExtCC {
     /// `myDone` (`hxx:56`).
-    my_done: bool,
+    done: bool,
     /// `mySqDist` (`hxx:57`); `RealLast()` before the search.
-    my_sq_dist: f64,
+    sq_dist: f64,
     /// `myPoint1` (`hxx:58`).
-    my_point1: POnCurv,
+    point1: POnCurv,
     /// `myPoint2` (`hxx:59`).
-    my_point2: POnCurv,
+    point2: POnCurv,
 }
 
 impl ExtremaLocateExtCC {
@@ -150,37 +150,37 @@ impl ExtremaLocateExtCC {
         let xtrem = GenLocateExtCC::new(c1, c2, u0, v0, tol_u, tol_v);
 
         // `cxx:39-46`.
-        let my_done = xtrem.is_done();
-        if my_done {
+        let done = xtrem.is_done();
+        if done {
             let (p1, p2) = xtrem.point();
             Self {
-                my_done,
-                my_sq_dist: xtrem.square_distance(),
-                my_point1: p1,
-                my_point2: p2,
+                done,
+                sq_dist: xtrem.square_distance(),
+                point1: p1,
+                point2: p2,
             }
         } else {
             Self {
-                my_done,
-                my_sq_dist: REAL_LAST,
-                my_point1: POnCurv::new(0.0, GpPnt::zero()),
-                my_point2: POnCurv::new(0.0, GpPnt::zero()),
+                done,
+                sq_dist: REAL_LAST,
+                point1: POnCurv::new(0.0, GpPnt::zero()),
+                point2: POnCurv::new(0.0, GpPnt::zero()),
             }
         }
     }
 
     /// `IsDone()` (`cxx:49-53`).
     pub fn is_done(&self) -> bool {
-        self.my_done
+        self.done
     }
 
     /// `SquareDistance()` (`cxx:55-63`); OCCT throws `StdFail_NotDone`.
     pub fn square_distance(&self) -> f64 {
-        self.my_sq_dist
+        self.sq_dist
     }
 
     /// `Point(P1, P2)` (`cxx:65-74`); same not-done convention.
     pub fn point(&self) -> (POnCurv, POnCurv) {
-        (self.my_point1, self.my_point2)
+        (self.point1, self.point2)
     }
 }

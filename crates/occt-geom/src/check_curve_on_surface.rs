@@ -299,7 +299,7 @@ fn fill_sub_intervals(
     // `theNbParticles = 3;` (`cxx:441`).
     *nb_particles = 3;
 
-    let mut a_nb_sub_intervals = 1usize;
+    let mut nb_sub_intervals = 1usize;
 
     let an_ind_max3d = an_arr_knots3d.len();
     let an_ind_max2d = an_arr_knots2d.len();
@@ -312,30 +312,30 @@ fn fill_sub_intervals(
     }
 
     while an_index3d < an_ind_max3d && an_index2d < an_ind_max2d {
-        let a_val3d = an_arr_knots3d[an_index3d];
-        let a_val2d = an_arr_knots2d[an_index2d];
-        let a_delta = a_val3d - a_val2d;
+        let val3d = an_arr_knots3d[an_index3d];
+        let val2d = an_arr_knots2d[an_index2d];
+        let delta = val3d - val2d;
 
-        if a_delta < PCONFUSION {
+        if delta < PCONFUSION {
             // `aVal3D <= aVal2D` (`cxx:579-595`).
-            if a_val3d > first && a_val3d < last {
-                a_nb_sub_intervals += 1;
+            if val3d > first && val3d < last {
+                nb_sub_intervals += 1;
                 if let Some(ref mut out) = sub_intervals {
-                    out.push(a_val3d);
+                    out.push(val3d);
                 }
             }
             an_index3d += 1;
 
-            if -a_delta < PCONFUSION {
+            if -delta < PCONFUSION {
                 // `aVal3D == aVal2D` (`cxx:592-595`).
                 an_index2d += 1;
             }
         } else {
             // `aVal2D < aVal3D` (`cxx:597-610`).
-            if a_val2d > first && a_val2d < last {
-                a_nb_sub_intervals += 1;
+            if val2d > first && val2d < last {
+                nb_sub_intervals += 1;
                 if let Some(ref mut out) = sub_intervals {
-                    out.push(a_val2d);
+                    out.push(val2d);
                 }
             }
             an_index2d += 1;
@@ -355,7 +355,7 @@ fn fill_sub_intervals(
         *nb_particles = (*nb_particles).max(degree);
     }
 
-    a_nb_sub_intervals
+    nb_sub_intervals
 }
 
 /// `PSO_Perform` (`cxx:645-694`).
@@ -368,48 +368,48 @@ fn pso_perform(
     best_value: &mut f64,
     out_param: &mut MathVector,
 ) -> bool {
-    let a_delta_param = par_sup.value(1) - par_inf.value(1);
-    if a_delta_param < PCONFUSION {
+    let delta_param = par_sup.value(1) - par_inf.value(1);
+    if delta_param < PCONFUSION {
         return false;
     }
 
-    let mut a_step_par = MathVector::new(1, 1);
-    a_step_par.set_value(1, epsilon * a_delta_param);
+    let mut step_par = MathVector::new(1, 1);
+    step_par.set_value(1, epsilon * delta_param);
 
-    let mut a_particles = PsoParticlesPool::new(nb_particles, 1);
+    let mut particles = PsoParticlesPool::new(nb_particles, 1);
 
     // The pool is seeded from `aNbControlPoints = 3 * theNbParticles` samples of
     // a regular grid whose last sample is `theParSup(1)` (`cxx:664-689`).
-    let a_nb_control_points = 3 * nb_particles;
-    let a_step = a_delta_param / (a_nb_control_points as f64 - 1.0);
-    let mut a_count = 1usize;
-    let mut a_prm = par_inf.value(1);
-    while a_count <= a_nb_control_points {
-        let mut a_val = REAL_LAST;
-        if func.value_scalar(a_prm, &mut a_val) {
+    let nb_control_points = 3 * nb_particles;
+    let step = delta_param / (nb_control_points as f64 - 1.0);
+    let mut count = 1usize;
+    let mut prm = par_inf.value(1);
+    while count <= nb_control_points {
+        let mut val = REAL_LAST;
+        if func.value_scalar(prm, &mut val) {
             // `GetWorstParticle()` (`math_PSOParticlesPool.cxx:63-66`).
-            let a_particle = a_particles.worst_particle_index();
-            if a_val <= a_particles.particle(a_particle).best_distance {
-                let particle = a_particles.particle_mut(a_particle);
-                particle.position[0] = a_prm;
-                particle.best_position[0] = a_prm;
-                particle.distance = a_val;
-                particle.best_distance = a_val;
+            let a_particle = particles.worst_particle_index();
+            if val <= particles.particle(a_particle).best_distance {
+                let particle = particles.particle_mut(a_particle);
+                particle.position[0] = prm;
+                particle.best_position[0] = prm;
+                particle.distance = val;
+                particle.best_distance = val;
             }
         }
-        a_count += 1;
-        a_prm = if a_count == a_nb_control_points {
+        count += 1;
+        prm = if count == nb_control_points {
             par_sup.value(1)
         } else {
-            a_prm + a_step
+            prm + step
         };
     }
 
     // `math_PSO aPSO(&theFunction, theParInf, theParSup, aStepPar)` uses the
     // `math_PSO.hxx:74-75` defaults `theNbParticles = 32` and `theNbIter = 100`;
     // `Perform(pool, theNbParticles, ...)` overrides the particle count only.
-    let mut a_pso = Pso::new(par_inf.clone(), par_sup.clone(), a_step_par, 32, 100);
-    a_pso.perform_with_pool(func, &mut a_particles, nb_particles, best_value, out_param);
+    let mut pso = Pso::new(par_inf.clone(), par_sup.clone(), step_par, 32, 100);
+    pso.perform_with_pool(func, &mut particles, nb_particles, best_value, out_param);
 
     true
 }
@@ -450,19 +450,19 @@ fn min_computing(
     // `math_NewtonMinimum aMinSol(theFunction)` (`cxx:734`): the default
     // constructor is `Precision::Confusion()`, 40 iterations, convexity `1.0e-6`
     // and singularity treatment on (`math_NewtonMinimum.hxx:41-45`).
-    let mut a_min_sol = NewtonMinimum::with_defaults(1);
-    a_min_sol.perform(func, &out_param);
+    let mut min_sol = NewtonMinimum::with_defaults(1);
+    min_sol.perform(func, &out_param);
 
-    if a_min_sol.is_done() && a_min_sol.get_status() == MathStatus::Ok {
+    if min_sol.is_done() && min_sol.get_status() == MathStatus::Ok {
         // math_NewtonMinimum has precised the value. We take it.
-        out_param.set_value(1, a_min_sol.location().value(1));
+        out_param.set_value(1, min_sol.location().value(1));
         *best_parameter = out_param.value(1);
-        *best_value = a_min_sol.minimum();
+        *best_value = min_sol.minimum();
     } else {
         // Use math_PSO again but on the smaller range (`cxx:742-762`).
-        let a_step = epsilon * (par_sup.value(1) - par_inf.value(1));
-        par_inf.set_value(1, *best_parameter - 0.5 * a_step);
-        par_sup.set_value(1, *best_parameter + 0.5 * a_step);
+        let step = epsilon * (par_sup.value(1) - par_inf.value(1));
+        par_inf.set_value(1, *best_parameter - 0.5 * step);
+        par_sup.set_value(1, *best_parameter + 0.5 * step);
 
         let mut a_value = REAL_LAST;
         if pso_perform(
@@ -611,76 +611,76 @@ impl<'a> CheckCurveOnSurface<'a> {
         // `const double anEpsilonRange = 1.e-3;` (`cxx:351`).
         let an_epsilon_range = 1.0e-3;
 
-        let mut a_nb_particles = 3usize;
+        let mut nb_particles = 3usize;
 
         // Polynomial function with degree n has not more than n-1 maxima and
         // minima, so one particle per monotonicity interval means n particles.
-        let a_nb_sub_intervals = fill_sub_intervals(
+        let nb_sub_intervals = fill_sub_intervals(
             my_curve,
             curve2d,
             my_curve.first_parameter(),
             my_curve.last_parameter(),
-            &mut a_nb_particles,
+            &mut nb_particles,
             None,
         );
 
-        if a_nb_sub_intervals == 0 {
+        if nb_sub_intervals == 0 {
             self.error_status = 3;
             return;
         }
 
-        let mut an_intervals: Vec<f64> = Vec::with_capacity(a_nb_sub_intervals + 2);
+        let mut an_intervals: Vec<f64> = Vec::with_capacity(nb_sub_intervals + 2);
         fill_sub_intervals(
             my_curve,
             curve2d,
             my_curve.first_parameter(),
             my_curve.last_parameter(),
-            &mut a_nb_particles,
+            &mut nb_particles,
             Some(&mut an_intervals),
         );
 
         // `GeomLib_CheckCurveOnSurface_Local::operator()` (`cxx:228-253`).
         // `anIntervals(1) == first`, `anIntervals(aNbSubIntervals + 1) == last`.
-        let mut arr_of_dist = vec![REAL_LAST; a_nb_sub_intervals];
-        let mut arr_of_param = vec![0.0f64; a_nb_sub_intervals];
+        let mut arr_of_dist = vec![REAL_LAST; nb_sub_intervals];
+        let mut arr_of_param = vec![0.0f64; nb_sub_intervals];
 
-        for an_i in 0..a_nb_sub_intervals {
-            let a_func = TargetFunc {
+        for an_i in 0..nb_sub_intervals {
+            let func = TargetFunc {
                 curve1: my_curve,
                 curve2: curve_on_surface,
                 first: an_intervals[an_i],
                 last: an_intervals[an_i + 1],
             };
 
-            let mut a_min_dist = REAL_LAST;
-            let mut a_par = 0.0;
+            let mut min_dist = REAL_LAST;
+            let mut par = 0.0;
             if !min_computing(
-                &a_func,
+                &func,
                 an_epsilon_range,
-                a_nb_particles,
-                &mut a_min_dist,
-                &mut a_par,
+                nb_particles,
+                &mut min_dist,
+                &mut par,
             ) {
                 arr_of_dist[an_i] = REAL_LAST;
-                arr_of_param[an_i] = a_func.first_parameter();
+                arr_of_param[an_i] = func.first_parameter();
                 continue;
             }
 
-            arr_of_dist[an_i] = a_min_dist;
-            arr_of_param[an_i] = a_par;
+            arr_of_dist[an_i] = min_dist;
+            arr_of_param[an_i] = par;
         }
 
         // `OptimalValues` (`cxx:256-269`): the smallest `-distance^2`.
-        let mut a_minimal_value = arr_of_dist[0];
-        let mut a_parameter = arr_of_param[0];
-        for i in 1..a_nb_sub_intervals {
-            if arr_of_dist[i] < a_minimal_value {
-                a_minimal_value = arr_of_dist[i];
-                a_parameter = arr_of_param[i];
+        let mut minimal_value = arr_of_dist[0];
+        let mut parameter = arr_of_param[0];
+        for i in 1..nb_sub_intervals {
+            if arr_of_dist[i] < minimal_value {
+                minimal_value = arr_of_dist[i];
+                parameter = arr_of_param[i];
             }
         }
 
-        self.max_distance = a_minimal_value.abs().sqrt();
-        self.max_parameter = a_parameter;
+        self.max_distance = minimal_value.abs().sqrt();
+        self.max_parameter = parameter;
     }
 }

@@ -53,13 +53,13 @@ pub(super) fn estim_defl<C: super::CurveSecondDeriv>(
     };
     let mid = 0.5 * (u1 + u2);
     let denom = u1.abs() + u2.abs();
-    let a_rel_tol = 1.0e-3_f64.max(if denom > 0.0 {
+    let rel_tol = 1.0e-3_f64.max(if denom > 0.0 {
         2.0 * u_tol / denom
     } else {
         1.0e-3
     });
     // `math_BrentMinimum(aRelTol, 100, myUTol)`: ZEPS is `myUTol` (`cxx:972-974`).
-    if let Some((loc, minv)) = brent_minimum(f, u1, mid, u2, a_rel_tol, u_tol, 100) {
+    if let Some((loc, minv)) = brent_minimum(f, u1, mid, u2, rel_tol, u_tol, 100) {
         return ((-minv).max(0.0).sqrt(), loc);
     }
     let du = curve_span.abs().max(u_tol);
@@ -72,7 +72,7 @@ pub(super) fn estim_defl<C: super::CurveSecondDeriv>(
         (t - step).max(u1),
         t,
         (t + step).min(u2),
-        a_rel_tol,
+        rel_tol,
         u_tol,
         100,
     ) {

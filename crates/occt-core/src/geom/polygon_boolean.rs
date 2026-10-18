@@ -444,11 +444,11 @@ pub fn polygon_boolean(a: &[GpPnt2d], b: &[GpPnt2d], op: PolygonBoolOp) -> Vec<V
     let (pts, per_a, per_b) = collect_intersections(a, b);
 
     if pts.is_empty() {
-        let a_in_b = all_vertices_inside(a, b);
+        let in_b = all_vertices_inside(a, b);
         let b_in_a = all_vertices_inside(b, a);
         return match op {
             PolygonBoolOp::Intersect => {
-                if a_in_b {
+                if in_b {
                     vec![a.to_vec()]
                 } else if b_in_a {
                     vec![b.to_vec()]
@@ -457,7 +457,7 @@ pub fn polygon_boolean(a: &[GpPnt2d], b: &[GpPnt2d], op: PolygonBoolOp) -> Vec<V
                 }
             }
             PolygonBoolOp::Union => {
-                if a_in_b {
+                if in_b {
                     vec![b.to_vec()]
                 } else if b_in_a {
                     vec![a.to_vec()]
@@ -466,7 +466,7 @@ pub fn polygon_boolean(a: &[GpPnt2d], b: &[GpPnt2d], op: PolygonBoolOp) -> Vec<V
                 }
             }
             PolygonBoolOp::Difference => {
-                if a_in_b {
+                if in_b {
                     Vec::new()
                 } else if b_in_a {
                     // b fully inside a → a with a hole; return both loops so

@@ -79,16 +79,16 @@ pub struct ExtremaExtSS {
     done: bool,
     /// `myIsPar`.
     is_par: bool,
-    my_uinf1: f64,
-    my_usup1: f64,
-    my_vinf1: f64,
-    my_vsup1: f64,
-    my_uinf2: f64,
-    my_usup2: f64,
-    my_vinf2: f64,
-    my_vsup2: f64,
-    my_tol_s1: f64,
-    my_tol_s2: f64,
+    uinf1: f64,
+    usup1: f64,
+    vinf1: f64,
+    vsup1: f64,
+    uinf2: f64,
+    usup2: f64,
+    vinf2: f64,
+    vsup2: f64,
+    tol_s1: f64,
+    tol_s2: f64,
     /// `mySqDist`.
     sq_dist: Vec<f64>,
     /// `myPOnS1`.
@@ -103,16 +103,16 @@ impl Default for ExtremaExtSS {
         ExtremaExtSS {
             done: false,
             is_par: false,
-            my_uinf1: 0.0,
-            my_usup1: 0.0,
-            my_vinf1: 0.0,
-            my_vsup1: 0.0,
-            my_uinf2: 0.0,
-            my_usup2: 0.0,
-            my_vinf2: 0.0,
-            my_vsup2: 0.0,
-            my_tol_s1: 0.0,
-            my_tol_s2: 0.0,
+            uinf1: 0.0,
+            usup1: 0.0,
+            vinf1: 0.0,
+            vsup1: 0.0,
+            uinf2: 0.0,
+            usup2: 0.0,
+            vinf2: 0.0,
+            vsup2: 0.0,
+            tol_s1: 0.0,
+            tol_s2: 0.0,
             sq_dist: Vec::new(),
             p_on_s1: Vec::new(),
             p_on_s2: Vec::new(),
@@ -148,11 +148,11 @@ impl ExtremaExtSS {
         tol_s2: f64,
     ) {
         self.is_par = false;
-        self.my_uinf2 = uinf2;
-        self.my_usup2 = usup2;
-        self.my_vinf2 = vinf2;
-        self.my_vsup2 = vsup2;
-        self.my_tol_s2 = tol_s2;
+        self.uinf2 = uinf2;
+        self.usup2 = usup2;
+        self.vinf2 = vinf2;
+        self.vsup2 = vsup2;
+        self.tol_s2 = tol_s2;
     }
 
     /// `Extrema_ExtSS::Perform(S1, Uinf1, Usup1, Vinf1, Vsup1, TolS1)`
@@ -168,11 +168,11 @@ impl ExtremaExtSS {
         vsup1: f64,
         tol_s1: f64,
     ) {
-        self.my_uinf1 = uinf1;
-        self.my_usup1 = usup1;
-        self.my_vinf1 = vinf1;
-        self.my_vsup1 = vsup1;
-        self.my_tol_s1 = tol_s1;
+        self.uinf1 = uinf1;
+        self.usup1 = usup1;
+        self.vinf1 = vinf1;
+        self.vsup1 = vsup1;
+        self.tol_s1 = tol_s1;
         self.sq_dist.clear();
         self.p_on_s1.clear();
         self.p_on_s2.clear();
@@ -204,7 +204,7 @@ impl ExtremaExtSS {
 
         // default: Extrema_GenExtSS(S1, *myS2, NbU, NbV, mytolS1, mytolS2)
         // — cxx:131-175 (Plane x non-Plane) and cxx:180-221 (non-Plane).
-        let gen = ExtremaGenExtSS::with_surfaces(s1, s2, NB_SAMPLE, NB_SAMPLE, tol_s1, self.my_tol_s2);
+        let gen = ExtremaGenExtSS::with_surfaces(s1, s2, NB_SAMPLE, NB_SAMPLE, tol_s1, self.tol_s2);
         self.done = gen.is_done();
         if !self.done {
             return;
@@ -216,25 +216,25 @@ impl ExtremaExtSS {
             let (mut u1, mut v1) = ps1.parameter();
             let (mut u2, mut v2) = ps2.parameter();
             if s1.is_u_periodic() {
-                u1 = clib::in_period(u1, self.my_uinf1, self.my_uinf1 + s1.u_period());
+                u1 = clib::in_period(u1, self.uinf1, self.uinf1 + s1.u_period());
             }
             if s1.is_v_periodic() {
-                v1 = clib::in_period(v1, self.my_vinf1, self.my_vinf1 + s1.v_period());
+                v1 = clib::in_period(v1, self.vinf1, self.vinf1 + s1.v_period());
             }
             if s2.is_u_periodic() {
-                u2 = clib::in_period(u2, self.my_uinf2, self.my_uinf2 + s2.u_period());
+                u2 = clib::in_period(u2, self.uinf2, self.uinf2 + s2.u_period());
             }
             if s2.is_v_periodic() {
-                v2 = clib::in_period(v2, self.my_vinf2, self.my_vinf2 + s2.v_period());
+                v2 = clib::in_period(v2, self.vinf2, self.vinf2 + s2.v_period());
             }
-            if (self.my_uinf1 - u1) <= self.my_tol_s1
-                && (u1 - self.my_usup1) <= self.my_tol_s1
-                && (self.my_vinf1 - v1) <= self.my_tol_s1
-                && (v1 - self.my_vsup1) <= self.my_tol_s1
-                && (self.my_uinf2 - u2) <= self.my_tol_s2
-                && (u2 - self.my_usup2) <= self.my_tol_s2
-                && (self.my_vinf2 - v2) <= self.my_tol_s2
-                && (v2 - self.my_vsup2) <= self.my_tol_s2
+            if (self.uinf1 - u1) <= self.tol_s1
+                && (u1 - self.usup1) <= self.tol_s1
+                && (self.vinf1 - v1) <= self.tol_s1
+                && (v1 - self.vsup1) <= self.tol_s1
+                && (self.uinf2 - u2) <= self.tol_s2
+                && (u2 - self.usup2) <= self.tol_s2
+                && (self.vinf2 - v2) <= self.tol_s2
+                && (v2 - self.vsup2) <= self.tol_s2
             {
                 self.sq_dist.push(gen.square_distance(i as i32));
                 self.p_on_s1.push(ExtremaPOnSurf::new(u1, v1, ps1.value()));

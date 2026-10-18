@@ -66,12 +66,12 @@ fn pb_on_face_lists(f: &PaveFiller, n_f: usize, pb: &BopdsPaveBlock) -> bool {
 }
 
 fn collect_face_verts(f: &PaveFiller, n_f: usize) -> HashSet<usize> {
-    let mut a_mvf: HashSet<usize> = HashSet::new();
+    let mut mvf: HashSet<usize> = HashSet::new();
     let Some(fi) = f.ds().face_info(n_f) else {
-        return a_mvf;
+        return mvf;
     };
     for &v in fi.verts_on().iter().chain(fi.verts_in().iter()).chain(fi.verts_sc().iter()) {
-        a_mvf.insert(v);
+        mvf.insert(v);
     }
     for &(e, t1, t2) in fi
         .paves_on()
@@ -83,12 +83,12 @@ fn collect_face_verts(f: &PaveFiller, n_f: usize) -> HashSet<usize> {
             let (a, b) = pb.range();
             if (a - t1).abs() <= 1e-7 && (b - t2).abs() <= 1e-7 {
                 let (n1, n2) = pb.indices();
-                a_mvf.insert(n1);
-                a_mvf.insert(n2);
+                mvf.insert(n1);
+                mvf.insert(n2);
             }
         }
     }
-    a_mvf
+    mvf
 }
 
 struct EdgeFaceForceTask {
@@ -105,10 +105,10 @@ pub fn force_interf_ef(f: &mut PaveFiller) -> Result<(), String> {
     if !f.is_primary() {
         return Ok(());
     }
-    let a_nb_s = f.ds().nb_source_shapes();
+    let nb_s = f.ds().nb_source_shapes();
     let mut mpb: Vec<BopdsPaveBlock> = Vec::new();
     let mut fence: HashSet<PbKey> = HashSet::new();
-    for n_e in 0..a_nb_s {
+    for n_e in 0..nb_s {
         let Some(si) = f.ds().shape_info(n_e) else {
             continue;
         };
@@ -122,9 +122,9 @@ pub fn force_interf_ef(f: &mut PaveFiller) -> Result<(), String> {
             continue;
         }
         for pb in f.ds().pave_blocks(n_e) {
-            let a_pbr = f.ds().real_pave_block(pb);
-            if fence.insert(pb_key(&a_pbr)) {
-                mpb.push(a_pbr);
+            let pbr = f.ds().real_pave_block(pb);
+            if fence.insert(pb_key(&pbr)) {
+                mpb.push(pbr);
             }
         }
     }
@@ -134,14 +134,14 @@ pub fn force_interf_ef(f: &mut PaveFiller) -> Result<(), String> {
 /// `BOPAlgo_PaveFiller::ForceInterfEF` (pave-block map overload).
 pub fn force_interf_ef_on(
     f: &mut PaveFiller,
-    the_mpb: &[BopdsPaveBlock],
-    the_add_interf: bool,
+    mpb: &[BopdsPaveBlock],
+    add_interf: bool,
 ) -> Result<(), String> {
-    if the_mpb.is_empty() {
+    if mpb.is_empty() {
         return Ok(());
     }
     let mut pb_ready: Vec<BopdsPaveBlock> = Vec::new();
-    for pb in the_mpb {
+    for pb in mpb {
         let mut a_pb = pb.clone();
         if !a_pb.has_shrunk_data() {
             let n_e = a_pb.original_edge();
@@ -160,10 +160,10 @@ pub fn force_interf_ef_on(
     }
 
     let b_si_check_mode = f.arguments().len() == 1;
-    let a_nb_s = f.ds().nb_source_shapes();
+    let nb_s = f.ds().nb_source_shapes();
     let mut pb_box: HashMap<(usize, u64, u64), occt_core::bnd::BndBox> = HashMap::new();
     let mut tasks: Vec<EdgeFaceForceTask> = Vec::new();
-    for n_f in 0..a_nb_s {
+    for n_f in 0..nb_s {
         let Some(si) = f.ds().shape_info(n_f).cloned() else {
             continue;
         };
@@ -182,7 +182,7 @@ pub fn force_interf_ef_on(
             .box_of(n_f)
             .cloned()
             .unwrap_or_else(|| shape_bbox(&a_f.0));
-        let a_mvf = collect_face_verts(f, n_f);
+        let mvf = collect_face_verts(f, n_f);
         for a_pb in &pb_ready {
             let n_e = if a_pb.has_edge() {
                 a_pb.edge()
@@ -196,7 +196,7 @@ pub fn force_interf_ef_on(
                 continue;
             }
             let (n_v1, n_v2) = a_pb.indices();
-            if !a_mvf.contains(&n_v1) || !a_mvf.contains(&n_v2) {
+            if !mvf.contains(&n_v1) || !mvf.contains(&n_v2) {
                 continue;
             }
             if !a_pb.has_edge() && f.ds().rank(n_f) == f.ds().rank(a_pb.original_edge()) {
@@ -230,12 +230,12 @@ pub fn force_interf_ef_on(
             };
             let p_on_s = surf.d0(u, v);
             let dist_mid = p_on_e.distance(&p_on_s);
-            let a_tol_check = if b_si_check_mode {
+            let tol_check = if b_si_check_mode {
                 f.fuzzy_value()
             } else {
                 2.0 * vertex_tol(f, n_v1).max(vertex_tol(f, n_v2))
             };
-            if dist_mid > a_tol_check + f.fuzzy_value() {
+            if dist_mid > tol_check + f.fuzzy_value() {
                 continue;
             }
             // `_5.cxx:1033`: `IsPointInFace(face, Pnt2d)` — In only, not On.
@@ -251,31 +251,31 @@ pub fn force_interf_ef_on(
             if !face_is_plane_type(&a_f) || !curve_is_line_edge(&a_e) {
                 let vf_norm = occt_core::gp::GpVec::from_pnts(&p_on_s, &p_on_e);
                 if vf_norm.square_magnitude() > RESOLUTION {
-                    let a_cos = vf_norm.normalized().dot(&ve_tgt.normalized());
-                    if a_cos.abs() > 0.4226 {
+                    let cos = vf_norm.normalized().dot(&ve_tgt.normalized());
+                    if cos.abs() > 0.4226 {
                         b_use_add_tol = false;
                     }
                 }
             }
-            let mut a_tol_add = 0.0;
+            let mut tol_add = 0.0;
             if b_use_add_tol {
                 for t in [ts0, ts1] {
                     let p = c.d0(t);
                     if let Ok((uu, vv)) = f.context_mut().project_point_on_face(&a_f, &p) {
                         let d = p.distance(&surf.d0(uu, vv));
-                        if d < a_tol_check && d > a_tol_add {
-                            a_tol_add = d;
+                        if d < tol_check && d > tol_add {
+                            tol_add = d;
                         }
                     }
                 }
-                if a_tol_add > 0.0 {
-                    a_tol_add -= BRepTool::edge_tolerance(&a_e) + BRepTool::face_tolerance(&a_f);
-                    if a_tol_add < 0.0 {
-                        a_tol_add = 0.0;
+                if tol_add > 0.0 {
+                    tol_add -= BRepTool::edge_tolerance(&a_e) + BRepTool::face_tolerance(&a_f);
+                    if tol_add < 0.0 {
+                        tol_add = 0.0;
                     }
                 }
             }
-            let mut b_intersect = a_tol_add > 0.0;
+            let mut b_intersect = tol_add > 0.0;
             if !b_intersect {
                 let done = f
                     .fpb_done()
@@ -294,7 +294,7 @@ pub fn force_interf_ef_on(
                 pb: a_pb.clone(),
                 t1,
                 t2,
-                fuzzy: f.fuzzy_value() + a_tol_add,
+                fuzzy: f.fuzzy_value() + tol_add,
             });
         }
     }
@@ -330,7 +330,7 @@ pub fn force_interf_ef_on(
         if cps.len() != 1 || cps[0].part_type() != CommonPartType::Edge {
             continue;
         }
-        if the_add_interf {
+        if add_interf {
             // `_5.cxx:1177-1181`: always Appended, then AddInterf.
             let ix = f.ds_mut().add_interf_ef(t.n_e, t.n_f, None);
             f.ds_mut().set_ef_common_range_at(
@@ -343,7 +343,7 @@ pub fn force_interf_ef_on(
         if let Some(fi) = f.ds_mut().face_info_mut(t.n_f) {
             fi.add_pave_block_in(&t.pb);
         }
-        if the_add_interf {
+        if add_interf {
             fill_map_pb_face(&t.pb, t.n_f, &mut mpbli);
         }
     }

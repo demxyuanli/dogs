@@ -141,19 +141,19 @@ impl<'a> FuncExtPc2d<'a> {
 
     /// `GFuncExtPC::Value` (`hxx:146-253`), including the `MaxOrder` singular D1
     /// reconstruction (`hxx:167-241`).
-    fn value_at(&mut self, the_u: f64, the_f: &mut f64) -> bool {
+    fn value_at(&mut self, the_u: f64, f: &mut f64) -> bool {
         self.u = the_u;
         let (pc, mut d1c) = self.curve.d1(the_u);
         self.pc = pc;
         if Precision::is_infinite(d1c.x()) || Precision::is_infinite(d1c.y()) {
-            *the_f = Precision::INFINITE;
+            *f = Precision::INFINITE;
             return false;
         }
         let mut ndu = d1c.magnitude();
 
         if self.max_deriv_order != 0 && ndu <= self.tol {
             // Singular case (`hxx:167-241`).
-            let a_delta = (self.singular_du() * DIVISION_FACTOR_D1).max(MIN_STEP);
+            let delta = (self.singular_du() * DIVISION_FACTOR_D1).max(MIN_STEP);
 
             // `do { V = DN(++n); ... } while (!found && n < MaxOrder)`.
             let mut n = 1;
@@ -167,10 +167,10 @@ impl<'a> FuncExtPc2d<'a> {
             }
 
             if is_derive_found {
-                let u = if self.u - self.u_inf < a_delta {
-                    self.u + a_delta
+                let u = if self.u - self.u_inf < delta {
+                    self.u + delta
                 } else {
-                    self.u - a_delta
+                    self.u - delta
                 };
                 let p1 = self.curve.d0(self.u.min(u));
                 let p2 = self.curve.d0(self.u.max(u));
@@ -178,17 +178,17 @@ impl<'a> FuncExtPc2d<'a> {
                 d1c = if v.dot(&v1) < 0.0 { v.reversed() } else { v };
             } else {
                 // Three-point Taylor (`hxx:213-238`); `Ptemp` stays at the origin.
-                let (p1, p2, p3, grown) = if self.u - self.u_inf < 2.0 * a_delta {
+                let (p1, p2, p3, grown) = if self.u - self.u_inf < 2.0 * delta {
                     (
                         self.curve.d0(self.u),
-                        self.curve.d0(self.u + a_delta),
-                        self.curve.d0(self.u + 2.0 * a_delta),
+                        self.curve.d0(self.u + delta),
+                        self.curve.d0(self.u + 2.0 * delta),
                         true,
                     )
                 } else {
                     (
-                        self.curve.d0(self.u - 2.0 * a_delta),
-                        self.curve.d0(self.u - a_delta),
+                        self.curve.d0(self.u - 2.0 * delta),
+                        self.curve.d0(self.u - delta),
                         self.curve.d0(self.u),
                         false,
                     )
@@ -214,16 +214,16 @@ impl<'a> FuncExtPc2d<'a> {
         }
 
         let ppc = vec_from_pnts2d(&self.point, &self.pc);
-        *the_f = ppc.dot(&d1c) / ndu;
+        *f = ppc.dot(&d1c) / ndu;
         true
     }
 
     /// `GFuncExtPC::Values` (`hxx:274-352`), including the singular DF
     /// three-point form (`hxx:297-338`).
-    fn values_at(&mut self, the_u: f64, the_f: &mut f64, the_df: &mut f64) -> bool {
+    fn values_at(&mut self, the_u: f64, f: &mut f64, df: &mut f64) -> bool {
         let pc_old = self.pc;
         let p_old = self.point;
-        if !self.value_at(the_u, the_f) {
+        if !self.value_at(the_u, f) {
             return false;
         }
         self.u = the_u;
@@ -235,12 +235,12 @@ impl<'a> FuncExtPc2d<'a> {
         let ndu = d1c.magnitude();
         if ndu <= self.tol {
             // Singular DF (`hxx:297-338`).
-            let a_delta = (self.singular_du() * DIVISION_FACTOR_DF).max(MIN_STEP);
+            let delta = (self.singular_du() * DIVISION_FACTOR_DF).max(MIN_STEP);
             let (f1, f2, f3);
-            if self.u - self.u_inf < 2.0 * a_delta {
-                f1 = *the_f;
-                let u2 = self.u + a_delta;
-                let u3 = self.u + a_delta * 2.0;
+            if self.u - self.u_inf < 2.0 * delta {
+                f1 = *f;
+                let u2 = self.u + delta;
+                let u3 = self.u + delta * 2.0;
                 let mut f2v = 0.0;
                 let mut f3v = 0.0;
                 if !(self.value_at(u2, &mut f2v) && self.value_at(u3, &mut f3v)) {
@@ -248,11 +248,11 @@ impl<'a> FuncExtPc2d<'a> {
                 }
                 f2 = f2v;
                 f3 = f3v;
-                *the_df = (-TAYLOR_A * f1 + TAYLOR_B * f2 - f3) / (2.0 * a_delta);
+                *df = (-TAYLOR_A * f1 + TAYLOR_B * f2 - f3) / (2.0 * delta);
             } else {
-                f3 = *the_f;
-                let u1 = self.u - a_delta * 2.0;
-                let u2 = self.u - a_delta;
+                f3 = *f;
+                let u1 = self.u - delta * 2.0;
+                let u2 = self.u - delta;
                 let mut f1v = 0.0;
                 let mut f2v = 0.0;
                 if !(self.value_at(u2, &mut f2v) && self.value_at(u1, &mut f1v)) {
@@ -260,28 +260,28 @@ impl<'a> FuncExtPc2d<'a> {
                 }
                 f1 = f1v;
                 f2 = f2v;
-                *the_df = (f1 - TAYLOR_B * f2 + TAYLOR_A * f3) / (2.0 * a_delta);
+                *df = (f1 - TAYLOR_B * f2 + TAYLOR_A * f3) / (2.0 * delta);
             }
             self.u = the_u;
             self.pc = pc_old;
             self.point = p_old;
         } else {
             let ppc = vec_from_pnts2d(&self.point, &self.pc);
-            *the_df = ndu + (ppc.dot(&d2c) / ndu) - *the_f * (d1c.dot(&d2c)) / (ndu * ndu);
+            *df = ndu + (ppc.dot(&d2c) / ndu) - *f * (d1c.dot(&d2c)) / (ndu * ndu);
         }
 
-        self.d1f = *the_df;
+        self.d1f = *df;
         true
     }
 
     /// `GFuncExtPC::SearchOfTolerance` (`hxx:428-456`) over the sub-interval
     /// currently set (i.e. the curve's own `[First, Last]` at construction).
     fn search_of_tolerance(&mut self) -> f64 {
-        let a_step = (self.u_sup - self.u_inf) / (N_POINT as f64);
-        let mut a_num = 0;
+        let step = (self.u_sup - self.u_inf) / (N_POINT as f64);
+        let mut num = 0;
         let mut a_max = -Precision::INFINITE;
         loop {
-            let mut u = self.u_inf + (a_num as f64) * a_step;
+            let mut u = self.u_inf + (num as f64) * step;
             if u > self.u_sup {
                 u = self.u_sup;
             }
@@ -293,8 +293,8 @@ impl<'a> FuncExtPc2d<'a> {
                     a_max = vm;
                 }
             }
-            a_num += 1;
-            if a_num >= N_POINT + 1 {
+            num += 1;
+            if num >= N_POINT + 1 {
                 break;
             }
         }

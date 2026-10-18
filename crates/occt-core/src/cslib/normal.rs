@@ -155,14 +155,14 @@ pub fn normal_max_order(
     let mut an_order = -1;
     let mut found_u_idx = 0;
     let mut found = false;
-    let mut a_d = GpVec::new(0.0, 0.0, 0.0);
+    let mut d = GpVec::new(0.0, 0.0, 0.0);
     while !found && an_order < max_order {
         an_order += 1;
         found_u_idx = an_order;
         while found_u_idx >= 0 && !found {
             let v_idx = an_order - found_u_idx;
-            a_d = der_nuv[found_u_idx as usize][v_idx as usize];
-            let norme = a_d.magnitude();
+            d = der_nuv[found_u_idx as usize][v_idx as usize];
+            let norme = d.magnitude();
             found = norme >= sin_tol;
             found_u_idx -= 1;
         }
@@ -173,7 +173,7 @@ pub fn normal_max_order(
         return (CSLibNormalStatus::Singular, None, order_u, order_v);
     }
     if an_order == 0 {
-        return match GpDir::from_vec(&a_d) {
+        return match GpDir::from_vec(&d) {
             Ok(n) => (CSLibNormalStatus::Defined, Some(n), order_u, order_v),
             Err(_) => (CSLibNormalStatus::Singular, None, order_u, order_v),
         };
@@ -198,41 +198,41 @@ pub fn normal_max_order(
         ratio_idx += 1;
     }
     if is_defined {
-        return match GpDir::from_vec(&a_d) {
+        return match GpDir::from_vec(&d) {
             Ok(n) => (CSLibNormalStatus::Defined, Some(n), order_u, order_v),
             Err(_) => (CSLibNormalStatus::Singular, None, order_u, order_v),
         };
     }
-    let mut a_inf = -std::f64::consts::PI;
-    let mut a_sup = std::f64::consts::PI;
+    let mut inf = -std::f64::consts::PI;
+    let mut sup = std::f64::consts::PI;
     let is_fu = (u - u_min).abs() < PCONFUSION;
     let is_lu = (u - u_max).abs() < PCONFUSION;
     let is_fv = (v - v_min).abs() < PCONFUSION;
     let is_lv = (v - v_max).abs() < PCONFUSION;
     if is_lu {
-        a_inf = std::f64::consts::FRAC_PI_2;
-        a_sup = 3.0 * std::f64::consts::FRAC_PI_2;
+        inf = std::f64::consts::FRAC_PI_2;
+        sup = 3.0 * std::f64::consts::FRAC_PI_2;
         if is_lv {
-            a_inf = std::f64::consts::PI;
+            inf = std::f64::consts::PI;
         }
         if is_fv {
-            a_sup = std::f64::consts::PI;
+            sup = std::f64::consts::PI;
         }
     } else if is_fu {
-        a_sup = std::f64::consts::FRAC_PI_2;
-        a_inf = -std::f64::consts::FRAC_PI_2;
+        sup = std::f64::consts::FRAC_PI_2;
+        inf = -std::f64::consts::FRAC_PI_2;
         if is_lv {
-            a_sup = 0.0;
+            sup = 0.0;
         }
         if is_fv {
-            a_inf = 0.0;
+            inf = 0.0;
         }
     } else if is_lv {
-        a_inf = -std::f64::consts::PI;
-        a_sup = 0.0;
+        inf = -std::f64::consts::PI;
+        sup = 0.0;
     } else if is_fv {
-        a_inf = 0.0;
-        a_sup = std::f64::consts::PI;
+        inf = 0.0;
+        sup = std::f64::consts::PI;
     }
     let mut changes_sign = false;
     let mut v_prec = 0.0;
@@ -240,8 +240,8 @@ pub fn normal_max_order(
     let mut poly = NormalPolyDef::new(an_order, &ratio);
     let find_roots = FunctionRoots::new(
         &mut poly,
-        a_inf,
-        a_sup,
+        inf,
+        sup,
         MAX_ROOT_ITERATIONS,
         ROOT_FINDING_TOL,
         CONFUSION,
@@ -255,8 +255,8 @@ pub fn normal_max_order(
             sol[root_idx as usize] = find_roots.value(root_idx);
         }
         sol[1..=nb_sol as usize].sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        sol[0] = a_inf;
-        sol[(nb_sol as usize) + 1] = a_sup;
+        sol[0] = inf;
+        sol[(nb_sol as usize) + 1] = sup;
         let mut first = 0;
         for interval_idx in 0..=nb_sol {
             if (sol[(interval_idx as usize) + 1] - sol[interval_idx as usize]).abs() > PCONFUSION {
@@ -276,15 +276,15 @@ pub fn normal_max_order(
         }
     } else {
         changes_sign = false;
-        poly.value(a_inf, &mut v_suiv);
+        poly.value(inf, &mut v_suiv);
     }
     if changes_sign {
         (CSLibNormalStatus::InfinityOfSolutions, None, order_u, order_v)
     } else {
-        let a_sign = if v_suiv > 0.0 { 1.0 } else { -1.0 };
+        let sign = if v_suiv > 0.0 { 1.0 } else { -1.0 };
         match GpDir::from_vec(&vk0) {
             Ok(n) => {
-                let n = if a_sign < 0.0 { n.reversed() } else { n };
+                let n = if sign < 0.0 { n.reversed() } else { n };
                 (CSLibNormalStatus::Defined, Some(n), order_u, order_v)
             }
             Err(_) => (CSLibNormalStatus::Singular, None, order_u, order_v),

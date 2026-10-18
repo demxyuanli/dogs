@@ -67,12 +67,12 @@ fn revert_unused_vertices(
     mv_tol: &HashMap<usize, f64>,
     dmvlv: &mut HashMap<usize, Vec<usize>>,
 ) {
-    for (&n_v, &a_tol) in mv_tol {
+    for (&n_v, &tol) in mv_tol {
         let Some(s) = f.ds().shape(n_v).cloned() else {
             continue;
         };
-        Vertex(s.clone()).set_tolerance(a_tol);
-        f.ds_mut().refresh_vertex_box(n_v, a_tol + CONFUSION);
+        Vertex(s.clone()).set_tolerance(tol);
+        f.ds_mut().refresh_vertex_box(n_v, tol + CONFUSION);
         dmvlv.remove(&n_v);
     }
 }
@@ -221,7 +221,7 @@ pub fn make_blocks_ff(f: &mut PaveFiller) -> Result<(), String> {
     let mut nb_ff = nb_ff_orig;
     let mut i = 0usize;
     while i < nb_ff {
-        let a_cur = if i < nb_ff_orig {
+        let cur = if i < nb_ff_orig {
             i
         } else {
             ff_to_recheck[i - nb_ff_orig]
@@ -230,7 +230,7 @@ pub fn make_blocks_ff(f: &mut PaveFiller) -> Result<(), String> {
 
         let mut mv_tol: HashMap<usize, f64> = HashMap::new();
         let (n_f1, n_f2, nb_c, nb_p) = {
-            let ff = &f.ds().interf_ff()[a_cur];
+            let ff = &f.ds().interf_ff()[cur];
             let (a, b) = ff.indices();
             (a, b, ff.curves().len(), ff.points().len())
         };
@@ -265,7 +265,7 @@ pub fn make_blocks_ff(f: &mut PaveFiller) -> Result<(), String> {
         let pb_common = pave_ff_exist::common_on_in(&on1, &in1, &on2, &in2);
 
         for j in 0..nb_p {
-            let p = f.ds().interf_ff()[a_cur].points()[j].pnt().clone();
+            let p = f.ds().interf_ff()[cur].points()[j].pnt().clone();
             if crate::pave_ff_is_exist::is_existing_vertex(
                 f.ds(),
                 &p,
@@ -279,7 +279,7 @@ pub fn make_blocks_ff(f: &mut PaveFiller) -> Result<(), String> {
             mscpb.push((
                 v,
                 CoupleOfPaveBlocks {
-                    index_interf: a_cur,
+                    index_interf: cur,
                     index: j,
                     pb: None,
                 },
@@ -287,10 +287,10 @@ pub fn make_blocks_ff(f: &mut PaveFiller) -> Result<(), String> {
         }
 
         for j in 0..nb_c {
-            f.ds_mut().interf_ff_mut()[a_cur].change_curves()[j].init_pave_block1();
+            f.ds_mut().interf_ff_mut()[cur].change_curves()[j].init_pave_block1();
             pave_ff_pave_put::put_paves_on_curve(
                 f,
-                a_cur,
+                cur,
                 j,
                 &mv_on_in,
                 &mv_common,
@@ -300,14 +300,14 @@ pub fn make_blocks_ff(f: &mut PaveFiller) -> Result<(), String> {
                 &mut dmvlv,
             );
         }
-        pave_ff_pave_put::filter_paves_on_curves(f.ds_mut(), a_cur, &mut mv_tol);
+        pave_ff_pave_put::filter_paves_on_curves(f.ds_mut(), cur, &mut mv_tol);
 
         let mut dmbv: HashMap<usize, Vec<usize>> = HashMap::new();
         let mut mv_bounds: HashSet<usize> = HashSet::new();
         for j in 0..nb_c {
             pave_ff_pave_stick::put_stick_paves_on_curve(
                 f,
-                a_cur,
+                cur,
                 j,
                 &face1,
                 &face2,
@@ -318,17 +318,17 @@ pub fn make_blocks_ff(f: &mut PaveFiller) -> Result<(), String> {
             );
             if nb_c == 1 {
                 pave_ff_pave_stick::put_ef_paves_on_curve(
-                    f, a_cur, j, &mi, &mv_ef, &mut mv_tol, &mut dmvlv,
+                    f, cur, j, &mi, &mv_ef, &mut mv_tol, &mut dmvlv,
                 );
             }
             let has_bounds = {
-                let nc = &f.ds().interf_ff()[a_cur].curves()[j];
+                let nc = &f.ds().interf_ff()[cur].curves()[j];
                 let (a, b) = nc.range();
                 a.is_finite() && b.is_finite()
             };
             if has_bounds {
                 let lbv = pave_ff_pave_bound::put_bound_pave_on_curve(
-                    f, a_cur, j, &face1, &face2, &mut ctx_tools,
+                    f, cur, j, &face1, &face2, &mut ctx_tools,
                 )?;
                 if !lbv.is_empty() {
                     for &n in &lbv {
@@ -339,14 +339,14 @@ pub fn make_blocks_ff(f: &mut PaveFiller) -> Result<(), String> {
             }
         }
         for j in 0..nb_c {
-            pave_ff_pave_bound::put_closing_pave_on_curve(f, a_cur, j);
+            pave_ff_pave_bound::put_closing_pave_on_curve(f, cur, j);
         }
 
         let mut is_to_recheck = nb_c > 0 && i <= nb_ff_orig;
         for j in 0..nb_c {
             let mut elementary: Vec<BopdsPaveBlock> = Vec::new();
             {
-                let pb1 = f.ds_mut().interf_ff_mut()[a_cur]
+                let pb1 = f.ds_mut().interf_ff_mut()[cur]
                     .change_curves()[j]
                     .change_pave_block1();
                 pb1.update(&mut elementary, false);
@@ -355,7 +355,7 @@ pub fn make_blocks_ff(f: &mut PaveFiller) -> Result<(), String> {
                 is_to_recheck = false;
             }
             let (curve, tol_r3d, pc1, pc2) = {
-                let nc = &f.ds().interf_ff()[a_cur].curves()[j];
+                let nc = &f.ds().interf_ff()[cur].curves()[j];
                 let Some(c) = nc.curve().cloned() else {
                     continue;
                 };
@@ -436,7 +436,7 @@ pub fn make_blocks_ff(f: &mut PaveFiller) -> Result<(), String> {
                     let b_in_f2 = pave_ff_exist::pb_in_face(&on2, &in2, &pb_out);
                     if !b_in_f1 || !b_in_f2 {
                         let n_e = pb_out.edge();
-                        let nc_tol = f.ds().interf_ff()[a_cur].curves()[j].tolerance();
+                        let nc_tol = f.ds().interf_ff()[cur].curves()[j].tolerance();
                         if tol_new < nc_tol {
                             tol_new = nc_tol;
                         }
@@ -469,7 +469,7 @@ pub fn make_blocks_ff(f: &mut PaveFiller) -> Result<(), String> {
                         if mpb_add.insert(key) {
                             pave_ff_exist::prepare_post_treat_ff(
                                 f.ds(),
-                                a_cur,
+                                cur,
                                 j,
                                 &pb_out,
                                 &mut mscpb,
@@ -497,7 +497,7 @@ pub fn make_blocks_ff(f: &mut PaveFiller) -> Result<(), String> {
                     pc_on_s2,
                 );
                 let cpb = CoupleOfPaveBlocks {
-                    index_interf: a_cur,
+                    index_interf: cur,
                     index: j,
                     pb: Some(pb.clone()),
                 };
@@ -507,7 +507,7 @@ pub fn make_blocks_ff(f: &mut PaveFiller) -> Result<(), String> {
                 mv_tol.remove(&n_v2);
                 crate::pave_ff_exist_es::process_existing_pave_blocks_es(
                     f,
-                    a_cur,
+                    cur,
                     j,
                     n_f1,
                     n_f2,
@@ -525,7 +525,7 @@ pub fn make_blocks_ff(f: &mut PaveFiller) -> Result<(), String> {
                 );
             }
             {
-                let lpbc = f.ds_mut().interf_ff_mut()[a_cur]
+                let lpbc = f.ds_mut().interf_ff_mut()[cur]
                     .change_curves()[j]
                     .change_pave_blocks();
                 lpbc.clear();
@@ -533,13 +533,13 @@ pub fn make_blocks_ff(f: &mut PaveFiller) -> Result<(), String> {
             }
         }
         if is_to_recheck {
-            ff_to_recheck.push(a_cur);
+            ff_to_recheck.push(cur);
             nb_ff += 1;
         }
         revert_unused_vertices(f, &mv_tol, &mut dmvlv);
         pave_ff_exist::process_existing_pave_blocks_bound(
             f,
-            a_cur,
+            cur,
             n_f1,
             n_f2,
             &on_in_pbs,

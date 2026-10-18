@@ -165,7 +165,7 @@ pub struct ExtPs<'a> {
     vsup: f64,
     tolu: f64,
     tolv: f64,
-    my_type: ExtPsSurfaceType,
+    kind: ExtPsSurfaceType,
     /// `nbU`/`nbV` handed to `myExtPS.Initialize` (`cxx:237-261`).
     nb_u: i32,
     nb_v: i32,
@@ -217,7 +217,7 @@ impl<'a> ExtPs<'a> {
             vsup: 0.0,
             tolu: 0.0,
             tolv: 0.0,
-            my_type: ExtPsSurfaceType::Other,
+            kind: ExtPsSurfaceType::Other,
             nb_u: 0,
             nb_v: 0,
             b_u_iso_deg: false,
@@ -299,10 +299,10 @@ impl<'a> ExtPs<'a> {
 
         self.tolu = tolu;
         self.tolv = tolv;
-        self.my_type = ext_ps_surface_type(s);
+        self.kind = ext_ps_surface_type(s);
 
         let is_b = matches!(
-            self.my_type,
+            self.kind,
             ExtPsSurfaceType::BSpline | ExtPsSurfaceType::Bezier
         );
         let mut nb_u = if is_b { 44 } else { 32 };
@@ -310,7 +310,7 @@ impl<'a> ExtPs<'a> {
 
         let mut b_u_iso_deg = false;
         let mut b_v_iso_deg = false;
-        if self.my_type != ExtPsSurfaceType::Plane {
+        if self.kind != ExtPsSurfaceType::Plane {
             b_u_iso_deg = iso_is_deg(s, self.uinf, true, 0.0, 1.0e-9)
                 || iso_is_deg(s, self.usup, true, 0.0, 1.0e-9);
             b_v_iso_deg = iso_is_deg(s, self.vinf, false, 0.0, 1.0e-9)
@@ -352,7 +352,7 @@ impl<'a> ExtPs<'a> {
             return;
         };
 
-        match self.my_type {
+        match self.kind {
             ExtPsSurfaceType::Plane => {
                 let pl = s.gp_pln().unwrap();
                 let e = point_plane_extrema(&pl, p);
@@ -628,6 +628,6 @@ impl<'a> ExtPs<'a> {
 
     /// The surface type this run dispatched on (`mytype`, `cxx:235`).
     pub fn surface_type(&self) -> ExtPsSurfaceType {
-        self.my_type
+        self.kind
     }
 }

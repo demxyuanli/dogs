@@ -55,11 +55,11 @@ fn curve2d_is_line(c: &dyn Curve2d) -> bool {
 /// `BOPAlgo_PaveFiller::FindPaveBlocks`.
 pub fn de_find_pave_blocks<F: PaveFillerLike>(
     f: &F,
-    the_pave_index: usize,
-    the_face_info_index: usize,
-    the_found: &mut Vec<BopdsPaveBlock>,
+    pave_index: usize,
+    face_info_index: usize,
+    found: &mut Vec<BopdsPaveBlock>,
 ) {
-    let Some(fi) = f.ds().face_info(the_face_info_index) else {
+    let Some(fi) = f.ds().face_info(face_info_index) else {
         return;
     };
     let tuples: Vec<(usize, f64, f64)> = fi
@@ -72,24 +72,24 @@ pub fn de_find_pave_blocks<F: PaveFillerLike>(
     for (edge, _t1, _t2) in tuples {
         for pb in f.ds().pave_blocks(edge) {
             let (n1, n2) = pb.indices();
-            if n1 == the_pave_index || n2 == the_pave_index {
-                the_found.push(pb.clone());
+            if n1 == pave_index || n2 == pave_index {
+                found.push(pb.clone());
             }
         }
     }
 }
 
 /// `AddSplitPoint`.
-pub fn add_split_point(the_pbd: &mut BopdsPaveBlock, the_pave: BopdsPave, the_tol: f64) -> bool {
-    let (a_td1, a_td2) = the_pbd.range();
-    let a_t = the_pave.parameter();
-    if a_t - a_td1 < the_tol || a_td2 - a_t < the_tol {
+pub fn add_split_point(pbd: &mut BopdsPaveBlock, pave: BopdsPave, tol: f64) -> bool {
+    let (td1, td2) = pbd.range();
+    let t = pave.parameter();
+    if t - td1 < tol || td2 - t < tol {
         return false;
     }
-    if the_pbd.contains_parameter(a_t, the_tol).is_some() {
+    if pbd.contains_parameter(t, tol).is_some() {
         return false;
     }
-    the_pbd.append_ext_pave1(the_pave);
+    pbd.append_ext_pave1(pave);
     true
 }
 
@@ -99,7 +99,7 @@ pub fn de_fill_paves<F: PaveFillerLike>(
     n_vd: usize,
     n_ed: usize,
     n_fd: usize,
-    a_lpb_out: &[BopdsPaveBlock],
+    lpb_out: &[BopdsPaveBlock],
     a_pbd: &mut BopdsPaveBlock,
 ) {
     let Some(dv_s) = f.ds().shape(n_vd).cloned() else {
@@ -111,26 +111,26 @@ pub fn de_fill_paves<F: PaveFillerLike>(
     let Some(df_s) = f.ds().shape(n_fd).cloned() else {
         return;
     };
-    let a_dv = Vertex(dv_s);
-    let a_de = Edge(de_s);
-    let a_df = Face(df_s);
-    let a_tol_v = BRepTool::vertex_tolerance(&a_dv);
-    let Some(surf) = BRepTool::face_surface(&a_df) else {
+    let dv = Vertex(dv_s);
+    let de = Edge(de_s);
+    let df = Face(df_s);
+    let tol_v = BRepTool::vertex_tolerance(&dv);
+    let Some(surf) = BRepTool::face_surface(&df) else {
         return;
     };
-    let Ok(c2d_de) = boptools_2d::make_2d(&a_de, &a_df) else {
+    let Ok(c2d_de) = boptools_2d::make_2d(&de, &df) else {
         return;
     };
-    let (td1, td2) = BRepTool::edge_parameters(&a_de);
+    let (td1, td2) = BRepTool::edge_parameters(&de);
     let p_mid = c2d_de.d0(0.5 * (td1 + td2));
-    let (a_u_res, a_v_res) = surface_uv_resolution(surf.as_ref(), p_mid.x(), p_mid.y(), a_tol_v);
-    let a_tol_int = PCONFUSION.max(a_u_res.max(a_v_res));
+    let (u_res, v_res) = surface_uv_resolution(surf.as_ref(), p_mid.x(), p_mid.y(), tol_v);
+    let tol_int = PCONFUSION.max(u_res.max(v_res));
     let p1 = c2d_de.d0(td1);
     let p2 = c2d_de.d0(td2);
     let b_u_dir = (p1.y() - p2.y()).abs() < PCONFUSION;
-    let a_tol_cmp = PCONFUSION.max(if b_u_dir { a_u_res } else { a_v_res });
+    let tol_cmp = PCONFUSION.max(if b_u_dir { u_res } else { v_res });
     let mut a_pave = BopdsPave::new(n_vd, 0.0);
-    for a_pb in a_lpb_out {
+    for a_pb in lpb_out {
         let n_e = if a_pb.edge() != 0 {
             a_pb.edge()
         } else {
@@ -143,31 +143,31 @@ pub fn de_fill_paves<F: PaveFillerLike>(
             continue;
         };
         let a_e = Edge(es);
-        let Ok(a_c2d) = boptools_2d::make_2d(&a_e, &a_df) else {
+        let Ok(c2d) = boptools_2d::make_2d(&a_e, &df) else {
             continue;
         };
-        let hits = if curve2d_is_line(a_c2d.as_ref()) {
-            intersect_curves(c2d_de.as_ref(), a_c2d.as_ref(), a_tol_int)
+        let hits = if curve2d_is_line(c2d.as_ref()) {
+            intersect_curves(c2d_de.as_ref(), c2d.as_ref(), tol_int)
         } else {
             let (t1, t2) = BRepTool::edge_parameters(&a_e);
             let _ = (t1, t2);
-            intersect_curves(c2d_de.as_ref(), a_c2d.as_ref(), a_tol_int)
+            intersect_curves(c2d_de.as_ref(), c2d.as_ref(), tol_int)
         };
         if hits.is_empty() {
-            let a_t = if n_vd == a_pb.pave1().index() {
+            let t = if n_vd == a_pb.pave1().index() {
                 a_pb.pave1().parameter()
             } else {
                 a_pb.pave2().parameter()
             };
-            let a_p2d = a_c2d.d0(a_t);
-            if let Some(proj) = project_point_on_curve(c2d_de.as_ref(), &a_p2d, a_tol_int) {
+            let p2d = c2d.d0(t);
+            if let Some(proj) = project_point_on_curve(c2d_de.as_ref(), &p2d, tol_int) {
                 a_pave.set_parameter(proj.parameter);
-                add_split_point(a_pbd, a_pave, a_tol_cmp);
+                add_split_point(a_pbd, a_pave, tol_cmp);
             }
         } else {
             for hit in hits {
                 a_pave.set_parameter(hit.u1);
-                add_split_point(a_pbd, a_pave, a_tol_cmp);
+                add_split_point(a_pbd, a_pave, tol_cmp);
             }
         }
     }
@@ -176,20 +176,20 @@ pub fn de_fill_paves<F: PaveFillerLike>(
 /// `MakeSplitEdge1`.
 pub fn make_split_edge1(
     a_e: &Edge,
-    a_f: &Face,
-    a_v1: &Vertex,
-    a_p1: f64,
-    a_v2: &Vertex,
-    a_p2: f64,
+    f: &Face,
+    v1: &Vertex,
+    p1: f64,
+    v2: &Vertex,
+    p2: f64,
 ) -> Result<Edge, String> {
     let a_tol = 1.0e-7;
-    let e = AlgoTools::make_split_edge(a_e, Some(&a_v1.0), a_p1, Some(&a_v2.0), a_p2)?;
+    let e = AlgoTools::make_split_edge(a_e, Some(&v1.0), p1, Some(&v2.0), p2)?;
     if let Some(mut g) = GeometryRegistry::global().edge_geom(&e.0) {
         g.degenerated = true;
         g.tolerance = a_tol;
         GeometryRegistry::global().set_edge(&e.0, g);
     }
-    let face_key = GeometryRegistry::shape_key(&a_f.0);
+    let face_key = GeometryRegistry::shape_key(&f.0);
     if let Some(pc) = GeometryRegistry::global().edge_pcurve(&a_e.0, face_key) {
         GeometryRegistry::global().set_edge_pcurve(&e.0, face_key, pc);
     }
@@ -204,29 +204,29 @@ pub fn de_make_split_edge<F: PaveFillerLike>(f: &mut F, n_de: usize, n_df: usize
     let Some(df_s) = f.ds().shape(n_df).cloned() else {
         return Ok(());
     };
-    let mut a_de = Edge(de_s);
-    a_de.0.set_orientation(Orientation::Forward);
-    let a_df = Face(df_s);
-    let a_lpb = f.ds().pave_blocks(n_de).to_vec();
-    let a_nb_pb = a_lpb.len();
+    let mut de = Edge(de_s);
+    de.0.set_orientation(Orientation::Forward);
+    let df = Face(df_s);
+    let lpb = f.ds().pave_blocks(n_de).to_vec();
+    let nb_pb = lpb.len();
     let mut clear_all = false;
     let mut splits: Vec<(usize, usize)> = Vec::new();
-    for (i, a_pb) in a_lpb.iter().enumerate() {
+    for (i, a_pb) in lpb.iter().enumerate() {
         let (n_v1, n_v2) = a_pb.indices();
-        let (a_t1, a_t2) = a_pb.range();
-        if f.ds().is_new_shape(n_v1) || a_nb_pb > 1 {
+        let (t1, t2) = a_pb.range();
+        if f.ds().is_new_shape(n_v1) || nb_pb > 1 {
             let Some(v1s) = f.ds().shape(n_v1).cloned() else {
                 continue;
             };
             let Some(v2s) = f.ds().shape(n_v2).cloned() else {
                 continue;
             };
-            let mut a_v1 = Vertex(v1s);
-            a_v1.0.set_orientation(Orientation::Forward);
-            let mut a_v2 = Vertex(v2s);
-            a_v2.0.set_orientation(Orientation::Reversed);
-            let a_sp = make_split_edge1(&a_de, &a_df, &a_v1, a_t1, &a_v2, a_t2)?;
-            let mut a_si = BopdsShapeInfo::new(a_sp.0);
+            let mut v1 = Vertex(v1s);
+            v1.0.set_orientation(Orientation::Forward);
+            let mut v2 = Vertex(v2s);
+            v2.0.set_orientation(Orientation::Reversed);
+            let sp = make_split_edge1(&de, &df, &v1, t1, &v2, t2)?;
+            let mut a_si = BopdsShapeInfo::new(sp.0);
             a_si.change_sub_shapes().extend_from_slice(&[n_v1, n_v2]);
             let n_sp = f.ds_mut().append_info(a_si);
             splits.push((i, n_sp));
@@ -264,16 +264,16 @@ pub fn de_process<F: PaveFillerLike>(f: &mut F) -> Result<(), String> {
         let Some(n_f) = an_edge_info.flag() else {
             continue;
         };
-        let Some(a_sif) = f.ds().shape_info(n_f).cloned() else {
+        let Some(sif) = f.ds().shape_info(n_f).cloned() else {
             continue;
         };
         let n_v0 = an_edge_info.sub_shapes().first().copied().unwrap_or(0);
         let n_v = f.ds().get_same_domain_index(n_v0);
-        match a_sif.shape_type() {
+        match sif.shape_type() {
             ShapeType::Face => {
-                let mut a_lpb_out: Vec<BopdsPaveBlock> = Vec::new();
-                de_find_pave_blocks(f, n_v, n_f, &mut a_lpb_out);
-                if !a_lpb_out.is_empty() {
+                let mut lpb_out: Vec<BopdsPaveBlock> = Vec::new();
+                de_find_pave_blocks(f, n_v, n_f, &mut lpb_out);
+                if !lpb_out.is_empty() {
                     let pbd = {
                         let blocks = f.ds_mut().change_pave_blocks_mut(an_edge_index);
                         let Some(first) = blocks.first().cloned() else {
@@ -282,7 +282,7 @@ pub fn de_process<F: PaveFillerLike>(f: &mut F) -> Result<(), String> {
                         first
                     };
                     let mut pbd = pbd;
-                    de_fill_paves(f, n_v, an_edge_index, n_f, &a_lpb_out, &mut pbd);
+                    de_fill_paves(f, n_v, an_edge_index, n_f, &lpb_out, &mut pbd);
                     let mut out = Vec::new();
                     pbd.update(&mut out, true);
                     let blocks = f.ds_mut().change_pave_blocks_mut(an_edge_index);
@@ -292,17 +292,17 @@ pub fn de_process<F: PaveFillerLike>(f: &mut F) -> Result<(), String> {
                 de_make_split_edge(f, an_edge_index, n_f)?;
             }
             ShapeType::Edge => {
-                let Some(a_de) = f.ds().shape(an_edge_index).cloned() else {
+                let Some(de) = f.ds().shape(an_edge_index).cloned() else {
                     continue;
                 };
-                let Some(a_vn) = f.ds().shape(n_v).cloned() else {
+                let Some(vn) = f.ds().shape(n_v).cloned() else {
                     continue;
                 };
                 let a_e = AlgoTools::make_split_edge(
-                    &Edge(a_de),
-                    Some(&a_vn),
+                    &Edge(de),
+                    Some(&vn),
                     0.0,
-                    Some(&a_vn),
+                    Some(&vn),
                     0.0,
                 )?;
                 if let Some(mut g) = GeometryRegistry::global().edge_geom(&a_e.0) {

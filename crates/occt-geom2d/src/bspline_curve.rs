@@ -486,7 +486,7 @@ impl Geom2dBSplineCurve {
     ///
     /// Rust has no default arguments: callers reproduce OCCT's
     /// `theTolerance = Precision::PConfusion()` default explicitly.
-    pub fn segment(&mut self, u1: f64, u2: f64, the_tolerance: f64) -> Result<(), &'static str> {
+    pub fn segment(&mut self, u1: f64, u2: f64, tolerance: f64) -> Result<(), &'static str> {
         if u2 < u1 {
             return Err("Geom2d_BSplineCurve::Segment");
         }
@@ -495,7 +495,7 @@ impl Geom2dBSplineCurve {
         let new_u1;
         let mut new_u2;
         let mut du = 0.0;
-        let mut a_ddu = 0.0;
+        let mut ddu = 0.0;
 
         // define param distance to keep (eap, Apr 18 2002, occ311)
         if self.periodic {
@@ -507,7 +507,7 @@ impl Geom2dBSplineCurve {
             if du > period {
                 du = period;
             }
-            a_ddu = du;
+            ddu = du;
         }
 
         // `BSplCLib::LocateParameter(Degree, Knots, Mults, U, Periodic,
@@ -551,7 +551,7 @@ impl Geom2dBSplineCurve {
             .max(new_u2.abs())
             .max(self.first_parameter().abs())
             .max(self.last_parameter().abs());
-        let eps = occt_core::precision::epsilon(abs_u_max).max(the_tolerance);
+        let eps = occt_core::precision::epsilon(abs_u_max).max(tolerance);
 
         // `InsertKnots(Knots, Mults, Eps)` — `Add` defaults to **false**
         // (`Geom2d_BSplineCurve.hxx:302-304`).
@@ -660,7 +660,7 @@ impl Geom2dBSplineCurve {
         if was_periodic {
             nknots[0] = u1;
             if a_nu2 < u2 {
-                nknots[last_k] = u1 + a_ddu;
+                nknots[last_k] = u1 + ddu;
             }
         }
 

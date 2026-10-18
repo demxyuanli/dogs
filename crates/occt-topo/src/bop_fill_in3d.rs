@@ -51,21 +51,21 @@ pub fn fill_in_3d_parts_builder<B: BopSolidHost>(
     ctx: &mut IntToolsContext,
 ) -> FillIn3dPartsResult {
     let mut result = FillIn3dPartsResult::default();
-    let mut a_shape_box_map: HashMap<ShapeMapKey, BndBox> = HashMap::new();
+    let mut shape_box_map: HashMap<ShapeMapKey, BndBox> = HashMap::new();
 
     // 1. All faces (images preferred).
-    let a_l_faces = collect_candidate_faces(f.history(), f.ds());
-    for face in &a_l_faces {
+    let l_faces = collect_candidate_faces(f.history(), f.ds());
+    for face in &l_faces {
         if f.ds().index(face).is_some() {
-            a_shape_box_map.insert(shape_key(face), shape_box_of(f.ds(), face));
+            shape_box_map.insert(shape_key(face), shape_box_of(f.ds(), face));
         }
     }
 
     // 2. Draft solids + INTERNAL faces.
-    let mut a_l_solids: Vec<TopoShape> = Vec::new();
-    let mut a_solids_if: HashMap<ShapeMapKey, Vec<TopoShape>> = HashMap::new();
+    let mut l_solids: Vec<TopoShape> = Vec::new();
+    let mut solids_if: HashMap<ShapeMapKey, Vec<TopoShape>> = HashMap::new();
     // source key → draft shape (OCCT `aDraftSolid` IndexedDataMap).
-    let mut a_draft_solid: Vec<(TopoShape, TopoShape)> = Vec::new();
+    let mut draft_solid: Vec<(TopoShape, TopoShape)> = Vec::new();
 
     let n = nb_source(f.ds());
     for i in 0..n {
@@ -73,57 +73,57 @@ pub fn fill_in_3d_parts_builder<B: BopSolidHost>(
         if si.shape_type() != ShapeType::Solid {
             continue;
         }
-        let a_s = si.shape().clone();
-        let mut a_box_s = shape_box_of(f.ds(), &a_s);
-        if a_box_s.is_void() {
-            a_box_s = crate::bbox_from_geometry::shape_bbox(&a_s);
+        let s = si.shape().clone();
+        let mut box_s = shape_box_of(f.ds(), &s);
+        if box_s.is_void() {
+            box_s = crate::bbox_from_geometry::shape_bbox(&s);
         }
         let mut warnings: Vec<String> = Vec::new();
-        let draft = build_draft_solid_occt(f, &a_s, ctx, &mut |msg| warnings.push(msg));
+        let draft = build_draft_solid_occt(f, &s, ctx, &mut |msg| warnings.push(msg));
         for w in warnings {
             f.add_warning(w);
         }
-        let a_sd = draft.draft;
-        a_l_solids.push(a_sd.clone());
-        a_solids_if.insert(shape_key(&a_sd), draft.internal_faces);
-        a_shape_box_map.insert(shape_key(&a_sd), a_box_s);
-        a_draft_solid.push((a_s, a_sd));
+        let sd = draft.draft;
+        l_solids.push(sd.clone());
+        solids_if.insert(shape_key(&sd), draft.internal_faces);
+        shape_box_map.insert(shape_key(&sd), box_s);
+        draft_solid.push((s, sd));
     }
 
     // 3. Classify faces relatively the draft solids.
     let an_in_parts = classify_faces_occt(
-        &a_l_faces,
-        &a_l_solids,
+        &l_faces,
+        &l_solids,
         ctx,
-        &a_shape_box_map,
-        &a_solids_if,
+        &shape_box_map,
+        &solids_if,
     );
 
     // 4. Analyze: bind drafts that need splitting, fill myInParts.
-    for (a_solid, a_s_draft) in a_draft_solid {
-        let a_l_in = an_in_parts
-            .get(&shape_key(&a_s_draft))
+    for (solid, s_draft) in draft_solid {
+        let l_in = an_in_parts
+            .get(&shape_key(&s_draft))
             .cloned()
             .unwrap_or_default();
-        let a_l_internal = a_solids_if
-            .get(&shape_key(&a_s_draft))
+        let l_internal = solids_if
+            .get(&shape_key(&s_draft))
             .cloned()
             .unwrap_or_default();
-        let a_nb_in = a_l_in.len();
-        let need = solid_needs_draft(f.history(), &a_solid, a_nb_in);
+        let nb_in = l_in.len();
+        let need = solid_needs_draft(f.history(), &solid, nb_in);
         if !need {
             continue;
         }
         result
             .draft_solids
-            .insert(shape_key(&a_solid), a_s_draft.clone());
+            .insert(shape_key(&solid), s_draft.clone());
         result
             .draft_to_source
-            .insert(shape_key(&a_s_draft), a_solid.clone());
-        if !a_l_internal.is_empty() || a_nb_in != 0 {
+            .insert(shape_key(&s_draft), solid.clone());
+        if !l_internal.is_empty() || nb_in != 0 {
             result.in_parts.insert(
-                shape_key(&a_solid),
-                combine_in_and_internal(&a_l_in, &a_l_internal),
+                shape_key(&solid),
+                combine_in_and_internal(&l_in, &l_internal),
             );
         }
     }

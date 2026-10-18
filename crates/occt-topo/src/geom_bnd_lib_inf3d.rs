@@ -12,61 +12,61 @@ use occt_core::precision::ANGULAR;
     }
 
 /// `GeomBndLib_InfiniteHelpers::OpenMin` (`InfiniteHelpers.pxx:51-80`).
-pub fn open_min(the_dir: &GpDir, the_box: &mut BndBox) {
+pub fn open_min(dir: &GpDir, bnd_box: &mut BndBox) {
     let dx = GpDir::new(1.0, 0.0, 0.0).unwrap();
     let dy = GpDir::new(0.0, 1.0, 0.0).unwrap();
     let dz = GpDir::new(0.0, 0.0, 1.0).unwrap();
-    if is_parallel(the_dir, &dx) {
-        if the_dir.x() > 0.0 { the_box.open_xmin(); } else { the_box.open_xmax(); }
-    } else if is_parallel(the_dir, &dy) {
-        if the_dir.y() > 0.0 { the_box.open_ymin(); } else { the_box.open_ymax(); }
-    } else if is_parallel(the_dir, &dz) {
-        if the_dir.z() > 0.0 { the_box.open_zmin(); } else { the_box.open_zmax(); }
+    if is_parallel(dir, &dx) {
+        if dir.x() > 0.0 { bnd_box.open_xmin(); } else { bnd_box.open_xmax(); }
+    } else if is_parallel(dir, &dy) {
+        if dir.y() > 0.0 { bnd_box.open_ymin(); } else { bnd_box.open_ymax(); }
+    } else if is_parallel(dir, &dz) {
+        if dir.z() > 0.0 { bnd_box.open_zmin(); } else { bnd_box.open_zmax(); }
     } else {
-        the_box.open_xmin();
-        the_box.open_ymin();
-        the_box.open_zmin();
+        bnd_box.open_xmin();
+        bnd_box.open_ymin();
+        bnd_box.open_zmin();
     }
 }
 
 /// `GeomBndLib_InfiniteHelpers::OpenMax` (`InfiniteHelpers.pxx:83-112`).
-pub fn open_max(the_dir: &GpDir, the_box: &mut BndBox) {
+pub fn open_max(dir: &GpDir, bnd_box: &mut BndBox) {
     let dx = GpDir::new(1.0, 0.0, 0.0).unwrap();
     let dy = GpDir::new(0.0, 1.0, 0.0).unwrap();
     let dz = GpDir::new(0.0, 0.0, 1.0).unwrap();
-    if is_parallel(the_dir, &dx) {
-        if the_dir.x() > 0.0 { the_box.open_xmax(); } else { the_box.open_xmin(); }
-    } else if is_parallel(the_dir, &dy) {
-        if the_dir.y() > 0.0 { the_box.open_ymax(); } else { the_box.open_ymin(); }
-    } else if is_parallel(the_dir, &dz) {
-        if the_dir.z() > 0.0 { the_box.open_zmax(); } else { the_box.open_zmin(); }
+    if is_parallel(dir, &dx) {
+        if dir.x() > 0.0 { bnd_box.open_xmax(); } else { bnd_box.open_xmin(); }
+    } else if is_parallel(dir, &dy) {
+        if dir.y() > 0.0 { bnd_box.open_ymax(); } else { bnd_box.open_ymin(); }
+    } else if is_parallel(dir, &dz) {
+        if dir.z() > 0.0 { bnd_box.open_zmax(); } else { bnd_box.open_zmin(); }
     } else {
-        the_box.open_xmax();
-        the_box.open_ymax();
-        the_box.open_zmax();
+        bnd_box.open_xmax();
+        bnd_box.open_ymax();
+        bnd_box.open_zmax();
     }
 }
 
 /// `GeomBndLib_InfiniteHelpers::OpenMinMax` (`InfiniteHelpers.pxx:116-141`).
-pub fn open_min_max(the_dir: &GpDir, the_box: &mut BndBox) {
+pub fn open_min_max(dir: &GpDir, bnd_box: &mut BndBox) {
     let dx = GpDir::new(1.0, 0.0, 0.0).unwrap();
     let dy = GpDir::new(0.0, 1.0, 0.0).unwrap();
     let dz = GpDir::new(0.0, 0.0, 1.0).unwrap();
-    if is_parallel(the_dir, &dx) {
-        the_box.open_xmax();
-        the_box.open_xmin();
-    } else if is_parallel(the_dir, &dy) {
-        the_box.open_ymax();
-        the_box.open_ymin();
-    } else if is_parallel(the_dir, &dz) {
-        the_box.open_zmax();
-        the_box.open_zmin();
+    if is_parallel(dir, &dx) {
+        bnd_box.open_xmax();
+        bnd_box.open_xmin();
+    } else if is_parallel(dir, &dy) {
+        bnd_box.open_ymax();
+        bnd_box.open_ymin();
+    } else if is_parallel(dir, &dz) {
+        bnd_box.open_zmax();
+        bnd_box.open_zmin();
     } else {
-        the_box.open_xmin();
-        the_box.open_ymin();
-        the_box.open_zmin();
-        the_box.open_xmax();
-        the_box.open_ymax();
-        the_box.open_zmax();
+        bnd_box.open_xmin();
+        bnd_box.open_ymin();
+        bnd_box.open_zmin();
+        bnd_box.open_xmax();
+        bnd_box.open_ymax();
+        bnd_box.open_zmax();
     }
 }

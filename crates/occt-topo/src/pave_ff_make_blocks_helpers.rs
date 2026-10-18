@@ -71,8 +71,8 @@ pub fn get_stick_vertices(
 }
 
 /// `BOPAlgo_PaveFiller::RemoveUsedVertices`.
-pub fn remove_used_vertices(a_vc: &[BopdsCurve], mv: &mut HashSet<usize>) {
-    for nc in a_vc {
+pub fn remove_used_vertices(vc: &[BopdsCurve], mv: &mut HashSet<usize>) {
+    for nc in vc {
         for pb in nc.pave_blocks() {
             mv.remove(&pb.index1);
             mv.remove(&pb.index2);

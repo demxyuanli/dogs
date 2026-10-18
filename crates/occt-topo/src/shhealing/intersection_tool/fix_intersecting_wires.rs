@@ -118,14 +118,14 @@ pub fn fix_intersecting_wires(face: &mut Face, ctx: &mut dyn ReShape) -> bool {
         let mut boxes1 = seq_boxes[n1 - 1].clone();
         // `aBox1` is a plain copy fetched once, never refreshed by the update
         // tail (`cxx:1893`) - keep it stale exactly like the cxx.
-        let a_box1 = seq_total[n1 - 1];
+        let box1 = seq_total[n1 - 1];
 
         for n2 in n1 + 1..=nb_wir {
             let mut wire2 = seq_wir[n2 - 1].clone();
             let mut boxes2 = seq_boxes[n2 - 1].clone();
-            let a_box2 = seq_total[n2 - 1];
+            let box2 = seq_total[n2 - 1];
             // `cxx:1903-1906`.
-            if !a_box1.is_void() && !a_box2.is_void() && a_box1.is_out_box(&a_box2) {
+            if !box1.is_void() && !box2.is_void() && box1.is_out_box(&box2) {
                 continue;
             }
 
@@ -896,16 +896,16 @@ pub fn fix_intersecting_wires(face: &mut Face, ctx: &mut dyn ReShape) -> bool {
                 seq_wir[n1 - 1] = new_wire1.clone();
                 wire1 = new_wire1;
                 boxes1.clear();
-                let a_new_box1 = create_boxes_2d(&wire1, face, &mut boxes1);
-                seq_total[n1 - 1] = a_new_box1;
+                let new_box1 = create_boxes_2d(&wire1, face, &mut boxes1);
+                seq_total[n1 - 1] = new_box1;
                 // `cxx:2496-2498`: the same for wire2.
                 let new_wire2 = rebuild_forward_wire(&wire2);
                 ctx.replace(&wire2.0, &new_wire2.0);
                 seq_wir[n2 - 1] = new_wire2.clone();
                 wire2 = new_wire2;
                 boxes2.clear();
-                let a_new_box2 = create_boxes_2d(&wire2, face, &mut boxes2);
-                seq_total[n2 - 1] = a_new_box2;
+                let new_box2 = create_boxes_2d(&wire2, face, &mut boxes2);
+                seq_total[n2 - 1] = new_box2;
             }
             seq_boxes[n1 - 1] = boxes1.clone();
             seq_boxes[n2 - 1] = boxes2.clone();

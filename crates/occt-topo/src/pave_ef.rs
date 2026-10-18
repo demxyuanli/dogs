@@ -130,24 +130,24 @@ pub fn has_interf_shape_sub_shapes(ds: &BopdsDS, i1: usize, i2: usize) -> bool {
 /// `BOPAlgo_PaveFiller::ReduceIntersectionRange`.
 pub fn reduce_intersection_range(
     ds: &BopdsDS,
-    the_v1: usize,
-    the_v2: usize,
-    the_e: usize,
-    the_f: usize,
+    v1: usize,
+    v2: usize,
+    e: usize,
+    f: usize,
     ts1: &mut f64,
     ts2: &mut f64,
 ) {
-    if !ds.is_new_shape(the_v1) && !ds.is_new_shape(the_v2) {
+    if !ds.is_new_shape(v1) && !ds.is_new_shape(v2) {
         return;
     }
-    if !has_interf_shape_sub_shapes(ds, the_e, the_f) {
+    if !has_interf_shape_sub_shapes(ds, e, f) {
         return;
     }
     if ds.interf_ee().is_empty() {
         return;
     }
     let mut mfe: Vec<usize> = Vec::new();
-    if let Some(si) = ds.shape_info(the_f) {
+    if let Some(si) = ds.shape_info(f) {
         for &n in si.sub_shapes() {
             if ds.shape_info(n).map(|s| s.shape_type()) == Some(ShapeType::Edge) {
                 mfe.push(n);
@@ -158,15 +158,15 @@ pub fn reduce_intersection_range(
         let Some(n_v) = ee.get_index_new() else {
             continue;
         };
-        if n_v != the_v1 && n_v != the_v2 {
+        if n_v != v1 && n_v != v2 {
             continue;
         }
         let (n_e1, n_e2) = ee.indices();
-        if (the_e != n_e1 && the_e != n_e2) || (!mfe.contains(&n_e1) && !mfe.contains(&n_e2)) {
+        if (e != n_e1 && e != n_e2) || (!mfe.contains(&n_e1) && !mfe.contains(&n_e2)) {
             continue;
         }
         let (tr1, tr2) = ee.common_range();
-        if n_v == the_v1 {
+        if n_v == v1 {
             if *ts1 < tr2 {
                 *ts1 = tr2;
             }

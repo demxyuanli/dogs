@@ -37,35 +37,35 @@ use occt_geom2d::curve::Curve2d;
 /// `N` iterations adds two points and updates the max deflection of the odd
 /// sample against the chord of the even pair. Returns that max deflection.
 pub fn fill_box2d(
-    the_box: &mut BndBox2d,
-    the_curve: &dyn Curve2d,
-    the_first: f64,
-    the_last: f64,
-    the_n: i32,
+    bnd_box: &mut BndBox2d,
+    curve: &dyn Curve2d,
+    first: f64,
+    last: f64,
+    n: i32,
 ) -> f64 {
-    let mut a_p1 = the_curve.d0(the_first);
-    the_box.add_point(&a_p1);
-    let mut p = the_first;
-    let mut dp = the_last - the_first;
+    let mut p1 = curve.d0(first);
+    bnd_box.add_point(&p1);
+    let mut p = first;
+    let mut dp = last - first;
     let mut tol = 0.0_f64;
     if dp.abs() > PCONFUSION {
-        dp /= 2.0 * the_n as f64;
-        for _i in 1..=the_n {
+        dp /= 2.0 * n as f64;
+        for _i in 1..=n {
             p += dp;
-            let a_p2 = the_curve.d0(p);
-            the_box.add_point(&a_p2);
+            let p2 = curve.d0(p);
+            bnd_box.add_point(&p2);
             p += dp;
-            let a_p3 = the_curve.d0(p);
-            the_box.add_point(&a_p3);
-            let a_pc = GpPnt2d::new(0.5 * (a_p1.x() + a_p3.x()), 0.5 * (a_p1.y() + a_p3.y()));
-            tol = tol.max(a_pc.distance(&a_p2));
-            a_p1 = a_p3;
+            let p3 = curve.d0(p);
+            bnd_box.add_point(&p3);
+            let pc = GpPnt2d::new(0.5 * (p1.x() + p3.x()), 0.5 * (p1.y() + p3.y()));
+            tol = tol.max(pc.distance(&p2));
+            p1 = p3;
         }
     } else {
-        let a_p1b = the_curve.d0(the_first);
-        the_box.add_point(&a_p1b);
-        let a_p3 = the_curve.d0(the_last);
-        the_box.add_point(&a_p3);
+        let p1b = curve.d0(first);
+        bnd_box.add_point(&p1b);
+        let p3 = curve.d0(last);
+        bnd_box.add_point(&p3);
     }
     tol
 }
@@ -74,12 +74,12 @@ const WEAKNESS: f64 = 1.5;
 const N_SAMPLES: i32 = 33;
 
 /// `GeomBndLib_OtherCurve2d::Box(theU1, theU2, theTol)`.
-pub fn box_other_2d(the_curve: &dyn Curve2d, the_u1: f64, the_u2: f64, the_tol: f64) -> BndBox2d {
+pub fn box_other_2d(curve: &dyn Curve2d, u1: f64, u2: f64, the_tol: f64) -> BndBox2d {
     let mut a_box = BndBox2d::new();
-    let mut a_b1 = BndBox2d::new();
-    let tol = fill_box2d(&mut a_b1, the_curve, the_u1, the_u2, N_SAMPLES);
-    a_b1.enlarge(WEAKNESS * tol);
-    if let Some((x, y, xx, yy)) = a_b1.get() {
+    let mut b1 = BndBox2d::new();
+    let tol = fill_box2d(&mut b1, curve, u1, u2, N_SAMPLES);
+    b1.enlarge(WEAKNESS * tol);
+    if let Some((x, y, xx, yy)) = b1.get() {
         a_box.update(x, y, xx, yy);
     }
     a_box.enlarge(the_tol);
@@ -87,11 +87,11 @@ pub fn box_other_2d(the_curve: &dyn Curve2d, the_u1: f64, the_u2: f64, the_tol: 
 }
 
 /// `GeomBndLib_OtherCurve2d::Box(theTol)` — full parameter range.
-pub fn box_other_full(the_curve: &dyn Curve2d, the_tol: f64) -> BndBox2d {
+pub fn box_other_full(curve: &dyn Curve2d, the_tol: f64) -> BndBox2d {
     box_other_2d(
-        the_curve,
-        the_curve.first_parameter(),
-        the_curve.last_parameter(),
+        curve,
+        curve.first_parameter(),
+        curve.last_parameter(),
         the_tol,
     )
 }
@@ -99,16 +99,16 @@ pub fn box_other_full(the_curve: &dyn Curve2d, the_tol: f64) -> BndBox2d {
 /// Adaptor-style 33-point box used when `BndLib_Add2dCurve::Add` cannot
 /// downcast to `Geom2dAdaptor_Curve` (`BndLib_Add2dCurve.cxx:38-56`):
 /// `N = 33`, `DU = (U2-U1)/(N-1)`, add `D0` at each node, then `Enlarge(Tol)`.
-pub fn box_adaptor_sample(the_curve: &dyn Curve2d, a_u1: f64, a_u2: f64, a_tol: f64) -> BndBox2d {
-    let mut a_box2d = BndBox2d::new();
+pub fn box_adaptor_sample(curve: &dyn Curve2d, a_u1: f64, a_u2: f64, a_tol: f64) -> BndBox2d {
+    let mut box2d = BndBox2d::new();
     let n = 33;
     let mut u = a_u1;
     let du = if n > 1 { (a_u2 - a_u1) / (n - 1) as f64 } else { 0.0 };
     for _j in 1..n {
-        a_box2d.add_point(&the_curve.d0(u));
+        box2d.add_point(&curve.d0(u));
         u += du;
     }
-    a_box2d.add_point(&the_curve.d0(a_u2));
-    a_box2d.enlarge(a_tol);
-    a_box2d
+    box2d.add_point(&curve.d0(a_u2));
+    box2d.enlarge(a_tol);
+    box2d
 }

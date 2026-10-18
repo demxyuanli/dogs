@@ -46,12 +46,12 @@ impl IntConicCurveGen {
         tol_conf: f64,
         tol: f64,
     ) {
-        let mut my_intersection = Geom2dIntConicCurve::new();
-        my_intersection
+        let mut intersection = Geom2dIntConicCurve::new();
+        intersection
             .base
             .set_reversed_parameters(self.base.reversed_parameters());
-        my_intersection.perform(i_curve, d1, p_curve, d2, tol_conf, tol);
-        self.base.set_values(&my_intersection.base);
+        intersection.perform(i_curve, d1, p_curve, d2, tol_conf, tol);
+        self.base.set_values(&intersection.base);
     }
 
     /// `Perform(const gp_Lin2d&, ...)` (`lxx:44-53`).

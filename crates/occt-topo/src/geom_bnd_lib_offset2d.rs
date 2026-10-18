@@ -27,87 +27,87 @@ use crate::geom_bnd_lib_other_curve2d::box_other_2d;
 fn try_offset_line2d(
     basis: &dyn Curve2d,
     offset: f64,
-    the_u1: f64,
-    the_u2: f64,
-    the_tol: f64,
+    u1: f64,
+    u2: f64,
+    tol: f64,
 ) -> Option<BndBox2d> {
     // `occ::down_cast<Geom2d_Line>(theBasis)` (`GeomBndLib_OffsetCurve2d.cxx:36`).
-    let a_basis_lin = basis.gp_lin2d()?;
-    let (loc, dir) = (a_basis_lin.location(), *a_basis_lin.direction());
-    let mut a_normal = GpVec2d::new(dir.y(), -dir.x());
-    if a_normal.square_magnitude() <= SQUARE_CONFUSION {
+    let basis_lin = basis.gp_lin2d()?;
+    let (loc, dir) = (basis_lin.location(), *basis_lin.direction());
+    let mut normal = GpVec2d::new(dir.y(), -dir.x());
+    if normal.square_magnitude() <= SQUARE_CONFUSION {
         return None;
     }
-    let _ = a_normal.normalize();
-    a_normal.multiply_scalar(offset);
-    let a_loc = GpPnt2d::new(loc.x() + a_normal.x(), loc.y() + a_normal.y());
-    let a_lin = GpLin2d::from_pnt_dir(a_loc, dir);
-    let mut a_local = box_lin_2d(&a_lin, the_u1, the_u2, 0.0).ok()?;
-    a_local.enlarge(the_tol);
-    Some(a_local)
+    let _ = normal.normalize();
+    normal.multiply_scalar(offset);
+    let a_loc = GpPnt2d::new(loc.x() + normal.x(), loc.y() + normal.y());
+    let lin = GpLin2d::from_pnt_dir(a_loc, dir);
+    let mut local = box_lin_2d(&lin, u1, u2, 0.0).ok()?;
+    local.enlarge(tol);
+    Some(local)
 }
 
 fn try_offset_circle2d(
     basis: &dyn Curve2d,
     offset: f64,
-    the_u1: f64,
-    the_u2: f64,
-    the_tol: f64,
+    u1: f64,
+    u2: f64,
+    tol: f64,
 ) -> Option<BndBox2d> {
     // `occ::down_cast<Geom2d_Circle>(theBasis)` (`GeomBndLib_OffsetCurve2d.cxx:63`).
-    let a_basis_circ = basis.gp_circ2d()?;
-    let a_u_mid = 0.5 * (the_u1 + the_u2);
-    let (a_p, a_v1) = basis.d1(a_u_mid);
-    if a_v1.square_magnitude() <= SQUARE_CONFUSION {
+    let basis_circ = basis.gp_circ2d()?;
+    let u_mid = 0.5 * (u1 + u2);
+    let (p, v1) = basis.d1(u_mid);
+    if v1.square_magnitude() <= SQUARE_CONFUSION {
         return None;
     }
-    let mut a_normal = GpVec2d::new(a_v1.y(), -a_v1.x());
-    if a_normal.square_magnitude() <= SQUARE_CONFUSION {
+    let mut normal = GpVec2d::new(v1.y(), -v1.x());
+    if normal.square_magnitude() <= SQUARE_CONFUSION {
         return None;
     }
-    let _ = a_normal.normalize();
-    let centre = a_basis_circ.location();
-    let a_radius = a_basis_circ.radius();
-    let mut a_radial = GpVec2d::new(a_p.x() - centre.x(), a_p.y() - centre.y());
-    if a_radial.square_magnitude() <= SQUARE_CONFUSION {
+    let _ = normal.normalize();
+    let centre = basis_circ.location();
+    let a_radius = basis_circ.radius();
+    let mut radial = GpVec2d::new(p.x() - centre.x(), p.y() - centre.y());
+    if radial.square_magnitude() <= SQUARE_CONFUSION {
         return None;
     }
-    let _ = a_radial.normalize();
-    let a_sign = a_normal.dot(&a_radial);
-    if (a_sign.abs() - 1.0).abs() > 1e-9 {
+    let _ = radial.normalize();
+    let sign = normal.dot(&radial);
+    if (sign.abs() - 1.0).abs() > 1e-9 {
         return None;
     }
-    let a_new_radius = a_radius + offset * a_sign;
-    let mut a_local = BndBox2d::new();
-    if a_new_radius > CONFUSION {
-        let mut a_offset_circ = GpCirc2d::default();
-        a_offset_circ.set_location(centre);
-        a_offset_circ.set_radius(a_new_radius);
-        a_local = box_circ_range_2d(&a_offset_circ, the_u1, the_u2, 0.0);
-    } else if a_new_radius.abs() <= CONFUSION {
-        a_local.add_point(&centre);
+    let new_radius = a_radius + offset * sign;
+    let mut local = BndBox2d::new();
+    if new_radius > CONFUSION {
+        let mut offset_circ = GpCirc2d::default();
+        offset_circ.set_location(centre);
+        offset_circ.set_radius(new_radius);
+        local = box_circ_range_2d(&offset_circ, u1, u2, 0.0);
+    } else if new_radius.abs() <= CONFUSION {
+        local.add_point(&centre);
     } else {
         return None;
     }
-    a_local.enlarge(the_tol);
-    Some(a_local)
+    local.enlarge(tol);
+    Some(local)
 }
 
 /// `GeomBndLib_OffsetCurve2d::Box(theU1, theU2, theTol)`.
-pub fn box_offset(off: &Geom2dOffsetCurve, the_u1: f64, the_u2: f64, the_tol: f64) -> BndBox2d {
+pub fn box_offset(off: &Geom2dOffsetCurve, u1: f64, u2: f64, tol: f64) -> BndBox2d {
     let basis = off.basis_curve().as_ref();
     let offset = off.offset_value();
-    if let Some(b) = try_offset_line2d(basis, offset, the_u1, the_u2, the_tol) {
+    if let Some(b) = try_offset_line2d(basis, offset, u1, u2, tol) {
         if !b.is_void() {
             return b;
         }
     }
-    if let Some(b) = try_offset_circle2d(basis, offset, the_u1, the_u2, the_tol) {
+    if let Some(b) = try_offset_circle2d(basis, offset, u1, u2, tol) {
         if !b.is_void() {
             return b;
         }
     }
-    box_other_2d(off, the_u1, the_u2, the_tol)
+    box_other_2d(off, u1, u2, tol)
 }
 
 /// Offset box from the `Curve2d` trait: `GeomBndLib_OffsetCurve2d::Box(theU1,
@@ -119,18 +119,18 @@ pub fn box_offset(off: &Geom2dOffsetCurve, the_u1: f64, the_u2: f64, the_tol: f6
 /// pieces from [`Curve2d::offset_basis`] / [`Curve2d::offset_value`]. A
 /// wrapper that hides them (`pcurve_full::ReparamCurve2d`, the stand-in for
 /// OCCT's `GeomLib::SameRange` B-spline conversion) keeps the sampling path.
-pub fn box_offset_as_curve(curve: &dyn Curve2d, the_u1: f64, the_u2: f64, the_tol: f64) -> BndBox2d {
+pub fn box_offset_as_curve(curve: &dyn Curve2d, u1: f64, u2: f64, tol: f64) -> BndBox2d {
     if let (Some(basis), Some(offset)) = (curve.offset_basis(), curve.offset_value()) {
-        if let Some(b) = try_offset_line2d(basis, offset, the_u1, the_u2, the_tol) {
+        if let Some(b) = try_offset_line2d(basis, offset, u1, u2, tol) {
             if !b.is_void() {
                 return b;
             }
         }
-        if let Some(b) = try_offset_circle2d(basis, offset, the_u1, the_u2, the_tol) {
+        if let Some(b) = try_offset_circle2d(basis, offset, u1, u2, tol) {
             if !b.is_void() {
                 return b;
             }
         }
     }
-    box_other_2d(curve, the_u1, the_u2, the_tol)
+    box_other_2d(curve, u1, u2, tol)
 }

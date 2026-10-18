@@ -77,11 +77,11 @@ fn gfunc_search_of_tolerance(curve: &dyn Curve) -> f64 {
     const N_POINT: i32 = 10;
     let u_inf = curve.first_parameter();
     let u_sup = curve.last_parameter();
-    let a_step = (u_sup - u_inf) / (N_POINT as f64);
-    let mut a_num = 0;
+    let step = (u_sup - u_inf) / (N_POINT as f64);
+    let mut num = 0;
     let mut a_max = -Precision::INFINITE;
     loop {
-        let mut u = u_inf + (a_num as f64) * a_step;
+        let mut u = u_inf + (num as f64) * step;
         if u > u_sup {
             u = u_sup;
         }
@@ -92,8 +92,8 @@ fn gfunc_search_of_tolerance(curve: &dyn Curve) -> f64 {
                 a_max = vm;
             }
         }
-        a_num += 1;
-        if a_num >= N_POINT + 1 {
+        num += 1;
+        if num >= N_POINT + 1 {
             break;
         }
     }
@@ -141,12 +141,12 @@ impl<'a> ExtPcf<'a> {
     }
 
     /// `GFuncExtPC::Value` (`hxx:146-253`) including MaxDerivOrder singular D1.
-    fn value_at(&mut self, the_u: f64, the_f: &mut f64) -> bool {
+    fn value_at(&mut self, the_u: f64, f: &mut f64) -> bool {
         self.u = the_u;
         let (pc, mut d1c) = self.curve.d1(the_u);
         self.pc = pc;
         if Precision::is_infinite(d1c.x()) || Precision::is_infinite(d1c.y()) {
-            *the_f = f64::INFINITY;
+            *f = f64::INFINITY;
             return false;
         }
         let mut ndu = d1c.magnitude();
@@ -154,7 +154,7 @@ impl<'a> ExtPcf<'a> {
         if self.max_deriv_order != 0 && ndu <= self.tol {
             // Singular case (`hxx:167-241`).
             const DIVISION_FACTOR: f64 = 1.0e-3;
-            let a_delta = (self.singular_du() * DIVISION_FACTOR).max(MIN_STEP);
+            let delta = (self.singular_du() * DIVISION_FACTOR).max(MIN_STEP);
 
             let mut n = 1;
             let mut v = GpVec::zero();
@@ -167,10 +167,10 @@ impl<'a> ExtPcf<'a> {
             }
 
             if is_derive_found {
-                let u = if self.u - self.u_inf < a_delta {
-                    self.u + a_delta
+                let u = if self.u - self.u_inf < delta {
+                    self.u + delta
                 } else {
-                    self.u - a_delta
+                    self.u - delta
                 };
                 let p1 = self.curve.d0(self.u.min(u));
                 let p2 = self.curve.d0(self.u.max(u));
@@ -182,17 +182,17 @@ impl<'a> ExtPcf<'a> {
                 }
             } else {
                 // Three-point Taylor (`hxx:213-238`); Ptemp default origin.
-                let (p1, p2, p3, grown) = if self.u - self.u_inf < 2.0 * a_delta {
+                let (p1, p2, p3, grown) = if self.u - self.u_inf < 2.0 * delta {
                     (
                         self.curve.d0(self.u),
-                        self.curve.d0(self.u + a_delta),
-                        self.curve.d0(self.u + 2.0 * a_delta),
+                        self.curve.d0(self.u + delta),
+                        self.curve.d0(self.u + 2.0 * delta),
                         true,
                     )
                 } else {
                     (
-                        self.curve.d0(self.u - 2.0 * a_delta),
-                        self.curve.d0(self.u - a_delta),
+                        self.curve.d0(self.u - 2.0 * delta),
+                        self.curve.d0(self.u - delta),
                         self.curve.d0(self.u),
                         false,
                     )
@@ -216,15 +216,15 @@ impl<'a> ExtPcf<'a> {
             return false;
         }
         let ppc = GpVec::from_pnts(&self.point, &self.pc);
-        *the_f = ppc.dot(&d1c) / ndu;
+        *f = ppc.dot(&d1c) / ndu;
         true
     }
 
     /// `GFuncExtPC::Values` (`hxx:274-352`) including singular DF (`hxx:297-338`).
-    fn values_at(&mut self, the_u: f64, the_f: &mut f64, the_df: &mut f64) -> bool {
+    fn values_at(&mut self, the_u: f64, f: &mut f64, df: &mut f64) -> bool {
         let pc_old = self.pc;
         let p_old = self.point;
-        if !self.value_at(the_u, the_f) {
+        if !self.value_at(the_u, f) {
             return false;
         }
         self.u = the_u;
@@ -236,14 +236,14 @@ impl<'a> ExtPcf<'a> {
         if ndu <= self.tol {
             // Singular DF via three F samples (`hxx:297-338`).
             const DIVISION_FACTOR: f64 = 0.01;
-            let a_delta = (self.singular_du() * DIVISION_FACTOR).max(MIN_STEP);
+            let delta = (self.singular_du() * DIVISION_FACTOR).max(MIN_STEP);
             let f1;
             let f2;
             let f3;
-            if self.u - self.u_inf < 2.0 * a_delta {
-                f1 = *the_f;
-                let u2 = self.u + a_delta;
-                let u3 = self.u + a_delta * 2.0;
+            if self.u - self.u_inf < 2.0 * delta {
+                f1 = *f;
+                let u2 = self.u + delta;
+                let u3 = self.u + delta * 2.0;
                 let mut f2v = 0.0;
                 let mut f3v = 0.0;
                 if !(self.value_at(u2, &mut f2v) && self.value_at(u3, &mut f3v)) {
@@ -251,11 +251,11 @@ impl<'a> ExtPcf<'a> {
                 }
                 f2 = f2v;
                 f3 = f3v;
-                *the_df = (-3.0 * f1 + 4.0 * f2 - f3) / (2.0 * a_delta);
+                *df = (-3.0 * f1 + 4.0 * f2 - f3) / (2.0 * delta);
             } else {
-                f3 = *the_f;
-                let u1 = self.u - a_delta * 2.0;
-                let u2 = self.u - a_delta;
+                f3 = *f;
+                let u1 = self.u - delta * 2.0;
+                let u2 = self.u - delta;
                 let mut f1v = 0.0;
                 let mut f2v = 0.0;
                 if !(self.value_at(u2, &mut f2v) && self.value_at(u1, &mut f1v)) {
@@ -263,16 +263,16 @@ impl<'a> ExtPcf<'a> {
                 }
                 f1 = f1v;
                 f2 = f2v;
-                *the_df = (f1 - 4.0 * f2 + 3.0 * f3) / (2.0 * a_delta);
+                *df = (f1 - 4.0 * f2 + 3.0 * f3) / (2.0 * delta);
             }
             self.u = the_u;
             self.pc = pc_old;
             self.point = p_old;
         } else {
             let ppc = GpVec::from_pnts(&self.point, &self.pc);
-            *the_df = ndu + (ppc.dot(&d2c) / ndu) - *the_f * (d1c.dot(&d2c)) / (ndu * ndu);
+            *df = ndu + (ppc.dot(&d2c) / ndu) - *f * (d1c.dot(&d2c)) / (ndu * ndu);
         }
-        self.d1f = *the_df;
+        self.d1f = *df;
         true
     }
 }
@@ -435,13 +435,13 @@ fn perform_bspline(state: &mut ExtPcState, curve: &dyn Curve, point: &GpPnt) {
     }
     let first_idx = first_u_knot_index(degree, &mults);
     let last_idx = last_u_knot_index(degree, &mults);
-    let a_tol_coeff = (state.u_sup - state.u_inf) * PCONFUSION;
+    let tol_coeff = (state.u_sup - state.u_inf) * PCONFUSION;
     let mut period_jump = 0.0;
     if curve.is_periodic() {
         let period = curve.period();
         if period.abs() > 0.0 {
             let mut shift = ((state.u_inf - knots[(first_idx - 1) as usize]) / period) as i32;
-            if state.u_inf < knots[(first_idx - 1) as usize] - a_tol_coeff {
+            if state.u_inf < knots[(first_idx - 1) as usize] - tol_coeff {
                 shift -= 1;
             }
             period_jump = period * shift as f64;
@@ -451,16 +451,16 @@ fn perform_bspline(state: &mut ExtPcState, curve: &dyn Curve, point: &GpPnt) {
     let mut first_used = first_idx;
     let mut last_used = last_idx;
     for an_idx in first_idx..=last_idx {
-        let a_knot = knots[(an_idx - 1) as usize] + period_jump;
-        if state.u_inf >= a_knot - a_tol_coeff {
+        let knot = knots[(an_idx - 1) as usize] + period_jump;
+        if state.u_inf >= knot - tol_coeff {
             first_used = an_idx;
         } else {
             break;
         }
     }
     for an_idx in (first_idx..=last_idx).rev() {
-        let a_knot = knots[(an_idx - 1) as usize] + period_jump;
-        if state.u_sup <= a_knot + a_tol_coeff {
+        let knot = knots[(an_idx - 1) as usize] + period_jump;
+        if state.u_sup <= knot + tol_coeff {
             last_used = an_idx;
         } else {
             break;
@@ -478,26 +478,26 @@ fn perform_bspline(state: &mut ExtPcState, curve: &dyn Curve, point: &GpPnt) {
         let mut tmin = 0.0;
         let mut distmin = f64::MAX;
         let mut pmin = GpPnt::zero();
-        let mut a_min2 = 0.0;
+        let mut min2 = 0.0;
         for an_idx in first_used..last_used {
             let mut a_f = knots[(an_idx - 1) as usize] + period_jump;
-            let mut a_l = knots[an_idx as usize] + period_jump;
+            let mut l = knots[an_idx as usize] + period_jump;
             if an_idx == first_used {
                 a_f = state.u_inf;
             } else if an_idx == last_used - 1 {
-                a_l = state.u_sup;
+                l = state.u_sup;
             }
             let a_p1 = curve.d0(a_f);
-            let a_p2 = curve.d0(a_l);
-            let a_base1 = GpVec::from_pnts(point, &a_p1);
-            let a_base2 = GpVec::from_pnts(point, &a_p2);
-            let a_v = GpVec::from_pnts(&a_p2, &a_p1);
-            let a_val1 = a_v.dot(&a_base1);
-            let a_val2 = a_v.dot(&a_base2);
-            let a_min1 = if an_idx == first_used {
+            let a_p2 = curve.d0(l);
+            let base1 = GpVec::from_pnts(point, &a_p1);
+            let base2 = GpVec::from_pnts(point, &a_p2);
+            let v = GpVec::from_pnts(&a_p2, &a_p1);
+            let val1 = v.dot(&base1);
+            let val2 = v.dot(&base2);
+            let min1 = if an_idx == first_used {
                 point.square_distance(&a_p1)
             } else {
-                let prev = a_min2;
+                let prev = min2;
                 if distmin > prev {
                     distmin = prev;
                     tmin = a_f;
@@ -505,16 +505,16 @@ fn perform_bspline(state: &mut ExtPcState, curve: &dyn Curve, point: &GpPnt) {
                 }
                 prev
             };
-            a_min2 = point.square_distance(&a_p2);
-            let a_min_sq = a_min1.min(a_min2);
-            let a_min_der = a_val1.abs().min(a_val2.abs());
-            if !(Precision::is_infinite(a_val1) || Precision::is_infinite(a_val2))
-                && (a_val1 * a_val2 <= 0.0
-                    || a_min_sq < 100.0 * CONFUSION * CONFUSION
-                    || 2.0 * a_min_der < CONFUSION)
+            min2 = point.square_distance(&a_p2);
+            let min_sq = min1.min(min2);
+            let min_der = val1.abs().min(val2.abs());
+            if !(Precision::is_infinite(val1) || Precision::is_infinite(val2))
+                && (val1 * val2 <= 0.0
+                    || min_sq < 100.0 * CONFUSION * CONFUSION
+                    || 2.0 * min_der < CONFUSION)
             {
                 state.int_u_inf = a_f;
-                state.int_u_sup = a_l;
+                state.int_u_sup = l;
                 state.interval_perform(curve, point);
             }
         }
@@ -538,18 +538,18 @@ fn perform_bspline(state: &mut ExtPcState, curve: &dyn Curve, point: &GpPnt) {
         let mut params = Vec::with_capacity(cap);
         for an_idx in first_used..last_used {
             let mut a_f = knots[(an_idx - 1) as usize] + period_jump;
-            let mut a_l = knots[an_idx as usize] + period_jump;
+            let mut l = knots[an_idx as usize] + period_jump;
             if an_idx == first_used {
                 a_f = state.u_inf;
             }
             if an_idx == last_used - 1 {
-                a_l = state.u_sup;
+                l = state.u_sup;
             }
-            let a_step = (a_l - a_f) / state.sample as f64;
-            for a_pnt_idx in 0..state.sample {
-                let a_cur = a_f + a_step * a_pnt_idx as f64;
-                vals.push(curve.d0(a_cur).square_distance(point));
-                params.push(a_cur);
+            let step = (l - a_f) / state.sample as f64;
+            for pnt_idx in 0..state.sample {
+                let cur = a_f + step * pnt_idx as f64;
+                vals.push(curve.d0(cur).square_distance(point));
+                params.push(cur);
             }
         }
         vals.push(curve.d0(state.u_sup).square_distance(point));
@@ -576,14 +576,14 @@ fn perform_bspline(state: &mut ExtPcState, curve: &dyn Curve, point: &GpPnt) {
         if state.dist1 > CONFUSION * CONFUSION && state.dist1.is_finite() && params.len() >= 2 {
             let (p1, v1) = curve.d1(params[0]);
             let (p2, v2) = curve.d1(params[1]);
-            let a_base1 = GpVec::from_pnts(point, &p1);
-            let a_base2 = GpVec::from_pnts(point, &p2);
-            let a_val1 = v1.dot(&a_base1);
-            let a_val2 = v2.dot(&a_base2);
-            if !(Precision::is_infinite(a_val1) || Precision::is_infinite(a_val2))
-                && (a_val1 * a_val2 <= 0.0
-                    || a_base1.dot(&a_base2) <= 0.0
-                    || 2.0 * a_val1.abs() < CONFUSION)
+            let base1 = GpVec::from_pnts(point, &p1);
+            let base2 = GpVec::from_pnts(point, &p2);
+            let val1 = v1.dot(&base1);
+            let val2 = v2.dot(&base2);
+            if !(Precision::is_infinite(val1) || Precision::is_infinite(val2))
+                && (val1 * val2 <= 0.0
+                    || base1.dot(&base2) <= 0.0
+                    || 2.0 * val1.abs() < CONFUSION)
             {
                 state.int_u_inf = params[0];
                 state.int_u_sup = params[1];
@@ -594,14 +594,14 @@ fn perform_bspline(state: &mut ExtPcState, curve: &dyn Curve, point: &GpPnt) {
             let n = params.len();
             let (p1, v1) = curve.d1(params[n - 2]);
             let (p2, v2) = curve.d1(params[n - 1]);
-            let a_base1 = GpVec::from_pnts(point, &p1);
-            let a_base2 = GpVec::from_pnts(point, &p2);
-            let a_val1 = v1.dot(&a_base1);
-            let a_val2 = v2.dot(&a_base2);
-            if !(Precision::is_infinite(a_val1) || Precision::is_infinite(a_val2))
-                && (a_val1 * a_val2 <= 0.0
-                    || a_base1.dot(&a_base2) <= 0.0
-                    || 2.0 * a_val2.abs() < CONFUSION)
+            let base1 = GpVec::from_pnts(point, &p1);
+            let base2 = GpVec::from_pnts(point, &p2);
+            let val1 = v1.dot(&base1);
+            let val2 = v2.dot(&base2);
+            if !(Precision::is_infinite(val1) || Precision::is_infinite(val2))
+                && (val1 * val2 <= 0.0
+                    || base1.dot(&base2) <= 0.0
+                    || 2.0 * val2.abs() < CONFUSION)
             {
                 state.int_u_inf = params[n - 2];
                 state.int_u_sup = params[n - 1];
@@ -638,12 +638,12 @@ fn defl_curv_intervals(curve: &dyn Curve) -> Vec<f64> {
 
     // Chord-sum from First to each of 22 interior/end samples (`cxx:51-57`).
     // OCCT does not update the running point — distances are from `Value(tf)`.
-    let a_p = curve.d0(tf);
+    let p = curve.d0(tf);
     let mut length = 0.0;
     let nbpnts = DEFL_LENGTH_SAMPLES;
     for i in 2..=nbpnts {
         let t = (tf * (nbpnts - i) as f64 + (i - 1) as f64 * tl) / (nbpnts - 1) as f64;
-        length += a_p.distance(&curve.d0(t));
+        length += p.distance(&curve.d0(t));
     }
 
     let span = tl - tf;
@@ -652,12 +652,12 @@ fn defl_curv_intervals(curve: &dyn Curve) -> Vec<f64> {
         return vec![tf, tl];
     }
 
-    let a_defl = (0.01 * length / (2.0 * std::f64::consts::PI)).max(MIN_DEFL);
-    if a_defl > MAX_DEFL {
+    let defl = (0.01 * length / (2.0 * std::f64::consts::PI)).max(MIN_DEFL);
+    if defl > MAX_DEFL {
         return vec![tf, tl];
     }
-    let a_min_len = (0.00001 * length).max(CONFUSION);
-    let a_tol = (0.00001 * span).max(PCONFUSION);
+    let min_len = (0.00001 * length).max(CONFUSION);
+    let tol = (0.00001 * span).max(PCONFUSION);
 
     // `GCPnts_TangentialDeflection(C, PI/6, aDefl, 2, aTol, aMinLen)` then
     // `PerformCurve` CN intervals (`TangentialDeflection.cxx:554-556`).
@@ -680,10 +680,10 @@ fn defl_curv_intervals(curve: &dyn Curve) -> Vec<f64> {
         tf,
         tl,
         std::f64::consts::PI / 6.0,
-        a_defl,
+        defl,
         2,
-        a_tol,
-        a_min_len,
+        tol,
+        min_len,
         &cn,
         degree_min_nb,
     );
@@ -735,26 +735,26 @@ fn perform_general(state: &mut ExtPcState, curve: &dyn Curve, point: &GpPnt) {
         state.sample = state.sample.max(3);
 
         let mut an_inf = state.int_u_inf;
-        let mut a_sup = state.int_u_sup;
+        let mut sup = state.int_u_sup;
         if is_periodic {
             let period = curve.period();
             an_inf = elclib_in_period(state.int_u_inf, state.u_inf, state.u_inf + period);
-            a_sup = state.int_u_sup + (an_inf - state.int_u_inf);
+            sup = state.int_u_sup + (an_inf - state.int_u_inf);
         }
-        if state.u_inf > a_sup || state.u_sup < an_inf {
+        if state.u_inf > sup || state.u_sup < an_inf {
             continue;
         }
         if state.u_inf >= an_inf {
             an_inf = state.u_inf;
         }
-        if state.u_sup <= a_sup {
-            a_sup = state.u_sup;
+        if state.u_sup <= sup {
+            sup = state.u_sup;
         }
-        if (a_sup - an_inf) <= state.tol_u {
+        if (sup - an_inf) <= state.tol_u {
             continue;
         }
         state.int_u_inf = an_inf;
-        state.int_u_sup = a_sup;
+        state.int_u_sup = sup;
 
         if i != 0 {
             let (pp, v1) = curve.d1(state.int_u_inf);

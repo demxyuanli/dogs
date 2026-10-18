@@ -23,13 +23,13 @@ use crate::geom_bnd_lib_curve2d::add_curve2d;
 use crate::geom_bnd_lib_other_curve2d::box_adaptor_sample;
 
 /// `BndLib_Add2dCurve::Add(Adaptor2d_Curve2d, Tol, Box)`.
-pub fn add_adaptor(curve: &dyn Curve2d, a_tol: f64, a_box2d: &mut BndBox2d) {
+pub fn add_adaptor(curve: &dyn Curve2d, tol: f64, box2d: &mut BndBox2d) {
     add_adaptor_range(
         curve,
         curve.first_parameter(),
         curve.last_parameter(),
-        a_tol,
-        a_box2d,
+        tol,
+        box2d,
     );
 }
 
@@ -40,45 +40,45 @@ pub fn add_adaptor(curve: &dyn Curve2d, a_tol: f64, a_box2d: &mut BndBox2d) {
 /// [`add_adaptor_sample`] explicitly when the curve is not a Geom2d handle.
 pub fn add_adaptor_range(
     curve: &dyn Curve2d,
-    a_u1: f64,
-    a_u2: f64,
-    a_tol: f64,
-    a_box2d: &mut BndBox2d,
+    u1: f64,
+    u2: f64,
+    tol: f64,
+    box2d: &mut BndBox2d,
 ) {
-    add_geom2d_range(curve, a_u1, a_u2, a_tol, a_box2d);
+    add_geom2d_range(curve, u1, u2, tol, box2d);
 }
 
 /// The 33-point adaptor fallback (`BndLib_Add2dCurve.cxx:38-56`).
 pub fn add_adaptor_sample(
     curve: &dyn Curve2d,
-    a_u1: f64,
-    a_u2: f64,
-    a_tol: f64,
-    a_box2d: &mut BndBox2d,
+    u1: f64,
+    u2: f64,
+    tol: f64,
+    box2d: &mut BndBox2d,
 ) {
-    a_box2d.add_box(&box_adaptor_sample(curve, a_u1, a_u2, a_tol));
+    box2d.add_box(&box_adaptor_sample(curve, u1, u2, tol));
 }
 
 /// `BndLib_Add2dCurve::Add(Geom2d_Curve, Tol, Box)`.
-pub fn add_geom2d(curve: &dyn Curve2d, a_tol: f64, a_box2d: &mut BndBox2d) {
+pub fn add_geom2d(curve: &dyn Curve2d, tol: f64, box2d: &mut BndBox2d) {
     add_geom2d_range(
         curve,
         curve.first_parameter(),
         curve.last_parameter(),
-        a_tol,
-        a_box2d,
+        tol,
+        box2d,
     );
 }
 
 /// `BndLib_Add2dCurve::Add(Geom2d_Curve, T1, T2, Tol, Box)`.
 pub fn add_geom2d_range(
     curve: &dyn Curve2d,
-    a_t1: f64,
-    a_t2: f64,
-    a_tol: f64,
-    a_box2d: &mut BndBox2d,
+    t1: f64,
+    t2: f64,
+    tol: f64,
+    box2d: &mut BndBox2d,
 ) {
-    add_curve2d(curve, a_t1, a_t2, a_tol, a_box2d);
+    add_curve2d(curve, t1, t2, tol, box2d);
 }
 
 /// `BndLib_Add2dCurve::AddOptimal` is not used by PerformAreas (`Add(..., 0.)`
@@ -87,10 +87,10 @@ pub fn add_geom2d_range(
 /// different sampling budget.
 pub fn add_geom2d_optimal(
     curve: &dyn Curve2d,
-    a_t1: f64,
-    a_t2: f64,
-    a_tol: f64,
-    a_box2d: &mut BndBox2d,
+    t1: f64,
+    t2: f64,
+    tol: f64,
+    box2d: &mut BndBox2d,
 ) {
-    add_geom2d_range(curve, a_t1, a_t2, a_tol, a_box2d);
+    add_geom2d_range(curve, t1, t2, tol, box2d);
 }

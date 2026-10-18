@@ -189,18 +189,18 @@ impl AlgoTools2D {
         let v_periodic = surf.is_v_periodic();
         let u_period = if u_periodic { surf.u_period() } else { 0.0 };
         let v_period = if v_periodic { surf.v_period() } else { 0.0 };
-        let a_delta = occt_core::precision::PCONFUSION;
+        let delta = occt_core::precision::PCONFUSION;
 
-        let a_t = 0.5 * (first + last);
-        let p = curve.d0(a_t);
+        let t = 0.5 * (first + last);
+        let p = curve.d0(t);
         let (mut u2, v2) = (p.x(), p.y());
 
         // du (`cxx:273-315`)
         let mut du = 0.0;
         if u_periodic && u_period > 0.0 {
-            if (u2 - umin).abs() < a_delta {
+            if (u2 - umin).abs() < delta {
                 u2 = umin;
-            } else if (u2 - umin - u_period).abs() < a_delta {
+            } else if (u2 - umin - u_period).abs() < delta {
                 u2 = umin + u_period;
             }
             let (nu2, ndu) =
@@ -209,10 +209,10 @@ impl AlgoTools2D {
             du = ndu;
             if du == 0.0 {
                 if let Some(radius) = cylinder_radius(surf.as_ref()) {
-                    let a_tol = max_tolerance_edge(face);
-                    let mut d_fi = a_tol / radius;
-                    if d_fi < a_delta {
-                        d_fi = a_delta;
+                    let tol = max_tolerance_edge(face);
+                    let mut d_fi = tol / radius;
+                    if d_fi < delta {
+                        d_fi = delta;
                     }
                     let min_cond = umin - u2 > d_fi;
                     let max_cond = u2 - umax > d_fi;
@@ -226,8 +226,8 @@ impl AlgoTools2D {
         // dv (`cxx:317-344`)
         let mut dv = 0.0;
         if v_periodic && v_period > 0.0 {
-            let min_cond = vmin - v2 > a_delta;
-            let max_cond = v2 - vmax > a_delta;
+            let min_cond = vmin - v2 > delta;
+            let max_cond = v2 - vmax > delta;
             if min_cond || max_cond {
                 dv = if min_cond { v_period } else { -v_period };
             }
@@ -242,12 +242,12 @@ impl AlgoTools2D {
         }
 
         // Classifier cross-check (`cxx:346-387`)
-        if let Ok(cl) = FClass2d::new(face, a_delta) {
-            if u_periodic && u_period > 0.0 && (umax - umin - 2.0 * a_delta) > u_period {
+        if let Ok(cl) = FClass2d::new(face, delta) {
+            if u_periodic && u_period > 0.0 && (umax - umin - 2.0 * delta) > u_period {
                 let u = u2 + du;
-                if u > umin + a_delta + u_period || u < umax - a_delta - u_period {
+                if u > umin + delta + u_period || u < umax - delta - u_period {
                     if cl.perform(GpPnt2d::new(u, v2 + dv)) == FaceState::Out {
-                        du += if u > umin + a_delta + u_period {
+                        du += if u > umin + delta + u_period {
                             -u_period
                         } else {
                             u_period
@@ -255,12 +255,12 @@ impl AlgoTools2D {
                     }
                 }
             }
-            if v_periodic && v_period > 0.0 && (vmax - vmin - 2.0 * a_delta) > v_period {
+            if v_periodic && v_period > 0.0 && (vmax - vmin - 2.0 * delta) > v_period {
                 let u = u2 + du;
                 let v = v2 + dv;
-                if v > vmin + a_delta + v_period || v < vmax - a_delta - v_period {
+                if v > vmin + delta + v_period || v < vmax - delta - v_period {
                     if cl.perform(GpPnt2d::new(u, v)) == FaceState::Out {
-                        dv += if v > vmin + a_delta + v_period {
+                        dv += if v > vmin + delta + v_period {
                             -v_period
                         } else {
                             v_period

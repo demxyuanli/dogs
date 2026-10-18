@@ -50,8 +50,8 @@ pub struct IntAnaCurve {
     r_cyl: f64,
     angle: f64,
     ax3: GpAx3,
-    my_first: f64,
-    my_last: f64,
+    first: f64,
+    last: f64,
 }
 
 impl Default for IntAnaCurve {
@@ -88,8 +88,8 @@ impl Default for IntAnaCurve {
             r_cyl: 0.0,
             angle: 0.0,
             ax3: GpAx3::standard(),
-            my_first: 0.0,
-            my_last: 0.0,
+            first: 0.0,
+            last: 0.0,
         }
     }
 }
@@ -151,8 +151,8 @@ impl IntAnaCurve {
         self.restricted_sup = true;
         self.first_bounded = false;
         self.last_bounded = false;
-        self.my_first = dom_inf;
-        self.my_last = if two_curves {
+        self.first = dom_inf;
+        self.last = if two_curves {
             dom_sup + dom_sup - dom_inf
         } else {
             dom_sup
@@ -210,8 +210,8 @@ impl IntAnaCurve {
         self.restricted_sup = true;
         self.first_bounded = false;
         self.last_bounded = false;
-        self.my_first = dom_inf;
-        self.my_last = if two_curves {
+        self.first = dom_inf;
+        self.last = if two_curves {
             dom_sup + dom_sup - dom_inf
         } else {
             dom_sup
@@ -223,7 +223,7 @@ impl IntAnaCurve {
     }
 
     pub fn domain(&self) -> (f64, f64) {
-        (self.my_first, self.my_last)
+        (self.first, self.last)
     }
 
     pub fn is_constant(&self) -> bool {
@@ -248,8 +248,8 @@ impl IntAnaCurve {
 
     pub fn set_domain(&mut self, first: f64, last: f64) {
         if last > first {
-            self.my_first = first;
-            self.my_last = last;
+            self.first = first;
+            self.last = last;
         }
     }
 
@@ -323,10 +323,10 @@ impl IntAnaCurve {
         params[0..4].sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let mut out = Vec::new();
         for i in 0..5 {
-            if params[i] > self.my_last {
+            if params[i] > self.last {
                 break;
             }
-            if params[i] < self.my_first {
+            if params[i] < self.first {
                 continue;
             }
             if i > 0 && (params[i] - params[i - 1]).abs() < PCONFUSION {
@@ -352,16 +352,16 @@ impl IntAnaCurve {
     fn internal_uv(&self, theta_in: f64) -> (f64, f64, f64, f64) {
         let rel_p = 1.0 + f64::EPSILON;
         let rel_m = 1.0 - f64::EPSILON;
-        let a_dt = 100.0 * f64::EPSILON * (self.domain_sup + self.domain_sup - self.domain_inf).abs().max(1.0);
+        let dt = 100.0 * f64::EPSILON * (self.domain_sup + self.domain_sup - self.domain_inf).abs().max(1.0);
         let mut theta = theta_in;
         let mut second = false;
         if theta < self.domain_inf * rel_m
             || (theta > self.domain_sup * rel_p && !self.two_curves)
             || theta > (self.domain_sup + self.domain_sup - self.domain_inf) * rel_p
         {
-            theta = theta.clamp(self.my_first, self.my_last);
+            theta = theta.clamp(self.first, self.last);
         }
-        if (theta - self.domain_sup).abs() < a_dt {
+        if (theta - self.domain_sup).abs() < dt {
             theta = self.domain_sup;
         } else if theta > self.domain_sup {
             theta = self.domain_sup + self.domain_sup - theta;
@@ -396,7 +396,7 @@ impl IntAnaCurve {
             + sin2t * (self.z0_sin_sin - self.z0_cos_cos)
             + cos2t * (self.z0_cos_sin + self.z0_cos_sin);
         let mut disc = b * b - 4.0 * a * c;
-        let tol_d = 2.0 * a_dt * (b * db - 2.0 * (a * dc + c * da)).abs();
+        let tol_d = 2.0 * dt * (b * db - 2.0 * (a * dc + c * da)).abs();
         if disc < tol_d {
             disc = 0.0;
         }
@@ -460,11 +460,11 @@ impl Curve for IntAnaCurve {
     }
 
     fn first_parameter(&self) -> f64 {
-        self.my_first
+        self.first
     }
 
     fn last_parameter(&self) -> f64 {
-        self.my_last
+        self.last
     }
 
     fn continuity(&self) -> u8 {
@@ -474,7 +474,7 @@ impl Curve for IntAnaCurve {
     fn transform(&mut self, _t: &GpTrsf) {}
 
     fn reverse(&mut self) {
-        std::mem::swap(&mut self.my_first, &mut self.my_last);
+        std::mem::swap(&mut self.first, &mut self.last);
     }
 
     fn clone_dyn(&self) -> Box<dyn Curve> {

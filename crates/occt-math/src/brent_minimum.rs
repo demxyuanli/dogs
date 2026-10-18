@@ -28,7 +28,7 @@ pub struct BrentMinimum {
     itermax: i32,
     /// `myF`: true when `F(Bx)` was supplied to the constructor, so `Perform`
     /// must not evaluate it again (`math_BrentMinimum.cxx:92-100`).
-    my_f: bool,
+    f: bool,
 }
 
 impl BrentMinimum {
@@ -47,7 +47,7 @@ impl BrentMinimum {
             done: false,
             iter: 0,
             itermax: nb_iterations,
-            my_f: false,
+            f: false,
         }
     }
 
@@ -71,7 +71,7 @@ impl BrentMinimum {
             done: false,
             iter: 0,
             itermax: nb_iterations,
-            my_f: true,
+            f: true,
         }
     }
 
@@ -135,7 +135,7 @@ impl BrentMinimum {
         self.x = bx;
         let mut w = bx;
         let mut v = bx;
-        if !self.my_f {
+        if !self.f {
             self.fx = f(self.x);
         }
         self.fw = self.fx;
@@ -253,7 +253,7 @@ impl BrentMinimum {
         self.x = bx;
         let mut w = bx;
         let mut v = bx;
-        if !self.my_f {
+        if !self.f {
             // math_BrentMinimum.cxx:93-97
             match f(self.x) {
                 Some(val) => self.fx = val,

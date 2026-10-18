@@ -51,9 +51,9 @@ pub(super) fn wire_add_edge_composed(wire: &mut Wire, at: usize, edge: &Edge) {
 /// B-spline whose COS range escapes it, `[cf, cl]` otherwise.
 pub(super) fn curve2d_box(c2d: &dyn Curve2d, cf: f64, cl: f64) -> BndBox2d {
     let mut box2d = BndBox2d::new();
-    let a_first = c2d.first_parameter();
-    let a_last = c2d.last_parameter();
-    if c2d.is_bspline2d() && (cf < a_first || cl > a_last) {
+    let first = c2d.first_parameter();
+    let last = c2d.last_parameter();
+    if c2d.is_bspline2d() && (cf < first || cl > last) {
         // pdn avoiding problems with segment in Bnd_Box (`cxx:328`).
         add_geom2d(c2d, CONFUSION, &mut box2d);
     } else {

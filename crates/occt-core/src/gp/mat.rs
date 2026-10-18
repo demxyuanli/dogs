@@ -368,8 +368,8 @@ mod tests {
         let c = GpMat::new(1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 3.0);
         let ab = &a * &b;
         let ab_c = &ab * &c;
-        let a_bc = &a * &(&b * &c);
-        assert_eq!(ab_c, a_bc);
+        let bc = &a * &(&b * &c);
+        assert_eq!(ab_c, bc);
     }
 
     #[test]

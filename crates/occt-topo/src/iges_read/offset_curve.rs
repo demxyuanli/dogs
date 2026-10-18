@@ -453,8 +453,8 @@ fn transfer_2d_composite(
     // `FixConnected(1, precision)` (`cxx:342-343`).
     let nb = wire_edges.len();
     if nb >= 2 {
-        for a_i in (2..=nb).rev() {
-            crate::shhealing::fix_connected_at(&mut wire, CONFUSION, maxtol, a_i);
+        for i in (2..=nb).rev() {
+            crate::shhealing::fix_connected_at(&mut wire, CONFUSION, maxtol, i);
         }
     }
     if nb >= 1 {

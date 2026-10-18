@@ -37,40 +37,40 @@ impl TheInterferenceOfHInter {
     /// `IntCurveSurface_TheInterferenceOfHInter(thePolyg, thePolyh)`
     /// (`...hxx:48-50`).
     pub fn of_polygon_polyhedron(
-        the_polyg: &ThePolygonOfHInter,
-        the_polyh: &ThePolyhedronOfHInter,
+        polyg: &ThePolygonOfHInter,
+        polyh: &ThePolyhedronOfHInter,
     ) -> Self {
         Self {
-            base: IntfInterferencePolygonPolyhedron::with_polygon_polyhedron(the_polyg, the_polyh),
+            base: IntfInterferencePolygonPolyhedron::with_polygon_polyhedron(polyg, polyh),
         }
     }
 
     /// `IntCurveSurface_TheInterferenceOfHInter(theLin, thePolyh)`
     /// (`...hxx:54-56`).
-    pub fn of_lin_polyhedron(the_lin: &GpLin, the_polyh: &ThePolyhedronOfHInter) -> Self {
+    pub fn of_lin_polyhedron(lin: &GpLin, polyh: &ThePolyhedronOfHInter) -> Self {
         Self {
-            base: IntfInterferencePolygonPolyhedron::with_lin_polyhedron(the_lin, the_polyh),
+            base: IntfInterferencePolygonPolyhedron::with_lin_polyhedron(lin, polyh),
         }
     }
 
     /// `IntCurveSurface_TheInterferenceOfHInter(theLins, thePolyh)`
     /// (`...hxx:60-62`).
-    pub fn of_lins_polyhedron(the_lins: &[GpLin], the_polyh: &ThePolyhedronOfHInter) -> Self {
+    pub fn of_lins_polyhedron(lins: &[GpLin], polyh: &ThePolyhedronOfHInter) -> Self {
         Self {
-            base: IntfInterferencePolygonPolyhedron::with_lins_polyhedron(the_lins, the_polyh),
+            base: IntfInterferencePolygonPolyhedron::with_lins_polyhedron(lins, polyh),
         }
     }
 
     /// `IntCurveSurface_TheInterferenceOfHInter(thePolyg, thePolyh, theBoundSB)`
     /// (`...hxx:80-83`).
     pub fn of_polygon_polyhedron_grid(
-        the_polyg: &ThePolygonOfHInter,
-        the_polyh: &ThePolyhedronOfHInter,
-        the_bsb: &IntfPolyhGrid,
+        polyg: &ThePolygonOfHInter,
+        polyh: &ThePolyhedronOfHInter,
+        bsb: &IntfPolyhGrid,
     ) -> Self {
         Self {
             base: IntfInterferencePolygonPolyhedron::with_polygon_polyhedron_grid(
-                the_polyg, the_polyh, the_bsb,
+                polyg, polyh, bsb,
             ),
         }
     }
@@ -78,13 +78,13 @@ impl TheInterferenceOfHInter {
     /// `IntCurveSurface_TheInterferenceOfHInter(theLin, thePolyh, theBoundSB)`
     /// (`...hxx:87-90`).
     pub fn of_lin_polyhedron_grid(
-        the_lin: &GpLin,
-        the_polyh: &ThePolyhedronOfHInter,
-        the_bsb: &IntfPolyhGrid,
+        lin: &GpLin,
+        polyh: &ThePolyhedronOfHInter,
+        bsb: &IntfPolyhGrid,
     ) -> Self {
         Self {
             base: IntfInterferencePolygonPolyhedron::with_lin_polyhedron_grid(
-                the_lin, the_polyh, the_bsb,
+                lin, polyh, bsb,
             ),
         }
     }
@@ -92,13 +92,13 @@ impl TheInterferenceOfHInter {
     /// `IntCurveSurface_TheInterferenceOfHInter(theLins, thePolyh, theBoundSB)`
     /// (`...hxx:94-97`).
     pub fn of_lins_polyhedron_grid(
-        the_lins: &[GpLin],
-        the_polyh: &ThePolyhedronOfHInter,
-        the_bsb: &IntfPolyhGrid,
+        lins: &[GpLin],
+        polyh: &ThePolyhedronOfHInter,
+        bsb: &IntfPolyhGrid,
     ) -> Self {
         Self {
             base: IntfInterferencePolygonPolyhedron::with_lins_polyhedron_grid(
-                the_lins, the_polyh, the_bsb,
+                lins, polyh, bsb,
             ),
         }
     }
@@ -106,52 +106,52 @@ impl TheInterferenceOfHInter {
     /// `Perform(thePolyg, thePolyh)` (`...hxx:66-68`).
     pub fn perform_polygon_polyhedron(
         &mut self,
-        the_polyg: &ThePolygonOfHInter,
-        the_polyh: &ThePolyhedronOfHInter,
+        polyg: &ThePolygonOfHInter,
+        polyh: &ThePolyhedronOfHInter,
     ) {
-        self.base.perform_polygon_polyhedron(the_polyg, the_polyh);
+        self.base.perform_polygon_polyhedron(polyg, polyh);
     }
 
     /// `Perform(theLin, thePolyh)` (`...hxx:71-72`).
-    pub fn perform_lin_polyhedron(&mut self, the_lin: &GpLin, the_polyh: &ThePolyhedronOfHInter) {
-        self.base.perform_lin_polyhedron(the_lin, the_polyh);
+    pub fn perform_lin_polyhedron(&mut self, lin: &GpLin, polyh: &ThePolyhedronOfHInter) {
+        self.base.perform_lin_polyhedron(lin, polyh);
     }
 
     /// `Perform(theLins, thePolyh)` (`...hxx:76-77`).
-    pub fn perform_lins_polyhedron(&mut self, the_lins: &[GpLin], the_polyh: &ThePolyhedronOfHInter) {
-        self.base.perform_lins_polyhedron(the_lins, the_polyh);
+    pub fn perform_lins_polyhedron(&mut self, lins: &[GpLin], polyh: &ThePolyhedronOfHInter) {
+        self.base.perform_lins_polyhedron(lins, polyh);
     }
 
     /// `Perform(thePolyg, thePolyh, theBoundSB)` (`...hxx:101-103`).
     pub fn perform_polygon_polyhedron_grid(
         &mut self,
-        the_polyg: &ThePolygonOfHInter,
-        the_polyh: &ThePolyhedronOfHInter,
-        the_bsb: &IntfPolyhGrid,
+        polyg: &ThePolygonOfHInter,
+        polyh: &ThePolyhedronOfHInter,
+        bsb: &IntfPolyhGrid,
     ) {
         self.base
-            .perform_polygon_polyhedron_grid(the_polyg, the_polyh, the_bsb);
+            .perform_polygon_polyhedron_grid(polyg, polyh, bsb);
     }
 
     /// `Perform(theLin, thePolyh, theBoundSB)` (`...hxx:107-112`).
     pub fn perform_lin_polyhedron_grid(
         &mut self,
-        the_lin: &GpLin,
-        the_polyh: &ThePolyhedronOfHInter,
-        the_bsb: &IntfPolyhGrid,
+        lin: &GpLin,
+        polyh: &ThePolyhedronOfHInter,
+        bsb: &IntfPolyhGrid,
     ) {
-        self.base.perform_lin_polyhedron_grid(the_lin, the_polyh, the_bsb);
+        self.base.perform_lin_polyhedron_grid(lin, polyh, bsb);
     }
 
     /// `Perform(theLins, thePolyh, theBoundSB)` (`...hxx:114-116`).
     pub fn perform_lins_polyhedron_grid(
         &mut self,
-        the_lins: &[GpLin],
-        the_polyh: &ThePolyhedronOfHInter,
-        the_bsb: &IntfPolyhGrid,
+        lins: &[GpLin],
+        polyh: &ThePolyhedronOfHInter,
+        bsb: &IntfPolyhGrid,
     ) {
         self.base
-            .perform_lins_polyhedron_grid(the_lins, the_polyh, the_bsb);
+            .perform_lins_polyhedron_grid(lins, polyh, bsb);
     }
 
     /// The `Intf_Interference` base, for `NbSectionPoints` / `PntValue` /

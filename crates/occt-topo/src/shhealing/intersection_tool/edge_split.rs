@@ -93,12 +93,12 @@ pub(super) fn cut_edge(edge: &Edge, pend: f64, cut: f64, face: &Face, is_cut_lin
     if (cut - pend).abs() < 10.0 * PCONFUSION {
         return false;
     }
-    let a_range = (cut - pend).abs();
+    let range = (cut - pend).abs();
     let reg = GeometryRegistry::global();
     // `cxx:213-214`: `BRep_Tool::Range(edge, a, b)`.
     let (a, b) = reg.edge_parameters(&edge.0);
     *is_cut_line = false; // `cxx:219`
-    if a_range < 10.0 * PCONFUSION {
+    if range < 10.0 * PCONFUSION {
         return false;
     }
 
@@ -131,10 +131,10 @@ pub(super) fn cut_edge(edge: &Edge, pend: f64, cut: f64, face: &Face, is_cut_lin
     }
 
     // `cxx:249-255`.
-    if ((a - b).abs() - a_range).abs() < PCONFUSION {
+    if ((a - b).abs() - range).abs() < PCONFUSION {
         return false;
     }
-    if a_range < 10.0 * PCONFUSION {
+    if range < 10.0 * PCONFUSION {
         return false;
     }
     // `cxx:258-259`: `B.Range(edge, min, max)`, every representation.

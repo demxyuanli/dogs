@@ -269,7 +269,7 @@ impl IntfTool {
     /// `Intf_Tool::Hypr2dBox` (`Intf_Tool.cxx:210-369`).
     pub fn hypr2d_box(
         &mut self,
-        the_hypr2d: &GpHypr2d,
+        hypr2d: &GpHypr2d,
         domain: &BndBox2d,
         box_hypr2d: &mut BndBox2d,
     ) {
@@ -285,7 +285,7 @@ impl IntfTool {
             return;
         }
 
-        let nb_pi = self.inters2d_hypr(the_hypr2d, domain);
+        let nb_pi = self.inters2d_hypr(hypr2d, domain);
 
         if nb_pi > 0 {
             let Some((mut xmin, mut ymin, mut xmax, mut ymax)) = domain.get() else {
@@ -320,9 +320,9 @@ impl IntfTool {
             for npi in 0..nb_pi as usize {
                 let (_, tan) = hyperbola_d1_ax22d(
                     self.parint[npi],
-                    &the_hypr2d.pos,
-                    the_hypr2d.major_radius,
-                    the_hypr2d.minor_radius,
+                    &hypr2d.pos,
+                    hypr2d.major_radius,
+                    hypr2d.minor_radius,
                 );
                 match self.bord[npi] {
                     1 => sinan = GpXY::new(-1.0, 0.0).crossed(&tan.xy()),
@@ -365,9 +365,9 @@ impl IntfTool {
                             let pas = if ip.abs() <= 10 { 1 } else { 10 };
                             box_hypr2d.add_point(&hyperbola_value_ax22d(
                                 f64::from(ip) / 10.0,
-                                &the_hypr2d.pos,
-                                the_hypr2d.major_radius,
-                                the_hypr2d.minor_radius,
+                                &hypr2d.pos,
+                                hypr2d.major_radius,
+                                hypr2d.minor_radius,
                             ));
                             ip += pas;
                         }
@@ -379,9 +379,9 @@ impl IntfTool {
             }
         } else if !domain.is_out(&hyperbola_value_ax22d(
             0.0,
-            &the_hypr2d.pos,
-            the_hypr2d.major_radius,
-            the_hypr2d.minor_radius,
+            &hypr2d.pos,
+            hypr2d.major_radius,
+            hypr2d.minor_radius,
         )) {
             *box_hypr2d = *domain;
             self.begin_on_curve[0] = -Precision::INFINITE;
@@ -391,7 +391,7 @@ impl IntfTool {
     }
 
     /// `Intf_Tool::Inters2d(gp_Hypr2d, Bnd_Box2d)` (`Intf_Tool.cxx:373-473`).
-    fn inters2d_hypr(&mut self, the_curv: &GpHypr2d, domain: &BndBox2d) -> i32 {
+    fn inters2d_hypr(&mut self, curv: &GpHypr2d, domain: &BndBox2d) -> i32 {
         let mut nbpi: i32 = 0;
 
         let Some((xmin, ymin, xmax, ymax)) = domain.get() else {
@@ -401,7 +401,7 @@ impl IntfTool {
         if !domain.is_open_ymax() {
             let l1 = GpLin2d::from_pnt_dir(GpPnt2d::new(0.0, ymax), dir2d_nx());
             let mut inters1 = IntAna2dAnaIntersection::new();
-            inters1.perform_hypr_conic(the_curv, &IntAna2dConic::from_lin2d(&l1));
+            inters1.perform_hypr_conic(curv, &IntAna2dConic::from_lin2d(&l1));
             if inters1.is_done() && !inters1.is_empty() {
                 for npi in 1..=inters1.nb_points() {
                     let x = inters1.point(npi).value().x();
@@ -419,7 +419,7 @@ impl IntfTool {
         if !domain.is_open_xmin() {
             let l2 = GpLin2d::from_pnt_dir(GpPnt2d::new(xmin, 0.0), dir2d_ny());
             let mut inters2 = IntAna2dAnaIntersection::new();
-            inters2.perform_hypr_conic(the_curv, &IntAna2dConic::from_lin2d(&l2));
+            inters2.perform_hypr_conic(curv, &IntAna2dConic::from_lin2d(&l2));
             if inters2.is_done() && !inters2.is_empty() {
                 for npi in 1..=inters2.nb_points() {
                     let y = inters2.point(npi).value().y();
@@ -437,7 +437,7 @@ impl IntfTool {
         if !domain.is_open_ymin() {
             let l3 = GpLin2d::from_pnt_dir(GpPnt2d::new(0.0, ymin), dir2d_x());
             let mut inters3 = IntAna2dAnaIntersection::new();
-            inters3.perform_hypr_conic(the_curv, &IntAna2dConic::from_lin2d(&l3));
+            inters3.perform_hypr_conic(curv, &IntAna2dConic::from_lin2d(&l3));
             if inters3.is_done() && !inters3.is_empty() {
                 for npi in 1..=inters3.nb_points() {
                     let x = inters3.point(npi).value().x();
@@ -455,7 +455,7 @@ impl IntfTool {
         if !domain.is_open_xmax() {
             let l4 = GpLin2d::from_pnt_dir(GpPnt2d::new(xmax, 0.0), dir2d_y());
             let mut inters4 = IntAna2dAnaIntersection::new();
-            inters4.perform_hypr_conic(the_curv, &IntAna2dConic::from_lin2d(&l4));
+            inters4.perform_hypr_conic(curv, &IntAna2dConic::from_lin2d(&l4));
             if inters4.is_done() && !inters4.is_empty() {
                 for npi in 1..=inters4.nb_points() {
                     let y = inters4.point(npi).value().y();
@@ -475,7 +475,7 @@ impl IntfTool {
     /// `Intf_Tool::Parab2dBox` (`Intf_Tool.cxx:477-638`).
     pub fn parab2d_box(
         &mut self,
-        the_parab2d: &GpParab2d,
+        parab2d: &GpParab2d,
         domain: &BndBox2d,
         box_parab2d: &mut BndBox2d,
     ) {
@@ -491,7 +491,7 @@ impl IntfTool {
             return;
         }
 
-        let nb_pi = self.inters2d_parab(the_parab2d, domain);
+        let nb_pi = self.inters2d_parab(parab2d, domain);
 
         if nb_pi > 0 {
             let Some((mut xmin, mut ymin, mut xmax, mut ymax)) = domain.get() else {
@@ -524,7 +524,7 @@ impl IntfTool {
 
             for npi in 0..nb_pi as usize {
                 let (_, tan) =
-                    parabola_d1_ax22d(self.parint[npi], &the_parab2d.pos, the_parab2d.focal);
+                    parabola_d1_ax22d(self.parint[npi], &parab2d.pos, parab2d.focal);
                 match self.bord[npi] {
                     1 => sinan = GpXY::new(-1.0, 0.0).crossed(&tan.xy()),
                     2 => sinan = GpXY::new(0.0, -1.0).crossed(&tan.xy()),
@@ -566,8 +566,8 @@ impl IntfTool {
                             let pas = if ip.abs() <= 10 { 1 } else { 10 };
                             box_parab2d.add_point(&parabola_value_ax22d(
                                 f64::from(ip) / 10.0,
-                                &the_parab2d.pos,
-                                the_parab2d.focal,
+                                &parab2d.pos,
+                                parab2d.focal,
                             ));
                             ip += pas;
                         }
@@ -577,7 +577,7 @@ impl IntfTool {
             if !out && self.nb_seg > 0 {
                 self.end_on_curve[self.nb_seg - 1] = Precision::INFINITE;
             }
-        } else if !domain.is_out(&parabola_value_ax22d(0.0, &the_parab2d.pos, the_parab2d.focal)) {
+        } else if !domain.is_out(&parabola_value_ax22d(0.0, &parab2d.pos, parab2d.focal)) {
             *box_parab2d = *domain;
             self.begin_on_curve[0] = -Precision::INFINITE;
             self.end_on_curve[0] = Precision::INFINITE;
@@ -586,7 +586,7 @@ impl IntfTool {
     }
 
     /// `Intf_Tool::Inters2d(gp_Parab2d, Bnd_Box2d)` (`Intf_Tool.cxx:642-742`).
-    fn inters2d_parab(&mut self, the_curv: &GpParab2d, domain: &BndBox2d) -> i32 {
+    fn inters2d_parab(&mut self, curv: &GpParab2d, domain: &BndBox2d) -> i32 {
         let mut nbpi: i32 = 0;
 
         let Some((xmin, ymin, xmax, ymax)) = domain.get() else {
@@ -596,7 +596,7 @@ impl IntfTool {
         if !domain.is_open_ymax() {
             let l1 = GpLin2d::from_pnt_dir(GpPnt2d::new(0.0, ymax), dir2d_nx());
             let mut inters1 = IntAna2dAnaIntersection::new();
-            inters1.perform_parab_conic(the_curv, &IntAna2dConic::from_lin2d(&l1));
+            inters1.perform_parab_conic(curv, &IntAna2dConic::from_lin2d(&l1));
             if inters1.is_done() && !inters1.is_empty() {
                 for npi in 1..=inters1.nb_points() {
                     let x = inters1.point(npi).value().x();
@@ -614,7 +614,7 @@ impl IntfTool {
         if !domain.is_open_xmin() {
             let l2 = GpLin2d::from_pnt_dir(GpPnt2d::new(xmin, 0.0), dir2d_ny());
             let mut inters2 = IntAna2dAnaIntersection::new();
-            inters2.perform_parab_conic(the_curv, &IntAna2dConic::from_lin2d(&l2));
+            inters2.perform_parab_conic(curv, &IntAna2dConic::from_lin2d(&l2));
             if inters2.is_done() && !inters2.is_empty() {
                 for npi in 1..=inters2.nb_points() {
                     let y = inters2.point(npi).value().y();
@@ -632,7 +632,7 @@ impl IntfTool {
         if !domain.is_open_ymin() {
             let l3 = GpLin2d::from_pnt_dir(GpPnt2d::new(0.0, ymin), dir2d_x());
             let mut inters3 = IntAna2dAnaIntersection::new();
-            inters3.perform_parab_conic(the_curv, &IntAna2dConic::from_lin2d(&l3));
+            inters3.perform_parab_conic(curv, &IntAna2dConic::from_lin2d(&l3));
             if inters3.is_done() && !inters3.is_empty() {
                 for npi in 1..=inters3.nb_points() {
                     let x = inters3.point(npi).value().x();
@@ -650,7 +650,7 @@ impl IntfTool {
         if !domain.is_open_xmax() {
             let l4 = GpLin2d::from_pnt_dir(GpPnt2d::new(xmax, 0.0), dir2d_y());
             let mut inters4 = IntAna2dAnaIntersection::new();
-            inters4.perform_parab_conic(the_curv, &IntAna2dConic::from_lin2d(&l4));
+            inters4.perform_parab_conic(curv, &IntAna2dConic::from_lin2d(&l4));
             if inters4.is_done() && !inters4.is_empty() {
                 for npi in 1..=inters4.nb_points() {
                     let y = inters4.point(npi).value().y();

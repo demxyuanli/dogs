@@ -51,13 +51,13 @@ impl CoupleOfShape {
 }
 
 /// `BOPTools_AlgoTools::GetEdgeOnFace`.
-pub fn get_edge_on_face(the_e1: &Edge, the_f2: &Face) -> Option<Edge> {
-    for w in ShapeIterator::of_shape(&the_f2.0) {
+pub fn get_edge_on_face(e1: &Edge, f2: &Face) -> Option<Edge> {
+    for w in ShapeIterator::of_shape(&f2.0) {
         if w.shape_type() != ShapeType::Wire {
             continue;
         }
         for e in ShapeIterator::of_shape(&w) {
-            if e.shape_type() == ShapeType::Edge && is_same(&e, &the_e1.0) {
+            if e.shape_type() == ShapeType::Edge && is_same(&e, &e1.0) {
                 return Some(Edge(e));
             }
         }
@@ -66,15 +66,15 @@ pub fn get_edge_on_face(the_e1: &Edge, the_f2: &Face) -> Option<Edge> {
 }
 
 /// `BOPTools_AlgoTools::GetEdgeOff`.
-pub fn get_edge_off(the_e1: &Edge, the_f2: &Face) -> Option<Edge> {
-    let or1c = the_e1.0.orientation().reversed();
-    for w in ShapeIterator::of_shape(&the_f2.0) {
+pub fn get_edge_off(e1: &Edge, f2: &Face) -> Option<Edge> {
+    let or1c = e1.0.orientation().reversed();
+    for w in ShapeIterator::of_shape(&f2.0) {
         if w.shape_type() != ShapeType::Wire {
             continue;
         }
         for e in ShapeIterator::of_shape(&w) {
             if e.shape_type() == ShapeType::Edge
-                && is_same(&e, &the_e1.0)
+                && is_same(&e, &e1.0)
                 && e.orientation() == or1c
             {
                 return Some(Edge(e));
@@ -348,14 +348,14 @@ pub fn get_face_off(
 }
 
 fn find_face_pairs(
-    the_e: &Edge,
-    the_lf: &[TopoShape],
+    e: &Edge,
+    lf: &[TopoShape],
     ctx: &IntToolsContext,
 ) -> Vec<(TopoShape, TopoShape)> {
     let mut lcef: Vec<CoupleOfShape> = Vec::new();
-    for fl in the_lf {
+    for fl in lf {
         let f = Face(fl.clone());
-        let Some(el) = get_edge_on_face(the_e, &f) else {
+        let Some(el) = get_edge_on_face(e, &f) else {
             return Vec::new();
         };
         lcef.push(CoupleOfShape::new(el.0, fl.clone()));
@@ -398,13 +398,13 @@ fn find_face_pairs(
 
 /// `BOPTools_AlgoTools::IsInternalFace` (face, edge, face1, face2).
 pub fn is_internal_face_by_pair(
-    the_face: &Face,
-    the_edge: &Edge,
+    face: &Face,
+    edge: &Edge,
     face1: &Face,
     face2: &Face,
     ctx: &IntToolsContext,
 ) -> i32 {
-    let Some(mut e1) = get_edge_on_face(the_edge, face1) else {
+    let Some(mut e1) = get_edge_on_face(edge, face1) else {
         return 2;
     };
     let e2 = if e1.0.orientation() == Orientation::Internal {
@@ -419,13 +419,13 @@ pub fn is_internal_face_by_pair(
         e.0.set_orientation(Orientation::Reversed);
         e
     } else {
-        match get_edge_on_face(the_edge, face2) {
+        match get_edge_on_face(edge, face2) {
             Some(e) => e,
             None => return 2,
         }
     };
     let lcs = vec![
-        CoupleOfShape::new(the_edge.0.clone(), the_face.0.clone()),
+        CoupleOfShape::new(edge.0.clone(), face.0.clone()),
         CoupleOfShape::new(e2.0, face2.0.clone()),
     ];
     // `GetFaceOff` false: angles are not distinct (`_cxx:977-982`) → iRet=2.
@@ -434,7 +434,7 @@ pub fn is_internal_face_by_pair(
         Some((_, false)) => 2,
         Some((f_off, true)) => {
             // `cxx:983`: `theFace.IsEqual(aFOff)`.
-            if is_equal(&the_face.0, &f_off.0) {
+            if is_equal(&face.0, &f_off.0) {
                 1
             } else {
                 0
@@ -445,23 +445,23 @@ pub fn is_internal_face_by_pair(
 
 /// `BOPTools_AlgoTools::IsInternalFace` (face, edge, list of faces).
 pub fn is_internal_face_by_list(
-    the_face: &Face,
-    the_edge: &Edge,
-    the_lf: &[TopoShape],
+    face: &Face,
+    edge: &Edge,
+    lf: &[TopoShape],
     ctx: &IntToolsContext,
 ) -> i32 {
-    if the_lf.len() == 2 {
+    if lf.len() == 2 {
         return is_internal_face_by_pair(
-            the_face,
-            the_edge,
-            &Face(the_lf[0].clone()),
-            &Face(the_lf[1].clone()),
+            face,
+            edge,
+            &Face(lf[0].clone()),
+            &Face(lf[1].clone()),
             ctx,
         );
     }
-    let pairs = find_face_pairs(the_edge, the_lf, ctx);
+    let pairs = find_face_pairs(edge, lf, ctx);
     for (f1, f2) in pairs {
-        let i = is_internal_face_by_pair(the_face, the_edge, &Face(f1), &Face(f2), ctx);
+        let i = is_internal_face_by_pair(face, edge, &Face(f1), &Face(f2), ctx);
         if i != 0 {
             return i;
         }
@@ -476,22 +476,22 @@ pub fn is_internal_face_by_list(
 /// An MEF hit that is skipped (one adjacent face whose edge is not INTERNAL)
 /// must fall through to `ComputeState`, not report Out.
 pub fn is_internal_face(
-    the_face: &Face,
+    face: &Face,
     the_solid: &TopoShape,
-    the_mef: &std::collections::HashMap<crate::topo_tools_full::ShapeMapKey, Vec<TopoShape>>,
+    mef: &std::collections::HashMap<crate::topo_tools_full::ShapeMapKey, Vec<TopoShape>>,
     the_tol: f64,
-    the_ctx: &IntToolsContext,
+    ctx: &IntToolsContext,
 ) -> bool {
     let mut i_ret = 0i32;
     let mut classified = false;
-    for e in edges_of(&the_face.0) {
+    for e in edges_of(&face.0) {
         if e.0.orientation() == Orientation::Internal {
             continue;
         }
         if BRepTool::is_degenerated(&e) {
             continue;
         }
-        let Some(lf) = the_mef.get(&shape_map_key(&e.0)) else {
+        let Some(lf) = mef.get(&shape_map_key(&e.0)) else {
             continue;
         };
         if lf.len() == 1 {
@@ -502,16 +502,16 @@ pub fn is_internal_face(
             if e1.0.orientation() != Orientation::Internal {
                 continue;
             }
-            i_ret = is_internal_face_by_pair(the_face, &e, &f1, &f1, the_ctx);
+            i_ret = is_internal_face_by_pair(face, &e, &f1, &f1, ctx);
             classified = true;
             break;
         } else if lf.len() == 2 {
             i_ret = is_internal_face_by_pair(
-                the_face,
+                face,
                 &e,
                 &Face(lf[0].clone()),
                 &Face(lf[1].clone()),
-                the_ctx,
+                ctx,
             );
             if i_ret != 2 {
                 classified = true;
@@ -522,7 +522,7 @@ pub fn is_internal_face(
     if classified && i_ret != 2 {
         return i_ret == 1;
     }
-    compute_state_face_in_solid(the_face, the_solid, the_tol)
+    compute_state_face_in_solid(face, the_solid, the_tol)
 }
 
 /// Representative point of a face for `BOPTools_AlgoTools::ComputeState`
@@ -578,8 +578,8 @@ pub(crate) fn compute_state_face(face: &Face, solid: &TopoShape, tol: f64) -> Fa
 ///
 /// Prefer the midpoint of an edge that is not a bound of the solid; if every
 /// edge sits on the solid, classify a point in the face.
-fn compute_state_face_in_solid(the_face: &Face, the_solid: &TopoShape, the_tol: f64) -> bool {
-    compute_state_face(the_face, the_solid, the_tol) == FaceState::In
+fn compute_state_face_in_solid(face: &Face, the_solid: &TopoShape, the_tol: f64) -> bool {
+    compute_state_face(face, the_solid, the_tol) == FaceState::In
 }
 
 /// `BOPTools_AlgoTools::ComputeState` (edge, solid, tol, context)

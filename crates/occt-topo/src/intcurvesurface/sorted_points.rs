@@ -256,8 +256,8 @@ pub fn compute_append_point(
     let mut u = su;
     let mut v = sv;
 
-    let a_ctype = classify_curve(curve);
-    if curve.is_periodic() || a_ctype == CurveKind::Circle || a_ctype == CurveKind::Ellipse {
+    let ctype = classify_curve(curve);
+    if curve.is_periodic() || ctype == CurveKind::Circle || ctype == CurveKind::Ellipse {
         w = in_period(w, w0, w0 + curve.period());
     }
 
@@ -267,11 +267,11 @@ pub fn compute_append_point(
         return None;
     }
 
-    let a_kind = crate::brep_surface::classify_surface(surface);
+    let kind = crate::brep_surface::classify_surface(surface);
     if surface.is_u_periodic()
-        || a_kind == crate::brep_surface::SurfaceKind::Cylinder
-        || a_kind == crate::brep_surface::SurfaceKind::Cone
-        || a_kind == crate::brep_surface::SurfaceKind::Sphere
+        || kind == crate::brep_surface::SurfaceKind::Cylinder
+        || kind == crate::brep_surface::SurfaceKind::Cone
+        || kind == crate::brep_surface::SurfaceKind::Sphere
     {
         u = in_period(u, u0, u0 + surface.u_period());
     }

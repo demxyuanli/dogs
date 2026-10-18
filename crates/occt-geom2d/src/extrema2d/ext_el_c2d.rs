@@ -49,11 +49,11 @@ fn line_point_square_distance(l: &GpLin2d, p: &GpPnt2d) -> f64 {
 /// `myPoint[8][2]`, `myNbExt`, `myDone`, `myIsPar`.
 #[derive(Debug, Clone)]
 pub struct ExtremaExtElC2d {
-    my_done: bool,
-    my_is_par: bool,
-    my_nb_ext: usize,
-    my_sq_dist: [f64; 8],
-    my_point: [[POnCurv2d; 2]; 8],
+    done: bool,
+    is_par: bool,
+    nb_ext: usize,
+    sq_dist: [f64; 8],
+    point: [[POnCurv2d; 2]; 8],
 }
 
 impl Default for ExtremaExtElC2d {
@@ -67,29 +67,29 @@ impl ExtremaExtElC2d {
     /// `Extrema_ExtElC2d()` (`cxx:33-42`).
     pub fn new() -> Self {
         Self {
-            my_done: false,
-            my_is_par: false,
-            my_nb_ext: 0,
-            my_sq_dist: [REAL_LAST; 8],
-            my_point: [[ORIGIN; 2]; 8],
+            done: false,
+            is_par: false,
+            nb_ext: 0,
+            sq_dist: [REAL_LAST; 8],
+            point: [[ORIGIN; 2]; 8],
         }
     }
 
     /// `IsDone()` (`cxx:490-493`).
     pub fn is_done(&self) -> bool {
-        self.my_done
+        self.done
     }
 
     /// `IsParallel()` (`cxx:497-505`). OCCT throws `StdFail_NotDone` when the
     /// computation failed; the port reports `myIsPar` (hence `false`).
     pub fn is_parallel(&self) -> bool {
-        self.my_done && self.my_is_par
+        self.done && self.is_par
     }
 
     /// `NbExt()` (`cxx:509-517`). OCCT throws when not done; the port returns 0.
     pub fn nb_ext(&self) -> usize {
-        if self.my_done {
-            self.my_nb_ext
+        if self.done {
+            self.nb_ext
         } else {
             0
         }
@@ -97,13 +97,13 @@ impl ExtremaExtElC2d {
 
     /// `SquareDistance(N)` (`cxx:520-527`), `N` 1-based.
     pub fn square_distance(&self, n: usize) -> f64 {
-        self.my_sq_dist[n - 1]
+        self.sq_dist[n - 1]
     }
 
     /// `Points(N, P1, P2)` (`cxx:532-540`), `N` 1-based. `P1` is on the first
     /// curve, `P2` on the second one.
     pub fn points(&self, n: usize) -> (POnCurv2d, POnCurv2d) {
-        (self.my_point[n - 1][0], self.my_point[n - 1][1])
+        (self.point[n - 1][0], self.point[n - 1][1])
     }
 
     /// `Extrema_ExtElC2d(const gp_Lin2d&, const gp_Lin2d&, const double)`
@@ -114,24 +114,24 @@ impl ExtremaExtElC2d {
         let d1 = GpVec2d::from_dir2d(&c1.pos.vdir);
         let d2 = GpVec2d::from_dir2d(&c2.pos.vdir);
         if d1.is_parallel(&d2, ANGULAR) {
-            r.my_is_par = true;
-            r.my_sq_dist[0] = line_point_square_distance(c2, &c1.pos.loc);
-            r.my_nb_ext = 1;
+            r.is_par = true;
+            r.sq_dist[0] = line_point_square_distance(c2, &c1.pos.loc);
+            r.nb_ext = 1;
         } else {
             // Cramer's rule for the intersection; no division by zero since the
             // directions are not parallel.
-            let a_p1p2 = GpVec2d::new(c2.pos.loc.x() - c1.pos.loc.x(), c2.pos.loc.y() - c1.pos.loc.y());
-            let a_delim = 1.0 / d1.crossed(&d2);
-            let a_param1 = a_p1p2.crossed(&d2) * a_delim;
-            let a_param2 = -(d1.crossed(&a_p1p2)) * a_delim;
-            let p1 = clib2d::line_value_ax2d(a_param1, &c1.pos);
-            let p2 = clib2d::line_value_ax2d(a_param2, &c2.pos);
-            r.my_sq_dist[0] = 0.0;
-            r.my_point[0][0] = POnCurv2d::new(a_param1, p1);
-            r.my_point[0][1] = POnCurv2d::new(a_param2, p2);
-            r.my_nb_ext = 1;
+            let p1p2 = GpVec2d::new(c2.pos.loc.x() - c1.pos.loc.x(), c2.pos.loc.y() - c1.pos.loc.y());
+            let delim = 1.0 / d1.crossed(&d2);
+            let param1 = p1p2.crossed(&d2) * delim;
+            let param2 = -(d1.crossed(&p1p2)) * delim;
+            let p1 = clib2d::line_value_ax2d(param1, &c1.pos);
+            let p2 = clib2d::line_value_ax2d(param2, &c2.pos);
+            r.sq_dist[0] = 0.0;
+            r.point[0][0] = POnCurv2d::new(param1, p1);
+            r.point[0][1] = POnCurv2d::new(param2, p2);
+            r.nb_ext = 1;
         }
-        r.my_done = true;
+        r.done = true;
         r
     }
 
@@ -157,12 +157,12 @@ impl ExtremaExtElC2d {
             let p2 = clib2d::circle_value_ax22d(teta[k], &c2.pos, c2.radius);
             let u1 = (p2.x() - o1.x()) * d.x + (p2.y() - o1.y()) * d.y;
             let p1 = clib2d::line_value_ax2d(u1, &c1.pos);
-            r.my_sq_dist[k] = p1.square_distance(&p2);
-            r.my_point[k][0] = POnCurv2d::new(u1, p1);
-            r.my_point[k][1] = POnCurv2d::new(teta[k], p2);
+            r.sq_dist[k] = p1.square_distance(&p2);
+            r.point[k][0] = POnCurv2d::new(u1, p1);
+            r.point[k][1] = POnCurv2d::new(teta[k], p2);
         }
-        r.my_nb_ext = 2;
-        r.my_done = true;
+        r.nb_ext = 2;
+        r.done = true;
         r
     }
 
@@ -189,12 +189,12 @@ impl ExtremaExtElC2d {
             let p2 = clib2d::ellipse_value_ax22d(teta[k], &c2.pos, r1, r2);
             let u1 = (p2.x() - o1.x()) * d.x + (p2.y() - o1.y()) * d.y;
             let p1 = clib2d::line_value_ax2d(u1, &c1.pos);
-            r.my_sq_dist[k] = p1.square_distance(&p2);
-            r.my_point[k][0] = POnCurv2d::new(u1, p1);
-            r.my_point[k][1] = POnCurv2d::new(teta[k], p2);
+            r.sq_dist[k] = p1.square_distance(&p2);
+            r.point[k][0] = POnCurv2d::new(u1, p1);
+            r.point[k][1] = POnCurv2d::new(teta[k], p2);
         }
-        r.my_nb_ext = 2;
-        r.my_done = true;
+        r.nb_ext = 2;
+        r.done = true;
         r
     }
 
@@ -221,11 +221,11 @@ impl ExtremaExtElC2d {
         let o1 = c1.pos.loc;
         let u1 = (p2.x() - o1.x()) * d.x + (p2.y() - o1.y()) * d.y;
         let p1 = clib2d::line_value_ax2d(u1, &c1.pos);
-        r.my_sq_dist[0] = p1.square_distance(&p2);
-        r.my_point[0][0] = POnCurv2d::new(u1, p1);
-        r.my_point[0][1] = POnCurv2d::new(u2, p2);
-        r.my_nb_ext = 1;
-        r.my_done = true;
+        r.sq_dist[0] = p1.square_distance(&p2);
+        r.point[0][0] = POnCurv2d::new(u1, p1);
+        r.point[0][1] = POnCurv2d::new(u2, p2);
+        r.nb_ext = 1;
+        r.done = true;
         r
     }
 
@@ -249,11 +249,11 @@ impl ExtremaExtElC2d {
         let o1 = c1.pos.loc;
         let u1 = (p2.x() - o1.x()) * d.x + (p2.y() - o1.y()) * d.y;
         let p1 = clib2d::line_value_ax2d(u1, &c1.pos);
-        r.my_sq_dist[0] = p1.square_distance(&p2);
-        r.my_point[0][0] = POnCurv2d::new(u1, p1);
-        r.my_point[0][1] = POnCurv2d::new(u2, p2);
-        r.my_nb_ext = 1;
-        r.my_done = true;
+        r.sq_dist[0] = p1.square_distance(&p2);
+        r.point[0][0] = POnCurv2d::new(u1, p1);
+        r.point[0][1] = POnCurv2d::new(u2, p2);
+        r.nb_ext = 1;
+        r.done = true;
         r
     }
 
@@ -263,21 +263,21 @@ impl ExtremaExtElC2d {
     /// four-pair branch also reports `IsDone()`.
     pub fn new_circle_circle(c1: &GpCirc2d, c2: &GpCirc2d) -> Self {
         let mut r = Self::new();
-        r.my_done = true;
+        r.done = true;
         let o1 = c1.pos.point;
         let o2 = c2.pos.point;
         let do1o2 = GpVec2d::new(o2.x() - o1.x(), o2.y() - o1.y());
-        let a_sq_d_centers = do1o2.square_magnitude();
-        if a_sq_d_centers < SQUARE_CONFUSION {
-            r.my_is_par = true;
-            r.my_nb_ext = 1;
-            let a_dr = c1.radius - c2.radius;
-            r.my_sq_dist[0] = a_dr * a_dr;
+        let sq_d_centers = do1o2.square_magnitude();
+        if sq_d_centers < SQUARE_CONFUSION {
+            r.is_par = true;
+            r.nb_ext = 1;
+            let dr = c1.radius - c2.radius;
+            r.sq_dist[0] = dr * dr;
             return r;
         }
         let r1 = c1.radius;
         let r2 = c2.radius;
-        let o1o2 = do1o2.multiplied_scalar(1.0 / a_sq_d_centers.sqrt());
+        let o1o2 = do1o2.multiplied_scalar(1.0 / sq_d_centers.sqrt());
         let p1 = [
             o1.translated_vec(&o1o2.multiplied_scalar(r1)),
             o1.translated_vec(&o1o2.multiplied_scalar(-r1)),
@@ -290,11 +290,11 @@ impl ExtremaExtElC2d {
         let usol2 = [clib2d::parameter_circ2d(c2, &p2[0]), clib2d::parameter_circ2d(c2, &p2[1])];
         for no_sol in 0..2 {
             for kk in 0..2 {
-                let n = r.my_nb_ext;
-                r.my_sq_dist[n] = p2[kk].square_distance(&p1[no_sol]);
-                r.my_point[n][0] = POnCurv2d::new(usol1[no_sol], p1[no_sol]);
-                r.my_point[n][1] = POnCurv2d::new(usol2[kk], p2[kk]);
-                r.my_nb_ext += 1;
+                let n = r.nb_ext;
+                r.sq_dist[n] = p2[kk].square_distance(&p1[no_sol]);
+                r.point[n][0] = POnCurv2d::new(usol1[no_sol], p1[no_sol]);
+                r.point[n][1] = POnCurv2d::new(usol2[kk], p2[kk]);
+                r.nb_ext += 1;
             }
         }
         r
@@ -313,17 +313,17 @@ impl ExtremaExtElC2d {
                     ext_p_el_c2d_circle(&e_pt.p2, c1, CONFUSION, 0.0, 2.0 * PI);
                 if circ_done {
                     for c_pt in &circ {
-                        if r.my_nb_ext == 8 {
+                        if r.nb_ext == 8 {
                             return r;
                         }
-                        let n = r.my_nb_ext;
-                        r.my_sq_dist[n] = e_pt.p2.square_distance(&c_pt.p2);
-                        r.my_point[n][0] = POnCurv2d::new(c_pt.u2, c_pt.p2);
-                        r.my_point[n][1] = POnCurv2d::new(e_pt.u2, e_pt.p2);
-                        r.my_nb_ext += 1;
+                        let n = r.nb_ext;
+                        r.sq_dist[n] = e_pt.p2.square_distance(&c_pt.p2);
+                        r.point[n][0] = POnCurv2d::new(c_pt.u2, c_pt.p2);
+                        r.point[n][1] = POnCurv2d::new(e_pt.u2, e_pt.p2);
+                        r.nb_ext += 1;
                     }
                 }
-                r.my_done = true;
+                r.done = true;
             }
         }
         r
@@ -341,17 +341,17 @@ impl ExtremaExtElC2d {
                     ext_p_el_c2d_circle(&e_pt.p2, c1, CONFUSION, 0.0, 2.0 * PI);
                 if circ_done {
                     for c_pt in &circ {
-                        if r.my_nb_ext == 8 {
+                        if r.nb_ext == 8 {
                             return r;
                         }
-                        let n = r.my_nb_ext;
-                        r.my_sq_dist[n] = e_pt.p2.square_distance(&c_pt.p2);
-                        r.my_point[n][0] = POnCurv2d::new(c_pt.u2, c_pt.p2);
-                        r.my_point[n][1] = POnCurv2d::new(e_pt.u2, e_pt.p2);
-                        r.my_nb_ext += 1;
+                        let n = r.nb_ext;
+                        r.sq_dist[n] = e_pt.p2.square_distance(&c_pt.p2);
+                        r.point[n][0] = POnCurv2d::new(c_pt.u2, c_pt.p2);
+                        r.point[n][1] = POnCurv2d::new(e_pt.u2, e_pt.p2);
+                        r.nb_ext += 1;
                     }
                 }
-                r.my_done = true;
+                r.done = true;
             }
         }
         r
@@ -368,17 +368,17 @@ impl ExtremaExtElC2d {
                     ext_p_el_c2d_circle(&e_pt.p2, c1, CONFUSION, 0.0, 2.0 * PI);
                 if circ_done {
                     for c_pt in &circ {
-                        if r.my_nb_ext == 8 {
+                        if r.nb_ext == 8 {
                             return r;
                         }
-                        let n = r.my_nb_ext;
-                        r.my_sq_dist[n] = e_pt.p2.square_distance(&c_pt.p2);
-                        r.my_point[n][0] = POnCurv2d::new(c_pt.u2, c_pt.p2);
-                        r.my_point[n][1] = POnCurv2d::new(e_pt.u2, e_pt.p2);
-                        r.my_nb_ext += 1;
+                        let n = r.nb_ext;
+                        r.sq_dist[n] = e_pt.p2.square_distance(&c_pt.p2);
+                        r.point[n][0] = POnCurv2d::new(c_pt.u2, c_pt.p2);
+                        r.point[n][1] = POnCurv2d::new(e_pt.u2, e_pt.p2);
+                        r.nb_ext += 1;
                     }
                 }
-                r.my_done = true;
+                r.done = true;
             }
         }
         r

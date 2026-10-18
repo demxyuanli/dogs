@@ -264,7 +264,7 @@ pub fn cubic_spline_interp(points: &[GpPnt]) -> Result<InterpCurve3d, String> {
         let p0 = &points[i];
         let p1 = &points[i + 1];
         let (mx_i, mx_i1) = (mi(&mx), mi1(&mx));
-        let (my_i, my_i1) = (mi(&my), mi1(&my));
+        let (my_i, i1) = (mi(&my), mi1(&my));
         let (mz_i, mz_i1) = (mi(&mz), mi1(&mz));
         // Natural cubic spline segment in local u = t/hi ∈ [0,1] (Hi = hi²):
         //   p(u) = (1−u)p0 + u·p1 + Hi/6·(1−u)³·M_i + Hi/6·u³·M_{i+1}
@@ -280,7 +280,7 @@ pub fn cubic_spline_interp(points: &[GpPnt]) -> Result<InterpCurve3d, String> {
         let c0 = [p0.x(), p0.y(), p0.z()];
         let c1 = [
             (p1.x() - p0.x()) + s6(-2.0 * mx_i - mx_i1),
-            (p1.y() - p0.y()) + s6(-2.0 * my_i - my_i1),
+            (p1.y() - p0.y()) + s6(-2.0 * my_i - i1),
             (p1.z() - p0.z()) + s6(-2.0 * mz_i - mz_i1),
         ];
         let c2 = [
@@ -290,7 +290,7 @@ pub fn cubic_spline_interp(points: &[GpPnt]) -> Result<InterpCurve3d, String> {
         ];
         let c3 = [
             s6(mx_i1 - mx_i),
-            s6(my_i1 - my_i),
+            s6(i1 - my_i),
             s6(mz_i1 - mz_i),
         ];
         coeffs.push([c0, c1, c2, c3]);

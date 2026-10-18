@@ -21,18 +21,18 @@ const DERIVEE_PREMIERE_NULLE: f64 = 0.000000000001;
 /// `IntImpParGen::NormalizeOnDomain` (`IntImpParGen.cxx:28-45`). OCCT takes
 /// `Param` by non-const reference but never writes it; the returned value is
 /// the only effect.
-pub fn normalize_on_domain(param: f64, the_domain: &IntRes2dDomain) -> f64 {
+pub fn normalize_on_domain(param: f64, domain: &IntRes2dDomain) -> f64 {
     let mut mod_param = param;
-    if the_domain.is_closed() {
-        let (t, p) = the_domain.equivalent_parameters();
+    if domain.is_closed() {
+        let (t, p) = domain.equivalent_parameters();
         let periode = p - t;
-        while mod_param < the_domain.first_parameter()
-            && mod_param + periode < the_domain.last_parameter()
+        while mod_param < domain.first_parameter()
+            && mod_param + periode < domain.last_parameter()
         {
             mod_param += periode;
         }
-        while mod_param > the_domain.last_parameter()
-            && mod_param - periode > the_domain.first_parameter()
+        while mod_param > domain.last_parameter()
+            && mod_param - periode > domain.first_parameter()
         {
             mod_param -= periode;
         }
@@ -42,23 +42,23 @@ pub fn normalize_on_domain(param: f64, the_domain: &IntRes2dDomain) -> f64 {
 
 /// `IntImpParGen::DeterminePosition` (`IntImpParGen.cxx:48-82`).
 pub fn determine_position(
-    the_domain: &IntRes2dDomain,
+    domain: &IntRes2dDomain,
     pnt1: &GpPnt2d,
     param1: f64,
 ) -> IntRes2dPosition {
     let mut pos1 = IntRes2dPosition::Middle;
 
-    if the_domain.has_first_point() {
-        if pnt1.distance(the_domain.first_point()) <= the_domain.first_tolerance() {
+    if domain.has_first_point() {
+        if pnt1.distance(domain.first_point()) <= domain.first_tolerance() {
             pos1 = IntRes2dPosition::Head;
         }
     }
 
-    if the_domain.has_last_point() {
-        if pnt1.distance(the_domain.last_point()) <= the_domain.last_tolerance() {
+    if domain.has_last_point() {
+        if pnt1.distance(domain.last_point()) <= domain.last_tolerance() {
             if pos1 == IntRes2dPosition::Head {
-                if (param1 - the_domain.last_parameter()).abs()
-                    < (param1 - the_domain.first_parameter()).abs()
+                if (param1 - domain.last_parameter()).abs()
+                    < (param1 - domain.first_parameter()).abs()
                 {
                     pos1 = IntRes2dPosition::End;
                 }

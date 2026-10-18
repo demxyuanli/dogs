@@ -225,9 +225,9 @@ impl GpQuaternion {
             gamma = -gamma;
         }
         if !o.is_extrinsic {
-            let a_first = alpha;
+            let first = alpha;
             alpha = gamma;
-            gamma = a_first;
+            gamma = first;
         }
         (alpha, beta, gamma)
     }

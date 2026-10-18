@@ -70,7 +70,7 @@ pub struct FClass2d {
     pub(super) vmax: f64,
     /// Whether the face is a "hole" (its largest boundary loop winds clockwise
     /// in the face's UV). Source: `IntTools_FClass2d::IsHole`.
-    pub(super) my_is_hole: bool,
+    pub(super) is_hole: bool,
     /// Per-wire 2D classifiers (`IntTools_FClass2d::TabClass`).
     #[allow(dead_code)]
     pub(super) tab_class: Vec<Class2d>,
@@ -100,7 +100,7 @@ impl FClass2d {
             umax: f64::NEG_INFINITY,
             vmin: f64::INFINITY,
             vmax: f64::NEG_INFINITY,
-            my_is_hole: true,
+            is_hole: true,
             tab_class: Vec::new(),
             tab_orien: Vec::new(),
             outer_class: None,
@@ -249,7 +249,7 @@ impl FClass2d {
 
         // A face is a "hole" when its largest boundary loop winds clockwise
         // (material on the outside of the loop). An empty face counts as a hole.
-        self.my_is_hole = match rings
+        self.is_hole = match rings
             .iter()
             .max_by(|a, b| a.1.abs().total_cmp(&b.1.abs()))
         {
@@ -367,7 +367,7 @@ impl FClass2d {
 
     /// Whether the face is a "hole" (`IntTools_FClass2d::IsHole`).
     pub fn is_hole(&self) -> bool {
-        self.my_is_hole
+        self.is_hole
     }
 
     /// Classify `puv` against the sampled boundary region using the UV
@@ -407,15 +407,15 @@ impl FClass2d {
         }
         let mut urecadre = false;
         let mut vrecadre = false;
-        let mut a_status = FaceState::Unknown;
+        let mut status = FaceState::Unknown;
         for _ in 0..64 {
-            a_status = self.classify_tab(&GpPnt2d::new(u, v), on_tol, on_mode);
+            status = self.classify_tab(&GpPnt2d::new(u, v), on_tol, on_mode);
 
             if !recadre || (!self.is_u_periodic && !self.is_v_periodic) {
-                return a_status;
+                return status;
             }
-            if a_status == FaceState::In || a_status == FaceState::On {
-                return a_status;
+            if status == FaceState::In || status == FaceState::On {
+                return status;
             }
             if !urecadre {
                 u = uu;
@@ -432,11 +432,11 @@ impl FClass2d {
                 }
                 u = uu;
                 if v > self.vmax || !self.is_v_periodic {
-                    return a_status;
+                    return status;
                 }
             }
         }
-        a_status
+        status
     }
 
     /// Classify with CSLib_Class2d on the winding-independent outer/hole rings.

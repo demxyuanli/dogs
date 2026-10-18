@@ -57,10 +57,10 @@ impl BndBox {
         if !self.has_finite_part() {
             return Self::new();
         }
-        let mut a_box = Self::new();
-        a_box.update(self.xmin, self.ymin, self.zmin, self.xmax, self.ymax, self.zmax);
-        a_box.set_gap(self.gap);
-        a_box
+        let mut bnd_box = Self::new();
+        bnd_box.update(self.xmin, self.ymin, self.zmin, self.xmax, self.ymax, self.zmax);
+        bnd_box.set_gap(self.gap);
+        bnd_box
     }
 
     // ---- modifiers ----
@@ -272,10 +272,10 @@ impl BndBox {
         if self.is_void() {
             return 0.0;
         }
-        let a_dx = self.xmax - self.xmin + self.gap + self.gap;
-        let a_dy = self.ymax - self.ymin + self.gap + self.gap;
-        let a_dz = self.zmax - self.zmin + self.gap + self.gap;
-        a_dx * a_dx + a_dy * a_dy + a_dz * a_dz
+        let dx = self.xmax - self.xmin + self.gap + self.gap;
+        let dy = self.ymax - self.ymin + self.gap + self.gap;
+        let dz = self.zmax - self.zmin + self.gap + self.gap;
+        dx * dx + dy * dy + dz * dz
     }
 
     /// True when the x extent is shorter than `tol`.

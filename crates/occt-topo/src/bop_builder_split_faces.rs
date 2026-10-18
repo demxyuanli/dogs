@@ -82,15 +82,15 @@ fn collect_split_edge_set<B: BopBuilderLike>(
     add_warning: &mut dyn FnMut(String),
 ) -> Vec<Edge> {
     let mut le: Vec<Edge> = Vec::new();
-    let mut a_m_fence: HashSet<usize> = HashSet::new();
+    let mut m_fence: HashSet<usize> = HashSet::new();
     let mut is_u_closed = false;
     let mut is_v_closed = false;
     let mut is_checked = false;
 
-    let mut a_ff = face.clone();
-    a_ff.0.set_orientation(Orientation::Forward);
+    let mut ff = face.clone();
+    ff.0.set_orientation(Orientation::Forward);
 
-    for be in edges_of(&a_ff.0) {
+    for be in edges_of(&ff.0) {
         let an_ori_e = be.0.orientation();
         if !f.history().has_image(&be.0) {
             if an_ori_e == Orientation::Internal {
@@ -117,23 +117,23 @@ fn collect_split_edge_set<B: BopBuilderLike>(
         let b_is_degenerated = BRepTool::is_degenerated(&be);
         let splits = f.history().image(&be.0).map(|s| s.to_vec()).unwrap_or_default();
         for sp_shape in splits {
-            let mut a_sp = sp_shape;
+            let mut sp = sp_shape;
             if b_is_degenerated {
-                a_sp.set_orientation(an_ori_e);
-                le.push(Edge(a_sp));
+                sp.set_orientation(an_ori_e);
+                le.push(Edge(sp));
                 continue;
             }
             if an_ori_e == Orientation::Internal {
-                a_sp.set_orientation(Orientation::Forward);
-                le.push(Edge(a_sp.clone()));
-                a_sp.set_orientation(Orientation::Reversed);
-                le.push(Edge(a_sp));
+                sp.set_orientation(Orientation::Forward);
+                le.push(Edge(sp.clone()));
+                sp.set_orientation(Orientation::Reversed);
+                le.push(Edge(sp));
                 continue;
             }
             if b_is_closed {
-                let sp_key = GeometryRegistry::shape_key(&a_sp);
-                if a_m_fence.insert(sp_key) {
-                    let sp_edge = Edge(a_sp.clone());
+                let sp_key = GeometryRegistry::shape_key(&sp);
+                if m_fence.insert(sp_key) {
+                    let sp_edge = Edge(sp.clone());
                     // `BOPAlgo_PaveFiller::MakePCurves` (`_7.cxx:589-790`) runs
                     // before `BOPAlgo_Builder::BuildSplitFaces` (`_2.cxx:233`)
                     // and leaves the split with its p-curve on the face.
@@ -152,15 +152,15 @@ fn collect_split_edge_set<B: BopBuilderLike>(
                             GeometryRegistry::shape_key(&face.0)
                         ));
                     }
-                    a_sp.set_orientation(Orientation::Forward);
-                    le.push(Edge(a_sp.clone()));
-                    a_sp.set_orientation(Orientation::Reversed);
-                    le.push(Edge(a_sp));
+                    sp.set_orientation(Orientation::Forward);
+                    le.push(Edge(sp.clone()));
+                    sp.set_orientation(Orientation::Reversed);
+                    le.push(Edge(sp));
                 }
                 continue;
             }
             let (oriented, warn) =
-                orient_split_from_base_with_warn(&a_sp, &be.0, an_ori_e, ctx);
+                orient_split_from_base_with_warn(&sp, &be.0, an_ori_e, ctx);
             if let Some(w) = warn {
                 add_warning(w.message);
             }
@@ -235,22 +235,22 @@ pub fn build_split_faces_occt<B: BopBuilderLike>(f: &mut B) -> Result<(), String
         let paves_in = unique_edge_paves(f.ds(), fi.paves_in());
         let paves_on = unique_edge_paves(f.ds(), fi.paves_on());
         let paves_sc = unique_edge_paves(f.ds(), fi.paves());
-        let a_liav = alone_vertices(f.ds(), i);
-        let a_nb_pb_in = paves_in.len();
-        let a_nb_pb_on = paves_on.len();
-        let a_nb_pb_sc = paves_sc.len();
-        let a_nb_av = a_liav.len();
-        if a_nb_pb_in == 0 && a_nb_pb_on == 0 && a_nb_pb_sc == 0 && a_nb_av == 0 {
+        let liav = alone_vertices(f.ds(), i);
+        let nb_pb_in = paves_in.len();
+        let nb_pb_on = paves_on.len();
+        let nb_pb_sc = paves_sc.len();
+        let nb_av = liav.len();
+        if nb_pb_in == 0 && nb_pb_on == 0 && nb_pb_sc == 0 && nb_av == 0 {
             continue;
         }
 
-        if a_nb_pb_in == 0 && a_nb_pb_sc == 0 {
+        if nb_pb_in == 0 && nb_pb_sc == 0 {
             let mut warnings: Vec<String> = Vec::new();
             let path = split_face_fast_path(
                 &face,
-                a_nb_pb_in,
-                a_nb_pb_sc,
-                a_nb_av,
+                nb_pb_in,
+                nb_pb_sc,
+                nb_av,
                 f.history(),
                 &mut ctx,
                 |msg| warnings.push(msg),

@@ -74,20 +74,20 @@ impl Surface for BoundedSurface {
 
 /// `CorrectPlaneBoundaries` — grow a finite UV box by 10% on each side.
 pub fn correct_plane_boundaries(
-    a_umin: &mut f64,
-    a_umax: &mut f64,
-    a_vmin: &mut f64,
-    a_vmax: &mut f64,
+    umin: &mut f64,
+    umax: &mut f64,
+    vmin: &mut f64,
+    vmax: &mut f64,
 ) {
-    if !(Precision::is_infinite(*a_umin) || Precision::is_infinite(*a_umax)) {
-        let d_u = 0.1 * (*a_umax - *a_umin);
-        *a_umin -= d_u;
-        *a_umax += d_u;
+    if !(Precision::is_infinite(*umin) || Precision::is_infinite(*umax)) {
+        let d_u = 0.1 * (*umax - *umin);
+        *umin -= d_u;
+        *umax += d_u;
     }
-    if !(Precision::is_infinite(*a_vmin) || Precision::is_infinite(*a_vmax)) {
-        let d_v = 0.1 * (*a_vmax - *a_vmin);
-        *a_vmin -= d_v;
-        *a_vmax += d_v;
+    if !(Precision::is_infinite(*vmin) || Precision::is_infinite(*vmax)) {
+        let d_v = 0.1 * (*vmax - *vmin);
+        *vmin -= d_v;
+        *vmax += d_v;
     }
 }
 
@@ -101,27 +101,27 @@ fn enlarge_kind(kind: SurfaceKind) -> bool {
 
 /// `CorrectSurfaceBoundaries` (`IntTools_FaceFace.cxx:2017`).
 ///
-/// Enlarges a non-periodic UV box by `the_tolerance` toward the surface
+/// Enlarges a non-periodic UV box by `tolerance` toward the surface
 /// natural bounds for cylinder / freeform faces. Periodic faces with linear
 /// seam pcurves shrink the box to the seam AABB.
 pub fn correct_surface_boundaries(
-    the_face: &Face,
-    the_tolerance: f64,
+    face: &Face,
+    tolerance: f64,
     theumin: &mut f64,
     theumax: &mut f64,
     thevmin: &mut f64,
     thevmax: &mut f64,
 ) {
-    let Some(a_surface) = BRepTool::face_surface(the_face) else {
+    let Some(surface) = BRepTool::face_surface(face) else {
         return;
     };
-    let (uinf, usup) = a_surface.u_range();
-    let (vinf, vsup) = a_surface.v_range();
-    let delta = the_tolerance;
-    let kind = classify_surface(a_surface.as_ref());
+    let (uinf, usup) = surface.u_range();
+    let (vinf, vsup) = surface.v_range();
+    let delta = tolerance;
+    let kind = classify_surface(surface.as_ref());
     let enlarge = enlarge_kind(kind);
-    let isuperiodic = a_surface.is_u_periodic();
-    let isvperiodic = a_surface.is_v_periodic();
+    let isuperiodic = surface.is_u_periodic();
+    let isvperiodic = surface.is_v_periodic();
 
     if !isuperiodic && enlarge {
         if !Precision::is_infinite(*theumin) && (*theumin - uinf) > delta {
@@ -152,17 +152,17 @@ pub fn correct_surface_boundaries(
         let mut correct = false;
         let mut correct_u = false;
         let mut correct_v = false;
-        let mut a_box = BndBox2d::new();
+        let mut bnd_box = BndBox2d::new();
         let an_u_dir = occt_core::gp::GpDir2d::new(1.0, 0.0).unwrap_or_default();
-        let a_v_dir = occt_core::gp::GpDir2d::new(0.0, 1.0).unwrap_or_default();
+        let v_dir = occt_core::gp::GpDir2d::new(0.0, 1.0).unwrap_or_default();
         let an_angular_tolerance = ANGULAR;
 
-        'edges: for e in ShapeIterator::of_shape(&the_face.0) {
+        'edges: for e in ShapeIterator::of_shape(&face.0) {
             if e.shape_type() != ShapeType::Edge {
                 continue;
             }
             let mut an_edge = Edge(e.clone());
-            if !is_closed_on_face(&an_edge, the_face) {
+            if !is_closed_on_face(&an_edge, face) {
                 continue;
             }
             correct = true;
@@ -172,27 +172,27 @@ pub fn correct_surface_boundaries(
                 } else {
                     an_edge.0.set_orientation(Orientation::Reversed);
                 }
-                let Some(a_curve) = curve_on_surface(&an_edge, the_face) else {
+                let Some(a_curve) = curve_on_surface(&an_edge, face) else {
                     correct = false;
                     break 'edges;
                 };
                 // `occ::down_cast<Geom2d_Line>(aCurve)` (`IntTools_FaceFace.cxx:2149`).
-                let Some(a_line) = a_curve.gp_lin2d() else {
+                let Some(line) = a_curve.gp_lin2d() else {
                     correct = false;
                     break 'edges;
                 };
                 // `aLine->Position().Direction()` (`:2161-2162`).
-                let dir = a_line.direction();
-                correct_u = correct_u || dir.is_parallel(&a_v_dir, an_angular_tolerance);
+                let dir = line.direction();
+                correct_u = correct_u || dir.is_parallel(&v_dir, an_angular_tolerance);
                 correct_v = correct_v || dir.is_parallel(&an_u_dir, an_angular_tolerance);
                 let (f, l) = GeometryRegistry::global().edge_parameters(&an_edge.0);
-                a_box.add_point(&a_curve.d0(f));
-                a_box.add_point(&a_curve.d0(l));
+                bnd_box.add_point(&a_curve.d0(f));
+                bnd_box.add_point(&a_curve.d0(l));
             }
         }
 
         if correct {
-            if let Some((umin, umax, vmin, vmax)) = a_box.get() {
+            if let Some((umin, umax, vmin, vmax)) = bnd_box.get() {
                 if isuperiodic && correct_u {
                     if *theumin < umin {
                         *theumin = umin;
@@ -220,7 +220,7 @@ pub fn corrected_uv_box(
     face: &Face,
     other_kind: SurfaceKind,
     self_kind: SurfaceKind,
-    the_tol: f64,
+    tol: f64,
 ) -> (f64, f64, f64, f64) {
     let (mut umin, mut umax, mut vmin, mut vmax) = face_uv_bounds(face);
     let is_self_plane = self_kind == SurfaceKind::Plane;
@@ -231,57 +231,57 @@ pub fn corrected_uv_box(
     if is_self_plane && is_other_quad {
         correct_plane_boundaries(&mut umin, &mut umax, &mut vmin, &mut vmax);
     } else {
-        correct_surface_boundaries(face, the_tol * 2.0, &mut umin, &mut umax, &mut vmin, &mut vmax);
+        correct_surface_boundaries(face, tol * 2.0, &mut umin, &mut umax, &mut vmin, &mut vmax);
     }
     (umin, umax, vmin, vmax)
 }
 
 /// `ParameterOutOfBoundary` (`IntTools_FaceFace.cxx:2213`).
 ///
-/// Walks `the_parameter` off the ON state of either face, returning a new
-/// parameter that still lies before `the_other_parameter`.
+/// Walks `parameter` off the ON state of either face, returning a new
+/// parameter that still lies before `other_parameter`.
 pub fn parameter_out_of_boundary(
-    the_parameter: f64,
-    the_curve: &dyn Curve,
-    the_face1: &Face,
-    the_face2: &Face,
-    the_other_parameter: f64,
+    parameter: f64,
+    curve: &dyn Curve,
+    face1: &Face,
+    face2: &Face,
+    other_parameter: f64,
     b_increase_par: bool,
-    the_tol: f64,
+    tol: f64,
 ) -> Option<f64> {
-    let mut the_new_parameter = the_parameter;
-    let mut acurpar = the_parameter;
-    let mut a_state = FaceState::On;
+    let mut new_parameter = parameter;
+    let mut acurpar = parameter;
+    let mut state = FaceState::On;
     let mut iter = 0i32;
-    let asumtol = the_tol;
+    let asumtol = tol;
     let mut adelta = asumtol * 0.1;
     adelta = if adelta < CONFUSION { CONFUSION } else { adelta };
-    let Some(a_surf1) = BRepTool::face_surface(the_face1) else {
+    let Some(surf1) = BRepTool::face_surface(face1) else {
         return None;
     };
-    let Some(a_surf2) = BRepTool::face_surface(the_face2) else {
+    let Some(surf2) = BRepTool::face_surface(face2) else {
         return None;
     };
-    let Ok(class1) = FClass2d::new(the_face1, BRepTool::face_tolerance(the_face1)) else {
+    let Ok(class1) = FClass2d::new(face1, BRepTool::face_tolerance(face1)) else {
         return None;
     };
-    let Ok(class2) = FClass2d::new(the_face2, BRepTool::face_tolerance(the_face2)) else {
+    let Ok(class2) = FClass2d::new(face2, BRepTool::face_tolerance(face2)) else {
         return None;
     };
 
-    while a_state == FaceState::On {
+    while state == FaceState::On {
         if b_increase_par {
             acurpar += adelta;
         } else {
             acurpar -= adelta;
         }
-        let a_p_current = the_curve.d0(acurpar);
-        if let Some(proj) = project_point_on_surface(a_surf1.as_ref(), &a_p_current, 0.0) {
-            a_state = class1.perform(GpPnt2d::new(proj.u, proj.v));
+        let p_current = curve.d0(acurpar);
+        if let Some(proj) = project_point_on_surface(surf1.as_ref(), &p_current, 0.0) {
+            state = class1.perform(GpPnt2d::new(proj.u, proj.v));
         }
-        if a_state != FaceState::On {
-            if let Some(proj) = project_point_on_surface(a_surf2.as_ref(), &a_p_current, 0.0) {
-                a_state = class2.perform(GpPnt2d::new(proj.u, proj.v));
+        if state != FaceState::On {
+            if let Some(proj) = project_point_on_surface(surf2.as_ref(), &p_current, 0.0) {
+                state = class2.perform(GpPnt2d::new(proj.u, proj.v));
             }
         }
         if iter > 11 {
@@ -291,15 +291,15 @@ pub fn parameter_out_of_boundary(
     }
 
     if iter <= 11 {
-        the_new_parameter = acurpar;
+        new_parameter = acurpar;
         if b_increase_par {
-            if acurpar >= the_other_parameter {
-                the_new_parameter = the_other_parameter;
+            if acurpar >= other_parameter {
+                new_parameter = other_parameter;
             }
-        } else if acurpar <= the_other_parameter {
-            the_new_parameter = the_other_parameter;
+        } else if acurpar <= other_parameter {
+            new_parameter = other_parameter;
         }
-        Some(the_new_parameter)
+        Some(new_parameter)
     } else {
         None
     }

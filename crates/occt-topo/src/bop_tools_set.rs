@@ -77,19 +77,19 @@ impl BopToolsSet {
         }
     }
 
-    /// `BOPTools_Set::Add(theS, theType)` — explore `the_s` for `the_type`
+    /// `BOPTools_Set::Add(theS, theType)` — explore `the_s` for `kind`
     /// and remember `the_s` as the representative.
-    pub fn add(&mut self, the_s: &TopoShape, the_type: ShapeType) {
+    pub fn add(&mut self, the_s: &TopoShape, kind: ShapeType) {
         self.shape = the_s.clone();
         let mut keys: Vec<ShapeMapKey> = Vec::new();
-        collect_set_items(the_s, the_type, &mut keys);
+        collect_set_items(the_s, kind, &mut keys);
         self.keys = keys;
     }
 
     /// Construct and fill in one call.
-    pub fn from_shape(the_s: &TopoShape, the_type: ShapeType) -> Self {
+    pub fn from_shape(the_s: &TopoShape, kind: ShapeType) -> Self {
         let mut s = Self::new();
-        s.add(the_s, the_type);
+        s.add(the_s, kind);
         s
     }
 

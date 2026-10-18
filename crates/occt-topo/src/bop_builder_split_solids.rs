@@ -69,8 +69,8 @@ fn draft_faces(draft: &TopoShape) -> Vec<TopoShape> {
 /// IN faces doubled FORWARD+REVERSED (`_3.cxx:502-511`).
 fn doubled_in_faces(in_faces: &[TopoShape]) -> Vec<TopoShape> {
     let mut out = Vec::with_capacity(in_faces.len() * 2);
-    for a_f in in_faces {
-        out.extend(both_orientations(a_f));
+    for f in in_faces {
+        out.extend(both_orientations(f));
     }
     out
 }
@@ -80,8 +80,8 @@ pub fn build_split_solids_occt<B: BopSolidHost>(
     f: &mut B,
     fill: &FillIn3dPartsResult,
 ) -> Result<(), String> {
-    let mut a_mst = BopToolsSetMap::new();
-    let mut a_m_fence: HashSet<ShapeMapKey> = HashSet::new();
+    let mut mst = BopToolsSetMap::new();
+    let mut m_fence: HashSet<ShapeMapKey> = HashSet::new();
 
     // 0. Same-domain seeds for non-interfered solids.
     let n = nb_source(f.ds());
@@ -90,21 +90,21 @@ pub fn build_split_solids_occt<B: BopSolidHost>(
         if si.shape_type() != ShapeType::Solid {
             continue;
         }
-        let a_s = si.shape().clone();
-        if !a_m_fence.insert(shape_key(&a_s)) {
+        let s = si.shape().clone();
+        if !m_fence.insert(shape_key(&s)) {
             continue;
         }
-        if fill.draft_solids.contains_key(&shape_key(&a_s)) {
+        if fill.draft_solids.contains_key(&shape_key(&s)) {
             continue;
         }
-        let mut a_st = BopToolsSet::new();
-        a_st.add(&a_s, ShapeType::Face);
-        a_mst.add(a_st);
+        let mut st = BopToolsSet::new();
+        st.add(&s, ShapeType::Face);
+        mst.add(st);
     }
 
     // 1. Build solids for interfered source solids.
-    let mut a_solids_im: Vec<(TopoShape, Vec<TopoShape>)> = Vec::new();
-    let mut a_vbs: Vec<SplitSolid> = Vec::new();
+    let mut solids_im: Vec<(TopoShape, Vec<TopoShape>)> = Vec::new();
+    let mut vbs: Vec<SplitSolid> = Vec::new();
     let fuzzy = f.fuzzy_value();
 
     for i in 0..n {
@@ -112,40 +112,40 @@ pub fn build_split_solids_occt<B: BopSolidHost>(
         if si.shape_type() != ShapeType::Solid {
             continue;
         }
-        let a_s = si.shape().clone();
-        let Some(a_sd) = fill.draft_solids.get(&shape_key(&a_s)) else {
+        let s = si.shape().clone();
+        let Some(sd) = fill.draft_solids.get(&shape_key(&s)) else {
             continue;
         };
-        let p_lfin = fill.in_parts.get(&shape_key(&a_s));
+        let p_lfin = fill.in_parts.get(&shape_key(&s));
         if p_lfin.map(|v| v.is_empty()).unwrap_or(true) {
-            a_solids_im.push((a_s, vec![a_sd.clone()]));
+            solids_im.push((s, vec![sd.clone()]));
             continue;
         }
-        let mut a_sfs = draft_faces(a_sd);
-        a_sfs.extend(doubled_in_faces(p_lfin.unwrap()));
-        a_vbs.push(SplitSolid::new(a_s, a_sfs, fuzzy));
+        let mut sfs = draft_faces(sd);
+        sfs.extend(doubled_in_faces(p_lfin.unwrap()));
+        vbs.push(SplitSolid::new(s, sfs, fuzzy));
     }
 
     // Sequential `BOPTools_Parallel::Perform`.
-    for bs in &mut a_vbs {
+    for bs in &mut vbs {
         bs.perform();
         for w in &bs.warnings {
             f.add_warning(w.clone());
         }
-        a_solids_im.push((bs.solid.clone(), bs.areas().to_vec()));
+        solids_im.push((bs.solid.clone(), bs.areas().to_vec()));
     }
 
     // Add new solids to images map (`_3.cxx:579-617`).
-    for (a_s, a_lsr) in a_solids_im {
-        if images_bound(f.history(), &a_s) {
+    for (s, lsr) in solids_im {
+        if images_bound(f.history(), &s) {
             continue;
         }
-        for a_sr in a_lsr {
-            let (a_sx, b_flag_sd) = intern_solid_sd(&mut a_mst, &a_sr);
-            f.history_mut().add_image(&a_s, a_sx.clone());
-            origins_append(f.origins_mut(), &a_sx, a_s.clone());
+        for sr in lsr {
+            let (sx, b_flag_sd) = intern_solid_sd(&mut mst, &sr);
+            f.history_mut().add_image(&s, sx.clone());
+            origins_append(f.origins_mut(), &sx, s.clone());
             if b_flag_sd {
-                f.bind_shapes_sd(a_sr, a_sx);
+                f.bind_shapes_sd(sr, sx);
             }
         }
     }

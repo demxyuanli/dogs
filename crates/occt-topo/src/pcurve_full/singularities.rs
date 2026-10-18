@@ -410,8 +410,8 @@ pub(super) fn correct_degenerated_points(
     curve: &dyn Curve,
     sing: &[Singularity],
     preci: f64,
-    the_tol_first: f64,
-    the_tol_last: f64,
+    tol_first: f64,
+    tol_last: f64,
     points: &[GpPnt],
     params: &[f64],
     pnt2d: &mut [GpPnt2d],
@@ -421,15 +421,15 @@ pub(super) fn correct_degenerated_points(
 
     // `cxx:1473-1497`. `theTolFirst` / `theTolLast` are `Perform`'s arguments;
     // a negative value means `Precision::Confusion()` (`cxx:1475-1476`).
-    let a_tol_first = if the_tol_first < 0.0 { CONFUSION } else { the_tol_first };
-    let a_tol_last = if the_tol_last < 0.0 { CONFUSION } else { the_tol_last };
-    let a_point_first = points[0];
-    let a_point_last = points[points.len() - 1];
+    let a_tol_first = if tol_first < 0.0 { CONFUSION } else { tol_first };
+    let a_tol_last = if tol_last < 0.0 { CONFUSION } else { tol_last };
+    let point_first = points[0];
+    let point_last = points[points.len() - 1];
     for sg in sing {
-        if sg.preci <= CONFUSION && a_point_first.distance(&sg.p3d) <= a_tol_first {
+        if sg.preci <= CONFUSION && point_first.distance(&sg.p3d) <= a_tol_first {
             correct_extremity(curve, params, pnt2d, true, &sg.first_p2d, sg.u_iso_deg, preci, s);
         }
-        if sg.preci <= CONFUSION && a_point_last.distance(&sg.p3d) <= a_tol_last {
+        if sg.preci <= CONFUSION && point_last.distance(&sg.p3d) <= a_tol_last {
             // `cxx:1495` passes `aFirstP2d` for the last point too.
             correct_extremity(curve, params, pnt2d, false, &sg.first_p2d, sg.u_iso_deg, preci, s);
         }
@@ -604,8 +604,8 @@ fn correct_extremity(
         if (coord_of(&second, 3 - ind_coord) - finish_coord).abs() <= 2.0 * PCONFUSION {
             break;
         }
-        let a_vec = GpVec2d::new(second.x() - first.x(), second.y() - first.y());
-        if a_vec.square_magnitude() <= 1.0e-32 {
+        let vec = GpVec2d::new(second.x() - first.x(), second.y() - first.y());
+        if vec.square_magnitude() <= 1.0e-32 {
             break;
         }
         // `gp_Dir2d aDir(aVec.X(), aVec.Y())` (`cxx:1986`). OCCT raises
@@ -613,7 +613,7 @@ fn correct_extremity(
         // `gp::Resolution()`; this port stops the walk instead (no exception
         // machinery, and the `1.e-32` guard above leaves only a degenerate
         // direction).
-        let Ok(chord_dir) = GpDir2d::from_vec2d(&a_vec) else {
+        let Ok(chord_dir) = GpDir2d::from_vec2d(&vec) else {
             break;
         };
         // `cxx:1988-1999`: intersect with the iso line and take the point on
@@ -631,8 +631,8 @@ fn correct_extremity(
         if (second_param - first_param).abs() <= 2.0 * PCONFUSION {
             break;
         }
-        let a_p3d = curve.d0(second_param);
-        second = value_of_uv(surf, &a_p3d, preci);
+        let p3d = curve.d0(second_param);
+        second = value_of_uv(surf, &p3d, preci);
         if is_periodic {
             adjust_second_to_first_point(surf, &first, &mut second);
         }

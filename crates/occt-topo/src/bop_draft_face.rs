@@ -49,12 +49,12 @@ pub type VertexEdgeMap = HashMap<ShapeMapKey, Vec<ShapeMapKey>>;
 
 /// `HasMultiConnected` (`_2.cxx:1014`).
 ///
-/// Walks the vertices of `the_edge`. For each vertex, records the edge in
+/// Walks the vertices of `edge`. For each vertex, records the edge in
 /// `the_map` (by TShape key). Returns true as soon as any vertex lists more
 /// than two distinct edges.
-pub fn has_multi_connected(the_edge: &Edge, the_map: &mut VertexEdgeMap) -> bool {
-    let e_key = shape_key(&the_edge.0);
-    let (va, vb) = edge_vertices(the_edge);
+pub fn has_multi_connected(edge: &Edge, the_map: &mut VertexEdgeMap) -> bool {
+    let e_key = shape_key(&edge.0);
+    let (va, vb) = edge_vertices(edge);
     for v in [va, vb].into_iter().flatten() {
         let vk = shape_key(&v.0);
         let list = the_map.entry(vk).or_default();
@@ -85,107 +85,107 @@ pub struct DraftFaceReport {
 
 /// `BuildDraftFace` (`_2.cxx:1052`).
 ///
-/// `the_images` is `myImages`. `the_ctx` is the shared `IntTools_Context`.
-/// `the_report` collects WithWarn alerts.
+/// `images` is `myImages`. `ctx` is the shared `IntTools_Context`.
+/// `report` collects WithWarn alerts.
 pub fn build_draft_face(
-    the_face: &Face,
-    the_images: &BopHistory,
-    the_ctx: &mut IntToolsContext,
-    the_report: &mut DraftFaceReport,
+    face: &Face,
+    images: &BopHistory,
+    ctx: &mut IntToolsContext,
+    report: &mut DraftFaceReport,
 ) -> DraftFaceResult {
-    let Some(a_s) = BRepTool::face_surface(the_face) else {
+    let Some(s) = BRepTool::face_surface(face) else {
         return DraftFaceResult::Fallback;
     };
     let bld = TopoBuilder::new();
-    let mut a_draft_face = bld.make_face(a_s, &[]);
-    a_draft_face.0.set_location(the_face.0.location());
+    let mut draft_face = bld.make_face(s, &[]);
+    draft_face.0.set_location(face.0.location());
 
-    let mut a_vertices_counter: VertexEdgeMap = HashMap::new();
-    let mut a_m_edges: HashSet<ShapeMapKey> = HashSet::new();
+    let mut vertices_counter: VertexEdgeMap = HashMap::new();
+    let mut m_edges: HashSet<ShapeMapKey> = HashSet::new();
 
-    let mut a_ff = the_face.clone();
-    a_ff.0.set_orientation(Orientation::Forward);
+    let mut ff = face.clone();
+    ff.0.set_orientation(Orientation::Forward);
 
-    for a_w in bop_wires_of_face(&a_ff) {
+    for a_w in bop_wires_of_face(&ff) {
         if a_w.0.shape_type() != ShapeType::Wire {
             continue;
         }
-        let mut a_w_fwd = a_w.clone();
-        a_w_fwd.0.set_orientation(Orientation::Forward);
-        let a_it_e: Vec<TopoShape> = iter_children(&a_w_fwd.0);
-        if a_it_e.is_empty() {
+        let mut w_fwd = a_w.clone();
+        w_fwd.0.set_orientation(Orientation::Forward);
+        let it_e: Vec<TopoShape> = iter_children(&w_fwd.0);
+        if it_e.is_empty() {
             continue;
         }
 
-        let mut a_new_wire = make_empty_wire(Orientation::Forward);
-        for a_e_shape in a_it_e {
-            let Some(a_e) = as_edge(&a_e_shape) else {
+        let mut new_wire = make_empty_wire(Orientation::Forward);
+        for e_shape in it_e {
+            let Some(e) = as_edge(&e_shape) else {
                 continue;
             };
-            let an_ori_e = a_e.0.orientation();
+            let an_ori_e = e.0.orientation();
             if an_ori_e == Orientation::Internal {
                 // Internal edges could split the original face on halves.
                 return DraftFaceResult::Fallback;
             }
-            let b_is_degenerated = BRepTool::is_degenerated(&a_e);
-            let b_is_closed = is_closed_on_face(&a_e, the_face);
+            let b_is_degenerated = BRepTool::is_degenerated(&e);
+            let b_is_closed = is_closed_on_face(&e, face);
 
-            if !the_images.has_image(&a_e.0) {
-                if !b_is_degenerated && has_multi_connected(&a_e, &mut a_vertices_counter) {
+            if !images.has_image(&e.0) {
+                if !b_is_degenerated && has_multi_connected(&e, &mut vertices_counter) {
                     return DraftFaceResult::Fallback;
                 }
-                if !b_is_closed && !a_m_edges.insert(shape_key(&a_e.0)) {
+                if !b_is_closed && !m_edges.insert(shape_key(&e.0)) {
                     return DraftFaceResult::Fallback;
                 }
-                add_edge_to_wire(&mut a_new_wire, &a_e);
+                add_edge_to_wire(&mut new_wire, &e);
                 continue;
             }
 
-            let splits = the_images.image(&a_e.0).unwrap_or(&[]).to_vec();
+            let splits = images.image(&e.0).unwrap_or(&[]).to_vec();
             for sp_shape in splits {
-                let Some(mut a_sp) = as_edge(&sp_shape) else {
+                let Some(mut sp) = as_edge(&sp_shape) else {
                     continue;
                 };
-                if !b_is_degenerated && has_multi_connected(&a_sp, &mut a_vertices_counter) {
+                if !b_is_degenerated && has_multi_connected(&sp, &mut vertices_counter) {
                     return DraftFaceResult::Fallback;
                 }
-                if !b_is_closed && !a_m_edges.insert(shape_key(&a_sp.0)) {
+                if !b_is_closed && !m_edges.insert(shape_key(&sp.0)) {
                     return DraftFaceResult::Fallback;
                 }
-                a_sp.0.set_orientation(an_ori_e);
+                sp.0.set_orientation(an_ori_e);
                 if b_is_degenerated {
-                    add_edge_to_wire(&mut a_new_wire, &a_sp);
+                    add_edge_to_wire(&mut new_wire, &sp);
                     continue;
                 }
-                if b_is_closed && !is_closed_on_face(&a_sp, the_face) {
-                    let _ = do_split_seam_on_face(&a_sp, the_face);
+                if b_is_closed && !is_closed_on_face(&sp, face) {
+                    let _ = do_split_seam_on_face(&sp, face);
                 }
-                if let Some(w) = orient_split_with_warn(&mut a_sp.0, &a_e.0, the_ctx) {
-                    the_report.warnings.push(w);
+                if let Some(w) = orient_split_with_warn(&mut sp.0, &e.0, ctx) {
+                    report.warnings.push(w);
                 }
-                add_edge_to_wire(&mut a_new_wire, &a_sp);
+                add_edge_to_wire(&mut new_wire, &sp);
             }
         }
-        a_new_wire.0.set_orientation(a_w.0.orientation());
-        a_new_wire.0.set_closed(crate::bop_occt_util::bop_wire_is_closed(&a_new_wire));
-        add_wire_to_face(&mut a_draft_face, &a_new_wire);
+        new_wire.0.set_orientation(a_w.0.orientation());
+        new_wire.0.set_closed(crate::bop_occt_util::bop_wire_is_closed(&new_wire));
+        add_wire_to_face(&mut draft_face, &new_wire);
     }
 
-    if the_face.0.orientation() == Orientation::Reversed {
-        a_draft_face.0.reverse();
+    if face.0.orientation() == Orientation::Reversed {
+        draft_face.0.reverse();
     }
-    DraftFaceResult::Draft(a_draft_face)
+    DraftFaceResult::Draft(draft_face)
 }
 
 /// Build a draft face and emit warnings through `add_warning`.
 pub fn build_draft_face_reported<F: FnMut(String)>(
-    the_face: &Face,
-    the_images: &BopHistory,
-    the_ctx: &mut IntToolsContext,
+    face: &Face,
+    images: &BopHistory,
+    ctx: &mut IntToolsContext,
     mut add_warning: F,
 ) -> DraftFaceResult {
     let mut report = DraftFaceReport::default();
-    let result = build_draft_face(the_face, the_images, the_ctx, &mut report);
+    let result = build_draft_face(face, images, ctx, &mut report);
     emit_warnings(&report.warnings, &mut add_warning);
     result
 }

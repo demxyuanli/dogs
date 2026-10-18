@@ -36,30 +36,30 @@ use super::*;
 /// `Extrema_ExtPRevS` (`Extrema_ExtPRevS.hxx:28-88`).
 pub struct ExtremaExtPRevS<'a> {
     /// `myS` (`hxx:77`).
-    my_s: &'a dyn Surface,
+    s: &'a dyn Surface,
     /// `myS->BasisCurve()`, the generatrix the surface stores.
-    my_c: Arc<dyn Curve>,
+    c: Arc<dyn Curve>,
     /// `myS->AxeOfRevolution()`.
-    my_axis: GpAx1,
+    axis: GpAx1,
     /// `myPosition` (`hxx:81`) - only `Location()` / `Direction()` are read.
-    my_position: CurvePlane,
+    position: CurvePlane,
     /// `myvinf` / `myvsup` / `mytolv` (`hxx:78-80`).
-    my_vinf: f64,
-    my_vsup: f64,
-    my_tolv: f64,
+    vinf: f64,
+    vsup: f64,
+    tolv: f64,
     /// `myExtPS` (`hxx:82`).
-    my_ext_ps: ExtremaGenExtPs<'a>,
+    ext_ps: ExtremaGenExtPs<'a>,
     /// `myIsAnalyticallyComputable` (`hxx:83`).
-    my_is_analytically_computable: bool,
+    is_analytically_computable: bool,
     /// `myDone` (`hxx:84`).
-    my_done: bool,
+    done: bool,
     /// `myNbExt` (`hxx:85`).
-    my_nb_ext: usize,
+    nb_ext: usize,
     /// `mySqDist[8]` (`hxx:86`), initialised to `RealLast()`
     /// (`cxx:217-220`).
-    my_sq_dist: [f64; 8],
+    sq_dist: [f64; 8],
     /// `myPoint[8]` (`hxx:87`).
-    my_point: [ExtremaPOnSurf; 8],
+    point: [ExtremaPOnSurf; 8],
 }
 
 impl<'a> ExtremaExtPRevS<'a> {
@@ -77,23 +77,23 @@ impl<'a> ExtremaExtPRevS<'a> {
         tolv: f64,
     ) -> Self {
         let mut e = ExtremaExtPRevS {
-            my_s: s,
-            my_c: s
+            s: s,
+            c: s
                 .revolution_basis_curve()
                 .expect("Extrema_ExtPRevS: revolution surface without a basis curve"),
-            my_axis: s
+            axis: s
                 .revolution_axis()
                 .expect("Extrema_ExtPRevS: revolution surface without an axis"),
-            my_position: CurvePlane::default(),
-            my_vinf: 0.0,
-            my_vsup: 0.0,
-            my_tolv: 0.0,
-            my_ext_ps: ExtremaGenExtPs::new(),
-            my_is_analytically_computable: false,
-            my_done: false,
-            my_nb_ext: 0,
-            my_sq_dist: [f64::MAX; 8],
-            my_point: [ExtremaPOnSurf::default(); 8],
+            position: CurvePlane::default(),
+            vinf: 0.0,
+            vsup: 0.0,
+            tolv: 0.0,
+            ext_ps: ExtremaGenExtPs::new(),
+            is_analytically_computable: false,
+            done: false,
+            nb_ext: 0,
+            sq_dist: [f64::MAX; 8],
+            point: [ExtremaPOnSurf::default(); 8],
         };
         e.initialize(s, umin, usup, vmin, vsup, tolu, tolv);
         e.perform(p);
@@ -117,52 +117,52 @@ impl<'a> ExtremaExtPRevS<'a> {
         tolu: f64,
         tolv: f64,
     ) {
-        self.my_vinf = vmin;
-        self.my_vsup = vsup;
-        self.my_tolv = tolv;
+        self.vinf = vmin;
+        self.vsup = vsup;
+        self.tolv = tolv;
 
-        self.my_done = false;
-        self.my_nb_ext = 0;
-        self.my_is_analytically_computable = false;
+        self.done = false;
+        self.nb_ext = 0;
+        self.is_analytically_computable = false;
 
         let an_a_curve = s
             .revolution_basis_curve()
             .expect("Extrema_ExtPRevS: revolution surface without a basis curve");
 
-        self.my_s = s;
-        self.my_c = an_a_curve;
-        self.my_axis = s
+        self.s = s;
+        self.c = an_a_curve;
+        self.axis = s
             .revolution_axis()
             .expect("Extrema_ExtPRevS: revolution surface without an axis");
-        self.my_position = get_position(s);
-        self.my_is_analytically_computable =
-            is_case_analytically_computable(self.my_c.as_ref(), &self.my_position, &self.my_axis);
+        self.position = get_position(s);
+        self.is_analytically_computable =
+            is_case_analytically_computable(self.c.as_ref(), &self.position, &self.axis);
 
-        if !self.my_is_analytically_computable {
+        if !self.is_analytically_computable {
             // `int aNbu = 32, aNbv = 32; if (HasSingularity(*theS)) aNbv = 100;`
             // (`cxx:287-292`).
-            let a_nbu = 32;
-            let a_nbv = if has_singularity(s) { 100 } else { 32 };
-            self.my_ext_ps
-                .initialize_window(s, a_nbu, a_nbv, umin, usup, vmin, vsup, tolu, tolv);
+            let nbu = 32;
+            let nbv = if has_singularity(s) { 100 } else { 32 };
+            self.ext_ps
+                .initialize_window(s, nbu, nbv, umin, usup, vmin, vsup, tolu, tolv);
         }
     }
 
     /// `Extrema_ExtPRevS::Perform` (`cxx:300-545`).
     pub fn perform(&mut self, p: &GpPnt) {
-        self.my_done = false;
-        self.my_nb_ext = 0;
+        self.done = false;
+        self.nb_ext = 0;
 
-        if !self.my_is_analytically_computable {
-            self.my_ext_ps.perform(p);
-            self.my_done = self.my_ext_ps.is_done();
-            self.my_nb_ext = self.my_ext_ps.nb_ext();
+        if !self.is_analytically_computable {
+            self.ext_ps.perform(p);
+            self.done = self.ext_ps.is_done();
+            self.nb_ext = self.ext_ps.nb_ext();
             return;
         }
 
-        let ax = self.my_axis;
+        let ax = self.axis;
         let dir = GpVec::from_xyz(ax.direction().xyz());
-        let z = self.my_position.dir;
+        let z = self.position.dir;
         let o = ax.location();
 
         // `Pp = P translated by -((O,P).Dir) * Dir; return when P is on the
@@ -197,11 +197,11 @@ impl<'a> ExtremaExtPRevS<'a> {
         // `gp_Vec OPpp(O, Ppp), OPq(O, myS->Value(M_PI / 2, 0));`
         // (`cxx:348-359`).
         let op_pp = GpVec::from_pnts(&o, &ppp);
-        let mut op_q = GpVec::from_pnts(&o, &self.my_s.d0(std::f64::consts::PI / 2.0, 0.0));
+        let mut op_q = GpVec::from_pnts(&o, &self.s.d0(std::f64::consts::PI / 2.0, 0.0));
         if u != std::f64::consts::PI / 2.0 {
             if op_q.magnitude() <= RESOLUTION {
-                let last = self.my_c.last_parameter();
-                op_q = GpVec::from_pnts(&o, &self.my_s.d0(std::f64::consts::PI / 2.0, last / 10.0));
+                let last = self.c.last_parameter();
+                op_q = GpVec::from_pnts(&o, &self.s.d0(std::f64::consts::PI / 2.0, last / 10.0));
             }
             if vec_angle_with_ref(&op_pp, &op_q, &dir) < 0.0 {
                 u += std::f64::consts::PI;
@@ -214,10 +214,10 @@ impl<'a> ExtremaExtPRevS<'a> {
         let _ = t.set_rotation_ax1(&ax, -u);
         let mut p1 = p.transformed(&t);
 
-        let map = CurveMap::of(&self.my_c);
-        let an_ext = ext_pelc_perform(map.analytic.as_ref(), &p1, self.my_tolv);
+        let map = CurveMap::of(&self.c);
+        let an_ext = ext_pelc_perform(map.analytic.as_ref(), &p1, self.tolv);
         if an_ext.done {
-            self.my_done = true;
+            self.done = true;
             self.add_solutions(p, &an_ext.sols, &map, u);
         }
 
@@ -225,9 +225,9 @@ impl<'a> ExtremaExtPRevS<'a> {
         let _ = t.set_rotation_ax1(&ax, std::f64::consts::PI);
         p1.transform(&t);
 
-        let an_ext2 = ext_pelc_perform(map.analytic.as_ref(), &p1, self.my_tolv);
+        let an_ext2 = ext_pelc_perform(map.analytic.as_ref(), &p1, self.tolv);
         if an_ext2.done {
-            self.my_done = true;
+            self.done = true;
             self.add_solutions(p, &an_ext2.sols, &map, u + std::f64::consts::PI);
         }
     }
@@ -246,22 +246,22 @@ impl<'a> ExtremaExtPRevS<'a> {
     ) {
         // `(anACurve->GetType() == GeomAbs_Circle) || (... GeomAbs_Ellipse)`
         // (`cxx:385`, `:417`).
-        let periodic_v = self.my_c.gp_circ().is_some() || self.my_c.gp_ellipse().is_some();
+        let periodic_v = self.c.gp_circ().is_some() || self.c.gp_ellipse().is_some();
 
         for sol in sols {
             let mut v = map.to_curve(sol.u);
             let mut e = GpPnt::zero();
             let mut dist2 = 0.0;
-            if v > self.my_vsup {
-                let mut new_v = self.my_vsup;
+            if v > self.vsup {
+                let mut new_v = self.vsup;
                 if periodic_v {
-                    new_v = clib::in_period(v, self.my_vinf, self.my_vinf + 2.0 * std::f64::consts::PI);
-                    if new_v > self.my_vsup {
+                    new_v = clib::in_period(v, self.vinf, self.vinf + 2.0 * std::f64::consts::PI);
+                    if new_v > self.vsup {
                         new_v -= 2.0 * std::f64::consts::PI;
-                        if new_v + self.my_tolv < self.my_vinf {
-                            new_v = self.my_vsup;
-                        } else if new_v < self.my_vinf {
-                            new_v = self.my_vinf;
+                        if new_v + self.tolv < self.vinf {
+                            new_v = self.vsup;
+                        } else if new_v < self.vinf {
+                            new_v = self.vinf;
                         }
                     }
                 }
@@ -269,18 +269,18 @@ impl<'a> ExtremaExtPRevS<'a> {
                 if !self.is_extremum(u, v, p, true, sol.is_min, &mut e, &mut dist2) {
                     continue;
                 }
-            } else if v < self.my_vinf {
-                let mut new_v = self.my_vinf;
+            } else if v < self.vinf {
+                let mut new_v = self.vinf;
                 if periodic_v {
                     // `ElCLib::InPeriod(V, myvsup - 2*M_PI, myvsup);`
                     // (`cxx:419`).
-                    new_v = clib::in_period(v, self.my_vsup - 2.0 * std::f64::consts::PI, self.my_vsup);
-                    if new_v < self.my_vinf {
+                    new_v = clib::in_period(v, self.vsup - 2.0 * std::f64::consts::PI, self.vsup);
+                    if new_v < self.vinf {
                         new_v += 2.0 * std::f64::consts::PI;
-                        if new_v - self.my_tolv > self.my_vsup {
-                            new_v = self.my_vinf;
-                        } else if new_v > self.my_vsup {
-                            new_v = self.my_vsup;
+                        if new_v - self.tolv > self.vsup {
+                            new_v = self.vinf;
+                        } else if new_v > self.vsup {
+                            new_v = self.vsup;
                         }
                     }
                 }
@@ -289,13 +289,13 @@ impl<'a> ExtremaExtPRevS<'a> {
                     continue;
                 }
             } else {
-                e = self.my_s.d0(u, v);
+                e = self.s.d0(u, v);
                 dist2 = p.square_distance(&e);
             }
-            if is_original_pnt(&e, &self.my_point, self.my_nb_ext) {
-                self.my_point[self.my_nb_ext] = ExtremaPOnSurf::new(u, v, e);
-                self.my_sq_dist[self.my_nb_ext] = dist2;
-                self.my_nb_ext += 1;
+            if is_original_pnt(&e, &self.point, self.nb_ext) {
+                self.point[self.nb_ext] = ExtremaPOnSurf::new(u, v, e);
+                self.sq_dist[self.nb_ext] = dist2;
+                self.nb_ext += 1;
             }
         }
     }
@@ -312,12 +312,12 @@ impl<'a> ExtremaExtPRevS<'a> {
         e: &mut GpPnt,
         dist2: &mut f64,
     ) -> bool {
-        *e = self.my_s.d0(u, v);
+        *e = self.s.d0(u, v);
         *dist2 = p.square_distance(e);
         let v_step = if is_vsup { v - 1.0 } else { v + 1.0 };
-        let up = p.square_distance(&self.my_s.d0(u + 1.0, v));
-        let down = p.square_distance(&self.my_s.d0(u - 1.0, v));
-        let side = p.square_distance(&self.my_s.d0(u, v_step));
+        let up = p.square_distance(&self.s.d0(u + 1.0, v));
+        let down = p.square_distance(&self.s.d0(u - 1.0, v));
+        let side = p.square_distance(&self.s.d0(u, v_step));
         if is_min {
             *dist2 < up && *dist2 < down && *dist2 < side
         } else {
@@ -327,7 +327,7 @@ impl<'a> ExtremaExtPRevS<'a> {
 
     /// `Extrema_ExtPRevS::IsDone()` (`cxx:549-552`).
     pub fn is_done(&self) -> bool {
-        self.my_done
+        self.done
     }
 
     /// `Extrema_ExtPRevS::NbExt()` (`cxx:556-563`).
@@ -335,29 +335,29 @@ impl<'a> ExtremaExtPRevS<'a> {
         if !self.is_done() {
             return 0;
         }
-        if self.my_is_analytically_computable {
-            self.my_nb_ext
+        if self.is_analytically_computable {
+            self.nb_ext
         } else {
-            self.my_ext_ps.nb_ext()
+            self.ext_ps.nb_ext()
         }
     }
 
     /// `Extrema_ExtPRevS::SquareDistance(N)` (`cxx:567-581`).
     pub fn square_distance(&self, n: usize) -> f64 {
-        if self.my_is_analytically_computable {
-            self.my_sq_dist[n - 1]
+        if self.is_analytically_computable {
+            self.sq_dist[n - 1]
         } else {
-            self.my_ext_ps.square_distance(n)
+            self.ext_ps.square_distance(n)
         }
     }
 
     /// `Extrema_ExtPRevS::Point(N)` (`cxx:585-599`) as `(U, V, P)`.
     pub fn point(&self, n: usize) -> (f64, f64, GpPnt) {
-        if self.my_is_analytically_computable {
-            let (u, v) = self.my_point[n - 1].parameter();
-            (u, v, self.my_point[n - 1].value())
+        if self.is_analytically_computable {
+            let (u, v) = self.point[n - 1].parameter();
+            (u, v, self.point[n - 1].value())
         } else {
-            self.my_ext_ps.point(n)
+            self.ext_ps.point(n)
         }
     }
 }
@@ -453,9 +453,9 @@ fn is_case_analytically_computable(c: &dyn Curve, plane: &CurvePlane, axis: &GpA
     // `double dist = 100., aThreshold = Angular()^2 * dist^2; p2 =
     // Axe.Location + dist * Axe.Direction;` (`cxx:154-156`).
     let dist = 100.0;
-    let a_threshold = ANGULAR * ANGULAR * dist * dist;
+    let threshold = ANGULAR * ANGULAR * dist * dist;
     let p1 = axis.location();
     let p2 = GpPnt::from_xyz(&axis.location().xyz().added(&axis.direction().xyz().multiplied(dist)));
-    plane_square_distance(&plane.loc, &plane.dir, &p1) < a_threshold
-        && plane_square_distance(&plane.loc, &plane.dir, &p2) < a_threshold
+    plane_square_distance(&plane.loc, &plane.dir, &p1) < threshold
+        && plane_square_distance(&plane.loc, &plane.dir, &p2) < threshold
 }

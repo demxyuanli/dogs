@@ -254,7 +254,7 @@ pub fn project_curve_on_surface_perform(
     // anchored on the LAST point of this curve.
     let a_change_cycle = cache.change_cycle(&pts3d[0], &pts3d[n - 1]);
     let mut is_from_cache = false;
-    let mut a_saved_point = GpPnt2d::zero();
+    let mut saved_point = GpPnt2d::zero();
     let mut pts: Vec<GpPnt2d> = vec![GpPnt2d::zero(); n];
     // `cxx:1020-1021`: `getLine` wrote `thePoints2d(1)` / `thePoints2d(aNb)`
     // before it failed; the `!isRecompute` endpoint arm reads them back.
@@ -277,35 +277,35 @@ pub fn project_curve_on_surface_perform(
     let mut prev_p2d = GpPnt2d::zero();
     for ii in 1..=n {
         // `cxx:1313`: the sample order may be reversed.
-        let a_pnt_index = if a_change_cycle { n - ii + 1 } else { ii };
-        let p3d = pts3d[a_pnt_index - 1];
+        let pnt_index = if a_change_cycle { n - ii + 1 } else { ii };
+        let p3d = pts3d[pnt_index - 1];
         if iso_param {
             // `cxx:1317-1375`: the isoparametric arms.
             let mut t_par = 0.0f64;
             if iso_out.iso_par2d3d {
                 // `cxx:1319-1328`.
                 t_par = if iso_par2 > iso_par1 {
-                    t_vals[a_pnt_index - 1]
+                    t_vals[pnt_index - 1]
                 } else {
-                    iso_out.t1 + iso_out.t2 - t_vals[a_pnt_index - 1]
+                    iso_out.t1 + iso_out.t2 - t_vals[pnt_index - 1]
                 };
             } else if !is_analytic {
                 // `cxx:1330-1346`: the projected iso parameters `pout`.
-                t_par = if a_pnt_index == 1 {
+                t_par = if pnt_index == 1 {
                     iso_par1
-                } else if a_pnt_index == n {
+                } else if pnt_index == n {
                     iso_par2
                 } else {
-                    iso_out.params_out[a_pnt_index - 1]
+                    iso_out.params_out[pnt_index - 1]
                 };
             }
             if !iso_out.iso_par2d3d && is_analytic {
                 // `cxx:1347-1362`: an analytic surface whose samples are not
                 // already the iso points still projects by `NextValueOfUV`;
                 // only the two ends take the iso values.
-                if a_pnt_index == 1 {
+                if pnt_index == 1 {
                     p2d = value_p1;
-                } else if a_pnt_index == n {
+                } else if pnt_index == n {
                     p2d = value_p2;
                 } else {
                     let (q, g) = next_value_of_uv(
@@ -324,22 +324,22 @@ pub fn project_curve_on_surface_perform(
             } else {
                 p2d = GpPnt2d::new(t_par, iso_value);
             }
-        } else if a_pnt_index == 1 && iso_out.p1_on_iso {
+        } else if pnt_index == 1 && iso_out.p1_on_iso {
             // `cxx:1379-1381`: endpoint override from `isAnIsoparametric`,
             // which can be set even when `isoParam` is false.
             p2d = value_p1;
-        } else if a_pnt_index == n && iso_out.p2_on_iso {
+        } else if pnt_index == n && iso_out.p2_on_iso {
             // `cxx:1382-1384`.
             p2d = value_p2;
-        } else if a_pnt_index == 1 || a_pnt_index == n {
+        } else if pnt_index == 1 || pnt_index == n {
             if !gl.is_recompute {
                 // `cxx:1388-1399`: no period jump among the `getLine` probes, so
                 // the endpoint keeps the seeded-Newton projection there.
-                p2d = pts[a_pnt_index - 1];
+                p2d = pts[pnt_index - 1];
                 gap = gl.last_gap;
-                if a_pnt_index == 1 {
+                if pnt_index == 1 {
                     is_from_cache = gl.is_from_cache;
-                    a_saved_point = p2d;
+                    saved_point = p2d;
                 }
                 continue;
             }
@@ -347,19 +347,19 @@ pub fn project_curve_on_surface_perform(
             // endpoint from `myCache` (walking Newton) or, without a cache hit,
             // globally.
             match cache.find(&p3d, preci * preci) {
-                Some(a_cache_pnt) => {
+                Some(cache_pnt) => {
                     let (q, g) = next_value_of_uv(
                         surf,
-                        &a_cache_pnt.second,
+                        &cache_pnt.second,
                         &p3d,
                         preci,
                         occt_core::precision::CONFUSION + gap,
                     );
                     p2d = q;
                     gap = g;
-                    if a_pnt_index == 1 {
+                    if pnt_index == 1 {
                         is_from_cache = true;
-                        a_saved_point = a_cache_pnt.second;
+                        saved_point = cache_pnt.second;
                     }
                 }
                 None => {
@@ -380,7 +380,7 @@ pub fn project_curve_on_surface_perform(
             p2d = q;
             gap = g;
         }
-        pts[a_pnt_index - 1] = p2d;
+        pts[pnt_index - 1] = p2d;
         // `cxx:1436-1451`: `needResolveUJump` / `needResolveVJump`. A sample
         // whose U (V) parameter moved a full period while its 3D point stayed
         // within `myPreci` of the previous one is a seam crossing the point-wise
@@ -416,9 +416,9 @@ pub fn project_curve_on_surface_perform(
         // extrapolation of this sample against the previously stored one.
         if ii > 1 {
             let base = if a_change_cycle {
-                pts[a_pnt_index]
+                pts[pnt_index]
             } else {
-                pts[a_pnt_index - 2]
+                pts[pnt_index - 2]
             };
             p2d = GpPnt2d::new(2.0 * p2d.x() - base.x(), 2.0 * p2d.y() - base.y());
         }
@@ -453,7 +453,7 @@ pub fn project_curve_on_surface_perform(
         need_resolve_u_jump,
         need_resolve_v_jump,
         is_from_cache,
-        a_saved_point,
+        saved_point,
         cache.adjust_over_degen_off,
         &mut t_vals,
         &mut pts3d,

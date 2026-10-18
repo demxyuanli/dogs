@@ -144,14 +144,14 @@ impl Pso {
     /// `aMinUV`/`aMaxUV` (`math_PSO.cxx:63-65`, `:131-132`): the borders shrunk
     /// by `(upp - low) / aBorderDivisor` on each side.
     fn shrunk_borders(&self) -> (MathVector, MathVector) {
-        let mut a_min_uv = MathVector::new(1, self.n);
-        let mut a_max_uv = MathVector::new(1, self.n);
+        let mut min_uv = MathVector::new(1, self.n);
+        let mut max_uv = MathVector::new(1, self.n);
         for i in 1..=self.n {
             let delta = self.upp_border.value(i) - self.low_border.value(i);
-            a_min_uv.set_value(i, self.low_border.value(i) + delta / A_BORDER_DIVISOR);
-            a_max_uv.set_value(i, self.upp_border.value(i) - delta / A_BORDER_DIVISOR);
+            min_uv.set_value(i, self.low_border.value(i) + delta / A_BORDER_DIVISOR);
+            max_uv.set_value(i, self.upp_border.value(i) - delta / A_BORDER_DIVISOR);
         }
-        (a_min_uv, a_max_uv)
+        (min_uv, max_uv)
     }
 
     /// `Perform(theParticles, theNbParticles, theValue, theOutPnt)`
@@ -187,49 +187,49 @@ impl Pso {
         out_pnt: &mut MathVector,
         nb_iter: usize,
     ) {
-        let (a_min_uv, a_max_uv) = self.shrunk_borders();
+        let (min_uv, max_uv) = self.shrunk_borders();
         self.nb_iter = nb_iter;
         self.steps = steps.clone();
 
-        let mut a_pool = PsoParticlesPool::new(self.nb_particles, self.n);
+        let mut pool = PsoParticlesPool::new(self.nb_particles, self.n);
 
-        let mut a_curr_point = MathVector::new(1, self.n);
+        let mut curr_point = MathVector::new(1, self.n);
         for i in 1..=self.n {
-            a_curr_point.set_value(i, a_min_uv.value(i));
+            curr_point.set_value(i, min_uv.value(i));
         }
 
-        let mut a_particle_idx = a_pool.worst_particle_index();
+        let mut particle_idx = pool.worst_particle_index();
         loop {
-            let mut a_curr_value = 0.0;
-            func.value(&a_curr_point, &mut a_curr_value);
+            let mut curr_value = 0.0;
+            func.value(&curr_point, &mut curr_value);
 
-            if a_curr_value < a_pool.particle(a_particle_idx).distance {
-                let p = a_pool.particle_mut(a_particle_idx);
-                for a_dim_idx in 0..self.n {
-                    p.position[a_dim_idx] = a_curr_point.value(a_dim_idx + 1);
-                    p.best_position[a_dim_idx] = a_curr_point.value(a_dim_idx + 1);
+            if curr_value < pool.particle(particle_idx).distance {
+                let p = pool.particle_mut(particle_idx);
+                for dim_idx in 0..self.n {
+                    p.position[dim_idx] = curr_point.value(dim_idx + 1);
+                    p.best_position[dim_idx] = curr_point.value(dim_idx + 1);
                 }
-                p.distance = a_curr_value;
-                p.best_distance = a_curr_value;
+                p.distance = curr_value;
+                p.best_distance = curr_value;
 
-                a_particle_idx = a_pool.worst_particle_index();
+                particle_idx = pool.worst_particle_index();
             }
 
             // Step (`math_PSO.cxx:98-118`).
-            a_curr_point.set_value(1, a_curr_point.value(1) + self.steps.value(1).max(1.0e-15));
-            for a_dim_idx in 1..self.n {
-                if a_curr_point.value(a_dim_idx) > a_max_uv.value(a_dim_idx) {
-                    a_curr_point.set_value(a_dim_idx, a_min_uv.value(a_dim_idx));
-                    a_curr_point.set_value(
-                        a_dim_idx + 1,
-                        a_curr_point.value(a_dim_idx + 1) + self.steps.value(a_dim_idx + 1),
+            curr_point.set_value(1, curr_point.value(1) + self.steps.value(1).max(1.0e-15));
+            for dim_idx in 1..self.n {
+                if curr_point.value(dim_idx) > max_uv.value(dim_idx) {
+                    curr_point.set_value(dim_idx, min_uv.value(dim_idx));
+                    curr_point.set_value(
+                        dim_idx + 1,
+                        curr_point.value(dim_idx + 1) + self.steps.value(dim_idx + 1),
                     );
                 } else {
                     break;
                 }
             }
 
-            if a_curr_point.value(self.n) > a_max_uv.value(self.n) {
+            if curr_point.value(self.n) > max_uv.value(self.n) {
                 break;
             }
         }
@@ -237,7 +237,7 @@ impl Pso {
         let nb_particles = self.nb_particles;
         self.perform_pso_with_given_particles(
             func,
-            &mut a_pool,
+            &mut pool,
             nb_particles,
             value,
             out_pnt,
@@ -255,96 +255,96 @@ impl Pso {
         out_pnt: &mut MathVector,
         nb_iter: usize,
     ) {
-        let (a_min_uv, a_max_uv) = self.shrunk_borders();
+        let (min_uv, max_uv) = self.shrunk_borders();
         self.nb_iter = nb_iter;
         self.nb_particles = nb_particles;
 
         // Current particle data.
-        let mut a_curr_point = MathVector::new(1, self.n);
-        let mut a_best_global_position = MathVector::new(1, self.n);
+        let mut curr_point = MathVector::new(1, self.n);
+        let mut best_global_position = MathVector::new(1, self.n);
 
         // Generate initial particle velocities (`math_PSO.cxx:143-152`).
-        let mut a_random = BullardGenerator::new();
-        for a_part_idx in 1..=self.nb_particles {
-            let p = particles.particle_mut(a_part_idx);
-            for a_dim_idx in 1..=self.n {
-                let a_ksi = a_random.next_real();
-                p.velocity[a_dim_idx - 1] = self.steps.value(a_dim_idx) * (a_ksi - 0.5) * 2.0;
+        let mut random = BullardGenerator::new();
+        for part_idx in 1..=self.nb_particles {
+            let p = particles.particle_mut(part_idx);
+            for dim_idx in 1..=self.n {
+                let ksi = random.next_real();
+                p.velocity[dim_idx - 1] = self.steps.value(dim_idx) * (ksi - 0.5) * 2.0;
             }
         }
 
-        let a_best_idx = particles.best_particle_index();
-        for a_dim_idx in 0..self.n {
-            a_best_global_position
-                .set_value(a_dim_idx + 1, particles.particle(a_best_idx).position[a_dim_idx]);
+        let best_idx = particles.best_particle_index();
+        for dim_idx in 0..self.n {
+            best_global_position
+                .set_value(dim_idx + 1, particles.particle(best_idx).position[dim_idx]);
         }
-        let mut a_best_global_distance = particles.particle(a_best_idx).distance;
+        let mut best_global_distance = particles.particle(best_idx).distance;
 
         // This velocity is used for detecting stagnation state.
-        let mut a_termination_velocity = MathVector::new(1, self.n);
+        let mut termination_velocity = MathVector::new(1, self.n);
         for i in 1..=self.n {
-            a_termination_velocity.set_value(i, self.steps.value(i) / 2048.0);
+            termination_velocity.set_value(i, self.steps.value(i) / 2048.0);
         }
         // This velocity shows minimal velocity on current step.
-        let mut a_minimal_velocity = MathVector::new(1, self.n);
+        let mut minimal_velocity = MathVector::new(1, self.n);
 
         // Run PSO iterations (`math_PSO.cxx:169-265`): `aStep` runs to `myNbIter - 1`.
-        for a_step in 1..self.nb_iter {
-            a_minimal_velocity.init(REAL_LAST);
+        for step in 1..self.nb_iter {
+            minimal_velocity.init(REAL_LAST);
 
-            for a_part_idx in 1..=self.nb_particles {
-                let a_ksi1 = a_random.next_real();
-                let a_ksi2 = a_random.next_real();
+            for part_idx in 1..=self.nb_particles {
+                let ksi1 = random.next_real();
+                let ksi2 = random.next_real();
 
                 const A_RETENT_WEIGHT: f64 = 0.72900;
                 const A_PERSON_WEIGHT: f64 = 1.49445;
                 const A_SOCIAL_WEIGHT: f64 = 1.49445;
 
-                let p = particles.particle_mut(a_part_idx);
-                for a_dim_idx in 0..self.n {
-                    p.velocity[a_dim_idx] = p.velocity[a_dim_idx] * A_RETENT_WEIGHT
-                        + (p.best_position[a_dim_idx] - p.position[a_dim_idx])
-                            * (A_PERSON_WEIGHT * a_ksi1)
-                        + (a_best_global_position.value(a_dim_idx + 1) - p.position[a_dim_idx])
-                            * (A_SOCIAL_WEIGHT * a_ksi2);
+                let p = particles.particle_mut(part_idx);
+                for dim_idx in 0..self.n {
+                    p.velocity[dim_idx] = p.velocity[dim_idx] * A_RETENT_WEIGHT
+                        + (p.best_position[dim_idx] - p.position[dim_idx])
+                            * (A_PERSON_WEIGHT * ksi1)
+                        + (best_global_position.value(dim_idx + 1) - p.position[dim_idx])
+                            * (A_SOCIAL_WEIGHT * ksi2);
 
-                    p.position[a_dim_idx] += p.velocity[a_dim_idx];
-                    p.position[a_dim_idx] = p.position[a_dim_idx]
-                        .max(a_min_uv.value(a_dim_idx + 1))
-                        .min(a_max_uv.value(a_dim_idx + 1));
-                    a_curr_point.set_value(a_dim_idx + 1, p.position[a_dim_idx]);
+                    p.position[dim_idx] += p.velocity[dim_idx];
+                    p.position[dim_idx] = p.position[dim_idx]
+                        .max(min_uv.value(dim_idx + 1))
+                        .min(max_uv.value(dim_idx + 1));
+                    curr_point.set_value(dim_idx + 1, p.position[dim_idx]);
 
-                    a_minimal_velocity.set_value(
-                        a_dim_idx + 1,
-                        a_minimal_velocity
-                            .value(a_dim_idx + 1)
-                            .min(p.velocity[a_dim_idx].abs()),
+                    minimal_velocity.set_value(
+                        dim_idx + 1,
+                        minimal_velocity
+                            .value(dim_idx + 1)
+                            .min(p.velocity[dim_idx].abs()),
                     );
                 }
 
                 let mut a_distance = 0.0;
-                func.value(&a_curr_point, &mut a_distance);
-                particles.particle_mut(a_part_idx).distance = a_distance;
+                func.value(&curr_point, &mut a_distance);
+                particles.particle_mut(part_idx).distance = a_distance;
 
-                let p = particles.particle_mut(a_part_idx);
+                let p = particles.particle_mut(part_idx);
                 if p.distance < p.best_distance {
                     p.best_distance = p.distance;
-                    for a_dim_idx in 0..self.n {
-                        p.best_position[a_dim_idx] = p.position[a_dim_idx];
+                    for dim_idx in 0..self.n {
+                        p.best_position[dim_idx] = p.position[dim_idx];
                     }
 
-                    if p.distance < a_best_global_distance {
-                        a_best_global_distance = p.distance;
-                        for a_dim_idx in 0..self.n {
-                            a_best_global_position.set_value(a_dim_idx + 1, p.position[a_dim_idx]);
+                    if p.distance < best_global_distance {
+                        best_global_distance = p.distance;
+                        for dim_idx in 0..self.n {
+                            best_global_position.set_value(dim_idx + 1, p.position[dim_idx]);
                         }
                     }
                 }
             }
 
             let mut is_terminal_velocity_reached = true;
-            for a_dim_idx in 1..=self.n {
-                if a_minimal_velocity.value(a_dim_idx) > a_termination_velocity.value(a_dim_idx) {
+            for dim_idx in 1..=self.n {
+                if minimal_velocity.value(dim_idx) > termination_velocity.value(dim_idx) {
                     is_terminal_velocity_reached = false;
                     break;
                 }
@@ -354,34 +354,34 @@ impl Pso {
                 // Minimum number of steps.
                 const A_MIN_STEPS: usize = 16;
 
-                if a_step > A_MIN_STEPS {
+                if step > A_MIN_STEPS {
                     break;
                 }
 
-                for a_part_idx in 1..=self.nb_particles {
-                    let a_ksi = a_random.next_real();
-                    let p = particles.particle_mut(a_part_idx);
+                for part_idx in 1..=self.nb_particles {
+                    let ksi = random.next_real();
+                    let p = particles.particle_mut(part_idx);
 
-                    for a_dim_idx in 0..self.n {
-                        let at_min = p.position[a_dim_idx] == a_min_uv.value(a_dim_idx + 1);
-                        let at_max = p.position[a_dim_idx] == a_max_uv.value(a_dim_idx + 1);
+                    for dim_idx in 0..self.n {
+                        let at_min = p.position[dim_idx] == min_uv.value(dim_idx + 1);
+                        let at_max = p.position[dim_idx] == max_uv.value(dim_idx + 1);
                         if at_min || at_max {
-                            p.velocity[a_dim_idx] = if at_min {
-                                self.steps.value(a_dim_idx + 1) * a_ksi
+                            p.velocity[dim_idx] = if at_min {
+                                self.steps.value(dim_idx + 1) * ksi
                             } else {
-                                -self.steps.value(a_dim_idx + 1) * a_ksi
+                                -self.steps.value(dim_idx + 1) * ksi
                             };
                         } else {
-                            p.velocity[a_dim_idx] = self.steps.value(a_dim_idx + 1) * (a_ksi - 0.5) * 2.0;
+                            p.velocity[dim_idx] = self.steps.value(dim_idx + 1) * (ksi - 0.5) * 2.0;
                         }
                     }
                 }
             }
         }
 
-        *value = a_best_global_distance;
+        *value = best_global_distance;
         for i in 1..=self.n {
-            out_pnt.set_value(i, a_best_global_position.value(i));
+            out_pnt.set_value(i, best_global_position.value(i));
         }
     }
 

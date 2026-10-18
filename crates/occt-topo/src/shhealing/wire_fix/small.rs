@@ -93,7 +93,7 @@ pub(in crate::shhealing) fn check_small(wire: &Wire, face: &Face, precsmall: f64
 pub(in crate::shhealing) fn fix_small_one(
     wire: &mut Wire,
     face: &Face,
-    my_precision: f64,
+    precision: f64,
     precsmall: f64,
     lockvtx: bool,
     num: usize,
@@ -128,7 +128,7 @@ pub(in crate::shhealing) fn fix_small_one(
     if check.done2 {
         let nb2 = wire_edges_nb(wire);
         let cnum = if n <= nb2 { n } else { 1 };
-        let _ = fix_connected_one(wire, my_precision, precsmall, cnum);
+        let _ = fix_connected_one(wire, precision, precsmall, cnum);
     }
     true
 }
@@ -142,7 +142,7 @@ pub(in crate::shhealing) fn fix_small_one(
 pub fn fix_small_all(
     wire: &mut Wire,
     face: &Face,
-    my_precision: f64,
+    precision: f64,
     precsmall: f64,
     lockvtx: bool,
 ) -> bool {
@@ -152,7 +152,7 @@ pub fn fix_small_all(
     let mut done = false;
     let mut i = wire_edges_nb(wire);
     while i > 0 {
-        done |= fix_small_one(wire, face, my_precision, precsmall, lockvtx, i);
+        done |= fix_small_one(wire, face, precision, precsmall, lockvtx, i);
         i -= 1;
     }
     done
