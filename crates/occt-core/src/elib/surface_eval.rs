@@ -3,10 +3,8 @@
 use crate::gp::{GpAx3, GpPln, GpCylinder, GpCone, GpSphere, GpTorus, GpPnt, GpVec};
 use crate::elib::slib;
 
-/// Evaluate plane D1: point + du + dv.
-pub fn plane_d1(pl: &GpPln, u: f64, v: f64) -> (GpPnt, GpVec, GpVec) {
-    slib::plane_d1(pl, u, v)
-}
+/// Evaluate plane D1: point + du + dv. `ElSLib::PlaneD1` lives in `slib`.
+pub use super::slib::plane_d1;
 
 /// Plane normal = Xdir × Ydir (constant).
 pub fn plane_normal(pl: &GpPln) -> GpVec {
@@ -154,7 +152,7 @@ pub fn torus_d2(t: &GpTorus, u: f64, v: f64) -> (GpPnt, GpVec, GpVec, GpVec, GpV
 /// body (before audit A10) returned **zero** `duu/dvv/duv` for sphere and torus,
 /// silently dropping curvature; `SurfaceRef` has no `Cone` variant, so a cone is
 /// evaluated through [`cone_d2`] directly.
-pub fn surface_d2(
+pub fn elementary_surface_d2(
     s: &SurfaceRef, u: f64, v: f64,
 ) -> (GpPnt, GpVec, GpVec, GpVec, GpVec, GpVec) {
     match s {

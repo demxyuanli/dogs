@@ -19,7 +19,7 @@ use occt_core::precision::PCONFUSION;
 use occt_geom2d::curve::Curve2d;
 use occt_geom2d::Geom2dBezierCurve;
 
-use crate::geom_bnd_lib_other_curve2d::box_other;
+use crate::geom_bnd_lib_other_curve2d::box_other_2d;
 
 /// `GeomBndLib_BezierCurve2d::Box(theU1, theU2, theTol)` on an owned Bezier.
 pub fn box_bezier_poles(curve: &Geom2dBezierCurve, the_u1: f64, the_u2: f64, the_tol: f64) -> BndBox2d {
@@ -28,7 +28,7 @@ pub fn box_bezier_poles(curve: &Geom2dBezierCurve, the_u1: f64, the_u2: f64, the
     let a_trim1 = the_u1.max(a_u1);
     let a_trim2 = the_u2.min(a_u2);
     if (a_u1 - a_trim1).abs() > PCONFUSION || (a_u2 - a_trim2).abs() > PCONFUSION {
-        return box_other(curve, a_trim1, a_trim2, the_tol);
+        return box_other_2d(curve, a_trim1, a_trim2, the_tol);
     }
     let mut a_box = BndBox2d::new();
     for i in 0..curve.nb_poles() {
@@ -62,10 +62,10 @@ pub fn box_bezier_as_curve(curve: &dyn Curve2d, the_u1: f64, the_u2: f64, the_to
     let a_trim1 = the_u1.max(a_u1);
     let a_trim2 = the_u2.min(a_u2);
     if (a_u1 - a_trim1).abs() > PCONFUSION || (a_u2 - a_trim2).abs() > PCONFUSION {
-        return box_other(curve, a_trim1, a_trim2, the_tol);
+        return box_other_2d(curve, a_trim1, a_trim2, the_tol);
     }
     match curve.poles2d() {
         Some(poles) => box_bezier_pole_slice(&poles, the_tol),
-        None => box_other(curve, a_trim1, a_trim2, the_tol),
+        None => box_other_2d(curve, a_trim1, a_trim2, the_tol),
     }
 }

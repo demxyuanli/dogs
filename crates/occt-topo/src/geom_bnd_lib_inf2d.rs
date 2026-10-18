@@ -23,7 +23,7 @@ fn dy2d() -> GpDir2d {
 }
 
 /// `GeomBndLib_InfiniteHelpers::OpenMin<gp_Dir2d, Bnd_Box2d>`.
-pub fn open_min(dir: &GpDir2d, box_: &mut BndBox2d) {
+pub fn open_min_2d(dir: &GpDir2d, box_: &mut BndBox2d) {
     if dir.is_parallel(&dx2d(), Precision::ANGULAR) || dir.is_parallel(&dx2d(), ANGULAR) {
         if dir.x() > 0.0 {
             box_.open_xmin();
@@ -43,7 +43,7 @@ pub fn open_min(dir: &GpDir2d, box_: &mut BndBox2d) {
 }
 
 /// `GeomBndLib_InfiniteHelpers::OpenMax<gp_Dir2d, Bnd_Box2d>`.
-pub fn open_max(dir: &GpDir2d, box_: &mut BndBox2d) {
+pub fn open_max_2d(dir: &GpDir2d, box_: &mut BndBox2d) {
     if dir.is_parallel(&dx2d(), Precision::ANGULAR) {
         if dir.x() > 0.0 {
             box_.open_xmax();
@@ -63,7 +63,7 @@ pub fn open_max(dir: &GpDir2d, box_: &mut BndBox2d) {
 }
 
 /// `GeomBndLib_InfiniteHelpers::OpenMinMax<gp_Dir2d, Bnd_Box2d>`.
-pub fn open_min_max(dir: &GpDir2d, box_: &mut BndBox2d) {
+pub fn open_min_max_2d(dir: &GpDir2d, box_: &mut BndBox2d) {
     if dir.is_parallel(&dx2d(), Precision::ANGULAR) {
         box_.open_xmax();
         box_.open_xmin();

@@ -15,7 +15,7 @@ use occt_geom2d::curve::Curve2d;
 use occt_geom2d::{Geom2dBezierCurve, Geom2dBSplineCurve};
 
 use crate::geom_bnd_lib_elclib2d::adjust_periodic;
-use crate::geom_bnd_lib_other_curve2d::{box_other, fill_box2d};
+use crate::geom_bnd_lib_other_curve2d::{box_other_2d, fill_box2d};
 use crate::geom_bnd_lib_sample2d::{compute_nb_samples2d, sample_kind_of};
 
 const WEAKNESS: f64 = 1.5;
@@ -166,7 +166,7 @@ pub fn bezier_curve_box2d(
     let first = 0.0;
     let last = 1.0;
     if the_u1 - first > PCONFUSION || last - the_u2 > PCONFUSION {
-        return box_other(geom, the_u1.max(first), the_u2.min(last), the_tol);
+        return box_other_2d(geom, the_u1.max(first), the_u2.min(last), the_tol);
     }
     let mut b1 = BndBox2d::new();
     let n = geom.degree().max(1) as i32;
@@ -205,7 +205,7 @@ pub fn bspline_curve_box2d_periodic(
         &mut a_u1,
         &mut a_u2,
     );
-    box_other(geom, a_u1, a_u2, the_tol)
+    box_other_2d(geom, a_u1, a_u2, the_tol)
 }
 
 /// Non-periodic `BSplineCurveBox` (`SplineHelpers.pxx:332-398`).
@@ -219,7 +219,7 @@ pub fn bspline_curve_box2d(
     let a_u1 = the_u1.max(geom.first_parameter());
     let a_u2 = the_u2.min(geom.last_parameter());
     if a_u1 - geom.first_parameter() > PCONFUSION || geom.last_parameter() - a_u2 > PCONFUSION {
-        return box_other(geom, a_u1, a_u2, the_tol);
+        return box_other_2d(geom, a_u1, a_u2, the_tol);
     }
     let (uknots, umults) = bspl_knots::unique_knots_mults(&geom.knots);
     if uknots.len() < 2 {

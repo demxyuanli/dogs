@@ -11,7 +11,7 @@ use occt_geom::Surface;
 use occt_geom::geom_api::project_point_on_surface;
 
 use crate::int_tools_wline::{
-    adjust_by_neighbour, adjust_periodic, find_point, is_point_on_boundary, u_period,
+    adjust_by_neighbour, wline_adjust_periodic, find_point, is_point_on_boundary, u_period,
     u_resolution, v_period, v_resolution, PntOn2S, WLine,
 };
 use crate::shape::Face;
@@ -90,7 +90,7 @@ pub fn decomposition_of_wline(
                         )
                     };
                 let (an_adjust_par, _anoffset) =
-                    adjust_periodic(a_parameter, alowerboundary, aupperboundary, a_period, 0.0);
+                    wline_adjust_periodic(a_parameter, alowerboundary, aupperboundary, a_period, 0.0);
                 let mut b_is_on_first_boundary = true;
                 b_is_point_on_boundary = is_point_on_boundary(
                     an_adjust_par,
@@ -221,7 +221,7 @@ pub fn decomposition_of_wline(
                             v_period(a_ga).unwrap_or(0.0)
                         };
                         let (an_adjust_par, _anoffset) =
-                            adjust_periodic(a_parameter, alowerboundary, aupperboundary, a_period, 0.0);
+                            wline_adjust_periodic(a_parameter, alowerboundary, aupperboundary, a_period, 0.0);
                         b_is_point_on_boundary = is_point_on_boundary(
                             an_adjust_par,
                             alowerboundary,
@@ -267,7 +267,7 @@ pub fn decomposition_of_wline(
                         };
                         let a_parameter = if b_is_u_boundary { u } else { v };
                         let (an_adjust_par, anoffset) =
-                            adjust_periodic(a_parameter, alowerboundary, aupperboundary, a_period, 0.0);
+                            wline_adjust_periodic(a_parameter, alowerboundary, aupperboundary, a_period, 0.0);
                         let adist = if b_is_first_boundary {
                             (an_adjust_par - alowerboundary).abs()
                         } else {

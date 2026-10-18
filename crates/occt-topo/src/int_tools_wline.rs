@@ -486,7 +486,7 @@ fn is_point_in_degenerated_zone(
 }
 
 /// `GeomInt::AdjustPeriodic` (`GeomInt.cxx:21`). Default `theEps` is 0.
-pub fn adjust_periodic(
+pub fn wline_adjust_periodic(
     the_par: f64,
     the_par_min: f64,
     the_par_max: f64,

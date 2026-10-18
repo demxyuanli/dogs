@@ -1,7 +1,7 @@
 //! `BSplCLib::Hunt` / `LocateParameter` / `ElCLib::InPeriod`.
 //! Knot slices are 0-based; indices follow OCCT `Array1` Lower=1.
 
-use crate::precision::{epsilon, Precision};
+use crate::precision::epsilon;
 
 /// `BSplCLib::Hunt` (`BSplCLib.cxx:74-107`). Result is 1-based.
 pub fn hunt_occt(knots: &[f64], x: f64) -> i32 {
@@ -30,18 +30,10 @@ pub fn hunt_occt(knots: &[f64], x: f64) -> i32 {
     pos
 }
 
-/// `ElCLib::InPeriod` (`ElCLib.cxx:95-111`).
-pub fn in_period(u: f64, u_first: f64, u_last: f64) -> f64 {
-    if Precision::is_infinite(u) || Precision::is_infinite(u_first) || Precision::is_infinite(u_last)
-    {
-        return u;
-    }
-    let period = u_last - u_first;
-    if period < epsilon(u_last) {
-        return u;
-    }
-    u_first.max(u + period * ((u_first - u) / period).ceil())
-}
+/// `ElCLib::InPeriod` (`ElCLib.cxx:95-111`). Dimension-independent, so the
+/// single implementation lives in `elib::clib` and this re-export keeps the
+/// B-spline call sites working.
+pub use crate::elib::clib::in_period;
 
 fn knot_1(knots: &[f64], i: i32) -> f64 {
     knots[(i - 1) as usize]

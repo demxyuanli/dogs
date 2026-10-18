@@ -49,7 +49,7 @@ pub use intss_pcurve::{
 pub use wl_approx::{MultiBSpCurve, ParametrizationType, WlApprox};
 pub(crate) use quadric::surface_parameters;
 
-use crate::int_tools_wline::adjust_periodic as wline_adjust_periodic;
+use crate::int_tools_wline::wline_adjust_periodic;
 
 /// `GeomInt::AdjustPeriodic` (`GeomInt.cxx:21`). Default `theEps` is 0.
 pub fn adjust_periodic(

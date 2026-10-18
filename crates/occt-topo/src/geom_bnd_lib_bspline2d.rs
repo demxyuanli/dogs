@@ -16,7 +16,7 @@ use occt_core::precision::PCONFUSION;
 use occt_geom2d::curve::Curve2d;
 use occt_geom2d::Geom2dBSplineCurve;
 
-use crate::geom_bnd_lib_other_curve2d::box_other;
+use crate::geom_bnd_lib_other_curve2d::box_other_2d;
 
 /// `GeomBndLib_BSplineCurve2d::Box(theU1, theU2, theTol)` on an owned B-spline.
 ///
@@ -42,7 +42,7 @@ pub fn box_bspline_poles(
     }
     if (a_u1 - a_trim1).abs() > PCONFUSION || (a_u2 - a_trim2).abs() > PCONFUSION {
         if a_curve.segment(a_trim1, a_trim2, PCONFUSION).is_err() {
-            return box_other(curve, a_trim1, a_trim2, the_tol);
+            return box_other_2d(curve, a_trim1, a_trim2, the_tol);
         }
     }
     let mut a_box = BndBox2d::new();
@@ -77,6 +77,6 @@ pub fn box_bspline_xy(xs: &[f64], ys: &[f64], the_tol: f64) -> BndBox2d {
 pub fn box_bspline_as_curve(curve: &dyn Curve2d, the_u1: f64, the_u2: f64, the_tol: f64) -> BndBox2d {
     match curve.bspline_copy2d() {
         Some(a_curve) => box_bspline_poles(&a_curve, the_u1, the_u2, the_tol),
-        None => box_other(curve, the_u1, the_u2, the_tol),
+        None => box_other_2d(curve, the_u1, the_u2, the_tol),
     }
 }

@@ -15,40 +15,40 @@ use occt_core::bnd::BndBox2d;
 use occt_core::gp::GpLin2d;
 use occt_core::precision::Precision;
 
-use crate::geom_bnd_lib_elclib2d::line_value;
-use crate::geom_bnd_lib_inf2d::{open_max, open_min, open_min_max};
+use crate::geom_bnd_lib_elclib2d::line_value_2d;
+use crate::geom_bnd_lib_inf2d::{open_max_2d, open_min_2d, open_min_max_2d};
 
 /// `GeomBndLib_Line2d::Box(theLin, theU1, theU2, theTol)`.
-pub fn box_lin(the_lin: &GpLin2d, the_u1: f64, the_u2: f64, the_tol: f64) -> Result<BndBox2d, String> {
+pub fn box_lin_2d(the_lin: &GpLin2d, the_u1: f64, the_u2: f64, the_tol: f64) -> Result<BndBox2d, String> {
     let mut a_box = BndBox2d::new();
     if Precision::is_negative_infinite(the_u1) {
         if Precision::is_negative_infinite(the_u2) {
             return Err("GeomBndLib_Line2d::Box - bad parameter".into());
         } else if Precision::is_positive_infinite(the_u2) {
-            open_min_max(the_lin.direction(), &mut a_box);
-            a_box.add_point(&line_value(0.0, the_lin));
+            open_min_max_2d(the_lin.direction(), &mut a_box);
+            a_box.add_point(&line_value_2d(0.0, the_lin));
         } else {
-            open_min(the_lin.direction(), &mut a_box);
-            a_box.add_point(&line_value(the_u2, the_lin));
+            open_min_2d(the_lin.direction(), &mut a_box);
+            a_box.add_point(&line_value_2d(the_u2, the_lin));
         }
     } else if Precision::is_positive_infinite(the_u1) {
         if Precision::is_negative_infinite(the_u2) {
-            open_min_max(the_lin.direction(), &mut a_box);
-            a_box.add_point(&line_value(0.0, the_lin));
+            open_min_max_2d(the_lin.direction(), &mut a_box);
+            a_box.add_point(&line_value_2d(0.0, the_lin));
         } else if Precision::is_positive_infinite(the_u2) {
             return Err("GeomBndLib_Line2d::Box - bad parameter".into());
         } else {
-            open_max(the_lin.direction(), &mut a_box);
-            a_box.add_point(&line_value(the_u2, the_lin));
+            open_max_2d(the_lin.direction(), &mut a_box);
+            a_box.add_point(&line_value_2d(the_u2, the_lin));
         }
     } else {
-        a_box.add_point(&line_value(the_u1, the_lin));
+        a_box.add_point(&line_value_2d(the_u1, the_lin));
         if Precision::is_negative_infinite(the_u2) {
-            open_min(the_lin.direction(), &mut a_box);
+            open_min_2d(the_lin.direction(), &mut a_box);
         } else if Precision::is_positive_infinite(the_u2) {
-            open_max(the_lin.direction(), &mut a_box);
+            open_max_2d(the_lin.direction(), &mut a_box);
         } else {
-            a_box.add_point(&line_value(the_u2, the_lin));
+            a_box.add_point(&line_value_2d(the_u2, the_lin));
         }
     }
     a_box.enlarge(the_tol);
@@ -62,5 +62,5 @@ pub fn box_lin_optimal(
     the_u2: f64,
     the_tol: f64,
 ) -> Result<BndBox2d, String> {
-    box_lin(the_lin, the_u1, the_u2, the_tol)
+    box_lin_2d(the_lin, the_u1, the_u2, the_tol)
 }

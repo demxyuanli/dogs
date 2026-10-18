@@ -10,12 +10,7 @@
 //! Line-number citations are against OCCT 8.0.0.
 use super::clib::{dir2d_angle, normalize_angle};
 use crate::gp::{GpAx2d, GpAx22d, GpCirc2d, GpDir2d, GpElips2d, GpHypr2d, GpLin2d, GpParab2d, GpPnt2d, GpVec2d, GpXY};
-use crate::precision::{epsilon, INFINITE, REAL_SMALL};
-
-/// `Precision::IsInfinite` (`Precision.hxx`).
-fn is_infinite(r: f64) -> bool {
-    r.abs() >= 0.5 * INFINITE
-}
+use crate::precision::REAL_SMALL;
 
 fn is_odd(n: i32) -> bool {
     n % 2 != 0
@@ -25,17 +20,10 @@ fn is_odd(n: i32) -> bool {
 // Period helpers
 // ---------------------------------------------------------------------------
 
-/// `ElCLib::InPeriod` (`cxx:95-111`).
-pub fn in_period(the_u: f64, the_u_first: f64, the_u_last: f64) -> f64 {
-    if is_infinite(the_u) || is_infinite(the_u_first) || is_infinite(the_u_last) {
-        return the_u;
-    }
-    let a_period = the_u_last - the_u_first;
-    if a_period < epsilon(the_u_last) {
-        return the_u;
-    }
-    the_u_first.max(the_u + a_period * ((the_u_first - the_u) / a_period).ceil())
-}
+/// `ElCLib::InPeriod` (`cxx:95-111`). Dimension-independent, so the single
+/// implementation lives in the 3D module and this re-export keeps the 2D call
+/// sites working.
+pub use super::clib::in_period;
 
 /// `ElCLib::AdjustPeriodic` (`cxx:115-148`). The single implementation lives in
 /// the 3D module ([`super::clib::adjust_periodic`]) because the `ElCLib` member

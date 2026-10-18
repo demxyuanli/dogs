@@ -41,7 +41,7 @@ pub fn classify_point(point: &[f64; 3], surface_point: &[f64; 3], normal: &[f64;
 }
 
 /// Compute the normal at a point on a sphere (center at origin).
-pub fn sphere_normal(center: &[f64; 3], point: &[f64; 3]) -> [f64; 3] {
+pub fn cslib_sphere_normal(center: &[f64; 3], point: &[f64; 3]) -> [f64; 3] {
     let mut n = [point[0]-center[0], point[1]-center[1], point[2]-center[2]];
     let len = (n[0]*n[0] + n[1]*n[1] + n[2]*n[2]).sqrt();
     if len > 1e-30 { n[0] /= len; n[1] /= len; n[2] /= len; }

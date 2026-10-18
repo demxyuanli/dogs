@@ -35,7 +35,7 @@ pub fn box_circ(the_circ: &GpCirc2d, the_tol: f64) -> BndBox2d {
 }
 
 /// `GeomBndLib_Circle2d::Box(theCirc, theU1, theU2, theTol)` — arc or full.
-pub fn box_circ_range(the_circ: &GpCirc2d, the_u1: f64, the_u2: f64, the_tol: f64) -> BndBox2d {
+pub fn box_circ_range_2d(the_circ: &GpCirc2d, the_u1: f64, the_u2: f64, the_tol: f64) -> BndBox2d {
     if the_u2 - the_u1 >= TWO_PI - PCONFUSION {
         return box_circ(the_circ, the_tol);
     }

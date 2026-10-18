@@ -14,69 +14,23 @@
 use occt_core::gp::{
     GpCirc2d, GpDir2d, GpElips2d, GpHypr2d, GpLin2d, GpParab2d, GpPnt2d, GpVec2d,
 };
-use occt_core::precision::{Precision, RESOLUTION};
+use occt_core::precision::RESOLUTION;
 
-/// `Epsilon(x)` used by `ElCLib::InPeriod` / `AdjustPeriodic`.
-fn epsilon_of(x: f64) -> f64 {
-    x.abs() * f64::EPSILON
-}
-
-/// `ElCLib::InPeriod` (`ElCLib.cxx:95`).
-///
-/// Infinite inputs are returned unchanged. A degenerate period
-/// (`period < Epsilon(ULast)`) returns `u` unchanged. Otherwise
-/// `max(UFirst, U + period * ceil((UFirst - U) / period))`.
-pub fn in_period(the_u: f64, the_u_first: f64, the_u_last: f64) -> f64 {
-    if Precision::is_infinite(the_u)
-        || Precision::is_infinite(the_u_first)
-        || Precision::is_infinite(the_u_last)
-    {
-        return the_u;
-    }
-    let a_period = the_u_last - the_u_first;
-    if a_period < epsilon_of(the_u_last) {
-        return the_u;
-    }
-    the_u_first.max(the_u + a_period * ((the_u_first - the_u) / a_period).ceil())
-}
-
-/// `ElCLib::AdjustPeriodic` (`ElCLib.cxx:115`).
-///
-/// Maps `[u1, u2]` into the periodic window `[u_first, u_last]` so that `u1`
-/// sits in `[u_first, u_last)` (with a `preci` snap at the closing seam) and
-/// `u2 - u1` is a positive length of at most one period.
-pub fn adjust_periodic(u_first: f64, u_last: f64, preci: f64, u1: &mut f64, u2: &mut f64) {
-    if Precision::is_infinite(u_first) || Precision::is_infinite(u_last) {
-        *u1 = u_first;
-        *u2 = u_last;
-        return;
-    }
-    let a_period = u_last - u_first;
-    if a_period < epsilon_of(u_last) {
-        *u1 = u_first;
-        *u2 = u_last;
-        return;
-    }
-    *u1 -= ((*u1 - u_first) / a_period).floor() * a_period;
-    if u_last - *u1 < preci {
-        *u1 -= a_period;
-    }
-    *u2 -= ((*u2 - *u1) / a_period).floor() * a_period;
-    if *u2 - *u1 < preci {
-        *u2 += a_period;
-    }
-}
+/// `ElCLib::InPeriod` (`ElCLib.cxx:95`) and `ElCLib::AdjustPeriodic`
+/// (`ElCLib.cxx:115`) are dimension-independent; the single implementations live
+/// in `occt_core::elib::clib` and these re-exports keep the call sites working.
+pub use occt_core::elib::clib::{adjust_periodic, in_period};
 
 /// `ElCLib::Value(U, gp_Lin2d)` — `P = Location + U * Direction`.
-pub fn line_value(u: f64, lin: &GpLin2d) -> GpPnt2d {
+pub fn line_value_2d(u: f64, lin: &GpLin2d) -> GpPnt2d {
     let loc = lin.location();
     let d = lin.direction();
     GpPnt2d::new(loc.x() + u * d.x(), loc.y() + u * d.y())
 }
 
 /// `ElCLib::D1(U, gp_Lin2d)` — point plus constant tangent.
-pub fn line_d1(u: f64, lin: &GpLin2d) -> (GpPnt2d, GpVec2d) {
-    let p = line_value(u, lin);
+pub fn line_d1_2d(u: f64, lin: &GpLin2d) -> (GpPnt2d, GpVec2d) {
+    let p = line_value_2d(u, lin);
     let d = lin.direction();
     (p, GpVec2d::new(d.x(), d.y()))
 }

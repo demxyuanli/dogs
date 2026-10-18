@@ -20,9 +20,9 @@ use occt_core::precision::{CONFUSION, SQUARE_CONFUSION};
 use occt_geom2d::curve::Curve2d;
 use occt_geom2d::offset::Geom2dOffsetCurve;
 
-use crate::geom_bnd_lib_circle2d::box_circ_range;
-use crate::geom_bnd_lib_line2d::box_lin;
-use crate::geom_bnd_lib_other_curve2d::box_other;
+use crate::geom_bnd_lib_circle2d::box_circ_range_2d;
+use crate::geom_bnd_lib_line2d::box_lin_2d;
+use crate::geom_bnd_lib_other_curve2d::box_other_2d;
 
 fn try_offset_line2d(
     basis: &dyn Curve2d,
@@ -42,7 +42,7 @@ fn try_offset_line2d(
     a_normal.multiply_scalar(offset);
     let a_loc = GpPnt2d::new(loc.x() + a_normal.x(), loc.y() + a_normal.y());
     let a_lin = GpLin2d::from_pnt_dir(a_loc, dir);
-    let mut a_local = box_lin(&a_lin, the_u1, the_u2, 0.0).ok()?;
+    let mut a_local = box_lin_2d(&a_lin, the_u1, the_u2, 0.0).ok()?;
     a_local.enlarge(the_tol);
     Some(a_local)
 }
@@ -83,7 +83,7 @@ fn try_offset_circle2d(
         let mut a_offset_circ = GpCirc2d::default();
         a_offset_circ.set_location(centre);
         a_offset_circ.set_radius(a_new_radius);
-        a_local = box_circ_range(&a_offset_circ, the_u1, the_u2, 0.0);
+        a_local = box_circ_range_2d(&a_offset_circ, the_u1, the_u2, 0.0);
     } else if a_new_radius.abs() <= CONFUSION {
         a_local.add_point(&centre);
     } else {
@@ -107,7 +107,7 @@ pub fn box_offset(off: &Geom2dOffsetCurve, the_u1: f64, the_u2: f64, the_tol: f6
             return b;
         }
     }
-    box_other(off, the_u1, the_u2, the_tol)
+    box_other_2d(off, the_u1, the_u2, the_tol)
 }
 
 /// Offset box from the `Curve2d` trait: `GeomBndLib_OffsetCurve2d::Box(theU1,
@@ -132,5 +132,5 @@ pub fn box_offset_as_curve(curve: &dyn Curve2d, the_u1: f64, the_u2: f64, the_to
             }
         }
     }
-    box_other(curve, the_u1, the_u2, the_tol)
+    box_other_2d(curve, the_u1, the_u2, the_tol)
 }

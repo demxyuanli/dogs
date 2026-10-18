@@ -35,12 +35,12 @@ use occt_geom2d::curve::Curve2d;
 
 use crate::geom_bnd_lib_bezier2d::box_bezier_as_curve;
 use crate::geom_bnd_lib_bspline2d::box_bspline_as_curve;
-use crate::geom_bnd_lib_circle2d::box_circ_range;
+use crate::geom_bnd_lib_circle2d::box_circ_range_2d;
 use crate::geom_bnd_lib_ellipse2d::box_elips_range;
 use crate::geom_bnd_lib_hyperbola2d::box_hypr;
-use crate::geom_bnd_lib_line2d::box_lin;
+use crate::geom_bnd_lib_line2d::box_lin_2d;
 use crate::geom_bnd_lib_offset2d::box_offset_as_curve;
-use crate::geom_bnd_lib_other_curve2d::box_other;
+use crate::geom_bnd_lib_other_curve2d::box_other_2d;
 use crate::geom_bnd_lib_parabola2d::box_parab;
 
 /// Analytic 2D curve type matching `GeomAbs_CurveType` as used by the dispatcher.
@@ -108,23 +108,23 @@ pub fn box_curve2d(curve: &dyn Curve2d, the_u1: f64, the_u2: f64, the_tol: f64) 
     match curve2d_abs_type(curve) {
         GeomAbsCurve2d::Line => {
             if let Some(lin) = curve.gp_lin2d().or_else(|| lin2d_from_curve(curve)) {
-                if let Ok(b) = box_lin(&lin, the_u1, the_u2, the_tol) {
+                if let Ok(b) = box_lin_2d(&lin, the_u1, the_u2, the_tol) {
                     return b;
                 }
             }
-            box_other(curve, the_u1, the_u2, the_tol)
+            box_other_2d(curve, the_u1, the_u2, the_tol)
         }
         GeomAbsCurve2d::Circle => {
             if let Some(c) = curve.gp_circ2d().or_else(|| circ2d_from_curve(curve)) {
-                return box_circ_range(&c, the_u1, the_u2, the_tol);
+                return box_circ_range_2d(&c, the_u1, the_u2, the_tol);
             }
-            box_other(curve, the_u1, the_u2, the_tol)
+            box_other_2d(curve, the_u1, the_u2, the_tol)
         }
         GeomAbsCurve2d::Ellipse => {
             if let Some(e) = curve.gp_elips2d() {
                 return box_elips_range(&e, the_u1, the_u2, the_tol);
             }
-            box_other(curve, the_u1, the_u2, the_tol)
+            box_other_2d(curve, the_u1, the_u2, the_tol)
         }
         GeomAbsCurve2d::Hyperbola => {
             if let Some(h) = curve.gp_hypr2d() {
@@ -132,7 +132,7 @@ pub fn box_curve2d(curve: &dyn Curve2d, the_u1: f64, the_u2: f64, the_tol: f64) 
                     return b;
                 }
             }
-            box_other(curve, the_u1, the_u2, the_tol)
+            box_other_2d(curve, the_u1, the_u2, the_tol)
         }
         GeomAbsCurve2d::Parabola => {
             if let Some(p) = curve.gp_parab2d() {
@@ -140,12 +140,12 @@ pub fn box_curve2d(curve: &dyn Curve2d, the_u1: f64, the_u2: f64, the_tol: f64) 
                     return b;
                 }
             }
-            box_other(curve, the_u1, the_u2, the_tol)
+            box_other_2d(curve, the_u1, the_u2, the_tol)
         }
         GeomAbsCurve2d::Bezier => box_bezier_as_curve(curve, the_u1, the_u2, the_tol),
         GeomAbsCurve2d::BSpline => box_bspline_as_curve(curve, the_u1, the_u2, the_tol),
         GeomAbsCurve2d::Offset => box_offset_as_curve(curve, the_u1, the_u2, the_tol),
-        GeomAbsCurve2d::Other => box_other(curve, the_u1, the_u2, the_tol),
+        GeomAbsCurve2d::Other => box_other_2d(curve, the_u1, the_u2, the_tol),
     }
 }
 
@@ -157,11 +157,11 @@ pub fn add_curve2d(curve: &dyn Curve2d, the_u1: f64, the_u2: f64, the_tol: f64, 
 /// Direct analytic boxes when the caller already has the `gp_*` (the static
 /// overloads of `GeomBndLib_*2d::Box`).
 pub fn box_lin_gp(lin: &GpLin2d, u1: f64, u2: f64, tol: f64) -> BndBox2d {
-    box_lin(lin, u1, u2, tol).unwrap_or_else(|_| BndBox2d::new())
+    box_lin_2d(lin, u1, u2, tol).unwrap_or_else(|_| BndBox2d::new())
 }
 
 pub fn box_circ_gp(c: &GpCirc2d, u1: f64, u2: f64, tol: f64) -> BndBox2d {
-    box_circ_range(c, u1, u2, tol)
+    box_circ_range_2d(c, u1, u2, tol)
 }
 
 pub fn box_elips_gp(e: &GpElips2d, u1: f64, u2: f64, tol: f64) -> BndBox2d {
