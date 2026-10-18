@@ -4,19 +4,19 @@ use occt_topo::brep_exchange::prs3d_get_deflection;
 use occt_topo::brep_tool::BRepTool;
 use occt_topo::builder::TopoBuilder;
 use occt_topo::meshing::incremental_mesh::IncrementalMesh;
-use occt_topo::meshing::range_splitter::{classify_surface, SurfaceType};
+use occt_topo::meshing::range_splitter::{classify_surface, MeshSurfaceType};
 use occt_topo::step::read_step_file;
 use occt_topo::tgeometry::GeometryRegistry;
 use occt_topo::topo_tools_full::{edge_vertices, edges_of, edges_of_wire, faces_of, vertices_of, wires_of_face};
 
-fn tname(t: SurfaceType) -> &'static str {
+fn tname(t: MeshSurfaceType) -> &'static str {
     match t {
-        SurfaceType::Plane => "Plane", SurfaceType::Cylinder => "Cylinder",
-        SurfaceType::Cone => "Cone", SurfaceType::Sphere => "Sphere",
-        SurfaceType::Torus => "Torus", SurfaceType::SurfaceOfRevolution => "Rev",
-        SurfaceType::SurfaceOfExtrusion => "Extr", SurfaceType::BezierSurface => "Bezier",
-        SurfaceType::BSplineSurface => "BSpline", SurfaceType::OffsetSurface => "Offset",
-        SurfaceType::OtherSurface => "Other",
+        MeshSurfaceType::Plane => "Plane", MeshSurfaceType::Cylinder => "Cylinder",
+        MeshSurfaceType::Cone => "Cone", MeshSurfaceType::Sphere => "Sphere",
+        MeshSurfaceType::Torus => "Torus", MeshSurfaceType::SurfaceOfRevolution => "Rev",
+        MeshSurfaceType::SurfaceOfExtrusion => "Extr", MeshSurfaceType::BezierSurface => "Bezier",
+        MeshSurfaceType::BSplineSurface => "BSpline", MeshSurfaceType::OffsetSurface => "Offset",
+        MeshSurfaceType::OtherSurface => "Other",
     }
 }
 

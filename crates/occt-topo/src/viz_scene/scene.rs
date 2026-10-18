@@ -13,7 +13,7 @@ use super::*;
 /// SHININESS and TRANSPARENCY).
 #[derive(Debug, Clone, Copy)]
 
-pub struct Material {
+pub struct RenderMaterial {
     /// Diffuse reflectance — the base surface color.
     pub diffuse: (f64, f64, f64),
     /// Specular reflectance — the color of the highlight.
@@ -26,7 +26,7 @@ pub struct Material {
     pub opacity: f64,
 }
 
-impl Default for Material {
+impl Default for RenderMaterial {
     /// Light steel gray diffuse, white specular, black emissive, 32 shininess,
     /// fully opaque.
     fn default() -> Self {
@@ -40,7 +40,7 @@ impl Default for Material {
     }
 }
 
-impl Material {
+impl RenderMaterial {
     /// A material with a plain diffuse color and default everything else.
     pub fn from_diffuse(diffuse: (f64, f64, f64)) -> Self {
         Self { diffuse, ..Default::default() }
@@ -126,7 +126,7 @@ impl Default for RenderSettings {
 // ---------------------------------------------------------------------------
 
 /// One item in a [`VizScene`]: a shape, its world transform, an optional
-/// per-shape color and a [`Material`].
+/// per-shape color and a [`RenderMaterial`].
 ///
 /// Mirrors OCCT's `AIS_Shape` which attaches a `TopoDS_Shape` and a display
 /// transform to the interactive context. The legacy [`SceneShape::color`]
@@ -143,7 +143,7 @@ pub struct SceneShape {
     pub transform: GpTrsf,
     pub color: Option<(f64, f64, f64)>,
     /// Surface material used by the shaded renderers.
-    pub material: Material,
+    pub material: RenderMaterial,
     /// Optional per-vertex texture coordinates, one [`GpPnt2d`] per mesh
     /// vertex (same length as the shape's tessellation). `None` (the default)
     /// means "no UV — synthesize a planar projection".
@@ -158,7 +158,7 @@ impl SceneShape {
             shape,
             transform: GpTrsf::identity(),
             color: None,
-            material: Material::default(),
+            material: RenderMaterial::default(),
             uv: None,
         }
     }
@@ -173,7 +173,7 @@ impl SceneShape {
 
     /// Copy with an explicit material. A legacy `color`, when set, still wins
     /// for the diffuse channel.
-    pub fn with_material(mut self, material: Material) -> Self {
+    pub fn with_material(mut self, material: RenderMaterial) -> Self {
         self.material = material;
         if let Some(c) = self.color {
             self.material.diffuse = c;
@@ -196,7 +196,7 @@ impl SceneShape {
 
     /// The effective material: the stored material with its diffuse channel
     /// replaced by `color` when an explicit color is set.
-    pub fn material(&self) -> Material {
+    pub fn material(&self) -> RenderMaterial {
         let mut m = self.material;
         if let Some(c) = self.color {
             m.diffuse = c;
@@ -286,7 +286,7 @@ impl VizScene {
 
     /// Replace the material of the shape at `idx`; returns `false` when `idx`
     /// is out of range.
-    pub fn set_material(&mut self, idx: usize, material: Material) -> bool {
+    pub fn set_material(&mut self, idx: usize, material: RenderMaterial) -> bool {
         match self.shapes.get_mut(idx) {
             Some(ss) => {
                 ss.material = material;
@@ -298,7 +298,7 @@ impl VizScene {
 
     /// The effective material of the shape at `idx`, or `None` when out of
     /// range.
-    pub fn shape_material(&self, idx: usize) -> Option<Material> {
+    pub fn shape_material(&self, idx: usize) -> Option<RenderMaterial> {
         self.shapes.get(idx).map(|ss| ss.material())
     }
 }

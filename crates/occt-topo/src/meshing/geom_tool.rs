@@ -19,7 +19,7 @@ use crate::meshing::edge_discret::CurveTessellator;
 
 /// Iso-curve type. Source: `GeomAbs_IsoType`
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IsoType {
+pub enum MeshIsoType {
     /// Fixed `U`, varying `V`.
     U,
     /// Fixed `V`, varying `U`.
@@ -44,7 +44,7 @@ pub enum IntFlag {
 pub struct GeomTool {
     params: Vec<f64>,
     points: Vec<GpPnt>,
-    iso: Option<(IsoType, f64)>,
+    iso: Option<(MeshIsoType, f64)>,
 }
 
 impl GeomTool {
@@ -76,12 +76,12 @@ impl GeomTool {
     }
 
     /// Discretizes an iso-curve of a surface on `[first, last]`.
-    /// For [`IsoType::U`] `first`/`last` are `V` bounds; for [`IsoType::V`] they
+    /// For [`MeshIsoType::U`] `first`/`last` are `V` bounds; for [`MeshIsoType::V`] they
     /// are `U` bounds. Returns `(parameter, point)` pairs plus the reconstructed
     /// `(U, V)` surface parameter for every point.
     pub fn new_iso_curve(
         surface: &dyn Surface,
-        iso_type: IsoType,
+        iso_type: MeshIsoType,
         iso_param: f64,
         first: f64,
         last: f64,
@@ -137,8 +137,8 @@ impl GeomTool {
     pub fn value_uv(&self, index: usize) -> Option<(f64, GpPnt, GpPnt2d)> {
         let (t, p) = self.value(index)?;
         match self.iso {
-            Some((IsoType::U, iso_param)) => Some((t, p, GpPnt2d::new(iso_param, t))),
-            Some((IsoType::V, iso_param)) => Some((t, p, GpPnt2d::new(t, iso_param))),
+            Some((MeshIsoType::U, iso_param)) => Some((t, p, GpPnt2d::new(iso_param, t))),
+            Some((MeshIsoType::V, iso_param)) => Some((t, p, GpPnt2d::new(t, iso_param))),
             None => None,
         }
     }
@@ -447,7 +447,7 @@ impl GeomTool {
     /// tangential-deflection engine, as OCCT does.
     pub fn discretize_iso_curve(
         surface: &dyn Surface,
-        iso_type: IsoType,
+        iso_type: MeshIsoType,
         iso_param: f64,
         first: f64,
         last: f64,
@@ -456,8 +456,8 @@ impl GeomTool {
         min_points: usize,
     ) -> Vec<(f64, GpPnt, GpPnt2d)> {
         let arc = match iso_type {
-            IsoType::U => surface.u_iso_curve(iso_param),
-            IsoType::V => surface.v_iso_curve(iso_param),
+            MeshIsoType::U => surface.u_iso_curve(iso_param),
+            MeshIsoType::V => surface.v_iso_curve(iso_param),
         };
         let Some(arc) = arc else {
             return Vec::new();
@@ -477,8 +477,8 @@ impl GeomTool {
             .zip(tess.points().iter().copied())
             .map(|(t, p)| {
                 let uv = match iso_type {
-                    IsoType::U => GpPnt2d::new(iso_param, t),
-                    IsoType::V => GpPnt2d::new(t, iso_param),
+                    MeshIsoType::U => GpPnt2d::new(iso_param, t),
+                    MeshIsoType::V => GpPnt2d::new(t, iso_param),
                 };
                 (t, p, uv)
             })
@@ -707,7 +707,7 @@ mod tests {
     fn discretize_iso_curve_uv_reconstruction() {
         let s = cylinder(1.0);
         // V-iso at v = 2.0 is a circle of radius 1 in plane z = 2.
-        let sampled = GeomTool::discretize_iso_curve(s.as_ref(), IsoType::V, 2.0, 0.0, PI, 0.01, 0.1, 8);
+        let sampled = GeomTool::discretize_iso_curve(s.as_ref(), MeshIsoType::V, 2.0, 0.0, PI, 0.01, 0.1, 8);
         assert!(sampled.len() >= 2);
         for &(t, p, uv) in sampled.iter() {
             assert!((uv.x() - t).abs() < 1e-12 && (uv.y() - 2.0).abs() < 1e-12);

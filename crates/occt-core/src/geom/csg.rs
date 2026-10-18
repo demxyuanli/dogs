@@ -74,10 +74,10 @@ impl VoxelSolid {
 
 /// Boolean operations on two voxel solids (same grid geometry).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BoolOp { Union, Intersection, Difference }
+pub enum CsgBoolOp { Union, Intersection, Difference }
 
 /// Apply a boolean op between a and b, storing into a.
-pub fn apply_bool(a: &mut VoxelSolid, b: &VoxelSolid, op: BoolOp) -> Result<(), &'static str> {
+pub fn apply_bool(a: &mut VoxelSolid, b: &VoxelSolid, op: CsgBoolOp) -> Result<(), &'static str> {
     if a.nx != b.nx || a.ny != b.ny || a.nz != b.nz {
         return Err("csg: grid dimensions must match");
     }
@@ -85,9 +85,9 @@ pub fn apply_bool(a: &mut VoxelSolid, b: &VoxelSolid, op: BoolOp) -> Result<(), 
         let ai = a.inside[i];
         let bi = b.inside[i];
         a.inside[i] = match op {
-            BoolOp::Union => ai || bi,
-            BoolOp::Intersection => ai && bi,
-            BoolOp::Difference => ai && !bi,
+            CsgBoolOp::Union => ai || bi,
+            CsgBoolOp::Intersection => ai && bi,
+            CsgBoolOp::Difference => ai && !bi,
         };
     }
     Ok(())
@@ -208,7 +208,7 @@ mod tests {
         // Intersection with full cube = sphere itself
         let mut b = grid.clone();
         b.fill(&box_inside(&GpPnt::new(0.,0.,0.), &GpPnt::new(1.,1.,1.)));
-        apply_bool(&mut grid, &b, BoolOp::Intersection).unwrap();
+        apply_bool(&mut grid, &b, CsgBoolOp::Intersection).unwrap();
         assert!((grid.volume() - vol_sphere).abs() < 1e-9);
     }
 
@@ -218,7 +218,7 @@ mod tests {
         a.fill(&box_inside(&GpPnt::new(0.,0.,0.), &GpPnt::new(1.,1.,1.)));
         let mut b = VoxelSolid::new(&unit_cube_bbox(), 0.1).unwrap();
         b.fill(&box_inside(&GpPnt::new(0.,0.,0.), &GpPnt::new(0.5,1.,1.)));
-        apply_bool(&mut a, &b, BoolOp::Difference).unwrap();
+        apply_bool(&mut a, &b, CsgBoolOp::Difference).unwrap();
         // Half box removed
         let vol = a.volume();
         assert!((vol - 0.5).abs() < 0.1, "vol {vol}");

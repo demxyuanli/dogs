@@ -24,8 +24,8 @@
 //!   (`AdjustPCurveOnSurf`);
 //! * **Surface normal** — [`AlgoTools::get_normal_to_surface`] computes the
 //!   unit normal of a surface at `(u, v)` (`GetNormalToSurface`);
-//! * **Shape sets** — [`BOPToolsSet::shape_list`] dedupes a shape collection
-//!   and [`BOPToolsSet::type_count`] counts shapes of a given type.
+//! * **Shape sets** — [`ShapeSetQueries::shape_list`] dedupes a shape collection
+//!   and [`ShapeSetQueries::type_count`] counts shapes of a given type.
 mod prelude {
 
 pub(crate) use std::collections::{HashMap, HashSet};

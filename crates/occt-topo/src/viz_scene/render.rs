@@ -9,7 +9,7 @@ use super::*;
 /// triangles and the effective material.
 #[derive(Debug, Clone)]
 pub(super) struct ShadeMesh {
-    pub(super) material: Material,
+    pub(super) material: RenderMaterial,
     pub(super) verts: Vec<GpPnt>,
     pub(super) normals: Vec<GpVec>,
     pub(super) triangles: Vec<(usize, usize, usize)>,
@@ -203,8 +203,8 @@ pub fn render_scene_raster_zbuffer(
 /// Preserves the base material's specular, shininess and opacity so the
 /// highlighted shape keeps its surface character — only the tint changes.
 /// Mirrors the default highlight color OCCT applies to a picked `AIS_Shape`.
-pub fn highlight_material(base: &Material) -> Material {
-    Material {
+pub fn highlight_material(base: &RenderMaterial) -> RenderMaterial {
+    RenderMaterial {
         diffuse: (1.0, 0.85, 0.2),
         specular: base.specular,
         emissive: (0.3, 0.22, 0.05),

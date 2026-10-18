@@ -420,12 +420,12 @@ use super::*;
         let line_edge = b.make_edge_segment(&GpPnt::zero(), &GpPnt::new(5.0, 0.0, 0.0));
         let curve = BRepTool::edge_curve(&line_edge).unwrap();
         let (a, bb) = BRepTool::edge_parameters(&line_edge);
-        assert_eq!(classify_curve(curve.as_ref(), a, bb), CurveKind::Line);
+        assert_eq!(classify_curve(curve.as_ref(), a, bb), AnalyticCurveKind::Line);
 
         let circle_edge = b.make_edge_circle(&GpAx2::standard(), 2.0, 0.0, PI);
         let curve = BRepTool::edge_curve(&circle_edge).unwrap();
         let (a, bb) = BRepTool::edge_parameters(&circle_edge);
-        assert_eq!(classify_curve(curve.as_ref(), a, bb), CurveKind::Circle);
+        assert_eq!(classify_curve(curve.as_ref(), a, bb), AnalyticCurveKind::Circle);
         assert!(approx(edge_length_exact(&circle_edge), 2.0 * PI, 1e-9));
     }
 

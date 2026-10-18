@@ -45,7 +45,7 @@ use super::deflection_control::{
 use super::parameters::MeshParameters;
 use super::range_splitter::{
     classify_surface, create_range_splitter, factory_uses_deflection_control,
-    grab_params_of_internal_edges, RangeSplitter, SurfaceType,
+    grab_params_of_internal_edges, RangeSplitter, MeshSurfaceType,
 };
 
 /// Abstract insertion of free vertices into a Delaunay mesh.
@@ -1711,46 +1711,46 @@ fn geom_tool_cells_count(
     let dv = range_v.1 - range_v.0;
     let mut cells_u;
     let mut cells_v;
-    if kind == SurfaceType::Torus {
+    if kind == MeshSurfaceType::Torus {
         cells_u = 2.0_f64.powf((du / delta.0).log10()).ceil() as i32;
         cells_v = 2.0_f64.powf((dv / delta.1).log10()).ceil() as i32;
-    } else if kind == SurfaceType::Cylinder {
+    } else if kind == MeshSurfaceType::Cylinder {
         cells_u = 2.0_f64.powf((du / delta.0 / dv).log10()).ceil() as i32;
         cells_v = 2.0_f64.powf((dv / err_v).log10()).ceil() as i32;
     } else {
         cells_u = 2.0_f64.powf((du / delta.0 / err_u).log10()).ceil() as i32;
         cells_v = 2.0_f64.powf((dv / delta.1 / err_v).log10()).ceil() as i32;
     }
-    if kind == SurfaceType::OtherSurface {
+    if kind == MeshSurfaceType::OtherSurface {
         return (-1, -1);
     }
     let logn = 2.0_f64.powf((vertices_nb as f64).log10()).ceil() as i32;
     match kind {
-        SurfaceType::Plane => {
+        MeshSurfaceType::Plane => {
             cells_u = logn;
             cells_v = logn;
         }
-        SurfaceType::Cylinder | SurfaceType::Cone => {
+        MeshSurfaceType::Cylinder | MeshSurfaceType::Cone => {
             cells_v = logn;
         }
-        SurfaceType::SurfaceOfExtrusion | SurfaceType::SurfaceOfRevolution => {
+        MeshSurfaceType::SurfaceOfExtrusion | MeshSurfaceType::SurfaceOfRevolution => {
             if let Some(c) = basis_curve_for_err(surface, kind) {
                 let planar_like = c.is_line()
                     || (c.bspline_poles().is_some()
                         && c.nurbs_degree().map(|d| d < 2).unwrap_or(false));
                 if planar_like {
-                    if kind == SurfaceType::SurfaceOfExtrusion {
+                    if kind == MeshSurfaceType::SurfaceOfExtrusion {
                         cells_u = logn;
                     } else {
                         cells_v = logn;
                     }
                 }
             }
-            if kind == SurfaceType::SurfaceOfExtrusion {
+            if kind == MeshSurfaceType::SurfaceOfExtrusion {
                 cells_v = logn;
             }
         }
-        SurfaceType::BezierSurface | SurfaceType::BSplineSurface => {
+        MeshSurfaceType::BezierSurface | MeshSurfaceType::BSplineSurface => {
             if surface.u_degree() < 2 {
                 cells_u = logn;
             }
@@ -1764,12 +1764,12 @@ fn geom_tool_cells_count(
 }
 
 /// `ComputeErrFactors` (`BRepMesh_GeomTool.cxx:32-84`).
-fn compute_err_factors(surface: &dyn Surface, kind: SurfaceType, deflection: f64) -> (f64, f64) {
+fn compute_err_factors(surface: &dyn Surface, kind: MeshSurfaceType, deflection: f64) -> (f64, f64) {
     let mut err_u = deflection * 10.0;
     let mut err_v = deflection * 10.0;
     match kind {
-        SurfaceType::Cylinder | SurfaceType::Cone | SurfaceType::Sphere | SurfaceType::Torus => {}
-        SurfaceType::SurfaceOfExtrusion | SurfaceType::SurfaceOfRevolution => {
+        MeshSurfaceType::Cylinder | MeshSurfaceType::Cone | MeshSurfaceType::Sphere | MeshSurfaceType::Torus => {}
+        MeshSurfaceType::SurfaceOfExtrusion | MeshSurfaceType::SurfaceOfRevolution => {
             if let Some(c) = basis_curve_for_err(surface, kind) {
                 if c.bspline_poles().is_some() {
                     if let Some(deg) = c.nurbs_degree() {
@@ -1781,7 +1781,7 @@ fn compute_err_factors(surface: &dyn Surface, kind: SurfaceType, deflection: f64
                 }
             }
         }
-        SurfaceType::BezierSurface => {
+        MeshSurfaceType::BezierSurface => {
             let du = surface.u_degree();
             let dv = surface.v_degree();
             if du > 2 {
@@ -1791,7 +1791,7 @@ fn compute_err_factors(surface: &dyn Surface, kind: SurfaceType, deflection: f64
                 err_v /= dv as f64;
             }
         }
-        SurfaceType::BSplineSurface => {
+        MeshSurfaceType::BSplineSurface => {
             let du = surface.u_degree();
             let dv = surface.v_degree();
             if du > 2 {
@@ -1801,7 +1801,7 @@ fn compute_err_factors(surface: &dyn Surface, kind: SurfaceType, deflection: f64
                 err_v /= dv as f64 * (surface.nb_v_intervals(0) + 1) as f64;
             }
         }
-        SurfaceType::Plane | SurfaceType::OffsetSurface | SurfaceType::OtherSurface => {
+        MeshSurfaceType::Plane | MeshSurfaceType::OffsetSurface | MeshSurfaceType::OtherSurface => {
             err_u = 1.0;
             err_v = 1.0;
         }
@@ -1811,11 +1811,11 @@ fn compute_err_factors(surface: &dyn Surface, kind: SurfaceType, deflection: f64
 
 fn basis_curve_for_err(
     surface: &dyn Surface,
-    kind: SurfaceType,
+    kind: MeshSurfaceType,
 ) -> Option<std::sync::Arc<dyn occt_geom::Curve>> {
     match kind {
-        SurfaceType::SurfaceOfExtrusion => surface.extrusion_basis_curve(),
-        SurfaceType::SurfaceOfRevolution => surface.revolution_basis_curve(),
+        MeshSurfaceType::SurfaceOfExtrusion => surface.extrusion_basis_curve(),
+        MeshSurfaceType::SurfaceOfRevolution => surface.revolution_basis_curve(),
         _ => None,
     }
 }

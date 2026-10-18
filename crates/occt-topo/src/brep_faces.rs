@@ -19,7 +19,7 @@ use crate::topo_tools_full::{edge_vertices, edges_of_wire, vertex_position, wire
 /// Degree-1 tensor-product B-spline surface (bilinear patches), used by
 /// [`make_surface_from_face`]. Poles are stored row-major (`n_u × n_v`).
 #[derive(Clone)]
-pub struct GeomBSplineSurface {
+pub struct BilinearPatchSurface {
     pub poles: Vec<GpPnt>,
     pub n_u: usize,
     pub n_v: usize,
@@ -29,7 +29,7 @@ pub struct GeomBSplineSurface {
     pub degree_v: usize,
 }
 
-impl GeomBSplineSurface {
+impl BilinearPatchSurface {
     pub fn new(
         poles: Vec<GpPnt>,
         n_u: usize,
@@ -40,13 +40,13 @@ impl GeomBSplineSurface {
         degree_v: usize,
     ) -> Result<Self, String> {
         if poles.len() != n_u * n_v {
-            return Err("GeomBSplineSurface: poles.len() must equal n_u * n_v".into());
+            return Err("BilinearPatchSurface: poles.len() must equal n_u * n_v".into());
         }
         Ok(Self { poles, n_u, n_v, knots_u, knots_v, degree_u, degree_v })
     }
 }
 
-impl Surface for GeomBSplineSurface {
+impl Surface for BilinearPatchSurface {
     fn d0(&self, u: f64, v: f64) -> GpPnt {
         occt_core::bspl::surface::eval_surface(
             &self.poles,
@@ -212,7 +212,7 @@ pub fn face_wire_length(face: &Face) -> f64 {
 
 /// Approximate the face surface with a degree-1 bilinear B-spline surface:
 /// the sampled `nu × nv` grid of face-surface points becomes the pole grid.
-pub fn make_surface_from_face(face: &Face, nu: usize, nv: usize) -> Result<GeomBSplineSurface, String> {
+pub fn make_surface_from_face(face: &Face, nu: usize, nv: usize) -> Result<BilinearPatchSurface, String> {
     let nu = nu.max(2);
     let nv = nv.max(2);
     let surf = BRepTool::face_surface_world(face).ok_or("make_surface_from_face: no face surface")?;
@@ -228,7 +228,7 @@ pub fn make_surface_from_face(face: &Face, nu: usize, nv: usize) -> Result<GeomB
     }
     let knots_u = occt_core::bspl::knots::build_uniform_knots(nu, 1);
     let knots_v = occt_core::bspl::knots::build_uniform_knots(nv, 1);
-    GeomBSplineSurface::new(poles, nu, nv, knots_u, knots_v, 1, 1)
+    BilinearPatchSurface::new(poles, nu, nv, knots_u, knots_v, 1, 1)
 }
 
 /// New face on the same surface, trimmed to the `(u0..u1, v0..v1)` sub-rectangle.

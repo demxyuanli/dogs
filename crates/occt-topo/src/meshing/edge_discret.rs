@@ -916,12 +916,12 @@ pub fn curve_tessellator_value_ok(
     point: &GpPnt,
     edge_tol: f64,
 ) -> bool {
-    use super::range_splitter::SurfaceType;
+    use super::range_splitter::MeshSurfaceType;
     let ty = super::range_splitter::classify_surface(surface);
     match ty {
-        SurfaceType::BSplineSurface
-        | SurfaceType::BezierSurface
-        | SurfaceType::OtherSurface => {}
+        MeshSurfaceType::BSplineSurface
+        | MeshSurfaceType::BezierSurface
+        | MeshSurfaceType::OtherSurface => {}
         _ => return true,
     }
     if surface.is_u_periodic() || surface.is_v_periodic() {

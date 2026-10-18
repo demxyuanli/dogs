@@ -277,7 +277,7 @@ use super::*;
         let _bd = data.add_link(b, d, VertexState::Free);
         let delaun = Delaun {
             mesh_data: data,
-            circles: CircleTool::new(),
+            circles: GridCircleTool::new(),
             sup_vert: Vec::new(),
             init_circles: false,
             failed: false,

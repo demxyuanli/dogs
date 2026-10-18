@@ -149,29 +149,29 @@ use super::*;
         assert_eq!(hit.uv2(), (1.0, 0.0));
     }
 
-    // ---- IntCurve ----
+    // ---- IntCurveRecord ----
 
     #[test]
     fn intcurve_construct_and_kinds() {
         let f1 = shape(ShapeType::Face);
         let f2 = shape(ShapeType::Face);
-        let curve = IntCurve::new(CurveKind::Circle, Some(f1), Some(f2), r(-1.0, 1.0));
+        let curve = IntCurveRecord::new(CurveKind::Circle, Some(f1), Some(f2), r(-1.0, 1.0));
         assert_eq!(curve.kind(), CurveKind::Circle);
         assert!(curve.face1().is_some());
         assert!(curve.face2().is_some());
         assert_eq!(curve.range(), r(-1.0, 1.0));
 
-        let line = IntCurve::new(CurveKind::Line, None, None, r(0.0, 2.0));
+        let line = IntCurveRecord::new(CurveKind::Line, None, None, r(0.0, 2.0));
         assert_eq!(line.kind(), CurveKind::Line);
         assert!(line.face1().is_none());
 
-        let mut b = IntCurve::default();
+        let mut b = IntCurveRecord::default();
         assert_eq!(b.kind(), CurveKind::Other);
         b.set_range(r(0.0, 5.0));
         assert_eq!(b.range(), r(0.0, 5.0));
         // All curve kinds are representable.
         for k in [CurveKind::Ellipse, CurveKind::Parabola, CurveKind::Hyperbola, CurveKind::BSpline] {
-            assert_eq!(IntCurve::new(k, None, None, r(0.0, 1.0)).kind(), k);
+            assert_eq!(IntCurveRecord::new(k, None, None, r(0.0, 1.0)).kind(), k);
         }
     }
 

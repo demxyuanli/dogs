@@ -9,7 +9,7 @@ use occt_topo::meshing::face_discret::Classifier;
 use occt_topo::meshing::parameters::MeshParameters;
 use occt_topo::meshing::incremental_mesh::IncrementalMesh;
 use occt_topo::meshing::range_splitter::{
-    classify_surface, create_range_splitter, RangeSplitter, SurfaceType,
+    classify_surface, create_range_splitter, RangeSplitter, MeshSurfaceType,
 };
 use occt_topo::shhealing::{edge_proj_aux_params, fix_shifted_wire};
 use occt_topo::step::read_step_file;
@@ -29,19 +29,19 @@ fn vf(obj: &str) -> (usize, usize) {
     (v, f)
 }
 
-fn type_name(t: SurfaceType) -> &'static str {
+fn type_name(t: MeshSurfaceType) -> &'static str {
     match t {
-        SurfaceType::Plane => "Plane",
-        SurfaceType::Cylinder => "Cylinder",
-        SurfaceType::Cone => "Cone",
-        SurfaceType::Sphere => "Sphere",
-        SurfaceType::Torus => "Torus",
-        SurfaceType::SurfaceOfRevolution => "Rev",
-        SurfaceType::SurfaceOfExtrusion => "Extr",
-        SurfaceType::BezierSurface => "Bezier",
-        SurfaceType::BSplineSurface => "BSpline",
-        SurfaceType::OffsetSurface => "Offset",
-        SurfaceType::OtherSurface => "Other",
+        MeshSurfaceType::Plane => "Plane",
+        MeshSurfaceType::Cylinder => "Cylinder",
+        MeshSurfaceType::Cone => "Cone",
+        MeshSurfaceType::Sphere => "Sphere",
+        MeshSurfaceType::Torus => "Torus",
+        MeshSurfaceType::SurfaceOfRevolution => "Rev",
+        MeshSurfaceType::SurfaceOfExtrusion => "Extr",
+        MeshSurfaceType::BezierSurface => "Bezier",
+        MeshSurfaceType::BSplineSurface => "BSpline",
+        MeshSurfaceType::OffsetSurface => "Offset",
+        MeshSurfaceType::OtherSurface => "Other",
     }
 }
 
@@ -193,7 +193,7 @@ fn dump_grid(shape: &occt_topo::shape::TopoShape, stem: &str) {
             vs.dedup_by(|a, b| (*a - *b).abs() < 1e-12);
             u_n = us.len();
             v_n = vs.len();
-            if ty == SurfaceType::BSplineSurface && vs.len() >= 2 {
+            if ty == MeshSurfaceType::BSplineSurface && vs.len() >= 2 {
                 let um = 0.5 * (u0 + u1);
                 if let Some(iso) = surf.u_iso_curve(um) {
                     max_sq = 0.0;
@@ -214,7 +214,7 @@ fn dump_grid(shape: &occt_topo::shape::TopoShape, stem: &str) {
         }
         let mut u_max_sq = f64::NAN;
         let mut nrm_ang = f64::NAN;
-        if ty == SurfaceType::BSplineSurface && u0.is_finite() && u1.is_finite() && v0.is_finite() {
+        if ty == MeshSurfaceType::BSplineSurface && u0.is_finite() && u1.is_finite() && v0.is_finite() {
             let vm = 0.5 * (v0 + v1);
             let um = 0.5 * (u0 + u1);
             if let Some(iso) = surf.v_iso_curve(vm) {
@@ -316,17 +316,17 @@ fn dump_faces(shape: &occt_topo::shape::TopoShape, stem: &str) {
         seen.insert(st.index);
         let ty = type_name(st.surface);
         let bucket = match st.surface {
-            SurfaceType::Plane => 0,
-            SurfaceType::Cylinder => 1,
-            SurfaceType::Cone => 2,
-            SurfaceType::Sphere => 3,
-            SurfaceType::Torus => 4,
-            SurfaceType::SurfaceOfRevolution => 5,
-            SurfaceType::SurfaceOfExtrusion => 6,
-            SurfaceType::BezierSurface => 7,
-            SurfaceType::BSplineSurface => 8,
-            SurfaceType::OffsetSurface => 9,
-            SurfaceType::OtherSurface => 10,
+            MeshSurfaceType::Plane => 0,
+            MeshSurfaceType::Cylinder => 1,
+            MeshSurfaceType::Cone => 2,
+            MeshSurfaceType::Sphere => 3,
+            MeshSurfaceType::Torus => 4,
+            MeshSurfaceType::SurfaceOfRevolution => 5,
+            MeshSurfaceType::SurfaceOfExtrusion => 6,
+            MeshSurfaceType::BezierSurface => 7,
+            MeshSurfaceType::BSplineSurface => 8,
+            MeshSurfaceType::OffsetSurface => 9,
+            MeshSurfaceType::OtherSurface => 10,
         };
         tot_v[bucket] += st.vertices;
         tot_t[bucket] += st.triangles;
@@ -510,17 +510,17 @@ fn main() {
                     if let Some(surf) = BRepTool::face_surface(&face) {
                         let ty = classify_surface(surf.as_ref());
                         let i = match ty {
-                            SurfaceType::Plane => 0,
-                            SurfaceType::Cylinder => 1,
-                            SurfaceType::Cone => 2,
-                            SurfaceType::Sphere => 3,
-                            SurfaceType::Torus => 4,
-                            SurfaceType::SurfaceOfRevolution => 5,
-                            SurfaceType::SurfaceOfExtrusion => 6,
-                            SurfaceType::BezierSurface => 7,
-                            SurfaceType::BSplineSurface => 8,
-                            SurfaceType::OffsetSurface => 9,
-                            SurfaceType::OtherSurface => 10,
+                            MeshSurfaceType::Plane => 0,
+                            MeshSurfaceType::Cylinder => 1,
+                            MeshSurfaceType::Cone => 2,
+                            MeshSurfaceType::Sphere => 3,
+                            MeshSurfaceType::Torus => 4,
+                            MeshSurfaceType::SurfaceOfRevolution => 5,
+                            MeshSurfaceType::SurfaceOfExtrusion => 6,
+                            MeshSurfaceType::BezierSurface => 7,
+                            MeshSurfaceType::BSplineSurface => 8,
+                            MeshSurfaceType::OffsetSurface => 9,
+                            MeshSurfaceType::OtherSurface => 10,
                         };
                         ty_n[i] += 1;
                     }

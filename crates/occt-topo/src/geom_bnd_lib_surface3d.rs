@@ -40,7 +40,7 @@ const PARAMETRIC_CONFUSION: f64 = CONFUSION * 0.01;
 
 /// `GeomAbs_SurfaceType` as far as the dispatcher needs it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SurfaceKind {
+pub enum GeomAbsSurfaceType {
     Plane,
     Cylinder,
     Cone,
@@ -58,34 +58,34 @@ pub enum SurfaceKind {
 /// geometry type, most specific first. A `Geom_RectangularTrimmedSurface`
 /// reports its basis type (`GeomAdaptor_Surface::load`, `Surface.cxx:423-430`
 /// recurses into the basis and dispatches there).
-pub fn surface_kind(s: &dyn Surface) -> SurfaceKind {
+pub fn surface_kind(s: &dyn Surface) -> GeomAbsSurfaceType {
     if let Some(basis) = s.rectangular_trimmed_basis() {
         return surface_kind(basis.as_ref());
     }
     if s.gp_pln().is_some() {
-        SurfaceKind::Plane
+        GeomAbsSurfaceType::Plane
     } else if s.gp_cylinder().is_some() {
-        SurfaceKind::Cylinder
+        GeomAbsSurfaceType::Cylinder
     } else if s.gp_cone().is_some() {
-        SurfaceKind::Cone
+        GeomAbsSurfaceType::Cone
     } else if s.gp_sphere().is_some() {
-        SurfaceKind::Sphere
+        GeomAbsSurfaceType::Sphere
     } else if s.gp_torus().is_some() {
-        SurfaceKind::Torus
+        GeomAbsSurfaceType::Torus
     } else if s.is_bspline_surface() {
-        SurfaceKind::BSplineSurface
+        GeomAbsSurfaceType::BSplineSurface
     } else if s.osculating_bspline().is_some() {
         // Only `Geom_BSplineSurface` and `Geom_BezierSurface` answer
         // `osculating_bspline`; the former is taken above.
-        SurfaceKind::BezierSurface
+        GeomAbsSurfaceType::BezierSurface
     } else if s.is_surface_of_revolution() {
-        SurfaceKind::SurfaceOfRevolution
+        GeomAbsSurfaceType::SurfaceOfRevolution
     } else if s.is_surface_of_linear_extrusion() {
-        SurfaceKind::SurfaceOfExtrusion
+        GeomAbsSurfaceType::SurfaceOfExtrusion
     } else if s.is_offset_surface() {
-        SurfaceKind::OffsetSurface
+        GeomAbsSurfaceType::OffsetSurface
     } else {
-        SurfaceKind::OtherSurface
+        GeomAbsSurfaceType::OtherSurface
     }
 }
 
@@ -122,7 +122,7 @@ fn real_to_int(v: f64) -> i32 {
 /// `ComputeNbUSamples(theSurf, theUMin, theUMax)` (`SamplingHelpers.pxx:109-143`).
 fn nb_u_samples(s: &dyn Surface, u_min: f64, u_max: f64) -> i32 {
     let n = match surface_kind(s) {
-        SurfaceKind::BezierSurface => {
+        GeomAbsSurfaceType::BezierSurface => {
             let mut n = 2 * s.nb_u_poles();
             let du = u_max - u_min;
             if du < 0.9 {
@@ -131,7 +131,7 @@ fn nb_u_samples(s: &dyn Surface, u_min: f64, u_max: f64) -> i32 {
             }
             n
         }
-        SurfaceKind::BSplineSurface => match spline_of(s) {
+        GeomAbsSurfaceType::BSplineSurface => match spline_of(s) {
             Some(b) => {
                 let knots = b.distinct_knots_and_mults_u().0;
                 let mut n = 2 * (b.deg_u as i32 + 1) * (knots.len() as i32 - 1);
@@ -153,7 +153,7 @@ fn nb_u_samples(s: &dyn Surface, u_min: f64, u_max: f64) -> i32 {
 /// `ComputeNbVSamples(theSurf, theVMin, theVMax)` (`SamplingHelpers.pxx:146-180`).
 fn nb_v_samples(s: &dyn Surface, v_min: f64, v_max: f64) -> i32 {
     let n = match surface_kind(s) {
-        SurfaceKind::BezierSurface => {
+        GeomAbsSurfaceType::BezierSurface => {
             let mut n = 2 * s.nb_v_poles();
             let dv = v_max - v_min;
             if dv < 0.9 {
@@ -162,7 +162,7 @@ fn nb_v_samples(s: &dyn Surface, v_min: f64, v_max: f64) -> i32 {
             }
             n
         }
-        SurfaceKind::BSplineSurface => match spline_of(s) {
+        GeomAbsSurfaceType::BSplineSurface => match spline_of(s) {
             Some(b) => {
                 let knots = b.distinct_knots_and_mults_v().0;
                 let mut n = 2 * (b.deg_v as i32 + 1) * (knots.len() as i32 - 1);
@@ -184,8 +184,8 @@ fn nb_v_samples(s: &dyn Surface, v_min: f64, v_max: f64) -> i32 {
 /// Full-range `ComputeNbUSamples(theSurf)` (`SamplingHelpers.pxx:184-203`).
 fn nb_u_samples_full(s: &dyn Surface) -> i32 {
     let n: i32 = match surface_kind(s) {
-        SurfaceKind::BezierSurface => 2 * s.nb_u_poles(),
-        SurfaceKind::BSplineSurface => match spline_of(s) {
+        GeomAbsSurfaceType::BezierSurface => 2 * s.nb_u_poles(),
+        GeomAbsSurfaceType::BSplineSurface => match spline_of(s) {
             Some(b) => {
                 let knots = b.distinct_knots_and_mults_u().0;
                 2 * (b.deg_u as i32 + 1) * (knots.len() as i32 - 1)
@@ -200,8 +200,8 @@ fn nb_u_samples_full(s: &dyn Surface) -> i32 {
 /// Full-range `ComputeNbVSamples(theSurf)` (`SamplingHelpers.pxx:206-222`).
 fn nb_v_samples_full(s: &dyn Surface) -> i32 {
     let n: i32 = match surface_kind(s) {
-        SurfaceKind::BezierSurface => 2 * s.nb_v_poles(),
-        SurfaceKind::BSplineSurface => match spline_of(s) {
+        GeomAbsSurfaceType::BezierSurface => 2 * s.nb_v_poles(),
+        GeomAbsSurfaceType::BSplineSurface => match spline_of(s) {
             Some(b) => {
                 let knots = b.distinct_knots_and_mults_v().0;
                 2 * (b.deg_v as i32 + 1) * (knots.len() as i32 - 1)
@@ -713,39 +713,39 @@ pub fn box_offset_surface(s: &dyn Surface, u1: f64, u2: f64, v1: f64, v2: f64, t
 /// (`GeomBndLib_Surface.cxx:344-364`).
 pub fn box_surface(s: &dyn Surface, u1: f64, u2: f64, v1: f64, v2: f64, tol: f64) -> BndBox {
     match surface_kind(s) {
-        SurfaceKind::Plane => {
+        GeomAbsSurfaceType::Plane => {
             let pln = s.gp_pln().expect("plane");
             let pos = pln.position();
             analytic::box_plane(&pos, u1, u2, v1, v2, tol)
         }
-        SurfaceKind::Cylinder => {
+        GeomAbsSurfaceType::Cylinder => {
             let c = s.gp_cylinder().expect("cylinder");
             let pos = c.position();
             analytic::box_cylinder(&pos, c.radius(), u1, u2, v1, v2, tol)
         }
-        SurfaceKind::Cone => {
+        GeomAbsSurfaceType::Cone => {
             let c = s.gp_cone().expect("cone");
             let pos = c.position();
             analytic::box_cone(&pos, c.radius(), c.semi_angle(), u1, u2, v1, v2, tol)
         }
-        SurfaceKind::Sphere => {
+        GeomAbsSurfaceType::Sphere => {
             let sp = s.gp_sphere().expect("sphere");
             let pos = *sp.position();
             let loc = sp.location();
             analytic::box_sphere(&pos, &loc, sp.radius(), u1, u2, v1, v2, tol)
         }
-        SurfaceKind::Torus => {
+        GeomAbsSurfaceType::Torus => {
             let t = s.gp_torus().expect("torus");
             let pos = *t.position();
             let loc = t.location();
             analytic::box_torus(&pos, &loc, t.major_radius(), t.minor_radius(), u1, u2, v1, v2, tol)
         }
-        SurfaceKind::BezierSurface => box_bezier_surface(s, u1, u2, v1, v2, tol),
-        SurfaceKind::BSplineSurface => box_bspline_surface(s, u1, u2, v1, v2, tol),
-        SurfaceKind::SurfaceOfRevolution => box_revolution(s, u1, u2, v1, v2, tol),
-        SurfaceKind::SurfaceOfExtrusion => box_extrusion(s, u1, u2, v1, v2, tol),
-        SurfaceKind::OffsetSurface => box_offset_surface(s, u1, u2, v1, v2, tol),
-        SurfaceKind::OtherSurface => box_other_surface(s, u1, u2, v1, v2, tol),
+        GeomAbsSurfaceType::BezierSurface => box_bezier_surface(s, u1, u2, v1, v2, tol),
+        GeomAbsSurfaceType::BSplineSurface => box_bspline_surface(s, u1, u2, v1, v2, tol),
+        GeomAbsSurfaceType::SurfaceOfRevolution => box_revolution(s, u1, u2, v1, v2, tol),
+        GeomAbsSurfaceType::SurfaceOfExtrusion => box_extrusion(s, u1, u2, v1, v2, tol),
+        GeomAbsSurfaceType::OffsetSurface => box_offset_surface(s, u1, u2, v1, v2, tol),
+        GeomAbsSurfaceType::OtherSurface => box_other_surface(s, u1, u2, v1, v2, tol),
     }
 }
 

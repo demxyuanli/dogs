@@ -651,7 +651,7 @@ pub fn analytic_mass(shape: &TopoShape, density: f64) -> Result<f64, String> {
 /// (the port keeps no `Any`-typed geometry, so the concrete `Geom*` type cannot
 /// be downcast).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CurveKind {
+pub enum AnalyticCurveKind {
     /// Straight segment: constant tangent direction, zero second derivative.
     Line,
     /// Circular arc: constant tangent speed and curvature, planar binormal.
@@ -670,14 +670,14 @@ pub enum CurveKind {
 /// * `Ellipse` — the sampled points are coplanar but the tangent speed is not
 ///   constant (an ellipse's arc length needs an elliptic integral);
 /// * `Other` — non-planar or unbounded curves.
-pub fn classify_curve(curve: &dyn occt_geom::Curve, a: f64, b: f64) -> CurveKind {
+pub fn classify_curve(curve: &dyn occt_geom::Curve, a: f64, b: f64) -> AnalyticCurveKind {
     if is_line_curve(curve, a, b) {
-        CurveKind::Line
+        AnalyticCurveKind::Line
     } else if circle_radius(curve, a, b).is_some() {
-        CurveKind::Circle
+        AnalyticCurveKind::Circle
     } else if curve_is_planar(curve, a, b) {
-        CurveKind::Ellipse
+        AnalyticCurveKind::Ellipse
     } else {
-        CurveKind::Other
+        AnalyticCurveKind::Other
     }
 }

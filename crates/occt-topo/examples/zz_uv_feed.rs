@@ -233,11 +233,11 @@ fn main() {
     if args.iter().any(|a| a == "--sph") {
         use occt_topo::brep_bnd_lib;
         use occt_topo::brep_tool::BRepTool;
-        use occt_topo::meshing::range_splitter::{classify_surface, SurfaceType};
+        use occt_topo::meshing::range_splitter::{classify_surface, MeshSurfaceType};
         use occt_topo::topo_tools_full::{edges_of_wire, faces_of, wires_of_face};
         for (i, f) in faces_of(&shape).iter().enumerate() {
             let Some(surf) = BRepTool::face_surface(f) else { continue };
-            if classify_surface(surf.as_ref()) != SurfaceType::Sphere {
+            if classify_surface(surf.as_ref()) != MeshSurfaceType::Sphere {
                 continue;
             }
             let bb = brep_bnd_lib::shape_bnd_box(&f.0);

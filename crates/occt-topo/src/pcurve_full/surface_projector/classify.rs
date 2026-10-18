@@ -19,7 +19,7 @@ use super::*;
 /// projected by the general path; treating it as analytic would feed the
 /// sampled analytic frame a parameterization it does not have.
 pub fn classify_surface_kind(s: &dyn Surface) -> SurfaceKind {
-    use crate::geom_bnd_lib_surface3d::SurfaceKind as TypeKind;
+    use crate::geom_bnd_lib_surface3d::GeomAbsSurfaceType as TypeKind;
     match crate::geom_bnd_lib_surface3d::surface_kind(s) {
         TypeKind::Plane => SurfaceKind::Plane,
         TypeKind::Sphere => SurfaceKind::Sphere,

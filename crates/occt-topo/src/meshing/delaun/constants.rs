@@ -83,7 +83,7 @@ pub(super) fn update_bnd_box(p1: GpXY, p2: GpXY, b: &mut BndB2) {
 /// Source: `BRepMesh_CircleTool` + `BRepMesh_CircleInspector`. Circles are
 /// stored in a `HashMap` grid keyed by 2-D cells; a query point only inspects
 /// the circles whose clamped bounding box covers the query's cell.
-pub struct CircleTool {
+pub struct GridCircleTool {
     pub(super) tolerance: f64,
     pub(super) sq_tolerance: f64,
     pub(super) cell_size: GpXY,
@@ -93,7 +93,7 @@ pub struct CircleTool {
     pub(super) grid: HashMap<(i64, i64), Vec<i32>>,
 }
 
-impl CircleTool {
+impl GridCircleTool {
     pub(super) fn new() -> Self {
         Self {
             tolerance: PREC,
@@ -281,7 +281,7 @@ impl StackOfFrames {
 /// cleanup and auxiliary-element removal.
 pub struct Delaun {
     pub(super) mesh_data: DelaunDataStructure,
-    pub(super) circles: CircleTool,
+    pub(super) circles: GridCircleTool,
     pub(super) sup_vert: Vec<i32>,
     pub(super) init_circles: bool,
     pub(super) sup_trian: DelaunTriangle,

@@ -167,7 +167,7 @@ fn amplify_cone_face(model: &mut MeshModel, face_index: usize, params: &MeshPara
         let Some(surface) = face.surface() else {
             return;
         };
-        if classify_surface(surface.as_ref()) != SurfaceType::Cone {
+        if classify_surface(surface.as_ref()) != MeshSurfaceType::Cone {
             return;
         }
         if face.wires_nb() == 0 {

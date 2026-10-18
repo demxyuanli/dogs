@@ -96,16 +96,16 @@ pub(super) fn exact_edge_length(e: &Edge) -> f64 {
         return 0.0;
     }
     match classify_curve(curve.as_ref(), a, b) {
-        CurveKind::Line => curve.d0(a).distance(&curve.d0(b)),
-        CurveKind::Circle => match circle_radius(curve.as_ref(), a, b) {
+        AnalyticCurveKind::Line => curve.d0(a).distance(&curve.d0(b)),
+        AnalyticCurveKind::Circle => match circle_radius(curve.as_ref(), a, b) {
             Some(r) => r * (b - a),
             None => crate::brep_measure::edge_length(e),
         },
-        CurveKind::Ellipse => {
+        AnalyticCurveKind::Ellipse => {
             let speed = |t: f64| curve.d1(t).1.magnitude();
             integrate(&speed, a, b, 24)
         }
-        CurveKind::Other => crate::brep_measure::edge_length(e),
+        AnalyticCurveKind::Other => crate::brep_measure::edge_length(e),
     }
 }
 

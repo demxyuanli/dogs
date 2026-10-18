@@ -13,7 +13,7 @@ impl Delaun {
         }
         let mut delaun = Self {
             mesh_data: data,
-            circles: CircleTool::new(),
+            circles: GridCircleTool::new(),
             sup_vert: Vec::new(),
             init_circles: false,
             failed: false,
@@ -40,7 +40,7 @@ impl Delaun {
     ) -> Self {
         let mut delaun = Self {
             mesh_data: data_structure,
-            circles: CircleTool::new(),
+            circles: GridCircleTool::new(),
             sup_vert: Vec::new(),
             init_circles: false,
             failed: false,
@@ -68,7 +68,7 @@ impl Delaun {
     ) -> Self {
         let mut delaun = Self {
             mesh_data: data_structure,
-            circles: CircleTool::new(),
+            circles: GridCircleTool::new(),
             sup_vert: Vec::new(),
             init_circles: false,
             failed: false,
@@ -244,7 +244,7 @@ impl Delaun {
     }
 
     /// The circle cell-filter tool used for point location.
-    pub fn circles(&self) -> &CircleTool {
+    pub fn circles(&self) -> &GridCircleTool {
         &self.circles
     }
 

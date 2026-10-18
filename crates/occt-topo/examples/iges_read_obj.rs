@@ -13,41 +13,41 @@ use occt_topo::brep_tool::BRepTool;
 use occt_topo::iges_read::read_iges_shape;
 use occt_topo::meshing::data_model::MeshStatus;
 use occt_topo::meshing::incremental_mesh::IncrementalMesh;
-use occt_topo::meshing::range_splitter::{classify_surface, SurfaceType};
+use occt_topo::meshing::range_splitter::{classify_surface, MeshSurfaceType};
 use occt_topo::tgeometry::GeometryRegistry;
 use occt_topo::topo_tools_full::{edges_of_wire, faces_of, wires_of_face};
 
-fn tname(t: SurfaceType) -> &'static str {
+fn tname(t: MeshSurfaceType) -> &'static str {
     match t {
-        SurfaceType::Plane => "Plane",
-        SurfaceType::Cylinder => "Cylinder",
-        SurfaceType::Cone => "Cone",
-        SurfaceType::Sphere => "Sphere",
-        SurfaceType::Torus => "Torus",
-        SurfaceType::SurfaceOfRevolution => "Rev",
-        SurfaceType::SurfaceOfExtrusion => "Extr",
-        SurfaceType::BezierSurface => "Bezier",
-        SurfaceType::BSplineSurface => "BSpline",
-        SurfaceType::OffsetSurface => "Offset",
-        SurfaceType::OtherSurface => "Other",
+        MeshSurfaceType::Plane => "Plane",
+        MeshSurfaceType::Cylinder => "Cylinder",
+        MeshSurfaceType::Cone => "Cone",
+        MeshSurfaceType::Sphere => "Sphere",
+        MeshSurfaceType::Torus => "Torus",
+        MeshSurfaceType::SurfaceOfRevolution => "Rev",
+        MeshSurfaceType::SurfaceOfExtrusion => "Extr",
+        MeshSurfaceType::BezierSurface => "Bezier",
+        MeshSurfaceType::BSplineSurface => "BSpline",
+        MeshSurfaceType::OffsetSurface => "Offset",
+        MeshSurfaceType::OtherSurface => "Other",
     }
 }
 
 /// OCCT `GeomAbs_SurfaceType` code of a port surface type, so the `type=` field
 /// of a `BOUND` line matches `occt_probe --boundary` (`0` plane … `10` other).
-fn tcode(t: SurfaceType) -> i32 {
+fn tcode(t: MeshSurfaceType) -> i32 {
     match t {
-        SurfaceType::Plane => 0,
-        SurfaceType::Cylinder => 1,
-        SurfaceType::Cone => 2,
-        SurfaceType::Sphere => 3,
-        SurfaceType::Torus => 4,
-        SurfaceType::BezierSurface => 5,
-        SurfaceType::BSplineSurface => 6,
-        SurfaceType::SurfaceOfRevolution => 7,
-        SurfaceType::SurfaceOfExtrusion => 8,
-        SurfaceType::OffsetSurface => 9,
-        SurfaceType::OtherSurface => 10,
+        MeshSurfaceType::Plane => 0,
+        MeshSurfaceType::Cylinder => 1,
+        MeshSurfaceType::Cone => 2,
+        MeshSurfaceType::Sphere => 3,
+        MeshSurfaceType::Torus => 4,
+        MeshSurfaceType::BezierSurface => 5,
+        MeshSurfaceType::BSplineSurface => 6,
+        MeshSurfaceType::SurfaceOfRevolution => 7,
+        MeshSurfaceType::SurfaceOfExtrusion => 8,
+        MeshSurfaceType::OffsetSurface => 9,
+        MeshSurfaceType::OtherSurface => 10,
     }
 }
 

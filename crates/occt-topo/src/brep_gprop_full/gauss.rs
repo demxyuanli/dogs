@@ -14,7 +14,7 @@ pub(super) const SM: usize = SUBS_POWER * GPM + 1;
 pub(super) const NGV: usize = 10; // number of value types in the GK integrator
 
 // ---------------------------------------------------------------------------
-// GProps — global-properties accumulator (GProp_GProps)
+// MassProperties — global-properties accumulator (GProp_GProps)
 // ---------------------------------------------------------------------------
 
 /// Accumulated mass properties about a reference point.
@@ -25,14 +25,14 @@ pub(super) const NGV: usize = 10; // number of value types in the GK integrator
 /// * `inertia` — the 3×3 inertia matrix about `loc` (standard form, off
 ///   diagonal entries negated: `I[1][2] = −∫xy dm`).
 #[derive(Debug, Clone, Copy)]
-pub struct GProps {
+pub struct MassProperties {
     pub dim: f64,
     pub loc: GpPnt,
     pub g: GpVec,
     pub inertia: GpMat,
 }
 
-impl GProps {
+impl MassProperties {
     /// Empty accumulator about `loc`.
     pub fn new(loc: GpPnt) -> Self {
         Self { dim: 0.0, loc, g: GpVec::zero(), inertia: GpMat::zero() }
@@ -63,7 +63,7 @@ impl GProps {
     /// Combine `other` (about its own `loc`) into `self` using the Huygens
     /// (parallel-axis) theorem. Both accumulators may have different reference
     /// points; the combined system is about `self.loc`.
-    pub fn add(&mut self, other: &GProps) {
+    pub fn add(&mut self, other: &MassProperties) {
         let off = GpVec::from_pnts(&self.loc, &other.loc); // other.loc − self.loc
         let other_g_here = other.g.added(&off);
         let huy = huygens_mat(other.dim, &off);

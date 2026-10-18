@@ -392,7 +392,7 @@ pub fn project_curve_on_surface_perform(
         // U(V)-closed qualifies.
         if n > 23 && ii > 2 && ii < n {
             let is_bspline = crate::geom_bnd_lib_surface3d::surface_kind(surf)
-                == crate::geom_bnd_lib_surface3d::SurfaceKind::BSplineSurface;
+                == crate::geom_bnd_lib_surface3d::GeomAbsSurfaceType::BSplineSurface;
             if is_bspline
                 && prev_p3d.distance(&p3d) < preci
                 && super::super::singularities::nb_singularities(&singularities, preci) > 0

@@ -10,7 +10,7 @@
 //! boundary; upgrade to a real boundary-aware boolean (BRepAlgoAPI_Fuse) later.
 
 use occt_core::bnd::BndBox;
-use occt_core::geom::csg::{apply_bool, voxel_to_mesh, BoolOp, VoxelSolid};
+use occt_core::geom::csg::{apply_bool, voxel_to_mesh, CsgBoolOp, VoxelSolid};
 use occt_core::gp::{GpPnt, GpVec};
 use occt_core::poly::triangulation::Triangle;
 
@@ -189,7 +189,7 @@ fn voxel_union_grid(a: &TopoShape, b: &TopoShape, resolution: usize) -> Result<V
     let mut vb = VoxelSolid::new(&bbox, cell).ok_or("voxel_union: failed to create grid")?;
     va.fill(&|p: &GpPnt| point_in_shape(a, p));
     vb.fill(&|p: &GpPnt| point_in_shape(b, p));
-    apply_bool(&mut va, &vb, BoolOp::Union).map_err(|e| e.to_string())?;
+    apply_bool(&mut va, &vb, CsgBoolOp::Union).map_err(|e| e.to_string())?;
     Ok(va)
 }
 

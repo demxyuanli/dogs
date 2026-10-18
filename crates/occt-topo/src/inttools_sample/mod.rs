@@ -14,7 +14,7 @@
 //!   curve/UV domain by sample points and map each cell to a curve/surface
 //!   index, tracking which cells are already known "out"
 //!   (`IntTools_CurveRangeLocalizeData`, `IntTools_SurfaceRangeLocalizeData`).
-//! - [`TopolTool`] — the sample-point generator for intersection algorithms:
+//! - [`IntToolsTopolTool`] — the sample-point generator for intersection algorithms:
 //!   computes a uniform `U × V` grid (`ComputeSamplePoints`), answers
 //!   `sample_point` (UV + evaluated 3D point), and builds an
 //!   deflection-adaptive grid for BSpline surfaces (`SamplePnts`)
@@ -39,7 +39,7 @@ pub(crate) use occt_core::precision::ANGULAR;
 pub(crate) use occt_geom::Surface;
 
 pub(crate) use crate::inttools_data::IntRange;
-pub(crate) use crate::meshing::range_splitter::{classify_surface, SurfaceType};
+pub(crate) use crate::meshing::range_splitter::{classify_surface, MeshSurfaceType};
 
 }
 

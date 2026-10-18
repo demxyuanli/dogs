@@ -543,7 +543,7 @@ fn tolerance_2d(v: &Vertex, face: &Face) -> f64 {
     let mut t2 = u.max(vv).max(t3);
     if let Some(s) = BRepTool::face_surface(face) {
         if crate::geom_bnd_lib_surface3d::surface_kind(s.as_ref())
-            == crate::geom_bnd_lib_surface3d::SurfaceKind::BSplineSurface
+            == crate::geom_bnd_lib_surface3d::GeomAbsSurfaceType::BSplineSurface
         {
             // `cxx:875-878`.
             t2 *= 1.1;

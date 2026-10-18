@@ -260,11 +260,11 @@ use super::*;
         assert!(!ld.is_range_out(1, 1));
     }
 
-    // ---- TopolTool ----
+    // ---- IntToolsTopolTool ----
 
     #[test]
     fn topol_tool_plane_nb_samples_and_domain() {
-        let mut tool = TopolTool::new();
+        let mut tool = IntToolsTopolTool::new();
         assert!(!tool.is_initialized());
         tool.initialize(plane_surface().as_ref());
         assert!(tool.is_initialized());
@@ -283,7 +283,7 @@ use super::*;
     #[test]
     fn topol_tool_plane_sample_point_matches_d0() {
         let surf = plane_surface();
-        let mut tool = TopolTool::new();
+        let mut tool = IntToolsTopolTool::new();
         tool.initialize(surf.as_ref());
         // The standard plane maps (u, v) -> (u, v, 0); every sample's 3D point
         // must agree with surface.d0(u, v) and lie in the plane.
@@ -299,7 +299,7 @@ use super::*;
 
     #[test]
     fn topol_tool_plane_sample_point_row_major() {
-        let mut tool = TopolTool::new();
+        let mut tool = IntToolsTopolTool::new();
         tool.initialize(plane_surface().as_ref());
         let (p1, _) = tool.sample_point(1).unwrap();
         let (p2, _) = tool.sample_point(2).unwrap();
@@ -315,7 +315,7 @@ use super::*;
     #[test]
     fn topol_tool_cylinder_nb_samples_match_domain() {
         let surf = cylinder_surface(1.0);
-        let mut tool = TopolTool::new();
+        let mut tool = IntToolsTopolTool::new();
         tool.initialize(surf.as_ref());
         // Radius 1 -> max_angle = 2*acos(1 - 0.01); U count from the 2π span,
         // V count clamped to the 50 cap (2e5/10 = 2e4).
@@ -329,7 +329,7 @@ use super::*;
     #[test]
     fn topol_tool_cylinder_sample_point_on_surface() {
         let surf = cylinder_surface(1.0);
-        let mut tool = TopolTool::new();
+        let mut tool = IntToolsTopolTool::new();
         tool.initialize(surf.as_ref());
         for i in 1..=tool.nb_samples() {
             let (p2d, p3d) = tool.sample_point(i).unwrap();
@@ -343,7 +343,7 @@ use super::*;
 
     #[test]
     fn topol_tool_sample_point_out_of_range_errors() {
-        let mut tool = TopolTool::new();
+        let mut tool = IntToolsTopolTool::new();
         assert!(tool.sample_point(1).is_err(), "no surface");
         tool.initialize(plane_surface().as_ref());
         assert!(tool.sample_point(0).is_err());
@@ -353,7 +353,7 @@ use super::*;
 
     #[test]
     fn topol_tool_sample_pnts_plane_uniform_grid_count() {
-        let mut tool = TopolTool::new();
+        let mut tool = IntToolsTopolTool::new();
         tool.initialize(plane_surface().as_ref());
         let pts = tool.sample_pnts(0.001, 4, 4).unwrap();
         // Plane is not a BSpline: uniform grid of max(10, 4)² = 100 points.
@@ -367,7 +367,7 @@ use super::*;
 
     #[test]
     fn topol_tool_sample_pnts_plane_floor_applies() {
-        let mut tool = TopolTool::new();
+        let mut tool = IntToolsTopolTool::new();
         tool.initialize(plane_surface().as_ref());
         let pts = tool.sample_pnts(0.001, 20, 20).unwrap();
         // nu_min/nv_min are a floor: max(10, 20)² = 400.
@@ -377,7 +377,7 @@ use super::*;
     #[test]
     fn topol_tool_sample_pnts_cylinder_grid_on_surface() {
         let surf = cylinder_surface(1.0);
-        let mut tool = TopolTool::new();
+        let mut tool = IntToolsTopolTool::new();
         tool.initialize(surf.as_ref());
         let pts = tool.sample_pnts(0.001, 4, 4).unwrap();
         let expected_len = tool.nb_samples_u() * tool.nb_samples_v();
@@ -393,11 +393,11 @@ use super::*;
     #[test]
     fn topol_tool_sample_pnts_bspline_adaptive_refines() {
         let surf = curved_bspline();
-        let mut coarse = TopolTool::new();
+        let mut coarse = IntToolsTopolTool::new();
         coarse.initialize(surf.as_ref());
         let coarse_pts = coarse.sample_pnts(10.0, 4, 4).unwrap();
 
-        let mut fine = TopolTool::new();
+        let mut fine = IntToolsTopolTool::new();
         fine.initialize(surf.as_ref());
         let fine_pts = fine.sample_pnts(1e-4, 4, 4).unwrap();
 
@@ -418,7 +418,7 @@ use super::*;
         let surf = GeometryRegistry::global()
             .face_surface(&face.0)
             .expect("unit-box face has a registered surface");
-        let mut tool = TopolTool::new();
+        let mut tool = IntToolsTopolTool::new();
         tool.initialize(surf.as_ref());
         assert_eq!(tool.nb_samples_u(), 10);
         assert_eq!(tool.nb_samples_v(), 10);

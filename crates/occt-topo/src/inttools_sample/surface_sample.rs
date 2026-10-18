@@ -1,7 +1,7 @@
 use super::prelude::*;
 use super::*;
 
-impl TopolTool {
+impl IntToolsTopolTool {
     /// Empty tool — no surface. Call [`initialize`](Self::initialize) before
     /// sampling.
     pub fn new() -> Self {
@@ -93,8 +93,8 @@ impl TopolTool {
 
         let typ = classify_surface(s);
         let (mut nbsu, mut nbsv): (usize, usize) = match typ {
-            SurfaceType::Plane => (10, 10),
-            SurfaceType::Cylinder => {
+            MeshSurfaceType::Plane => (10, 10),
+            MeshSurfaceType::Cylinder => {
                 let radius = cylinder_radius(s);
                 let max_angle = max_angle_for_radius(radius);
                 let nbsu = if max_angle > ANGULAR {
@@ -105,7 +105,7 @@ impl TopolTool {
                 let nbsv = ((vsup - vinf) / 10.0) as usize;
                 (nbsu.max(2).min(MAX_NB_SAMPLE), nbsv.max(2).min(MAX_NB_SAMPLE))
             }
-            SurfaceType::Cone => {
+            MeshSurfaceType::Cone => {
                 let radius = cone_radius_at(s, vinf).max(cone_radius_at(s, vsup));
                 let max_angle = max_angle_for_radius(radius);
                 let nbsu = if max_angle > ANGULAR {
@@ -116,7 +116,7 @@ impl TopolTool {
                 let nbsv = ((vsup - vinf) / 10.0) as usize;
                 (nbsu.max(10).min(MAX_NB_SAMPLE), nbsv.max(10).min(MAX_NB_SAMPLE))
             }
-            SurfaceType::Sphere => {
+            MeshSurfaceType::Sphere => {
                 let radius = sphere_radius(s);
                 let max_angle = max_angle_for_radius(radius);
                 let nbsu = if max_angle > ANGULAR {
@@ -131,7 +131,7 @@ impl TopolTool {
                 };
                 (nbsu.max(10).min(MAX_NB_SAMPLE), nbsv.max(10).min(MAX_NB_SAMPLE))
             }
-            SurfaceType::Torus => {
+            MeshSurfaceType::Torus => {
                 let (_major, minor) = torus_radii(s);
                 let max_angle = max_angle_for_radius(minor);
                 let nbsu = if max_angle > ANGULAR {
@@ -146,17 +146,17 @@ impl TopolTool {
                 };
                 (nbsu.max(10).min(MAX_NB_SAMPLE), nbsv.max(10).min(MAX_NB_SAMPLE))
             }
-            SurfaceType::BezierSurface | SurfaceType::BSplineSurface => {
+            MeshSurfaceType::BezierSurface | MeshSurfaceType::BSplineSurface => {
                 // Pole/knot counts are unreachable through `dyn Surface`; the
                 // base grid is refined adaptively by `sample_pnts`.
                 (10, 10)
             }
-            SurfaceType::SurfaceOfExtrusion => {
+            MeshSurfaceType::SurfaceOfExtrusion => {
                 let nbsv = ((vsup - vinf) / 10.0) as usize;
                 (15, nbsv.max(15).min(MAX_NB_SAMPLE))
             }
-            SurfaceType::SurfaceOfRevolution => (15, 15),
-            SurfaceType::OffsetSurface | SurfaceType::OtherSurface => (10, 10),
+            MeshSurfaceType::SurfaceOfRevolution => (15, 15),
+            MeshSurfaceType::OffsetSurface | MeshSurfaceType::OtherSurface => (10, 10),
         };
         if nbsu == 0 {
             nbsu = 10;
@@ -217,10 +217,10 @@ impl TopolTool {
         let s = self
             .surface
             .as_ref()
-            .ok_or("TopolTool::sample_point: no surface initialized")?;
+            .ok_or("IntToolsTopolTool::sample_point: no surface initialized")?;
         let s: &dyn Surface = s.as_ref();
         if self.nb_samples_u == 0 || self.nb_samples_v == 0 {
-            return Err("TopolTool::sample_point: sample grid not computed".into());
+            return Err("IntToolsTopolTool::sample_point: sample grid not computed".into());
         }
         let (nu, nv) = match (&self.u_pars, &self.v_pars) {
             (Some(u), Some(v)) => (u.len(), v.len()),
@@ -228,7 +228,7 @@ impl TopolTool {
         };
         if index == 0 || index > nu * nv {
             return Err(format!(
-                "TopolTool::sample_point: index {index} out of range [1, {}]",
+                "IntToolsTopolTool::sample_point: index {index} out of range [1, {}]",
                 nu * nv
             ));
         }
@@ -263,7 +263,7 @@ impl TopolTool {
         nv_min: usize,
     ) -> Result<Vec<(GpPnt2d, GpPnt)>, String> {
         if self.surface.is_none() {
-            return Err("TopolTool::sample_pnts: no surface initialized".into());
+            return Err("IntToolsTopolTool::sample_pnts: no surface initialized".into());
         }
         // Recompute the analytic base grid (idempotent; also clears any stale
         // adaptive parameters from a previous call).
@@ -287,7 +287,7 @@ impl TopolTool {
         let typ = classify_surface(s);
         let (u_pars, v_pars) = if matches!(
             typ,
-            SurfaceType::BSplineSurface | SurfaceType::BezierSurface
+            MeshSurfaceType::BSplineSurface | MeshSurfaceType::BezierSurface
         ) {
             let u_base = uniform_u();
             let v_base = uniform_v();
@@ -316,7 +316,7 @@ impl TopolTool {
     }
 }
 
-impl Default for TopolTool {
+impl Default for IntToolsTopolTool {
     fn default() -> Self {
         Self::new()
     }

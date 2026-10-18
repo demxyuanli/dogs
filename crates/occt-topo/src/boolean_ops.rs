@@ -19,7 +19,7 @@ use crate::shape::TopoShape;
 
 /// The boolean operation to apply to a voxel cell.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BoolOp {
+pub enum VoxelBoolOp {
     /// Cell occupied by either input (Fuse).
     Union,
     /// Cell occupied by both inputs (Common).
@@ -174,7 +174,7 @@ pub fn voxel_boolean(
     a: &TopoShape,
     b: &TopoShape,
     resolution: usize,
-    op: BoolOp,
+    op: VoxelBoolOp,
 ) -> Result<ShapeMesh, String> {
     if resolution < 4 {
         return Err("voxel_boolean: resolution must be >= 4".into());
@@ -193,9 +193,9 @@ pub fn voxel_boolean(
     // Combine per the operation.
     for i in 0..a_occ.len() {
         grid.occupied[i] = match op {
-            BoolOp::Union => a_occ[i] || b_occ[i],
-            BoolOp::Intersection => a_occ[i] && b_occ[i],
-            BoolOp::Subtraction => a_occ[i] && !b_occ[i],
+            VoxelBoolOp::Union => a_occ[i] || b_occ[i],
+            VoxelBoolOp::Intersection => a_occ[i] && b_occ[i],
+            VoxelBoolOp::Subtraction => a_occ[i] && !b_occ[i],
         };
     }
     Ok(grid.to_mesh())
@@ -203,16 +203,16 @@ pub fn voxel_boolean(
 
 /// Voxel intersection (Common) of two solids.
 pub fn voxel_intersect(a: &TopoShape, b: &TopoShape, resolution: usize) -> Result<ShapeMesh, String> {
-    voxel_boolean(a, b, resolution, BoolOp::Intersection)
+    voxel_boolean(a, b, resolution, VoxelBoolOp::Intersection)
 }
 
 /// Voxel subtraction (Cut): `a` minus `b`.
 pub fn voxel_subtract(a: &TopoShape, b: &TopoShape, resolution: usize) -> Result<ShapeMesh, String> {
-    voxel_boolean(a, b, resolution, BoolOp::Subtraction)
+    voxel_boolean(a, b, resolution, VoxelBoolOp::Subtraction)
 }
 
 /// Surface area of a voxel boolean result.
-pub fn boolean_surface_area(a: &TopoShape, b: &TopoShape, resolution: usize, op: BoolOp) -> Result<f64, String> {
+pub fn boolean_surface_area(a: &TopoShape, b: &TopoShape, resolution: usize, op: VoxelBoolOp) -> Result<f64, String> {
     Ok(mesh_surface_area(&voxel_boolean(a, b, resolution, op)?))
 }
 
@@ -276,7 +276,7 @@ pub fn point_in_mesh(mesh: &ShapeMesh, p: &GpPnt) -> bool {
 }
 
 /// Number of surface triangles of a voxel boolean result.
-pub fn boolean_triangle_count(a: &TopoShape, b: &TopoShape, resolution: usize, op: BoolOp) -> Result<usize, String> {
+pub fn boolean_triangle_count(a: &TopoShape, b: &TopoShape, resolution: usize, op: VoxelBoolOp) -> Result<usize, String> {
     Ok(voxel_boolean(a, b, resolution, op)?.triangles.len())
 }
 
@@ -346,7 +346,7 @@ mod tests {
     fn union_covered_by_solid_union() {
         let a = BRepPrimBox::make_box(1.0, 1.0, 1.0);
         let b = BRepPrimBox::make_box_corner(&GpPnt::new(1.0, 0.0, 0.0), &GpPnt::new(2.0, 1.0, 1.0));
-        let fused = voxel_boolean(&a.solid.0, &b.solid.0, 20, BoolOp::Union).expect("union works");
+        let fused = voxel_boolean(&a.solid.0, &b.solid.0, 20, VoxelBoolOp::Union).expect("union works");
         let area = mesh_surface_area(&fused);
         // Two 1×1×1 boxes side by side → exact surface 10 (touching faces
         // cancel), voxel staircase inflates.

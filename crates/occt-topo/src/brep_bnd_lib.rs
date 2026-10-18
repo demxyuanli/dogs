@@ -31,7 +31,7 @@ use occt_core::bnd::BndBox;
 use crate::brep_tool::BRepTool;
 use crate::brep_uv_bounds::uv_box_of_face;
 use crate::geom_bnd_lib_curve3d::box_curve;
-use crate::geom_bnd_lib_surface3d::{add_surface, surface_kind, SurfaceKind};
+use crate::geom_bnd_lib_surface3d::{add_surface, surface_kind, GeomAbsSurfaceType};
 use crate::shape::{Edge, Face, TopoShape, Vertex};
 use crate::topo_tools_full::{edges_of, faces_of, vertices_of};
 
@@ -107,7 +107,7 @@ pub fn add(shape: &TopoShape, b: &mut BndBox, use_triangulation: bool) {
             // `GS.IsNull()` and no triangulation: the face contributes nothing.
             continue;
         };
-        if surface_kind(gs.as_ref()) != SurfaceKind::Plane {
+        if surface_kind(gs.as_ref()) != GeomAbsSurfaceType::Plane {
             let (u1, u2, v1, v2) = uv_bounds(&f);
             let tol = BRepTool::face_tolerance(&f);
             add_surface(&gs, u1, u2, v1, v2, tol, b);

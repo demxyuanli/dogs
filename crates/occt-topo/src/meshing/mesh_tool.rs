@@ -13,7 +13,7 @@
 use occt_core::gp::GpPnt2d;
 
 use super::data_model;
-use super::delaun_index::{Box2d, DelaunVertex, VertexTool};
+use super::delaun_index::{Box2d, IndexVertex, VertexTool};
 use super::edge_discret;
 
 /// Extracted 2D Delaunay input for one face.
@@ -23,7 +23,7 @@ use super::edge_discret;
 #[derive(Debug, Clone, PartialEq)]
 pub struct FaceMeshData {
     /// Deduplicated UV vertices.
-    pub vertices: Vec<DelaunVertex>,
+    pub vertices: Vec<IndexVertex>,
     /// Constraint (boundary) edges as vertex-index pairs.
     pub constraint_edges: Vec<(usize, usize)>,
 }
@@ -40,7 +40,7 @@ impl FaceMeshData {
     }
 
     /// Vertex with the given index.
-    pub fn vertex(&self, index: usize) -> Option<&DelaunVertex> {
+    pub fn vertex(&self, index: usize) -> Option<&IndexVertex> {
         self.vertices.get(index)
     }
 }
@@ -170,7 +170,7 @@ impl MeshTool {
         let mut tool = VertexTool::new(box2d, cells_u, cells_v);
         let indices: Vec<usize> = raw
             .iter()
-            .map(|p| tool.add_vertex(DelaunVertex::new(p.x(), p.y()), tolerance))
+            .map(|p| tool.add_vertex(IndexVertex::new(p.x(), p.y()), tolerance))
             .collect();
 
         let mut edges: Vec<(usize, usize)> = Vec::new();
@@ -217,7 +217,7 @@ impl NodeClassifier {
     }
 
     /// Builds a classifier over the constraint between two UV vertices.
-    pub fn from_vertices(a: &DelaunVertex, b: &DelaunVertex) -> Self {
+    pub fn from_vertices(a: &IndexVertex, b: &IndexVertex) -> Self {
         Self::new(a.u, a.v, b.u, b.v)
     }
 
@@ -361,8 +361,8 @@ mod tests {
         assert!(!nc_v_rev.is_above(0.5, 0.5));
 
         // from_vertices builds the same classifier from UV vertices.
-        let a = DelaunVertex::new(0.0, 0.0);
-        let b = DelaunVertex::new(1.0, 0.0);
+        let a = IndexVertex::new(0.0, 0.0);
+        let b = IndexVertex::new(1.0, 0.0);
         let nc2 = NodeClassifier::from_vertices(&a, &b);
         assert!(nc2.is_above(0.5, 0.5));
     }

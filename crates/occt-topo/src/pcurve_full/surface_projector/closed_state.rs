@@ -70,7 +70,7 @@ pub(crate) fn end_mults(flat: &[f64]) -> (i32, i32) {
 /// the value is preci-independent, so the boolean is unchanged; see the module
 /// notes on the stateless port).
 pub(crate) fn sa_u_close_state(s: &dyn Surface) -> (f64, f64, f64) {
-    use crate::geom_bnd_lib_surface3d::SurfaceKind as TypeKind;
+    use crate::geom_bnd_lib_surface3d::GeomAbsSurfaceType as TypeKind;
     // `cxx:668-671`: `Bounds` + `RestrictBounds`.
     let (mut uf, mut ul) = s.u_range();
     let (vf, vl) = s.v_range();
@@ -239,7 +239,7 @@ pub(crate) fn sa_u_close_state(s: &dyn Surface) -> (f64, f64, f64) {
 /// Same contract as [`sa_u_close_state`] with the V switch; `myVDelt` is the
 /// `dv` counterpart of `myUDelt` (`cxx:879`).
 pub(crate) fn sa_v_close_state(s: &dyn Surface) -> (f64, f64, f64) {
-    use crate::geom_bnd_lib_surface3d::SurfaceKind as TypeKind;
+    use crate::geom_bnd_lib_surface3d::GeomAbsSurfaceType as TypeKind;
     let (uf, ul) = s.u_range();
     let (mut vf, mut vl) = s.v_range();
     restrict_bounds(&mut vf, &mut vl);

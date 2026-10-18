@@ -231,7 +231,7 @@ use super::*;
 
     #[test]
     fn phong_shading_light_hits() {
-        let mat = Material::default();
+        let mat = RenderMaterial::default();
         let light = Light {
             position: GpPnt::new(0.0, 0.0, 2.0),
             color: (1.0, 1.0, 1.0),
@@ -269,8 +269,8 @@ use super::*;
 
     #[test]
     fn phong_specular_high_shininess() {
-        let high = Material { shininess: 128.0, ..Default::default() };
-        let low = Material { shininess: 4.0, ..Default::default() };
+        let high = RenderMaterial { shininess: 128.0, ..Default::default() };
+        let low = RenderMaterial { shininess: 4.0, ..Default::default() };
         let light = Light {
             position: GpPnt::new(0.0, 0.0, 2.0),
             color: (1.0, 1.0, 1.0),
@@ -327,11 +327,11 @@ use super::*;
         let mut scene = VizScene::new();
         let mut red = SceneShape::new(unit_box());
         red.transform = translate(-1.5, 0.0, 0.0);
-        red.material = Material::from_diffuse((0.8, 0.1, 0.1));
+        red.material = RenderMaterial::from_diffuse((0.8, 0.1, 0.1));
         scene.add(red);
         let mut blue = SceneShape::new(unit_box());
         blue.transform = translate(1.5, 0.0, 0.0);
-        blue.material = Material::from_diffuse((0.1, 0.1, 0.8));
+        blue.material = RenderMaterial::from_diffuse((0.1, 0.1, 0.8));
         scene.add(blue);
         let raster = render_scene_raster_zbuffer(
             &scene,
@@ -357,11 +357,11 @@ use super::*;
     fn depth_buffer_occludes() {
         let mut scene = VizScene::new();
         let mut near = SceneShape::new(unit_box());
-        near.material = Material::from_diffuse((0.9, 0.1, 0.1));
+        near.material = RenderMaterial::from_diffuse((0.9, 0.1, 0.1));
         scene.add(near);
         let mut far = SceneShape::new(unit_box());
         far.transform = translate(0.0, 0.0, -4.0);
-        far.material = Material::from_diffuse((0.1, 0.1, 0.9));
+        far.material = RenderMaterial::from_diffuse((0.1, 0.1, 0.9));
         scene.add(far);
         let raster = render_scene_raster_zbuffer(
             &scene,
@@ -514,7 +514,7 @@ use super::*;
         let mut scene = box_scene();
         assert!(scene.shape_material(0).is_some());
         assert!(scene.shape_material(1).is_none());
-        let red = Material::from_diffuse((0.9, 0.2, 0.1));
+        let red = RenderMaterial::from_diffuse((0.9, 0.2, 0.1));
         assert!(scene.set_material(0, red));
         assert!(!scene.set_material(9, red));
         let m = scene.shape_material(0).unwrap();

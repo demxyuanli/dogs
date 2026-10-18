@@ -472,7 +472,7 @@ impl Default for PntOn2Faces {
 }
 
 // ---------------------------------------------------------------------------
-// CurveKind / IntCurve
+// CurveKind / IntCurveRecord
 // ---------------------------------------------------------------------------
 
 /// The analytic family of an intersection curve.
@@ -498,14 +498,14 @@ pub enum CurveKind {
 /// boolean layer needs: the curve family, the two faces it came from and the
 /// parameter range over which it is valid.
 #[derive(Debug, Clone)]
-pub struct IntCurve {
+pub struct IntCurveRecord {
     pub kind: CurveKind,
     pub face1: Option<TopoShape>,
     pub face2: Option<TopoShape>,
     pub range: IntRange,
 }
 
-impl IntCurve {
+impl IntCurveRecord {
     pub fn new(kind: CurveKind, face1: Option<TopoShape>, face2: Option<TopoShape>, range: IntRange) -> Self {
         Self { kind, face1, face2, range }
     }
@@ -531,7 +531,7 @@ impl IntCurve {
     }
 }
 
-impl Default for IntCurve {
+impl Default for IntCurveRecord {
     fn default() -> Self {
         Self::new(CurveKind::Other, None, None, IntRange::zero())
     }

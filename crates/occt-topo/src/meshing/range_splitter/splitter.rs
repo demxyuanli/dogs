@@ -715,7 +715,7 @@ dv={dv:.15} old_dv={old_dv:.15} nup={} nvp={} nu={} nv={} nodes={}",
 /// Source: `BRepMesh_NURBSRangeSplitter`.
 pub struct NURBSRangeSplitter {
     pub(super) inner: UVParamRangeSplitter,
-    pub(super) surface_type: SurfaceType,
+    pub(super) surface_type: MeshSurfaceType,
 }
 
 impl NURBSRangeSplitter {
@@ -723,7 +723,7 @@ impl NURBSRangeSplitter {
     pub fn new() -> Self {
         Self {
             inner: UVParamRangeSplitter::new(),
-            surface_type: SurfaceType::OtherSurface,
+            surface_type: MeshSurfaceType::OtherSurface,
         }
     }
 }
@@ -741,8 +741,8 @@ impl RangeSplitter for NURBSRangeSplitter {
         self.surface_type = self
             .surface()
             .map(|s| classify_surface(s.as_ref()))
-            .unwrap_or(SurfaceType::OtherSurface);
-        if self.surface_type == SurfaceType::BezierSurface {
+            .unwrap_or(MeshSurfaceType::OtherSurface);
+        if self.surface_type == MeshSurfaceType::BezierSurface {
             let (ru0, ru1) = self.base().range_u();
             let (rv0, rv1) = self.base().range_v();
             self.base_mut()

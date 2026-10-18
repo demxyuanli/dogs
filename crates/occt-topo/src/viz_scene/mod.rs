@@ -19,7 +19,7 @@
 //!   pixel through a BVH over the scene's triangles; hits are shaded with a
 //!   Lambert term against a front light and written as binary PPM.
 //! - [`render_scene_ppm_shaded`] / [`render_scene_raster_zbuffer`] — a
-//!   hardware-style software renderer: per-shape [`Material`]s, point
+//!   hardware-style software renderer: per-shape [`RenderMaterial`]s, point
 //!   [`Light`]s, an ambient term and flat / Gouraud / Phong shading, produced
 //!   either by per-pixel ray casting (the nearest BVH hit acts as the depth
 //!   buffer) or by a screen-space z-buffer triangle rasterizer.

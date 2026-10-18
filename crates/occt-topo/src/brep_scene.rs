@@ -1,6 +1,6 @@
 //! Module 3: brep_scene — a named scene of transformed BRep shapes.
 //!
-//! A lightweight scene graph: each `SceneShape` holds a `TopoShape`, an
+//! A lightweight scene graph: each `ScenePart` holds a `TopoShape`, an
 //! optional `GpTrsf`, and an optional color. Export meshes every shape (in its
 //! placed position) and merges the results into one OBJ/STL/PLY file.
 
@@ -18,7 +18,7 @@ use crate::shape::{Compound, TopoShape};
 
 /// A single named shape placed in a scene.
 #[derive(Debug, Clone)]
-pub struct SceneShape {
+pub struct ScenePart {
     pub name: String,
     pub shape: TopoShape,
     pub transform: Option<GpTrsf>,
@@ -28,7 +28,7 @@ pub struct SceneShape {
 /// A named collection of shapes with optional transforms.
 #[derive(Debug, Clone)]
 pub struct BRepScene {
-    pub shapes: Vec<SceneShape>,
+    pub shapes: Vec<ScenePart>,
     by_name: HashMap<String, usize>,
 }
 
@@ -50,11 +50,11 @@ impl BRepScene {
 
     fn add_inner(&mut self, name: String, shape: TopoShape, transform: Option<GpTrsf>, color: Option<Color>) {
         self.by_name.insert(name.clone(), self.shapes.len());
-        self.shapes.push(SceneShape { name, shape, transform, color });
+        self.shapes.push(ScenePart { name, shape, transform, color });
     }
 
     /// Look up a shape by name.
-    pub fn find(&self, name: &str) -> Option<&SceneShape> {
+    pub fn find(&self, name: &str) -> Option<&ScenePart> {
         self.by_name.get(name).map(|&i| &self.shapes[i])
     }
 
@@ -70,7 +70,7 @@ impl BRepScene {
     }
 
     /// Remove a shape by name, returning it.
-    pub fn remove(&mut self, name: &str) -> Option<SceneShape> {
+    pub fn remove(&mut self, name: &str) -> Option<ScenePart> {
         let i = self.by_name.remove(name)?;
         let s = self.shapes.remove(i);
         self.reindex();
@@ -89,7 +89,7 @@ impl BRepScene {
     /// The mesher (`shape_mesh::mesh_shape`) emits vertices in the shape's own
     /// frame and does not apply the `TopoShape::location`, so we apply the
     /// scene transform to the mesh vertices ourselves.
-    fn placed_mesh(s: &SceneShape, deflection: f64) -> crate::mesh::ShapeMesh {
+    fn placed_mesh(s: &ScenePart, deflection: f64) -> crate::mesh::ShapeMesh {
         let mut mesh = crate::shape_mesh::mesh_shape(&s.shape, deflection);
         if let Some(t) = &s.transform {
             for v in &mut mesh.vertices {

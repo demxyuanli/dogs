@@ -10,7 +10,7 @@
 //! 2. [`ModelAlgo`]s discretize edges, heal, pre/post-process and mesh faces.
 //! 3. [`MeshAlgo`] is the per-face triangulation interface used inside the
 //!    face discretizer.
-//! 4. [`ShapeExplorer`] walks a shape's faces and free edges and feeds them to
+//! 4. [`MeshShapeExplorer`] walks a shape's faces and free edges and feeds them to
 //!    a [`ShapeVisitor`](super::shape_tool::ShapeVisitor).
 
 use std::collections::HashSet;
@@ -55,12 +55,12 @@ pub trait MeshBuilder {
 /// Explores a shape for parts to be meshed — faces and free edges — visiting
 /// each one through a [`ShapeVisitor`].
 /// Source: `IMeshTools_ShapeExplorer::Accept`.
-pub trait ShapeExplorer {
+pub trait MeshShapeExplorer {
     /// Visits all faces and edges of the explored shape.
     fn accept(&self, visitor: &mut dyn ShapeVisitor);
 }
 
-/// Default [`ShapeExplorer`]: walks the shape's distinct faces (and the edges
+/// Default [`MeshShapeExplorer`]: walks the shape's distinct faces (and the edges
 /// belonging to each), then visits the faces themselves. Edges that are not
 /// part of any face are visited first as free edges, mirroring
 /// `IMeshTools_ShapeExplorer::Accept`.
@@ -80,7 +80,7 @@ impl TopoShapeExplorer {
     }
 }
 
-impl ShapeExplorer for TopoShapeExplorer {
+impl MeshShapeExplorer for TopoShapeExplorer {
     fn accept(&self, visitor: &mut dyn ShapeVisitor) {
         let shape = &self.shape;
 
@@ -450,7 +450,7 @@ mod tests {
     #[test]
     fn shape_explorer_accepts_through_trait_object() {
         let b = BRepPrimBox::make_box(1.0, 1.0, 1.0);
-        let explorer: Box<dyn ShapeExplorer> = Box::new(TopoShapeExplorer::new(b.solid.0));
+        let explorer: Box<dyn MeshShapeExplorer> = Box::new(TopoShapeExplorer::new(b.solid.0));
         let mut visitor = CountingVisitor::default();
         explorer.accept(&mut visitor);
         assert_eq!(visitor.edges.len(), 12);

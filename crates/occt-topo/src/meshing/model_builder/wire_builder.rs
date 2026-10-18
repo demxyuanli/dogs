@@ -358,13 +358,13 @@ pub(crate) fn wire_edges_explorer(wire: &Wire, face: &Face) -> Vec<Edge> {
         // faces, from `BRepTools::UVBounds`; every other surface type keeps them
         // at 0.
         let (umin, umax, vmin, vmax) = match classify_surface(surf.as_ref()) {
-            SurfaceType::Cone
-            | SurfaceType::BSplineSurface
-            | SurfaceType::BezierSurface => crate::brep_tools::uv_bounds(face),
+            MeshSurfaceType::Cone
+            | MeshSurfaceType::BSplineSurface
+            | MeshSurfaceType::BezierSurface => crate::brep_tools::uv_bounds(face),
             _ => (0.0, 0.0, 0.0, 0.0),
         };
         match classify_surface(surf.as_ref()) {
-            SurfaceType::Cone => {
+            MeshSurfaceType::Cone => {
                 // `cxx:170-200`.
                 let maxtol = 0.0005 * (umax - umin);
                 let a1 = surf.d1(umin, vmin).1.magnitude();
@@ -381,7 +381,7 @@ pub(crate) fn wire_edges_explorer(wire: &Wire, face: &Face) -> Vec<Edge> {
                 };
                 tol_u = 2.0 * tol1.max(tol2);
             }
-            SurfaceType::BSplineSurface | SurfaceType::BezierSurface => {
+            MeshSurfaceType::BSplineSurface | MeshSurfaceType::BezierSurface => {
                 // `cxx:202-217`.
                 let mut max_tol = tol_u.max(tol_v);
                 let (_, du, dv) = surf.d1((umax - umin) / 2.0, (vmax - vmin) / 2.0);

@@ -1,10 +1,10 @@
 //! Port of OCCT delaun_index — BRepMesh_{VertexTool, VertexInspector, CircleTool, CircleInspector}.
 //!
 //! Uniform-grid spatial indexes over 2D UV space. [`VertexTool`] hashes
-//! [`DelaunVertex`]es into a `cells_u × cells_v` grid covering a [`Box2d`] and
+//! [`IndexVertex`]es into a `cells_u × cells_v` grid covering a [`Box2d`] and
 //! answers "is there already a vertex within `tol` of this UV point?" so that
 //! coincident mesh nodes collapse to a single index. [`CircleTool`] does the
-//! same for circumcircles ([`DelaunCircle`]), keyed by circle center and
+//! same for circumcircles ([`IndexCircle`]), keyed by circle center and
 //! queried with "which circumcircles are shot by this point?". The matching
 //! `*Inspector` types implement the per-cell predicates (coincidence within
 //! tolerance / circle hit by a query point), mirroring OCCT's `NCollection_CellFilter`
@@ -75,13 +75,13 @@ pub enum Movability {
 /// Minimal stand-in for `delaun_types::DelaunVertex` (which adds a 3D-location
 /// index); see the ponytail note at the top of this module.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct DelaunVertex {
+pub struct IndexVertex {
     pub u: f64,
     pub v: f64,
     pub movability: Movability,
 }
 
-impl DelaunVertex {
+impl IndexVertex {
     /// Builds a free vertex at `(u, v)`.
     pub const fn new(u: f64, v: f64) -> Self {
         Self { u, v, movability: Movability::Free }
@@ -119,13 +119,13 @@ impl DelaunVertex {
 ///
 /// Minimal stand-in for `delaun_types::DelaunCircle`.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct DelaunCircle {
+pub struct IndexCircle {
     pub u: f64,
     pub v: f64,
     pub radius: f64,
 }
 
-impl DelaunCircle {
+impl IndexCircle {
     /// Builds a circle with the given center and radius.
     pub const fn new(u: f64, v: f64, radius: f64) -> Self {
         Self { u, v, radius }
@@ -270,7 +270,7 @@ impl VertexInspector {
 
     /// Inspects one vertex against the reference point. Deleted vertices are
     /// ignored. Returns `true` when the vertex lies within the tolerance.
-    pub fn inspect(&mut self, index: usize, vertex: &DelaunVertex) -> bool {
+    pub fn inspect(&mut self, index: usize, vertex: &IndexVertex) -> bool {
         if vertex.is_deleted() {
             return false;
         }
@@ -305,7 +305,7 @@ impl VertexInspector {
 #[derive(Debug, Clone)]
 pub struct VertexTool {
     grid: CellGrid,
-    vertices: Vec<DelaunVertex>,
+    vertices: Vec<IndexVertex>,
     del_nodes: Vec<usize>,
     inspector: VertexInspector,
 }
@@ -322,7 +322,7 @@ impl VertexTool {
     }
 
     /// The indexed vertices (deleted slots included, marked [`Movability::Deleted`]).
-    pub fn vertices(&self) -> &[DelaunVertex] {
+    pub fn vertices(&self) -> &[IndexVertex] {
         &self.vertices
     }
 
@@ -337,7 +337,7 @@ impl VertexTool {
     }
 
     /// Vertex with the given index.
-    pub fn vertex(&self, index: usize) -> Option<&DelaunVertex> {
+    pub fn vertex(&self, index: usize) -> Option<&IndexVertex> {
         self.vertices.get(index)
     }
 
@@ -396,7 +396,7 @@ impl VertexTool {
 
     /// Adds a vertex unless one already exists within `tol`; returns the
     /// existing or newly created vertex index.
-    pub fn add_vertex(&mut self, vertex: DelaunVertex, tol: f64) -> usize {
+    pub fn add_vertex(&mut self, vertex: IndexVertex, tol: f64) -> usize {
         if let Some(existing) = self.find_vertex(vertex.u, vertex.v, tol) {
             return existing;
         }
@@ -426,7 +426,7 @@ impl VertexTool {
     }
 
     /// Consumes the tool and returns the live vertices (deleted slots dropped).
-    pub fn into_vertices(self) -> Vec<DelaunVertex> {
+    pub fn into_vertices(self) -> Vec<IndexVertex> {
         self.vertices.into_iter().filter(|v| !v.is_deleted()).collect()
     }
 }
@@ -468,7 +468,7 @@ impl CircleInspector {
 
     /// Inspects one circle: `true` when the reference point shots it. Deleted
     /// circles (negative radius) are ignored.
-    pub fn inspect(&mut self, index: usize, circle: &DelaunCircle) -> bool {
+    pub fn inspect(&mut self, index: usize, circle: &IndexCircle) -> bool {
         if circle.is_deleted() {
             return false;
         }
@@ -495,7 +495,7 @@ impl CircleInspector {
 #[derive(Debug, Clone)]
 pub struct CircleTool {
     grid: CellGrid,
-    circles: Vec<DelaunCircle>,
+    circles: Vec<IndexCircle>,
     inspector: CircleInspector,
 }
 
@@ -525,12 +525,12 @@ impl CircleTool {
     }
 
     /// Circle with the given index.
-    pub fn circle(&self, index: usize) -> Option<&DelaunCircle> {
+    pub fn circle(&self, index: usize) -> Option<&IndexCircle> {
         self.circles.get(index)
     }
 
     /// Registers a circle and returns its index.
-    pub fn add_circle(&mut self, circle: DelaunCircle) -> usize {
+    pub fn add_circle(&mut self, circle: IndexCircle) -> usize {
         let index = self.circles.len();
         self.circles.push(circle);
         self.key_in_grid(index, &circle);
@@ -539,9 +539,9 @@ impl CircleTool {
 
     /// Binds a circle to the given (pre-allocated) index. Mirrors OCCT's
     /// `Bind`; intended for one-shot initialization, not re-keying a moved circle.
-    pub fn bind_circle(&mut self, index: usize, circle: DelaunCircle) {
+    pub fn bind_circle(&mut self, index: usize, circle: IndexCircle) {
         if index >= self.circles.len() {
-            self.circles.resize(index + 1, DelaunCircle::new(0.0, 0.0, -1.0));
+            self.circles.resize(index + 1, IndexCircle::new(0.0, 0.0, -1.0));
         }
         self.circles[index] = circle;
         self.key_in_grid(index, &circle);
@@ -668,7 +668,7 @@ impl CircleTool {
     }
 
     /// Hashes the circle's bounding box into the grid cells it covers.
-    fn key_in_grid(&mut self, index: usize, circle: &DelaunCircle) {
+    fn key_in_grid(&mut self, index: usize, circle: &IndexCircle) {
         let b = self.grid.box2d;
         let min_u = (circle.u - circle.radius).max(b.min_u);
         let max_u = (circle.u + circle.radius).min(b.max_u);
@@ -695,15 +695,15 @@ mod tests {
     #[test]
     fn vertex_tolerance_find_merges_coincident() {
         let mut vt = VertexTool::new(unit_box(), 4, 4);
-        let a = vt.add_vertex(DelaunVertex::new(0.2, 0.3), 1e-6);
+        let a = vt.add_vertex(IndexVertex::new(0.2, 0.3), 1e-6);
         // Exact duplicate returns the existing index.
-        let b = vt.add_vertex(DelaunVertex::new(0.2, 0.3), 1e-6);
+        let b = vt.add_vertex(IndexVertex::new(0.2, 0.3), 1e-6);
         assert_eq!(a, b);
         // A point within the tolerance merges into the same index.
-        let c = vt.add_vertex(DelaunVertex::new(0.2 + 1e-4, 0.3 + 1e-4), 1e-3);
+        let c = vt.add_vertex(IndexVertex::new(0.2 + 1e-4, 0.3 + 1e-4), 1e-3);
         assert_eq!(c, a);
         // A distinct point is added.
-        let d = vt.add_vertex(DelaunVertex::new(0.8, 0.9), 1e-6);
+        let d = vt.add_vertex(IndexVertex::new(0.8, 0.9), 1e-6);
         assert_ne!(d, a);
         assert_eq!(vt.extent(), 2);
 
@@ -715,16 +715,16 @@ mod tests {
         // Deleting frees the slot for reuse by the next addition.
         vt.delete_vertex(d);
         assert!(vt.vertex(d).unwrap().is_deleted());
-        let e = vt.add_vertex(DelaunVertex::new(0.7, 0.7), 1e-6);
+        let e = vt.add_vertex(IndexVertex::new(0.7, 0.7), 1e-6);
         assert_eq!(e, d);
     }
 
     #[test]
     fn vertex_grid_partitions_and_selects() {
         let mut vt = VertexTool::new(unit_box(), 4, 4);
-        let a = vt.add_vertex(DelaunVertex::new(0.1, 0.1), 1e-6);
-        let b = vt.add_vertex(DelaunVertex::new(0.9, 0.9), 1e-6);
-        let c = vt.add_vertex(DelaunVertex::new(0.3, 0.7), 1e-6);
+        let a = vt.add_vertex(IndexVertex::new(0.1, 0.1), 1e-6);
+        let b = vt.add_vertex(IndexVertex::new(0.9, 0.9), 1e-6);
+        let c = vt.add_vertex(IndexVertex::new(0.3, 0.7), 1e-6);
 
         // Each point lands in its own cell.
         assert_eq!(vt.get_cell(0.1, 0.1), (0, 0));
@@ -751,8 +751,8 @@ mod tests {
         assert!((v - 0.5).abs() < 1e-9, "center v {v}");
         assert!((r - (0.5f64).sqrt()).abs() < 1e-9, "radius {r}");
 
-        let big = ct.add_circle(DelaunCircle::new(u, v, r));
-        let small = ct.add_circle(DelaunCircle::new(0.5, 0.5, 0.05));
+        let big = ct.add_circle(IndexCircle::new(u, v, r));
+        let small = ct.add_circle(IndexCircle::new(0.5, 0.5, 0.05));
         // Center coincidence find.
         assert_eq!(ct.find_circle(0.5, 0.5, 1e-6), Some(big));
         assert_eq!(ct.find_circle(0.1, 0.1, 1e-6), None);
@@ -772,8 +772,8 @@ mod tests {
     #[test]
     fn circle_grid_partitions_by_center_bbox() {
         let mut ct = CircleTool::new(unit_box(), 4, 4, 1e-6);
-        let big = ct.add_circle(DelaunCircle::new(0.5, 0.5, 0.9));
-        let small = ct.add_circle(DelaunCircle::new(0.1, 0.1, 0.05));
+        let big = ct.add_circle(IndexCircle::new(0.5, 0.5, 0.9));
+        let small = ct.add_circle(IndexCircle::new(0.1, 0.1, 0.05));
 
         // The big circle's bbox clamps to the whole grid box...
         assert_eq!(ct.box2d(), unit_box());

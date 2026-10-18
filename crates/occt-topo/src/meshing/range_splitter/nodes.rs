@@ -176,15 +176,15 @@ impl RangeSplitter for ExtrusionRangeSplitter {
 /// `BRepMesh_MeshAlgoFactory` splitter selection.
 pub fn create_range_splitter(surface: &dyn Surface) -> Box<dyn RangeSplitter> {
     match classify_surface(surface) {
-        SurfaceType::Plane => Box::new(DefaultRangeSplitter::new()),
-        SurfaceType::Sphere => Box::new(SphereRangeSplitter::new()),
-        SurfaceType::Cylinder => Box::new(CylinderRangeSplitter::new()),
-        SurfaceType::Cone => Box::new(ConeRangeSplitter::new()),
-        SurfaceType::Torus => Box::new(TorusRangeSplitter::new()),
-        SurfaceType::SurfaceOfRevolution => Box::new(BoundaryParamsRangeSplitter::new()),
-        SurfaceType::SurfaceOfExtrusion => Box::new(ExtrusionRangeSplitter::new()),
-        SurfaceType::BezierSurface | SurfaceType::BSplineSurface => Box::new(NURBSRangeSplitter::new()),
-        SurfaceType::OffsetSurface | SurfaceType::OtherSurface => {
+        MeshSurfaceType::Plane => Box::new(DefaultRangeSplitter::new()),
+        MeshSurfaceType::Sphere => Box::new(SphereRangeSplitter::new()),
+        MeshSurfaceType::Cylinder => Box::new(CylinderRangeSplitter::new()),
+        MeshSurfaceType::Cone => Box::new(ConeRangeSplitter::new()),
+        MeshSurfaceType::Torus => Box::new(TorusRangeSplitter::new()),
+        MeshSurfaceType::SurfaceOfRevolution => Box::new(BoundaryParamsRangeSplitter::new()),
+        MeshSurfaceType::SurfaceOfExtrusion => Box::new(ExtrusionRangeSplitter::new()),
+        MeshSurfaceType::BezierSurface | MeshSurfaceType::BSplineSurface => Box::new(NURBSRangeSplitter::new()),
+        MeshSurfaceType::OffsetSurface | MeshSurfaceType::OtherSurface => {
             Box::new(UndefinedRangeSplitter::new())
         }
     }
@@ -201,17 +201,17 @@ pub fn factory_uses_deflection_control(surface: &dyn Surface, params: &MeshParam
         return true;
     }
     match classify_surface(surface) {
-        SurfaceType::SurfaceOfRevolution
-        | SurfaceType::SurfaceOfExtrusion
-        | SurfaceType::BezierSurface
-        | SurfaceType::BSplineSurface
-        | SurfaceType::OffsetSurface
-        | SurfaceType::OtherSurface => true,
-        SurfaceType::Plane
-        | SurfaceType::Sphere
-        | SurfaceType::Cylinder
-        | SurfaceType::Cone
-        | SurfaceType::Torus => false,
+        MeshSurfaceType::SurfaceOfRevolution
+        | MeshSurfaceType::SurfaceOfExtrusion
+        | MeshSurfaceType::BezierSurface
+        | MeshSurfaceType::BSplineSurface
+        | MeshSurfaceType::OffsetSurface
+        | MeshSurfaceType::OtherSurface => true,
+        MeshSurfaceType::Plane
+        | MeshSurfaceType::Sphere
+        | MeshSurfaceType::Cylinder
+        | MeshSurfaceType::Cone
+        | MeshSurfaceType::Torus => false,
     }
 }
 

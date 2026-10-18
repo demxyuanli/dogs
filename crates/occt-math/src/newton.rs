@@ -91,12 +91,12 @@ fn finite_difference_jacobian<F: Fn(&MathVector) -> MathVector>(f: &F, x: &MathV
 /// the bounded `Perform` are **UNPORTED here**, and
 /// `math_GlobOptMin::computeLocalExtremum`'s Newton arm is skipped for the same
 /// reason (`globoptmin.rs`, `compute_local_extremum`).
-pub struct NewtonMinimum {
+pub struct BfgsMinimizer {
     pub max_iter: usize,
     pub tolerance: f64,
 }
 
-impl NewtonMinimum {
+impl BfgsMinimizer {
     pub fn new() -> Self { Self { max_iter: 200, tolerance: 1e-8 } }
 
     /// Minimize f(x) starting from x0. grad: gradient function.
@@ -182,7 +182,7 @@ mod tests {
             MathVector::from_slice(&[2.0*(x.value(1)-3.0), 2.0*(x.value(2)+2.0)])
         };
         let x0 = MathVector::from_slice(&[0.0, 0.0]);
-        let nm = NewtonMinimum::new();
+        let nm = BfgsMinimizer::new();
         let x = nm.minimize(f, grad, &x0).unwrap();
         assert!((x.value(1) - 3.0).abs() < 1e-6);
         assert!((x.value(2) + 2.0).abs() < 1e-6);

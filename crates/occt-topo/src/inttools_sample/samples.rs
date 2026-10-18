@@ -643,7 +643,7 @@ impl Default for SurfaceRangeLocalizeData {
 }
 
 // ---------------------------------------------------------------------------
-// TopolTool
+// IntToolsTopolTool
 // ---------------------------------------------------------------------------
 
 /// Sample-point generator for intersection algorithms.
@@ -661,7 +661,7 @@ impl Default for SurfaceRangeLocalizeData {
 /// `ponytail:` `dyn Surface` implements neither `Debug` nor `Clone`, so the
 /// struct is not `Clone`/`Debug`; surfaces are re-attached with
 /// [`initialize`](Self::initialize).
-pub struct TopolTool {
+pub struct IntToolsTopolTool {
     pub(super) surface: Option<Box<dyn Surface>>,
     /// Computed sample count along U.
     pub(super) nb_samples_u: usize,

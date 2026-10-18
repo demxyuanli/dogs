@@ -274,7 +274,7 @@ pub(super) enum SurfaceGeom {
 /// faithful `GeomBndLib_Surface::initFromSurface` classifier (it also recurses
 /// into `Geom_RectangularTrimmedSurface` bases).
 pub(super) fn classify_surface_kind(s: &dyn Surface) -> SurfaceKind {
-    use crate::geom_bnd_lib_surface3d::SurfaceKind as TypeKind;
+    use crate::geom_bnd_lib_surface3d::GeomAbsSurfaceType as TypeKind;
     match crate::geom_bnd_lib_surface3d::surface_kind(s) {
         TypeKind::Plane => SurfaceKind::Plane,
         TypeKind::Sphere => SurfaceKind::Sphere,

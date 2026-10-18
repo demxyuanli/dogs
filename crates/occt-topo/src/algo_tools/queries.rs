@@ -294,9 +294,9 @@ fn cylinder_radius(surf: &dyn Surface) -> Option<f64> {
 }
 
 /// Shape-set utilities mirroring `BOPTools_Set`.
-pub struct BOPToolsSet;
+pub struct ShapeSetQueries;
 
-impl BOPToolsSet {
+impl ShapeSetQueries {
     /// Deduplicate `shapes`, keeping the first occurrence of each distinct
     /// shape. Two shapes are the same when they share the same `TShape` data
     /// (`TopoShape::same_tshape` — pointer identity), matching OCCT's shape-map

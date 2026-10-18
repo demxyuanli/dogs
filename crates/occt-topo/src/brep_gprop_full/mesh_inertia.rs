@@ -2,7 +2,7 @@ use super::prelude::*;
 use super::*;
 
 /// Linear properties of a polyline (`BRepGProp_MeshCinert::Perform`).
-pub fn mesh_cinert(nodes: &[GpPnt], loc: &GpPnt) -> GProps {
+pub fn mesh_cinert(nodes: &[GpPnt], loc: &GpPnt) -> MassProperties {
     let order = 2;
     let (gp, gw) = gauss_legendre(-1.0, 1.0, order);
     let mut inert = Inertia::default();
@@ -35,5 +35,5 @@ pub fn mesh_cinert(nodes: &[GpPnt], loc: &GpPnt) -> GProps {
         inert.mul(um);
     }
     let (mass, g, mat) = convert_s(&inert);
-    GProps { dim: mass, loc: *loc, g, inertia: mat }
+    MassProperties { dim: mass, loc: *loc, g, inertia: mat }
 }

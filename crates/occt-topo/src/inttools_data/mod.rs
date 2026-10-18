@@ -11,7 +11,7 @@
 //!   interval the root was found in (`IntTools_Root`).
 //! - [`PntOnFace`] / [`PntOn2Faces`] — a 3D point plus UV parameters on one /
 //!   two faces (`IntTools_PntOnFace`, `IntTools_PntOn2Faces`).
-//! - [`IntCurve`] / [`CurveKind`] — an intersection-curve container
+//! - [`IntCurveRecord`] / [`CurveKind`] — an intersection-curve container
 //!   (`IntTools_Curve`).
 //! - [`MarkedRangeSet`] — a flagged interval set with union / intersection /
 //!   difference (`IntTools_MarkedRangeSet`).

@@ -49,7 +49,7 @@ pub(crate) use super::super::model_builder::{ModelBuilder, ModelPreProcessor};
 pub(crate) use super::super::model_healer::ModelHealer;
 pub(crate) use super::super::node_insertion::{DelaunayNodeInsertionMeshAlgo, TriangulationResult};
 pub(crate) use super::super::parameters::MeshParameters;
-pub(crate) use super::super::range_splitter::{classify_surface, SurfaceType};
+pub(crate) use super::super::range_splitter::{classify_surface, MeshSurfaceType};
 pub(crate) use super::super::triangulator::{FaceTriangulation};
 
 }

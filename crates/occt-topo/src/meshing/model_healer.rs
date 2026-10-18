@@ -18,7 +18,7 @@
 //! * FaceChecker + `amplifyEdges` run from `IncrementalMesh::heal_self_intersecting_wires`
 //!   (`BRepMesh_ModelHealer.cxx:234-211`).
 //! * [`ModelPostProcessor::process`] converts a `DelaunDataStructure` into a
-//!   [`FaceTriangulation`] (3D nodes + per-node UV + index triples) — the
+//!   [`HealedTriangulation`] (3D nodes + per-node UV + index triples) — the
 //!   structure a `MeshModel` face is meshed from, mirroring `Poly_Triangulation`.
 
 use std::collections::{HashMap, HashSet};
@@ -563,7 +563,7 @@ impl ModelHealer {
 /// reference positions in `nodes`. This is the Rust counterpart of OCCT's
 /// `Poly_Triangulation` and is what a `MeshModel` face is meshed from.
 #[derive(Debug, Clone, PartialEq)]
-pub struct FaceTriangulation {
+pub struct HealedTriangulation {
     /// Model index of the face the triangulation belongs to.
     pub face_index: usize,
     /// 3D positions of the mesh vertices.
@@ -574,7 +574,7 @@ pub struct FaceTriangulation {
     pub triangles: Vec<[i32; 3]>,
 }
 
-impl FaceTriangulation {
+impl HealedTriangulation {
     /// Empty triangulation (used for faces that were skipped).
     pub fn empty(face_index: usize) -> Self {
         Self { face_index, nodes: Vec::new(), uv_nodes: Vec::new(), triangles: Vec::new() }
@@ -595,7 +595,7 @@ impl FaceTriangulation {
 pub struct ModelPostProcessor;
 
 impl ModelPostProcessor {
-    /// Converts the live Delaunay triangles into a [`FaceTriangulation`] for the
+    /// Converts the live Delaunay triangles into a [`HealedTriangulation`] for the
     /// given model face: 3D nodes + per-node UV + index triples.
     ///
     /// Faces marked `Failure`/`Reused` are skipped (empty result), matching the
@@ -609,10 +609,10 @@ impl ModelPostProcessor {
         delaun: &DelaunDataStructure,
         model: &MeshModel,
         face_index: usize,
-    ) -> Result<FaceTriangulation, String> {
+    ) -> Result<HealedTriangulation, String> {
         let face = model.face(face_index)?;
         if face.is_status(MeshStatus::FAILURE) || face.is_status(MeshStatus::REUSED) {
-            return Ok(FaceTriangulation::empty(face_index));
+            return Ok(HealedTriangulation::empty(face_index));
         }
 
         let element_ids: Vec<i32> = delaun.elements_of_domain().iter().copied().collect();
@@ -636,7 +636,7 @@ impl ModelPostProcessor {
             triangles.push(corner);
         }
 
-        Ok(FaceTriangulation { face_index, nodes, uv_nodes, triangles })
+        Ok(HealedTriangulation { face_index, nodes, uv_nodes, triangles })
     }
 }
 

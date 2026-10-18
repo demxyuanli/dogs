@@ -137,18 +137,18 @@ use super::*;
     fn shape_list_dedupes_and_type_count() {
         let b = unit_box();
         let faces: Vec<TopoShape> = b.faces.iter().map(|f| f.0.clone()).collect();
-        assert_eq!(BOPToolsSet::type_count(&faces, ShapeType::Face), 6);
-        assert_eq!(BOPToolsSet::type_count(&faces, ShapeType::Edge), 0);
+        assert_eq!(ShapeSetQueries::type_count(&faces, ShapeType::Face), 6);
+        assert_eq!(ShapeSetQueries::type_count(&faces, ShapeType::Edge), 0);
 
         // Duplicated faces collapse to the 6 distinct ones.
         let mut dup = faces.clone();
         dup.extend(faces.iter().cloned());
-        assert_eq!(BOPToolsSet::shape_list(&dup).len(), 6);
+        assert_eq!(ShapeSetQueries::shape_list(&dup).len(), 6);
 
         // Repeated identical edges collapse to one.
         let e0 = b.edges[0].0.clone();
         let lst = vec![e0.clone(), e0.clone(), b.edges[1].0.clone()];
-        assert_eq!(BOPToolsSet::shape_list(&lst).len(), 2);
+        assert_eq!(ShapeSetQueries::shape_list(&lst).len(), 2);
     }
 
     // ---- Phase 18b tests ----------------------------------------------------

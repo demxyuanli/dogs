@@ -14,11 +14,11 @@ use super::*;
         let mut scene = VizScene::new();
         let mut box_ss = SceneShape::new(unit_box());
         box_ss.transform = translate(-1.5, 0.0, 0.0); // x in [-1.5, -0.5]
-        box_ss.material = Material::from_diffuse((0.8, 0.1, 0.1));
+        box_ss.material = RenderMaterial::from_diffuse((0.8, 0.1, 0.1));
         scene.add(box_ss);
         let mut sphere_ss = SceneShape::new(BRepPrimSphere::make_sphere(0.5).solid.0);
         sphere_ss.transform = translate(1.5, 0.0, 0.0); // x in [1.0, 2.0]
-        sphere_ss.material = Material::from_diffuse((0.1, 0.1, 0.8));
+        sphere_ss.material = RenderMaterial::from_diffuse((0.1, 0.1, 0.8));
         scene.add(sphere_ss);
         let cam = Camera::default();
         // Box front-face centre and the sphere's front-most point toward the

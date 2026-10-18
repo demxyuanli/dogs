@@ -7,7 +7,7 @@
 //! (loops), vertex/edge/face tolerances and bounding-box extents.
 //!
 //! [`ShapeVisitor`] is the visitor interface used by
-//! [`ShapeExplorer`](super::context::ShapeExplorer) to walk a shape;
+//! [`MeshShapeExplorer`](super::context::MeshShapeExplorer) to walk a shape;
 //! [`ModelShapeVisitor`] builds the discrete [`MeshModel`] by adding faces and
 //! edges (deduplicated by `TShape` identity) and wiring each face's boundary
 //! edges with p-curves.
@@ -182,7 +182,7 @@ impl ShapeTool {
 }
 
 /// Visitor interface for shapes: handles faces and edges discovered by a
-/// [`ShapeExplorer`](super::context::ShapeExplorer).
+/// [`MeshShapeExplorer`](super::context::MeshShapeExplorer).
 /// Source: `IMeshTools_ShapeVisitor`.
 pub trait ShapeVisitor {
     /// Handles a `TopoDS_Edge`.
@@ -302,7 +302,7 @@ impl ShapeVisitor for ModelShapeVisitor {
 mod tests {
     use super::*;
     use crate::builder::TopoBuilder;
-    use crate::meshing::context::{ShapeExplorer, TopoShapeExplorer};
+    use crate::meshing::context::{MeshShapeExplorer, TopoShapeExplorer};
     use crate::primitives::BRepPrimBox;
     use crate::topo_tools_full::faces_of;
     use occt_core::gp::{GpAx3, GpPln, GpPnt};

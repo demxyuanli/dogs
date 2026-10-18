@@ -4,14 +4,14 @@ use super::*;
 /// Assembly metadata: product list plus per-product name/color/layer.
 #[derive(Debug, Clone, Default, PartialEq)]
 
-pub struct StepAssembly {
+pub struct AssemblyMetadata {
     pub products: Vec<String>,
     pub names: HashMap<String, String>,
     pub colors: HashMap<String, (f64, f64, f64)>,
     pub layers: HashMap<String, String>,
 }
 
-impl StepAssembly {
+impl AssemblyMetadata {
     /// Register a product (idempotent).
     pub fn add_product(&mut self, name: &str) {
         if !self.products.iter().any(|p| p == name) {
@@ -39,8 +39,8 @@ impl StepAssembly {
 }
 
 /// Extract the assembly metadata (name/color/layer) from each model shape.
-pub fn model_to_step_assembly(model: &BRepModel) -> StepAssembly {
-    let mut asm = StepAssembly::default();
+pub fn model_to_step_assembly(model: &BRepModel) -> AssemblyMetadata {
+    let mut asm = AssemblyMetadata::default();
     for ms in &model.shapes {
         asm.add_product(&ms.name);
         if let Some(c) = ms.color {
@@ -97,11 +97,11 @@ pub(super) fn sanitize(s: &str) -> String {
     s.replace(['|', '\n', '\r'], "/")
 }
 
-/// Parse the embedded assembly comment block back into a [`StepAssembly`].
+/// Parse the embedded assembly comment block back into a [`AssemblyMetadata`].
 ///
 /// Lines are `name|r,g,b|layer`; empty color/layer fields are skipped.
-pub fn extract_metadata_from_step(step_text: &str) -> StepAssembly {
-    let mut asm = StepAssembly::default();
+pub fn extract_metadata_from_step(step_text: &str) -> AssemblyMetadata {
+    let mut asm = AssemblyMetadata::default();
     let Some(begin) = step_text.find(BLOCK_BEGIN) else {
         return asm;
     };

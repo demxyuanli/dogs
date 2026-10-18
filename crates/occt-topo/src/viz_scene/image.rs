@@ -444,7 +444,7 @@ pub fn light_dir_at(light: &Light, point: GpPnt) -> GpVec {
 ///
 /// The components are not clamped here; the rasterizers clamp on write.
 pub fn shade_phong(
-    material: &Material,
+    material: &RenderMaterial,
     light: &Light,
     normal: GpVec,
     view_dir: GpVec,
@@ -490,7 +490,7 @@ pub fn shade_phong(
 /// compute each light direction. Opacity is applied as a blend toward
 /// `settings.background`.
 pub(super) fn shade_point(
-    material: &Material,
+    material: &RenderMaterial,
     settings: &RenderSettings,
     normal: GpVec,
     view_dir: GpVec,

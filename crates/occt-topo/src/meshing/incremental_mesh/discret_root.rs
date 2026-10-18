@@ -84,7 +84,7 @@ pub struct FaceMeshStat {
     /// with its face without relying on traversal order (the mesh model skips
     /// faces, so a positional lookup is off by the number of skipped faces).
     pub shape_key: usize,
-    pub surface: SurfaceType,
+    pub surface: MeshSurfaceType,
     pub vertices: usize,
     pub triangles: usize,
 }
@@ -275,7 +275,7 @@ impl IncrementalMesh {
                 .ok()
                 .and_then(|f| f.surface())
                 .map(|s| classify_surface(s.as_ref()))
-                .unwrap_or(SurfaceType::OtherSurface);
+                .unwrap_or(MeshSurfaceType::OtherSurface);
             self.face_stats.push(FaceMeshStat {
                 index: ft.face_index,
                 shape_key: model

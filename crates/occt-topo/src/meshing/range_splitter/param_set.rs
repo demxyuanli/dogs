@@ -63,7 +63,7 @@ impl ParamSet {
 /// Analytic surface type used to pick a range splitter. Source:
 /// `GeomAbs_SurfaceType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SurfaceType {
+pub enum MeshSurfaceType {
     Plane,
     Cylinder,
     Cone,
@@ -77,7 +77,7 @@ pub enum SurfaceType {
     OtherSurface,
 }
 
-/// Classifies a `dyn Surface` into a [`SurfaceType`].
+/// Classifies a `dyn Surface` into a [`MeshSurfaceType`].
 ///
 /// Exact transcription of `GeomAdaptor_Surface::Load`
 /// (`GeomAdaptor_Surface.cxx:422-513`), which compares **`DynamicType`**
@@ -90,41 +90,41 @@ pub enum SurfaceType {
 /// periodicity flags plus a sampled constant-radius test (`is_cylinder_like`),
 /// which turned any V-bounded cylinder or cone into a `Sphere` and swapped the
 /// whole internal node grid (audit A24).
-pub fn classify_surface(s: &dyn Surface) -> SurfaceType {
+pub fn classify_surface(s: &dyn Surface) -> MeshSurfaceType {
     if let Some(basis) = s.rectangular_trimmed_basis() {
         return classify_surface(basis.as_ref());
     }
     if s.gp_pln().is_some() {
-        return SurfaceType::Plane;
+        return MeshSurfaceType::Plane;
     }
     if s.gp_cylinder().is_some() {
-        return SurfaceType::Cylinder;
+        return MeshSurfaceType::Cylinder;
     }
     if s.gp_cone().is_some() {
-        return SurfaceType::Cone;
+        return MeshSurfaceType::Cone;
     }
     if s.gp_sphere().is_some() {
-        return SurfaceType::Sphere;
+        return MeshSurfaceType::Sphere;
     }
     if s.gp_torus().is_some() {
-        return SurfaceType::Torus;
+        return MeshSurfaceType::Torus;
     }
     if s.is_surface_of_revolution() {
-        return SurfaceType::SurfaceOfRevolution;
+        return MeshSurfaceType::SurfaceOfRevolution;
     }
     if s.is_surface_of_linear_extrusion() {
-        return SurfaceType::SurfaceOfExtrusion;
+        return MeshSurfaceType::SurfaceOfExtrusion;
     }
     if s.is_bezier_surface() {
-        return SurfaceType::BezierSurface;
+        return MeshSurfaceType::BezierSurface;
     }
     if s.is_bspline_surface() {
-        return SurfaceType::BSplineSurface;
+        return MeshSurfaceType::BSplineSurface;
     }
     if s.is_offset_surface() {
-        return SurfaceType::OffsetSurface;
+        return MeshSurfaceType::OffsetSurface;
     }
-    SurfaceType::OtherSurface
+    MeshSurfaceType::OtherSurface
 }
 
 /// Radius of a cylinder. `BRepAdaptor_Surface::Cylinder().Radius()` when the
@@ -326,13 +326,13 @@ fn adaptor_surface_intervals(
     range: (f64, f64),
 ) -> Vec<f64> {
     match classify_surface(surf) {
-        SurfaceType::OffsetSurface => {
+        MeshSurfaceType::OffsetSurface => {
             let base_s = offset_interval_continuity(continuity);
             if let Some(basis) = surf.offset_basis_surface() {
                 return adaptor_surface_intervals(basis.as_ref(), is_u, base_s, range);
             }
         }
-        SurfaceType::SurfaceOfRevolution => {
+        MeshSurfaceType::SurfaceOfRevolution => {
             if !is_u {
                 if let Some(c) = surf.revolution_basis_curve() {
                     if c.bspline_knots().is_some() {
@@ -342,7 +342,7 @@ fn adaptor_surface_intervals(
             }
             return vec![range.0, range.1];
         }
-        SurfaceType::BSplineSurface => {}
+        MeshSurfaceType::BSplineSurface => {}
         _ => {
             return if is_u {
                 surf.u_intervals(continuity)

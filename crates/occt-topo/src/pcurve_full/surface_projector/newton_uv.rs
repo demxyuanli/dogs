@@ -446,7 +446,7 @@ pub(crate) fn next_value_of_uv(
     preci: f64,
     maxpreci: f64,
 ) -> (GpPnt2d, f64) {
-    use crate::geom_bnd_lib_surface3d::SurfaceKind as TypeKind;
+    use crate::geom_bnd_lib_surface3d::GeomAbsSurfaceType as TypeKind;
     let takes_newton = matches!(
         crate::geom_bnd_lib_surface3d::surface_kind(s),
         TypeKind::BezierSurface
