@@ -92,8 +92,10 @@ impl GeomBSplineSurface {
         self.weights = weights;
         if u_direction {
             self.knots_u = flat_knots(periodic, degree, &new_knots, &new_mults);
+            self.update_u_knots();
         } else {
             self.knots_v = flat_knots(periodic, degree, &new_knots, &new_mults);
+            self.update_v_knots();
         }
         Ok(true)
     }

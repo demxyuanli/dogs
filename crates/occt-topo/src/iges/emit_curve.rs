@@ -292,13 +292,13 @@ impl IgesWriter {
             let poles = start.bspline_poles()?.to_vec();
             let knots = start.bspline_knots()?.to_vec();
             let degree = start.nurbs_degree()?;
-            let mut c = occt_geom::bspline_curve::GeomBSplineCurve {
+            let mut c = occt_geom::bspline_curve::GeomBSplineCurve::from_parts(
                 poles,
-                weights: start.bspline_weights().map(|w| w.to_vec()),
+                start.bspline_weights().map(|w| w.to_vec()),
                 knots,
                 degree,
-                periodic: true,
-            };
+                true,
+            );
             c.set_not_periodic();
             unperiodized = c;
             &unperiodized

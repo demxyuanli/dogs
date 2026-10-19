@@ -175,21 +175,21 @@ impl SurfaceProjectorWithCache {
             return cache;
         }
         let (u_mults, v_mults) = (
-            occt_geom::bspline_surface::GeomBSplineSurface::unique_knots_mults(&bs.knots_u),
-            occt_geom::bspline_surface::GeomBSplineSurface::unique_knots_mults(&bs.knots_v),
+            occt_geom::bspline_surface::GeomBSplineSurface::unique_knots_mults(bs.knots_u()),
+            occt_geom::bspline_surface::GeomBSplineSurface::unique_knots_mults(bs.knots_v()),
         );
         if u_mults.1.is_empty() || v_mults.1.is_empty() {
             return cache;
         }
         // `cxx:156-170`.
-        let is_u_first_clamped = u_mults.1[0] >= bs.deg_u as i32 + 1;
-        let is_u_last_clamped = u_mults.1[u_mults.1.len() - 1] >= bs.deg_u as i32 + 1;
-        let is_v_first_clamped = v_mults.1[0] >= bs.deg_v as i32 + 1;
-        let is_v_last_clamped = v_mults.1[v_mults.1.len() - 1] >= bs.deg_v as i32 + 1;
-        let u_first = bs.knots_u[0];
-        let u_last = bs.knots_u[bs.knots_u.len() - 1];
-        let v_first = bs.knots_v[0];
-        let v_last = bs.knots_v[bs.knots_v.len() - 1];
+        let is_u_first_clamped = u_mults.1[0] >= bs.deg_u() as i32 + 1;
+        let is_u_last_clamped = u_mults.1[u_mults.1.len() - 1] >= bs.deg_u() as i32 + 1;
+        let is_v_first_clamped = v_mults.1[0] >= bs.deg_v() as i32 + 1;
+        let is_v_last_clamped = v_mults.1[v_mults.1.len() - 1] >= bs.deg_v() as i32 + 1;
+        let u_first = bs.knots_u()[0];
+        let u_last = bs.knots_u()[bs.knots_u().len() - 1];
+        let v_first = bs.knots_v()[0];
+        let v_last = bs.knots_v()[bs.knots_v().len() - 1];
         // `cxx:172-199`: the four corners, in the order OCCT appends them.
         if is_u_first_clamped && is_v_first_clamped {
             cache.corners3d.push(bs.poles[0][0]);
@@ -437,7 +437,7 @@ fn is_cn_1(s: &dyn Surface) -> bool {
         return true;
     };
     let cn = |flat: &[f64], deg: usize| (deg as i32 - max_internal_mult(flat)) >= 1;
-    cn(&b.knots_u, b.deg_u) && cn(&b.knots_v, b.deg_v)
+    cn(b.knots_u(), b.deg_u()) && cn(b.knots_v(), b.deg_v())
 }
 
 /// The projection of `p` (with its residue, OCCT's `SurfaceProjector::Gap`).

@@ -350,10 +350,10 @@ ENDSEC;\nEND-ISO-10303-21;";
         let rr = occt_geom::bspline_surface::GeomBSplineSurface::rational(
             r.poles.clone(),
             w,
-            r.knots_u.clone(),
-            r.knots_v.clone(),
-            r.deg_u,
-            r.deg_v,
+            r.knots_u().to_vec(),
+            r.knots_v().to_vec(),
+            r.deg_u(),
+            r.deg_v(),
         )
         .unwrap();
         let rface = crate::brep_builder_full::BRepBuilderFace::from_surface(Arc::new(rr));

@@ -555,7 +555,7 @@ pub fn write_bspline_surface(step: &mut StepWriter, s: &GeomBSplineSurface) -> R
     let body = match &s.weights {
         None => format!(
             "B_SPLINE_SURFACE_WITH_KNOTS('',{},{},{},.UNSPECIFIED.,{closed_u},{closed_v},.F.,{u_mults},{v_mults},{u_knots},{v_knots},{knot_spec})",
-            s.deg_u, s.deg_v, poles_grid
+            s.deg_u(), s.deg_v(), poles_grid
         ),
         Some(w) => {
             let weights = format!(
@@ -574,7 +574,7 @@ pub fn write_bspline_surface(step: &mut StepWriter, s: &GeomBSplineSurface) -> R
                  B_SPLINE_SURFACE_WITH_KNOTS({u_mults},{v_mults},{u_knots},{v_knots},{knot_spec}) \
                  GEOMETRIC_REPRESENTATION_ITEM() RATIONAL_B_SPLINE_SURFACE({weights}) \
                  REPRESENTATION_ITEM('') SURFACE())",
-                s.deg_u, s.deg_v, poles_grid
+                s.deg_u(), s.deg_v(), poles_grid
             )
         }
     };

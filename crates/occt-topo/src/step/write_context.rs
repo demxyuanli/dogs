@@ -54,27 +54,26 @@ fn exact_bspline_of(s: &dyn Surface) -> Option<GeomBSplineSurface> {
 /// the `ADVANCED_FACE` bounds.
 pub(super) fn bounded_bspline_surface(s: &dyn Surface) -> Option<GeomBSplineSurface> {
     let mut bs = exact_bspline_of(s)?;
-    if bs.u_periodic {
+    if bs.u_periodic() {
         let (knots, map) = occt_core::bspl::unperiodize_direction(
-            bs.deg_u as i32,
-            &bs.knots_u,
+            bs.deg_u() as i32,
+            bs.knots_u(),
             bs.nb_poles_u(),
         );
         let poles: Vec<Vec<GpPnt>> = map.iter().map(|k| bs.poles[*k].clone()).collect();
-        bs.knots_u = knots;
         bs.poles = poles;
         if let Some(w) = bs.weights.take() {
             bs.weights = Some(map.iter().map(|k| w[*k].clone()).collect());
         }
-        bs.u_periodic = false;
+        bs.set_u_periodic_flag(false);
+        bs.set_uknots(knots);
     }
-    if bs.v_periodic {
+    if bs.v_periodic() {
         let (knots, map) = occt_core::bspl::unperiodize_direction(
-            bs.deg_v as i32,
-            &bs.knots_v,
+            bs.deg_v() as i32,
+            bs.knots_v(),
             bs.nb_poles_v(),
         );
-        bs.knots_v = knots;
         for row in bs.poles.iter_mut() {
             *row = map.iter().map(|k| row[*k].clone()).collect();
         }
@@ -83,11 +82,12 @@ pub(super) fn bounded_bspline_surface(s: &dyn Surface) -> Option<GeomBSplineSurf
                 *row = map.iter().map(|k| row[*k]).collect();
             }
         }
-        bs.v_periodic = false;
+        bs.set_v_periodic_flag(false);
+        bs.set_vknots(knots);
     }
     let nu = bs.poles.len();
     let nv = bs.poles.first().map_or(0, |r| r.len());
-    if bs.knots_u.len() != nu + bs.deg_u + 1 || bs.knots_v.len() != nv + bs.deg_v + 1 {
+    if bs.knots_u().len() != nu + bs.deg_u() + 1 || bs.knots_v().len() != nv + bs.deg_v() + 1 {
         return None;
     }
     // `poles` and the flat knot sequences were reassigned above, so the
@@ -117,7 +117,7 @@ fn curve_to_bspline(c: &dyn Curve) -> Option<GeomBSplineCurve> {
 /// vector. `periodic` is `C->IsPeriodic()` of the curve as received (`cxx:45`).
 fn open_periodic_bspline(bs: &mut GeomBSplineCurve, periodic: bool) {
     if periodic {
-        bs.periodic = true;
+        bs.set_periodic_flag(true);
         bs.set_not_periodic();
     }
 }
@@ -324,7 +324,7 @@ impl WriteCtx {
                         // (`Geom_BSplineCurve.cxx:769-779`: `SetOrigin` +
                         // `SetNotPeriodic`). The port's constructors do not
                         // carry the flag, so it is restored on the copy.
-                        bs.periodic = basis.is_periodic();
+                        bs.set_periodic_flag(basis.is_periodic());
                         // `theTolerance` defaults to `Precision::PConfusion()`
                         // (`Geom_BSplineCurve.hxx:322-324`). OCCT lets a
                         // failure escape; the port keeps the previous

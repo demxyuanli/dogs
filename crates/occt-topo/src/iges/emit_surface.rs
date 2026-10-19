@@ -192,7 +192,7 @@ impl IgesWriter {
                 surf.v_degree().max(1) as usize,
             ),
             _ => {
-                if std::env::var("IGES_TRACE").is_ok() {
+                if crate::debug_flags::iges_trace() {
                     eprintln!("TRACE bspline missing data: is_bspline={}", surf.is_bspline_surface());
                 }
                 return None;
@@ -244,7 +244,7 @@ impl IgesWriter {
         if !open_flat_ok(&knots_u, nu0, deg_u, period_u)
             || !open_flat_ok(&knots_v, nv0, deg_v, period_v)
         {
-            if std::env::var("IGES_TRACE").is_ok() {
+            if crate::debug_flags::iges_trace() {
                 eprintln!(
                     "TRACE bspline layout mismatch: nu={nu0} nv={nv0} deg=({deg_u},{deg_v}) ku={} kv={} | nbuv=({},{}) uvdeg=({},{}) pu={period_u} pv={period_v} trim={} bs={}",
                     knots_u.len(),
@@ -320,17 +320,16 @@ impl IgesWriter {
             && (v_shift - crate::pcurve_full::adjust_to_period(v1_arg, sv0, sv1)).abs()
                 > occt_core::precision::PCONFUSION;
         if u_reorigin || v_reorigin {
-            let mut ms = occt_geom::bspline_surface::GeomBSplineSurface {
-                poles: poles.clone(),
-                knots_u: knots_u.clone(),
-                knots_v: knots_v.clone(),
+            let mut ms = occt_geom::bspline_surface::GeomBSplineSurface::from_parts(
+                poles.clone(),
+                if rational { Some(weights.clone()) } else { None },
+                knots_u.clone(),
+                knots_v.clone(),
                 deg_u,
                 deg_v,
-                weights: if rational { Some(weights.clone()) } else { None },
-                u_periodic: period_u,
-                v_periodic: period_v,
-                res_latch: occt_geom::bspline_surface::ResolutionLatch::new(),
-            };
+                period_u,
+                period_v,
+            );
             let mut changed = false;
             if u_reorigin {
                 let (left, _right) = ms.locate_u(u0, occt_core::precision::PCONFUSION);
@@ -345,12 +344,12 @@ impl IgesWriter {
                 }
             }
             if changed {
+                knots_u = ms.knots_u().to_vec();
+                knots_v = ms.knots_v().to_vec();
                 poles = ms.poles;
                 if let Some(w) = ms.weights {
                     weights = w;
                 }
-                knots_u = ms.knots_u;
-                knots_v = ms.knots_v;
             }
         }
 
@@ -383,7 +382,7 @@ impl IgesWriter {
 
         let (nu, nv) = (poles.len(), poles[0].len());
         if knots_u.len() != nu + deg_u + 1 || knots_v.len() != nv + deg_v + 1 {
-            if std::env::var("IGES_TRACE").is_ok() {
+            if crate::debug_flags::iges_trace() {
                 eprintln!(
                     "TRACE bspline post-unperiodize mismatch: nu={nu} nv={nv} deg=({deg_u},{deg_v}) ku={} kv={} pu={period_u} pv={period_v}",
                     knots_u.len(),

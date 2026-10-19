@@ -217,8 +217,8 @@ fn is_geom_abs_c0(surf: &dyn Surface) -> bool {
         };
         let (_, um) = bs.distinct_knots_and_mults_u();
         let (_, vm) = bs.distinct_knots_and_mults_v();
-        return direction_is_c0(bs.deg_u, bs.u_periodic, &um)
-            || direction_is_c0(bs.deg_v, bs.v_periodic, &vm);
+        return direction_is_c0(bs.deg_u(), bs.u_periodic(), &um)
+            || direction_is_c0(bs.deg_v(), bs.v_periodic(), &vm);
     }
     if surf.is_surface_of_revolution() || surf.is_surface_of_linear_extrusion() {
         return surf.continuity() == 0;

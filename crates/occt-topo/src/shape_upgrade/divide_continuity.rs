@@ -232,8 +232,8 @@ fn raise_surface_dir(
     if knots.len() <= 2 {
         return;
     }
-    let degree = if u_direction { bs.deg_u } else { bs.deg_v };
-    let periodic = if u_direction { bs.u_periodic } else { bs.v_periodic };
+    let degree = if u_direction { bs.deg_u() } else { bs.deg_v() };
+    let periodic = if u_direction { bs.u_periodic() } else { bs.v_periodic() };
     let (first_k, last_k) = if periodic {
         (1, mults.len() as i32)
     } else {
@@ -407,6 +407,6 @@ fn clone_bspline(curve: &dyn Curve) -> Option<GeomBSplineCurve> {
     } else {
         GeomBSplineCurve::new(poles, knots, degree).ok()?
     };
-    built.periodic = curve.is_periodic();
+    built.set_periodic_flag(curve.is_periodic());
     Some(built)
 }

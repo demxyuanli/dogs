@@ -209,13 +209,13 @@ fn bspline_copy(curve: &dyn Curve) -> Result<GeomBSplineCurve, String> {
     let degree = curve
         .nurbs_degree()
         .ok_or_else(|| "Geom_BSplineCurve".to_string())?;
-    Ok(GeomBSplineCurve {
+    Ok(GeomBSplineCurve::from_parts(
         poles,
-        weights: curve.bspline_weights().map(|w| w.to_vec()),
+        curve.bspline_weights().map(|w| w.to_vec()),
         knots,
         degree,
-        periodic: curve.is_periodic(),
-    })
+        curve.is_periodic(),
+    ))
 }
 
 /// `ShapeExtend_WireData::Reverse` (`ShapeExtend_WireData.cxx:483-506`).

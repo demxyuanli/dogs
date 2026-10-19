@@ -114,21 +114,21 @@ pub(crate) fn sa_u_close_state(s: &dyn Surface) -> (f64, f64, f64) {
             if let Some(bs) = s.osculating_bspline() {
                 let nbup = bs.poles.len();
                 let mut distmin = f64::MAX;
-                let (m1, m2) = end_mults(&bs.knots_u);
-                if bs.u_periodic {
+                let (m1, m2) = end_mults(bs.knots_u());
+                if bs.u_periodic() {
                     // `cxx:724-728`.
                     close = 0.0;
                     delt = 0.0;
                 } else if nbup < 3 {
                     // `cxx:729-731`.
                 } else if bs.is_rational()
-                    || m1 != bs.deg_u as i32 + 1
-                    || m2 != bs.deg_u as i32 + 1
+                    || m1 != bs.deg_u() as i32 + 1
+                    || m2 != bs.deg_u() as i32 + 1
                 {
                     // `cxx:732-765`: sample along the V knots when the boundary
                     // is not a simple pole row (rational, or a boundary knot
                     // multiplicity that is not `degree + 1`).
-                    let (vknots, _) = occt_geom::bspline_surface::GeomBSplineSurface::unique_knots_mults(&bs.knots_v);
+                    let (vknots, _) = occt_geom::bspline_surface::GeomBSplineSurface::unique_knots_mults(bs.knots_v());
                     let nbvk = vknots.len();
                     let mut v = vknots[0];
                     let p1 = s.value(uf, v);
@@ -277,18 +277,18 @@ pub(crate) fn sa_v_close_state(s: &dyn Surface) -> (f64, f64, f64) {
             if let Some(bs) = s.osculating_bspline() {
                 let nbvp = bs.nb_poles_v();
                 let mut distmin = f64::MAX;
-                let (m1, m2) = end_mults(&bs.knots_v);
-                if bs.v_periodic {
+                let (m1, m2) = end_mults(bs.knots_v());
+                if bs.v_periodic() {
                     close = 0.0;
                     delt = 0.0;
                 } else if nbvp < 3 {
                     // `cxx:928-931`.
                 } else if bs.is_rational()
-                    || m1 != bs.deg_v as i32 + 1
-                    || m2 != bs.deg_v as i32 + 1
+                    || m1 != bs.deg_v() as i32 + 1
+                    || m2 != bs.deg_v() as i32 + 1
                 {
                     // `cxx:932-960`.
-                    let (uknots, _) = occt_geom::bspline_surface::GeomBSplineSurface::unique_knots_mults(&bs.knots_u);
+                    let (uknots, _) = occt_geom::bspline_surface::GeomBSplineSurface::unique_knots_mults(bs.knots_u());
                     let nbuk = uknots.len();
                     let mut u = uknots[0];
                     let p1 = s.value(u, vf);

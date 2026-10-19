@@ -175,7 +175,7 @@ impl<'a> Resolver<'a> {
                         GeomBSplineSurface::rational(poles, wgrid, u_knots, v_knots, deg_u, deg_v)
                     }
                 };
-                if std::env::var("IGES_TRACE").is_ok() {
+                if crate::debug_flags::iges_trace() {
                     eprintln!(
                         "TRACE surf#{id}: nu={} nv={} ku={} kv={} deg=({deg_u},{deg_v})",
                         surface.as_ref().map_or(0, |s| s.nb_poles_u()),
@@ -551,7 +551,7 @@ fn shape_analysis_project_act(
 
 /// `ShapeAnalysis_Curve::Project` (`cxx:147-201`) with `AdjustToEnds=false`
 /// as `MakeFromCurve3D` (`TranslateEdge.cxx:443-444`).
-fn shape_analysis_project(curve: &dyn Curve, p: &GpPnt, preci: f64) -> (f64, f64) {
+pub(super) fn shape_analysis_project(curve: &dyn Curve, p: &GpPnt, preci: f64) -> (f64, f64) {
     let (mut u_min, mut u_max) = (curve.first_parameter(), curve.last_parameter());
     if u_min > u_max {
         std::mem::swap(&mut u_min, &mut u_max);
@@ -1075,7 +1075,7 @@ pub(super) fn read_step_impl(content: &str) -> Result<(BRepModel, Vec<String>), 
     // claim the shared faces of the product's node and carry neither its name nor
     // its styles.
     let roots = root_product_definitions(&records);
-    if std::env::var("ZZSTEP_DBG").is_ok() {
+    if crate::debug_flags::zzstep_dbg() {
         eprintln!(
             "DBG records={} roots={} rep_ids={}",
             records.len(),
@@ -1118,7 +1118,7 @@ pub(super) fn read_step_impl(content: &str) -> Result<(BRepModel, Vec<String>), 
                             names.def_name.get(&node.pd).filter(|n| !n.is_empty()).cloned()
                         })
                         .unwrap_or_else(|| composer.name(node.rep));
-                    if std::env::var("ZZSTEP_DBG").is_ok() {
+                    if crate::debug_flags::zzstep_dbg() {
                         let n = crate::topo_tools::faces_of(&node.shape).len();
                         let b = crate::brep_bnd_lib::shape_bnd_box(&node.shape).get();
                         eprintln!(
@@ -1143,7 +1143,7 @@ pub(super) fn read_step_impl(content: &str) -> Result<(BRepModel, Vec<String>), 
             // `TransferEntity(PD)` with one SDR and no NAUO binds the
             // representation's own shape as it is (`cxx:842-848`).
             let Some(shape) = composer.rep_shape(rep) else { continue };
-            if std::env::var("ZZSTEP_DBG").is_ok() {
+            if crate::debug_flags::zzstep_dbg() {
                 let n = crate::topo_tools::faces_of(&shape).len();
                 eprintln!("DBG pd={pd} rep={rep} faces={n}");
             }

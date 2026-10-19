@@ -394,13 +394,13 @@ pub(super) fn promote_curve2d(curve: &dyn Curve2d) -> Option<Box<dyn Curve>> {
             .zip(ys.iter())
             .map(|(x, y)| occt_core::elib::slib::plane_value(&plane, *x, *y))
             .collect();
-        return Some(Box::new(GeomBSplineCurve {
+        return Some(Box::new(GeomBSplineCurve::from_parts(
             poles,
-            weights: None,
-            knots: knots.to_vec(),
+            None,
+            knots.to_vec(),
             degree,
-            periodic: basis.is_periodic(),
-        }));
+            basis.is_periodic(),
+        )));
     }
     // `Adaptor3d_CurveOnSurface::Bezier()` (`cxx:1458-1485`) lifts the 2-D
     // Bezier's poles to Z=0 and `GeomAdaptor::MakeCurve` (`GeomAdaptor.cxx:60-77`)

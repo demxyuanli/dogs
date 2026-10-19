@@ -111,15 +111,15 @@ struct BsplKnots {
 }
 
 fn bspl_knots(bs: &GeomBSplineSurface) -> Option<BsplKnots> {
-    let (u_knots, u_mults) = GeomBSplineSurface::unique_knots_mults(&bs.knots_u);
-    let (v_knots, v_mults) = GeomBSplineSurface::unique_knots_mults(&bs.knots_v);
+    let (u_knots, u_mults) = GeomBSplineSurface::unique_knots_mults(bs.knots_u());
+    let (v_knots, v_mults) = GeomBSplineSurface::unique_knots_mults(bs.knots_v());
     if u_knots.len() < 2 || v_knots.len() < 2 {
         return None;
     }
-    let u_first = first_u_knot_index(bs.deg_u as i32, &u_mults);
-    let u_last = last_u_knot_index(bs.deg_u as i32, &u_mults);
-    let v_first = first_u_knot_index(bs.deg_v as i32, &v_mults);
-    let v_last = last_u_knot_index(bs.deg_v as i32, &v_mults);
+    let u_first = first_u_knot_index(bs.deg_u() as i32, &u_mults);
+    let u_last = last_u_knot_index(bs.deg_u() as i32, &u_mults);
+    let v_first = first_u_knot_index(bs.deg_v() as i32, &v_mults);
+    let v_last = last_u_knot_index(bs.deg_v() as i32, &v_mults);
     if u_first < 1 || u_last > u_knots.len() as i32 || u_first >= u_last {
         return None;
     }

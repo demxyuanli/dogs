@@ -134,7 +134,7 @@ fn nb_u_samples(s: &dyn Surface, u_min: f64, u_max: f64) -> i32 {
         GeomAbsSurfaceType::BSplineSurface => match spline_of(s) {
             Some(b) => {
                 let knots = b.distinct_knots_and_mults_u().0;
-                let mut n = 2 * (b.deg_u as i32 + 1) * (knots.len() as i32 - 1);
+                let mut n = 2 * (b.deg_u() as i32 + 1) * (knots.len() as i32 - 1);
                 let (u_min_g, u_max_g) = (s.u_range().0, s.u_range().1);
                 let du = (u_max - u_min) / (u_max_g - u_min_g);
                 if du < 0.9 {
@@ -165,7 +165,7 @@ fn nb_v_samples(s: &dyn Surface, v_min: f64, v_max: f64) -> i32 {
         GeomAbsSurfaceType::BSplineSurface => match spline_of(s) {
             Some(b) => {
                 let knots = b.distinct_knots_and_mults_v().0;
-                let mut n = 2 * (b.deg_v as i32 + 1) * (knots.len() as i32 - 1);
+                let mut n = 2 * (b.deg_v() as i32 + 1) * (knots.len() as i32 - 1);
                 let (v_min_g, v_max_g) = (s.v_range().0, s.v_range().1);
                 let dv = (v_max - v_min) / (v_max_g - v_min_g);
                 if dv < 0.9 {
@@ -188,7 +188,7 @@ fn nb_u_samples_full(s: &dyn Surface) -> i32 {
         GeomAbsSurfaceType::BSplineSurface => match spline_of(s) {
             Some(b) => {
                 let knots = b.distinct_knots_and_mults_u().0;
-                2 * (b.deg_u as i32 + 1) * (knots.len() as i32 - 1)
+                2 * (b.deg_u() as i32 + 1) * (knots.len() as i32 - 1)
             }
             None => 33,
         },
@@ -204,7 +204,7 @@ fn nb_v_samples_full(s: &dyn Surface) -> i32 {
         GeomAbsSurfaceType::BSplineSurface => match spline_of(s) {
             Some(b) => {
                 let knots = b.distinct_knots_and_mults_v().0;
-                2 * (b.deg_v as i32 + 1) * (knots.len() as i32 - 1)
+                2 * (b.deg_v() as i32 + 1) * (knots.len() as i32 - 1)
             }
             None => 33,
         },
@@ -272,8 +272,8 @@ pub fn box_bspline_surface(s: &dyn Surface, u1: f64, u2: f64, v1: f64, v2: f64, 
     if !is_out_of_bounds {
         let nb_u_poles = b.nb_poles_u() as i32;
         let nb_v_poles = b.nb_poles_v() as i32;
-        let is_u_periodic = b.u_periodic;
-        let is_v_periodic = b.v_periodic;
+        let is_u_periodic = b.u_periodic();
+        let is_v_periodic = b.v_periodic();
 
         let mut u_min_idx = 1;
         let mut u_max_idx = nb_u_poles;
@@ -285,7 +285,7 @@ pub fn box_bspline_surface(s: &dyn Surface, u1: f64, u2: f64, v1: f64, v2: f64, 
             let (mn, mx) = compute_poles_indexes(
                 &knots,
                 &mults,
-                b.deg_u as i32,
+                b.deg_u() as i32,
                 u1,
                 u2,
                 nb_u_poles,
@@ -299,7 +299,7 @@ pub fn box_bspline_surface(s: &dyn Surface, u1: f64, u2: f64, v1: f64, v2: f64, 
             let (mn, mx) = compute_poles_indexes(
                 &knots,
                 &mults,
-                b.deg_v as i32,
+                b.deg_v() as i32,
                 v1,
                 v2,
                 nb_v_poles,

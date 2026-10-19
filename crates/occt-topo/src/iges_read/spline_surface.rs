@@ -358,7 +358,7 @@ fn increase_surface_continuity(
     if continuity < 1 {
         return Ok(());
     }
-    let degree_u = surf.deg_u as i32;
+    let degree_u = surf.deg_u() as i32;
     loop {
         let (knots, mults) = surf.distinct_knots_and_mults_u();
         let last = occt_core::bspl::locate::last_u_knot_index(degree_u, &mults);
@@ -385,7 +385,7 @@ fn increase_surface_continuity(
             break;
         }
     }
-    let degree_v = surf.deg_v as i32;
+    let degree_v = surf.deg_v() as i32;
     loop {
         let (_, mults) = surf.distinct_knots_and_mults_v();
         let last = occt_core::bspl::locate::last_u_knot_index(degree_v, &mults);
@@ -425,7 +425,7 @@ fn remove_u_knot(
         return Ok(true);
     }
     let (knots, mults) = surf.distinct_knots_and_mults_u();
-    let degree = surf.deg_u as i32;
+    let degree = surf.deg_u() as i32;
     let first = occt_core::bspl::locate::first_u_knot_index(degree, &mults);
     let last = occt_core::bspl::locate::last_u_knot_index(degree, &mults);
     if index <= first || index >= last {
@@ -472,7 +472,7 @@ fn remove_u_knot(
         return Ok(false);
     }
     let (v_knots, v_mults) = surf.distinct_knots_and_mults_v();
-    let deg_v = surf.deg_v;
+    let deg_v = surf.deg_v();
     let mut poles = Vec::with_capacity(new_nu as usize);
     let mut cursor = 0usize;
     for _ in 0..new_nu {
@@ -510,7 +510,7 @@ fn remove_v_knot(
         return Ok(true);
     }
     let (knots, mults) = surf.distinct_knots_and_mults_v();
-    let degree = surf.deg_v as i32;
+    let degree = surf.deg_v() as i32;
     let first = occt_core::bspl::locate::first_u_knot_index(degree, &mults);
     let last = occt_core::bspl::locate::last_u_knot_index(degree, &mults);
     if index <= first || index >= last {
@@ -559,7 +559,7 @@ fn remove_v_knot(
         return Ok(false);
     }
     let (u_knots, u_mults) = surf.distinct_knots_and_mults_u();
-    let deg_u = surf.deg_u;
+    let deg_u = surf.deg_u();
     let mut poles = vec![Vec::with_capacity(new_nv as usize); nu];
     let mut cursor = 0usize;
     for _v in 0..new_nv {

@@ -406,12 +406,12 @@ fn infinite_extrusion_bspline(
         weights.push(vec![w, w]);
     }
     let period = u_knots.last().copied().unwrap_or(0.0) - u_knots.first().copied().unwrap_or(0.0);
-    let flat_u = flat_knots(&u_knots, &u_mults, curve.degree as i32, curve.periodic, period);
+    let flat_u = flat_knots(&u_knots, &u_mults, curve.degree as i32, curve.periodic(), period);
     let flat_v = knot_sequence(&[vf, vl], &[2, 2], 1);
     let mut built = GeomBSplineSurface::rational(poles, weights, flat_u, flat_v, curve.degree, 1)
         .map_err(|e| format!("infinite extrusion BSpline: {e}"))?;
-    built.u_periodic = curve.periodic;
-    built.v_periodic = false;
+    built.set_u_periodic_flag(curve.periodic());
+    built.set_v_periodic_flag(false);
     Ok(built)
 }
 
@@ -426,13 +426,13 @@ fn convert_curve_to_bspline(
     mut max_degree: i32,
 ) -> Result<GeomBSplineCurve, String> {
     if curve.bspline_poles().is_some() && !curve.is_geom_trimmed() {
-        return Ok(GeomBSplineCurve {
-            poles: curve.bspline_poles().unwrap().to_vec(),
-            weights: curve.bspline_weights().map(|w| w.to_vec()),
-            knots: curve.bspline_knots().unwrap_or(&[]).to_vec(),
-            degree: curve.nurbs_degree().unwrap_or(1),
-            periodic: curve.is_periodic(),
-        });
+        return Ok(GeomBSplineCurve::from_parts(
+            curve.bspline_poles().unwrap().to_vec(),
+            curve.bspline_weights().map(|w| w.to_vec()),
+            curve.bspline_knots().unwrap_or(&[]).to_vec(),
+            curve.nurbs_degree().unwrap_or(1),
+            curve.is_periodic(),
+        ));
     }
     if curve.gp_circ().is_some()
         || curve.gp_ellipse().is_some()
@@ -602,12 +602,12 @@ fn extrusion_bspline(
         weights.push(vec![w, w]);
     }
     let period = u_knots.last().copied().unwrap_or(0.0) - u_knots.first().copied().unwrap_or(0.0);
-    let flat_u = flat_knots(&u_knots, &u_mults, curve.degree as i32, curve.periodic, period);
+    let flat_u = flat_knots(&u_knots, &u_mults, curve.degree as i32, curve.periodic(), period);
     let flat_v = knot_sequence(&[v1, v2], &[2, 2], 1);
     let mut built = GeomBSplineSurface::rational(poles, weights, flat_u, flat_v, curve.degree, 1)
         .map_err(|e| format!("extrusion BSpline: {e}"))?;
-    built.u_periodic = curve.periodic;
-    built.v_periodic = false;
+    built.set_u_periodic_flag(curve.periodic());
+    built.set_v_periodic_flag(false);
     Ok(built)
 }
 
@@ -685,8 +685,8 @@ fn revolution_bspline(
     let knots_v = curve.knots.clone();
     let mut built = GeomBSplineSurface::rational(poles, weights, knots_u, knots_v, 2, curve.degree)
         .map_err(|e| format!("revolution BSpline: {e}"))?;
-    built.u_periodic = periodic;
-    built.v_periodic = curve.periodic;
+    built.set_u_periodic_flag(periodic);
+    built.set_v_periodic_flag(curve.periodic());
     Ok(built)
 }
 
@@ -762,7 +762,7 @@ fn transform_edge(
             let knot_last = moved.last_parameter();
             // `Resolution` then `BSplCLib::Reparametrize` + `SetKnots`
             // (`BRepTools_NurbsConvertModification.cxx:469-476`).
-            if !moved.periodic {
+            if !moved.periodic() {
                 let u_tol = moved.resolution(edge_tol);
                 if (first - knot_first).abs() > u_tol || (last - knot_last).abs() > u_tol {
                     let (mut knots, _) = moved.distinct_knots_and_mults();

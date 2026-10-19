@@ -120,7 +120,7 @@ pub(super) fn make_bspline_curve_with_knots(
             return Err("B_SPLINE_CURVE: periodic pole/degree mismatch".into());
         }
         let flat = occt_core::bspl::knots::knot_sequence_periodic(uknots, umults, degree as i32);
-        GeomBSplineCurve { poles, weights, knots: flat, degree, periodic: true }
+        GeomBSplineCurve::from_parts(poles, weights, flat, degree, true)
     } else {
         let flat = occt_core::bspl::banded_interp::knot_sequence(uknots, umults, degree as i32);
         match weights {

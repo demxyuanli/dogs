@@ -195,6 +195,8 @@ impl GeomBSplineSurface {
         self.weights = nweights;
         self.knots_u = flat_of(&nuknots, &numults, self.deg_u as i32, self.u_periodic);
         self.knots_v = flat_of(&nvknots, &nvmults, self.deg_v as i32, self.v_periodic);
+        self.update_u_knots();
+        self.update_v_knots();
         Ok(())
     }
 
@@ -270,6 +272,7 @@ impl GeomBSplineSurface {
         // `InsertUKnots` ends in `updateUKnots()` (`Geom_BSplineSurface.cxx:1148-1152`).
         self.res_latch.invalidate();
         self.knots_u = flat_of(&new_knots, &new_mults, self.deg_u as i32, self.u_periodic);
+        self.update_u_knots();
         Ok(())
     }
 
@@ -328,6 +331,7 @@ impl GeomBSplineSurface {
         // `InsertVKnots` ends in `updateVKnots()` (`Geom_BSplineSurface.cxx:1196-1200`).
         self.res_latch.invalidate();
         self.knots_v = flat_of(&new_knots, &new_mults, self.deg_v as i32, self.v_periodic);
+        self.update_v_knots();
         Ok(())
     }
 
@@ -352,7 +356,7 @@ impl GeomBSplineSurface {
         }
         self.knots_u = flat_knots_from_mults(&new_knots, &new_mults);
         self.u_periodic = false;
-        self.res_latch.invalidate();
+        self.update_u_knots();
     }
 
     /// `Geom_BSplineSurface::SetVNotPeriodic` (`Geom_BSplineSurface_1.cxx:1292`).
@@ -380,7 +384,7 @@ impl GeomBSplineSurface {
         }
         self.knots_v = flat_knots_from_mults(&new_knots, &new_mults);
         self.v_periodic = false;
-        self.res_latch.invalidate();
+        self.update_v_knots();
     }
 }
 

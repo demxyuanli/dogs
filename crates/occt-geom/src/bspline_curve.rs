@@ -8,20 +8,69 @@ use occt_core::bspl::{knots, eval, poles, curve_tools};
 pub const MAX_DEGREE: usize = 25;
 
 /// Non-rational or rational B-spline curve in 3D.
+///
+/// The distinct knots and their multiplicities are stored, as OCCT stores them
+/// in `myKnots` / `myMults` (`Geom_BSplineCurve.hxx:151-152`) and rebuilds them
+/// in `updateKnots()` (`Geom_BSplineCurve.cxx:1171-1188`). Every evaluation
+/// (`EvalD0..D3`) feeds those arrays to `BSplCLib`; the port used to recover
+/// them by rescanning `knots` on each call.
 #[derive(Clone)]
 pub struct GeomBSplineCurve {
     pub poles: Vec<GpPnt>,
     pub weights: Option<Vec<f64>>,
+    /// Flat knot vector (`myFlatKnots`).
     pub knots: Vec<f64>,
     pub degree: usize,
-    pub periodic: bool,
+    /// `myPeriodic`. Read through [`Self::periodic`]; write through
+    /// [`Self::set_periodic_flag`], which refreshes [`Self::distinct_knots`].
+    periodic: bool,
+    /// `myKnots` — distinct knots of the stored representation.
+    distinct: Vec<f64>,
+    /// `myMults` — multiplicities, one per entry of `distinct`.
+    mults: Vec<i32>,
+}
+
+/// Recover the stored distinct knots / multiplicities from a flat knot vector
+/// (`Geom_BSplineCurve::updateKnots`, `Geom_BSplineCurve.cxx:1171-1188`, via
+/// `BSplCLib::KnotAnalysis`).
+///
+/// For a periodic curve the period-extension knots lie outside
+/// `[FirstParameter, LastParameter]` (`stored_knot ± period`), so the run
+/// lengths of the flat array restricted to that interval are exactly
+/// `myMults`; the end knots are included because they equal `FirstParameter`
+/// and `LastParameter`.
+fn distinct_knots_and_mults_of(flat: &[f64], degree: usize, periodic: bool) -> (Vec<f64>, Vec<i32>) {
+    let (uknots, umults) = knots::unique_knots_mults(flat);
+    if !periodic || uknots.is_empty() {
+        return (uknots, umults);
+    }
+    if flat.len() <= degree {
+        // Malformed input (fewer knots than one clamped end): there is no
+        // parameter window to restrict to, so keep the run lengths as they are.
+        return (uknots, umults);
+    }
+    let (first, last) = (flat[degree], flat[flat.len() - 1 - degree]);
+    let mut out_knots = Vec::new();
+    let mut out_mults = Vec::new();
+    for (k, m) in uknots.iter().zip(umults.iter()) {
+        if *k < first || *k > last {
+            continue;
+        }
+        out_knots.push(*k);
+        out_mults.push(*m);
+    }
+    if out_knots.is_empty() {
+        (uknots, umults)
+    } else {
+        (out_knots, out_mults)
+    }
 }
 
 impl GeomBSplineCurve {
     /// Build a non-rational B-spline. Knot count must be poles + degree + 1.
     pub fn new(poles: Vec<GpPnt>, knots: Vec<f64>, degree: usize) -> Result<Self, &'static str> {
         knots::check_degree(poles.len(), degree, knots.len())?;
-        Ok(Self { poles, weights: None, knots, degree, periodic: false })
+        Ok(Self::from_parts(poles, None, knots, degree, false))
     }
 
     /// `Geom_BSplineCurve(Poles, Knots, Mults, Degree)` — unique knots + multiplicities.
@@ -41,7 +90,57 @@ impl GeomBSplineCurve {
         if weights.len() != poles.len() {
             return Err("GeomBSplineCurve: weight count mismatch");
         }
-        Ok(Self { poles, weights: Some(weights), knots, degree, periodic: false })
+        Ok(Self::from_parts(poles, Some(weights), knots, degree, false))
+    }
+
+    /// Assemble a curve from its flat representation — the single place that
+    /// derives the stored distinct knots / multiplicities (`updateKnots()`).
+    /// Used by callers that build a periodic curve from an already
+    /// period-extended flat knot vector.
+    pub fn from_parts(
+        poles: Vec<GpPnt>,
+        weights: Option<Vec<f64>>,
+        knots: Vec<f64>,
+        degree: usize,
+        periodic: bool,
+    ) -> Self {
+        let (distinct, mults) = distinct_knots_and_mults_of(&knots, degree, periodic);
+        Self { poles, weights, knots, degree, periodic, distinct, mults }
+    }
+
+    /// `myPeriodic`.
+    pub fn periodic(&self) -> bool {
+        self.periodic
+    }
+
+    /// `myPeriodic` setter. OCCT never exposes the flag as a plain field, so
+    /// the callers that flip it on a built curve go through
+    /// `Geom_BSplineCurve::SetPeriodic` / `SetNotPeriodic` or restore it on a
+    /// copy; either way the knot representation must follow.
+    pub fn set_periodic_flag(&mut self, periodic: bool) {
+        if self.periodic == periodic {
+            return;
+        }
+        self.periodic = periodic;
+        self.refresh_knot_rep();
+    }
+
+    /// `myKnots` — the distinct knots (`Geom_BSplineCurve::Knots()`).
+    pub fn distinct_knots(&self) -> &[f64] {
+        &self.distinct
+    }
+
+    /// `myMults` — the multiplicities (`Geom_BSplineCurve::Multiplicities()`).
+    pub fn multiplicities(&self) -> &[i32] {
+        &self.mults
+    }
+
+    /// Rebuild the stored distinct knots / multiplicities after `knots`,
+    /// `degree` or `periodic` changed (`updateKnots()`).
+    fn refresh_knot_rep(&mut self) {
+        let (distinct, mults) = distinct_knots_and_mults_of(&self.knots, self.degree, self.periodic);
+        self.distinct = distinct;
+        self.mults = mults;
     }
 
     pub fn set_pole(&mut self, i: usize, p: GpPnt) { self.poles[i] = p; }
@@ -66,12 +165,11 @@ impl GeomBSplineCurve {
     /// (`Geom_BSplineCurve.cxx:1176`: `BSplCLib::KnotAnalysis(myDeg, myPeriodic,
     /// myKnots, myMults, myKnotSet, MaxKnotMult)`).
     pub fn knot_distribution(&self) -> occt_core::kernel::geomabs::BSplKnotDistribution {
-        let (uknots, umults) = self.distinct_knots_and_mults();
         occt_core::bspl::knot_analysis::knot_analysis(
             self.degree as i32,
             self.periodic,
-            &uknots,
-            &umults,
+            &self.distinct,
+            &self.mults,
         )
         .0
     }
@@ -80,31 +178,17 @@ impl GeomBSplineCurve {
     /// (`Geom_BSplineCurve_1.cxx:380-383`, `:148-151`): the stored distinct
     /// knots and their multiplicities.
     ///
-    /// The port stores the flat sequence only. For a periodic curve the
-    /// period-extension knots live **outside** `[FirstParameter,
-    /// LastParameter]` (they are `stored_knot ± period`), so the run lengths of
-    /// the flat array restricted to that interval are exactly `myMults` — the
-    /// equivalent of OCCT's separately stored arrays.
+    /// The port stores the flat sequence plus the derived distinct knots /
+    /// multiplicities. For a periodic curve the period-extension knots live
+    /// **outside** `[FirstParameter, LastParameter]` (they are `stored_knot ±
+    /// period`), so the run lengths of the flat array restricted to that
+    /// interval are exactly `myMults` — the equivalent of OCCT's separately
+    /// stored arrays.
+    ///
+    /// Returns owned copies; hot paths read [`Self::distinct_knots`] and
+    /// [`Self::multiplicities`] instead.
     pub fn distinct_knots_and_mults(&self) -> (Vec<f64>, Vec<i32>) {
-        let (uknots, umults) = knots::unique_knots_mults(&self.knots);
-        if !self.periodic || uknots.is_empty() {
-            return (uknots, umults);
-        }
-        let (first, last) = (self.first_parameter(), self.last_parameter());
-        let mut out_knots = Vec::new();
-        let mut out_mults = Vec::new();
-        for (k, m) in uknots.iter().zip(umults.iter()) {
-            if *k < first || *k > last {
-                continue;
-            }
-            out_knots.push(*k);
-            out_mults.push(*m);
-        }
-        if out_knots.is_empty() {
-            (uknots, umults)
-        } else {
-            (out_knots, out_mults)
-        }
+        (self.distinct.clone(), self.mults.clone())
     }
 
     /// `Geom_BSplineCurve::SetKnots(K)` (`Geom_BSplineCurve.cxx:758-765`):
@@ -129,6 +213,7 @@ impl GeomBSplineCurve {
                 self.degree as i32,
             )
         };
+        self.refresh_knot_rep();
         Ok(())
     }
 
@@ -159,6 +244,7 @@ impl GeomBSplineCurve {
         }
         self.knots = occt_core::bspl::unperiodize::flat_knots_from_mults(&new_knots, &new_mults);
         self.periodic = false;
+        self.refresh_knot_rep();
     }
 
     /// `Geom_BSplineCurve::SetPeriodic()` (`Geom_BSplineCurve.cxx:777-815`):
@@ -217,6 +303,7 @@ impl GeomBSplineCurve {
         }
         self.knots = knots::knot_sequence_periodic(&uknots, &umults, degree);
         self.periodic = true;
+        self.refresh_knot_rep();
     }
 
     /// `Geom_BSplineCurve::FirstUKnotIndex()` / `LastUKnotIndex()`
@@ -248,6 +335,9 @@ impl GeomBSplineCurve {
         } else {
             occt_core::bspl::banded_interp::knot_sequence(uknots, umults, self.degree as i32)
         };
+        // The stored representation is always derived from the flat vector, so
+        // it is exactly what a fresh rescan of `knots` yields.
+        self.refresh_knot_rep();
     }
 
     /// `Geom_BSplineCurve::InsertKnots(Knots, Mults, ParametricTolerance, Add)`
@@ -458,6 +548,7 @@ impl GeomBSplineCurve {
             for k in self.knots.iter_mut() {
                 *k += delta;
             }
+            self.refresh_knot_rep();
         }
         // For a periodic curve, uf and ul represent the same point
         if (u - uf).abs() < tol || (u - ul).abs() < tol {
@@ -809,6 +900,7 @@ impl GeomBSplineCurve {
         if self.weights.is_some() {
             self.weights = Some(vec![1.0; n_new]);
         }
+        self.refresh_knot_rep();
     }
 
     /// `Geom_BSplineCurve::EvalD0/D1/D2/D3` preamble
@@ -819,12 +911,13 @@ impl GeomBSplineCurve {
     /// that distinct-knot array and post-corrected by `aSpanIndex--` when
     /// `aNewU` sits below `myKnots(aSpanIndex)`. The flat-knot arm is only used
     /// by `LocalD0..LocalD3` and `EvalDN`.
-    fn eval_span(&self, u: f64) -> (f64, i32, Vec<f64>, Vec<i32>) {
-        let (uknots, umults) = self.distinct_knots_and_mults();
+    fn eval_span(&self, u: f64) -> (f64, i32, &[f64], &[i32]) {
+        let uknots = self.distinct.as_slice();
+        let umults = self.mults.as_slice();
         let (mut span, new_u) = occt_core::bspl::locate::locate_parameter(
             self.degree as i32,
-            &uknots,
-            Some(&umults),
+            uknots,
+            Some(umults),
             u,
             self.periodic,
             0,
@@ -836,6 +929,16 @@ impl GeomBSplineCurve {
                 }
             }
         }
+        // Debug builds re-derive the pair and compare, so a mutation path that
+        // forgets to refresh the representation shows up in the existing parity
+        // tests instead of silently shifting geometry.
+        debug_assert!(
+            {
+                let (d, m) = distinct_knots_and_mults_of(&self.knots, self.degree, self.periodic);
+                d.as_slice() == uknots && m.as_slice() == umults
+            },
+            "GeomBSplineCurve: stored distinct knots out of date"
+        );
         (new_u, span, uknots, umults)
     }
 
@@ -901,7 +1004,7 @@ impl Curve for GeomBSplineCurve {
         let (new_u, span, uknots, umults) = self.eval_span(u);
         occt_core::bspl::curve_eval::curve_d0(
             new_u, span, self.degree as i32, self.periodic, &self.poles,
-            self.weights.as_deref(), &uknots, Some(&umults),
+            self.weights.as_deref(), uknots, Some(umults),
         )
     }
 
@@ -910,7 +1013,7 @@ impl Curve for GeomBSplineCurve {
         let (new_u, span, uknots, umults) = self.eval_span(u);
         occt_core::bspl::curve_eval::curve_d1(
             new_u, span, self.degree as i32, self.periodic, &self.poles,
-            self.weights.as_deref(), &uknots, Some(&umults),
+            self.weights.as_deref(), uknots, Some(umults),
         )
     }
 
@@ -938,7 +1041,7 @@ impl Curve for GeomBSplineCurve {
         let (new_u, span, uknots, umults) = self.eval_span(u);
         let r = occt_core::bspl::curve_eval::curve_d2(
             new_u, span, self.degree as i32, self.periodic, &self.poles,
-            self.weights.as_deref(), &uknots, Some(&umults),
+            self.weights.as_deref(), uknots, Some(umults),
         );
         r
     }
@@ -951,7 +1054,7 @@ impl Curve for GeomBSplineCurve {
         let (new_u, span, uknots, umults) = self.eval_span(u);
         occt_core::bspl::curve_eval::curve_d3(
             new_u, span, self.degree as i32, self.periodic, &self.poles,
-            self.weights.as_deref(), &uknots, Some(&umults),
+            self.weights.as_deref(), uknots, Some(umults),
         )
     }
 
@@ -996,6 +1099,7 @@ impl Curve for GeomBSplineCurve {
             self.knots =
                 occt_core::bspl::banded_interp::knot_sequence(&uknots, &umults, self.degree as i32);
         }
+        self.refresh_knot_rep();
     }
 
     fn clone_dyn(&self) -> Box<dyn Curve> { Box::new(self.clone()) }

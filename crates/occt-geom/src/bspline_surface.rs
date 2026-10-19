@@ -89,20 +89,48 @@ impl Clone for ResolutionLatch {
 }
 
 /// Non-rational or rational tensor-product B-spline surface.
+///
+/// The head of the representation follows OCCT: `knots_u`/`knots_v` are the
+/// flat sequences (`myFlatKnots`), while the distinct knots and multiplicities
+/// (`myUKnots`/`myUMults`, `myVKnots`/`myVMults`) are stored beside them and
+/// rebuilt by `update_u_knots` / `update_v_knots` exactly where OCCT calls
+/// `updateUKnots()` / `updateVKnots()` (`Geom_BSplineSurface.cxx:1148-1192`).
+/// The head fields are `pub(crate)` so the geometry crate's own rebuilders can
+/// read them, but no other crate can mutate them: every mutation from outside
+/// goes through a setter that keeps the stored arrays in step, and read access
+/// is through [`Self::knots_u`] and friends.
 #[derive(Clone)]
 pub struct GeomBSplineSurface {
     pub poles: Vec<Vec<GpPnt>>,
-    pub knots_u: Vec<f64>,
-    pub knots_v: Vec<f64>,
-    pub deg_u: usize,
-    pub deg_v: usize,
+    pub(crate) knots_u: Vec<f64>,
+    pub(crate) knots_v: Vec<f64>,
+    pub(crate) deg_u: usize,
+    pub(crate) deg_v: usize,
     pub weights: Option<Vec<Vec<f64>>>,
     /// `Geom_BSplineSurface` UPeriodic (`StepToGeom::MakeBSplineSurface` cxx:1101-1110).
-    pub u_periodic: bool,
+    pub(crate) u_periodic: bool,
     /// `Geom_BSplineSurface` VPeriodic (`StepToGeom::MakeBSplineSurface` cxx:1120-1129).
-    pub v_periodic: bool,
+    pub(crate) v_periodic: bool,
+    /// `myUKnots` — distinct U knots inside the surface's own parameter window.
+    pub(crate) uknots: Vec<f64>,
+    /// `myUMults`.
+    pub(crate) umults: Vec<i32>,
+    /// `myVKnots`.
+    pub(crate) vknots: Vec<f64>,
+    /// `myVMults`.
+    pub(crate) vmults: Vec<i32>,
     /// `Geom_BSplineSurface::myMaxDerivInvOk` / `myUMaxDerivInv` / `myVMaxDerivInv`.
     pub res_latch: ResolutionLatch,
+}
+
+/// `FirstParameter()..LastParameter()` of one direction from the flat vector,
+/// with the same fallback [`GeomBSplineSurface::u_range`] uses for a malformed
+/// or empty representation.
+fn knot_window(flat: &[f64], degree: usize) -> (f64, f64) {
+    if flat.is_empty() || degree >= flat.len() {
+        return (0.0, 1.0);
+    }
+    (flat[degree], flat[flat.len() - 1 - degree])
 }
 
 impl GeomBSplineSurface {
@@ -151,7 +179,7 @@ impl GeomBSplineSurface {
         let (u_periodic, v_periodic) = Self::periodic_flags_from_flat(
             nu, nv, deg_u, deg_v, &knots_u, &knots_v,
         );
-        Ok(Self {
+        let mut s = Self {
             poles,
             knots_u,
             knots_v,
@@ -160,8 +188,161 @@ impl GeomBSplineSurface {
             weights: None,
             u_periodic,
             v_periodic,
+            uknots: Vec::new(),
+            umults: Vec::new(),
+            vknots: Vec::new(),
+            vmults: Vec::new(),
             res_latch: ResolutionLatch::new(),
-        })
+        };
+        s.update_u_knots();
+        s.update_v_knots();
+        Ok(s)
+    }
+
+    // ---- representation head (OCCT `myFlatKnots` / `myUKnots` / `myUMults`) ----
+
+    /// `myFlatKnots` in U.
+    pub fn knots_u(&self) -> &[f64] {
+        &self.knots_u
+    }
+
+    /// `myFlatKnots` in V.
+    pub fn knots_v(&self) -> &[f64] {
+        &self.knots_v
+    }
+
+    /// `myDeg`.
+    pub fn deg_u(&self) -> usize {
+        self.deg_u
+    }
+
+    /// `myDeg` in V.
+    pub fn deg_v(&self) -> usize {
+        self.deg_v
+    }
+
+    /// `IsUPeriodic()`.
+    pub fn u_periodic(&self) -> bool {
+        self.u_periodic
+    }
+
+    /// `IsVPeriodic()`.
+    pub fn v_periodic(&self) -> bool {
+        self.v_periodic
+    }
+
+    /// `myUKnots` — the distinct U knots as stored.
+    pub fn uknots(&self) -> &[f64] {
+        &self.uknots
+    }
+
+    /// `myUMults`.
+    pub fn umults(&self) -> &[i32] {
+        &self.umults
+    }
+
+    /// `myVKnots`.
+    pub fn vknots(&self) -> &[f64] {
+        &self.vknots
+    }
+
+    /// `myVMults`.
+    pub fn vmults(&self) -> &[i32] {
+        &self.vmults
+    }
+
+    /// Replace the flat U knot vector (`updateUKnots()` follows, as it does
+    /// after every OCCT mutator that assigns `myFlatKnots`).
+    pub fn set_uknots(&mut self, flat: Vec<f64>) {
+        self.knots_u = flat;
+        self.update_u_knots();
+    }
+
+    /// Replace the flat V knot vector.
+    pub fn set_vknots(&mut self, flat: Vec<f64>) {
+        self.knots_v = flat;
+        self.update_v_knots();
+    }
+
+    /// Restore `IsUPeriodic()` on a rebuilt copy (OCCT carries the flag on the
+    /// object rather than in the flat vector). The stored knot window follows.
+    pub fn set_u_periodic_flag(&mut self, periodic: bool) {
+        if self.u_periodic == periodic {
+            return;
+        }
+        self.u_periodic = periodic;
+        self.update_u_knots();
+    }
+
+    /// Restore `IsVPeriodic()` on a rebuilt copy.
+    pub fn set_v_periodic_flag(&mut self, periodic: bool) {
+        if self.v_periodic == periodic {
+            return;
+        }
+        self.v_periodic = periodic;
+        self.update_v_knots();
+    }
+
+    /// `Geom_BSplineSurface::updateUKnots()` (`Geom_BSplineSurface.cxx:1148-1192`):
+    /// rebuild `myUKnots`/`myUMults` from the flat vector and clear the cached
+    /// resolution bound (`myMaxDerivInvOk = false`, `cxx:1150-1152`).
+    pub(crate) fn update_u_knots(&mut self) {
+        let (k, m) = distinct_km(
+            &self.knots_u,
+            self.u_periodic,
+            knot_window(&self.knots_u, self.deg_u),
+        );
+        self.uknots = k;
+        self.umults = m;
+        self.res_latch.invalidate();
+    }
+
+    /// `Geom_BSplineSurface::updateVKnots()`.
+    pub(crate) fn update_v_knots(&mut self) {
+        let (k, m) = distinct_km(
+            &self.knots_v,
+            self.v_periodic,
+            knot_window(&self.knots_v, self.deg_v),
+        );
+        self.vknots = k;
+        self.vmults = m;
+        self.res_latch.invalidate();
+    }
+
+    /// Assemble the head directly from an already-flat knot sequence and
+    /// re-derive `myUKnots`/`myUMults` / `myVKnots`/`myVMults`
+    /// (`updateUKnots()` / `updateVKnots()`), for the knot-insertion /
+    /// segmentation / removal paths and for readers that already hold the flat
+    /// `KnotSequence` forms (OCCT's `SetPoles` + assignment of the flat knots
+    /// followed by `updateUKnots()`).
+    pub fn from_parts(
+        poles: Vec<Vec<GpPnt>>,
+        weights: Option<Vec<Vec<f64>>>,
+        knots_u: Vec<f64>,
+        knots_v: Vec<f64>,
+        deg_u: usize,
+        deg_v: usize,
+        u_periodic: bool,
+        v_periodic: bool,
+    ) -> Self {
+        let mut s = Self {
+            poles,
+            knots_u,
+            knots_v,
+            deg_u,
+            deg_v,
+            weights,
+            u_periodic,
+            v_periodic,
+            uknots: Vec::new(),
+            umults: Vec::new(),
+            vknots: Vec::new(),
+            vmults: Vec::new(),
+            res_latch: ResolutionLatch::new(),
+        };
+        s.update_u_knots();
+        s.update_v_knots();
+        s
     }
 
     /// Build a rational surface; `weights` must match the pole grid size.
@@ -204,18 +385,19 @@ impl GeomBSplineSurface {
 
     /// `Geom_BSplineSurface::UKnots()` / `UMultiplicities()`: the distinct U
     /// knots and their multiplicities as stored, i.e. restricted to the
-    /// surface's own parameter window. The port keeps only the flat periodic
-    /// sequence, whose extension knots lie outside that window, so the
-    /// periodic arm drops them (mirror of
-    /// `GeomBSplineCurve::distinct_knots_and_mults`).
+    /// surface's own parameter window (`myUKnots` / `myUMults`). The extension
+    /// knots of a periodic flat sequence lie outside that window and are not
+    /// stored.
+    ///
+    /// Returns owned copies; hot paths read [`Self::uknots`] / [`Self::umults`].
     pub fn distinct_knots_and_mults_u(&self) -> (Vec<f64>, Vec<i32>) {
-        distinct_km(&self.knots_u, self.u_periodic, self.u_range())
+        (self.uknots.clone(), self.umults.clone())
     }
 
     /// `Geom_BSplineSurface::VKnots()` / `VMultiplicities()`; see
     /// [`Self::distinct_knots_and_mults_u`].
     pub fn distinct_knots_and_mults_v(&self) -> (Vec<f64>, Vec<i32>) {
-        distinct_km(&self.knots_v, self.v_periodic, self.v_range())
+        (self.vknots.clone(), self.vmults.clone())
     }
 
     /// `Geom_BSplineSurface::UKnotDistribution()`
@@ -224,12 +406,11 @@ impl GeomBSplineSurface {
     /// `BSplCLib::KnotAnalysis(myUDeg, myUPeriodic, myUKnots, myUMults,
     /// myUKnotSet, MaxKnotMult)`).
     pub fn u_knot_distribution(&self) -> occt_core::kernel::geomabs::BSplKnotDistribution {
-        let (knots, mults) = self.distinct_knots_and_mults_u();
         occt_core::bspl::knot_analysis::knot_analysis(
             self.deg_u as i32,
             self.u_periodic,
-            &knots,
-            &mults,
+            &self.uknots,
+            &self.umults,
         )
         .0
     }
@@ -238,12 +419,11 @@ impl GeomBSplineSurface {
     /// (`Geom_BSplineSurface_1.cxx:1858-1862`); see
     /// [`Self::u_knot_distribution`] (`Geom_BSplineSurface.cxx:1201`).
     pub fn v_knot_distribution(&self) -> occt_core::kernel::geomabs::BSplKnotDistribution {
-        let (knots, mults) = self.distinct_knots_and_mults_v();
         occt_core::bspl::knot_analysis::knot_analysis(
             self.deg_v as i32,
             self.v_periodic,
-            &knots,
-            &mults,
+            &self.vknots,
+            &self.vmults,
         )
         .0
     }
@@ -296,6 +476,8 @@ impl GeomBSplineSurface {
         // Prefer the STEP/unique mult vectors (`cxx:1101-1129`) over flat-derived.
         s.u_periodic = Self::should_be_periodic(s.poles.len(), deg_u, &u_mults);
         s.v_periodic = Self::should_be_periodic(s.poles.first().map_or(0, |r| r.len()), deg_v, &v_mults);
+        s.update_u_knots();
+        s.update_v_knots();
         Ok(s)
     }
 
@@ -318,18 +500,22 @@ impl GeomBSplineSurface {
     }
 
     /// Shared knot/mult args for `BSplSLib::{D2,D3,DN}` on this surface.
+    /// Borrowed from the stored representation, so an evaluation allocates
+    /// nothing for the knots.
     fn bspl_lib_args(
         &self,
     ) -> (
-        Option<(Vec<f64>, Vec<i32>)>,
-        Option<(Vec<f64>, Vec<i32>)>,
+        Option<(&[f64], &[i32])>,
+        Option<(&[f64], &[i32])>,
         bool,
     ) {
         let rat = self.weights.is_some();
         if self.has_periodic_direction() {
-            let uk = distinct_km(&self.knots_u, self.u_periodic, self.u_range());
-            let vk = distinct_km(&self.knots_v, self.v_periodic, self.v_range());
-            (Some(uk), Some(vk), rat)
+            (
+                Some((self.uknots.as_slice(), self.umults.as_slice())),
+                Some((self.vknots.as_slice(), self.vmults.as_slice())),
+                rat,
+            )
         } else {
             (None, None, rat)
         }
@@ -358,6 +544,7 @@ impl GeomBSplineSurface {
             }
             self.knots_u = banded_interp::knot_sequence(&uknots, &umults, self.deg_u as i32);
         }
+        self.update_u_knots();
     }
 
     /// `Geom_BSplineSurface::VReverse` (`Geom_BSplineSurface_1.cxx:1603-1623`).
@@ -393,6 +580,7 @@ impl GeomBSplineSurface {
             }
             self.knots_v = banded_interp::knot_sequence(&vknots, &vmults, self.deg_v as i32);
         }
+        self.update_v_knots();
     }
 
     /// `BSplSLib::HomogeneousD1` on this surface (`BSplSLib.cxx:974-1059`).
@@ -410,10 +598,10 @@ impl GeomBSplineSurface {
                 0,
                 &self.poles,
                 self.weights.as_deref(),
-                &uk.0,
-                &vk.0,
-                Some(&uk.1),
-                Some(&vk.1),
+                uk.0,
+                vk.0,
+                Some(uk.1),
+                Some(vk.1),
                 self.deg_u as i32,
                 self.deg_v as i32,
                 rat,
@@ -454,10 +642,10 @@ impl GeomBSplineSurface {
                 0,
                 &self.poles,
                 self.weights.as_deref(),
-                &uk.0,
-                &vk.0,
-                Some(&uk.1),
-                Some(&vk.1),
+                uk.0,
+                vk.0,
+                Some(uk.1),
+                Some(vk.1),
                 self.deg_u as i32,
                 self.deg_v as i32,
                 rat,
@@ -498,10 +686,10 @@ impl GeomBSplineSurface {
                 0,
                 &self.poles,
                 self.weights.as_deref(),
-                &uk.0,
-                &vk.0,
-                Some(&uk.1),
-                Some(&vk.1),
+                uk.0,
+                vk.0,
+                Some(uk.1),
+                Some(vk.1),
                 self.deg_u as i32,
                 self.deg_v as i32,
                 rat,
@@ -542,10 +730,10 @@ impl GeomBSplineSurface {
                 0,
                 &self.poles,
                 self.weights.as_deref(),
-                &uk.0,
-                &vk.0,
-                Some(&uk.1),
-                Some(&vk.1),
+                uk.0,
+                vk.0,
+                Some(uk.1),
+                Some(vk.1),
                 self.deg_u as i32,
                 self.deg_v as i32,
                 rat,
@@ -586,10 +774,10 @@ impl GeomBSplineSurface {
                 0,
                 &self.poles,
                 self.weights.as_deref(),
-                &uk.0,
-                &vk.0,
-                Some(&uk.1),
-                Some(&vk.1),
+                uk.0,
+                vk.0,
+                Some(uk.1),
+                Some(vk.1),
                 self.deg_u as i32,
                 self.deg_v as i32,
                 rat,
@@ -627,8 +815,6 @@ impl GeomBSplineSurface {
             // OCCT's EvalDN passes the distinct knots and multiplicities
             // (Geom_BSplineSurface_1.cxx:279-312), whose periodic arm wraps the
             // knot window; the flat NoMults arm cannot.
-            let uk = distinct_km(&self.knots_u, self.u_periodic, self.u_range());
-            let vk = distinct_km(&self.knots_v, self.v_periodic, self.v_range());
             return occt_core::bspl::prepare_eval::surface_dn(
                 u,
                 v,
@@ -638,10 +824,10 @@ impl GeomBSplineSurface {
                 0,
                 &self.poles,
                 self.weights.as_deref(),
-                &uk.0,
-                &vk.0,
-                Some(&uk.1),
-                Some(&vk.1),
+                &self.uknots,
+                &self.vknots,
+                Some(&self.umults),
+                Some(&self.vmults),
                 self.deg_u as i32,
                 self.deg_v as i32,
                 rat,
@@ -740,6 +926,7 @@ impl GeomBSplineSurface {
             self.knots_u =
                 occt_core::bspl::knots::knot_sequence_periodic(&knots, &mults, degree as i32);
             self.u_periodic = true;
+            self.update_u_knots();
         } else {
             for row in self.poles.iter_mut() {
                 if nbp < row.len() {
@@ -760,6 +947,7 @@ impl GeomBSplineSurface {
             self.knots_v =
                 occt_core::bspl::knots::knot_sequence_periodic(&knots, &mults, degree as i32);
             self.v_periodic = true;
+            self.update_v_knots();
         }
     }
 
@@ -772,15 +960,13 @@ impl GeomBSplineSurface {
     /// would shift the returned indices by the wrapped tail and widen the
     /// `PeriodicNormalization` period.
     pub fn locate_u(&self, u: f64, parametric_tolerance: f64) -> (i32, i32) {
-        let (knots, _) = self.distinct_knots_and_mults_u();
-        Self::locate_param(u, parametric_tolerance, &knots, self.u_periodic)
+        Self::locate_param(u, parametric_tolerance, &self.uknots, self.u_periodic)
     }
 
     /// `Geom_BSplineSurface::LocateV` (`Geom_BSplineSurface_1.cxx:1518-1560`);
     /// see [`Self::locate_u`] for the `myVKnots` window.
     pub fn locate_v(&self, v: f64, parametric_tolerance: f64) -> (i32, i32) {
-        let (knots, _) = self.distinct_knots_and_mults_v();
-        Self::locate_param(v, parametric_tolerance, &knots, self.v_periodic)
+        Self::locate_param(v, parametric_tolerance, &self.vknots, self.v_periodic)
     }
 
     /// Knot window + pole offset rotation shared by `SetUOrigin` / `SetVOrigin`
@@ -858,6 +1044,7 @@ impl GeomBSplineSurface {
             return Err("Geom_BSplineSurface::SetUOrigin: pole count mismatch".to_string());
         }
         self.knots_u = flat;
+        self.update_u_knots();
         Ok(())
     }
 
@@ -901,6 +1088,7 @@ impl GeomBSplineSurface {
             return Err("Geom_BSplineSurface::SetVOrigin: pole count mismatch".to_string());
         }
         self.knots_v = flat;
+        self.update_v_knots();
         Ok(())
     }
 
@@ -1456,17 +1644,16 @@ pub fn fit_surface_grid(
     }
     let (knots_u, knots_v) = bspline_surface_uniform_knots(nu, nv, deg_u, deg_v);
     if deg_u == 1 && deg_v == 1 {
-        return Ok(GeomBSplineSurface {
-            poles: points.to_vec(),
+        return Ok(GeomBSplineSurface::from_parts(
+            points.to_vec(),
+            None,
             knots_u,
             knots_v,
             deg_u,
             deg_v,
-            weights: None,
-            u_periodic: false,
-            v_periodic: false,
-            res_latch: ResolutionLatch::new(),
-        });
+            false,
+            false,
+        ));
     }
 
     // Uniform grid parameters in [0, 1].
@@ -1511,17 +1698,16 @@ pub fn fit_surface_grid(
             poles[i][j] = GpPnt::new(px[j], py[j], pz[j]);
         }
     }
-    Ok(GeomBSplineSurface {
+    Ok(GeomBSplineSurface::from_parts(
         poles,
+        None,
         knots_u,
         knots_v,
         deg_u,
         deg_v,
-        weights: None,
-        u_periodic: false,
-        v_periodic: false,
-        res_latch: ResolutionLatch::new(),
-    })
+        false,
+        false,
+    ))
 }
 
 impl Surface for GeomBSplineSurface {
@@ -1544,21 +1730,11 @@ impl Surface for GeomBSplineSurface {
     }
 
     fn u_range(&self) -> (f64, f64) {
-        if self.knots_u.is_empty() || self.deg_u >= self.knots_u.len() {
-            return (0.0, 1.0);
-        }
-        let lo = self.knots_u[self.deg_u];
-        let hi = self.knots_u[self.knots_u.len() - 1 - self.deg_u];
-        (lo, hi)
+        knot_window(&self.knots_u, self.deg_u)
     }
 
     fn v_range(&self) -> (f64, f64) {
-        if self.knots_v.is_empty() || self.deg_v >= self.knots_v.len() {
-            return (0.0, 1.0);
-        }
-        let lo = self.knots_v[self.deg_v];
-        let hi = self.knots_v[self.knots_v.len() - 1 - self.deg_v];
-        (lo, hi)
+        knot_window(&self.knots_v, self.deg_v)
     }
 
     fn continuity(&self) -> u8 {

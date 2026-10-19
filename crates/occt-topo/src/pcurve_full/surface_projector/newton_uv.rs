@@ -461,14 +461,14 @@ pub(crate) fn next_value_of_uv(
         if let Some(bs) = bspline_behind(s, 0) {
             let (uf, ul) = s.u_range();
             let (vf, vl) = s.v_range();
-            let on_u_knot = bspline_c0(&bs.knots_u, bs.deg_u, uf, ul)
+            let on_u_knot = bspline_c0(bs.knots_u(), bs.deg_u(), uf, ul)
                 && bs
-                    .knots_u
+                    .knots_u()
                     .iter()
                     .any(|k| (k - p2d_prev.x()).abs() < occt_core::precision::CONFUSION);
-            let on_v_knot = bspline_c0(&bs.knots_v, bs.deg_v, vf, vl)
+            let on_v_knot = bspline_c0(bs.knots_v(), bs.deg_v(), vf, vl)
                 && bs
-                    .knots_v
+                    .knots_v()
                     .iter()
                     .any(|k| (k - p2d_prev.y()).abs() < occt_core::precision::CONFUSION);
             if on_u_knot || on_v_knot {

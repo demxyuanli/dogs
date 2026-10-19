@@ -36,7 +36,7 @@ use occt_core::gp::{
 };
 
 use crate::bspline_curve::GeomBSplineCurve;
-use crate::bspline_surface::{GeomBSplineSurface, ResolutionLatch};
+use crate::bspline_surface::GeomBSplineSurface;
 use crate::convert_approx_curve::GeomConvertApproxCurve;
 use crate::curve::Curve;
 use occt_core::kernel::geomabs::Shape;
@@ -165,17 +165,16 @@ fn insert_surface_u(s: &GeomBSplineSurface, u: f64, mult: usize) -> GeomBSplineS
     for _ in 0..mult {
         knots_u = insert_knot(&knots_u, u, 1);
     }
-    GeomBSplineSurface {
-        poles: new_poles,
+    GeomBSplineSurface::from_parts(
+        new_poles,
+        new_weights,
         knots_u,
-        knots_v: s.knots_v.clone(),
-        deg_u: s.deg_u,
-        deg_v: s.deg_v,
-        weights: new_weights,
-        u_periodic: s.u_periodic,
-        v_periodic: s.v_periodic,
-        res_latch: ResolutionLatch::new(),
-    }
+        s.knots_v().to_vec(),
+        s.deg_u(),
+        s.deg_v(),
+        s.u_periodic(),
+        s.v_periodic(),
+    )
 }
 
 fn insert_surface_v(s: &GeomBSplineSurface, v: f64, mult: usize) -> GeomBSplineSurface {
@@ -203,17 +202,16 @@ fn insert_surface_v(s: &GeomBSplineSurface, v: f64, mult: usize) -> GeomBSplineS
     for _ in 0..mult {
         knots_v = insert_knot(&knots_v, v, 1);
     }
-    GeomBSplineSurface {
-        poles: new_poles,
-        knots_u: s.knots_u.clone(),
+    GeomBSplineSurface::from_parts(
+        new_poles,
+        new_weights,
+        s.knots_u().to_vec(),
         knots_v,
-        deg_u: s.deg_u,
-        deg_v: s.deg_v,
-        weights: new_weights,
-        u_periodic: s.u_periodic,
-        v_periodic: s.v_periodic,
-        res_latch: ResolutionLatch::new(),
-    }
+        s.deg_u(),
+        s.deg_v(),
+        s.u_periodic(),
+        s.v_periodic(),
+    )
 }
 
 fn distinct_in_range(knots: &[f64], first: f64, last: f64) -> Vec<f64> {
@@ -378,13 +376,13 @@ fn bspline_curve_builder(
     };
     let weights = convert.weights().to_vec();
     let weights = if weights_are_rational(&weights) { Some(weights) } else { None };
-    let mut curve = GeomBSplineCurve {
+    let mut curve = GeomBSplineCurve::from_parts(
         poles,
         weights,
-        knots: flat,
-        degree: convert.degree(),
-        periodic: convert.is_periodic(),
-    };
+        flat,
+        convert.degree(),
+        convert.is_periodic(),
+    );
     let mut trsf = GpTrsf::identity();
     trsf.set_transformation_from_to(&conic_position.to_ax3(), &GpAx3::standard());
     Curve::transform(&mut curve, &trsf);
@@ -414,13 +412,13 @@ pub fn bspline_copy(c: &dyn Curve) -> Result<GeomBSplineCurve, ConvertError> {
     let poles = c.bspline_poles().ok_or(ConvertError::DomainError)?;
     let knots = c.bspline_knots().ok_or(ConvertError::DomainError)?;
     let degree = c.nurbs_degree().ok_or(ConvertError::DomainError)?;
-    Ok(GeomBSplineCurve {
-        poles: poles.to_vec(),
-        weights: c.bspline_weights().map(|w| w.to_vec()),
-        knots: knots.to_vec(),
+    Ok(GeomBSplineCurve::from_parts(
+        poles.to_vec(),
+        c.bspline_weights().map(|w| w.to_vec()),
+        knots.to_vec(),
         degree,
-        periodic: c.is_periodic(),
-    })
+        c.is_periodic(),
+    ))
 }
 
 /// `GeomConvert::CurveToBSplineCurve(C, Parameterisation)` (`GeomConvert.cxx:163-430`);
@@ -573,13 +571,13 @@ pub fn curve_to_bspline_curve(
         // drops the periodic representation (`SetNotPeriodic`) and the copy is
         // then cut with `Segment(U1, U2)`.
         if basis.bspline_poles().is_some() {
-            let mut bs = GeomBSplineCurve {
-                poles: basis.bspline_poles().ok_or(ConvertError::DomainError)?.to_vec(),
-                weights: basis.bspline_weights().map(|w| w.to_vec()),
-                knots: basis.bspline_knots().ok_or(ConvertError::DomainError)?.to_vec(),
-                degree: basis.nurbs_degree().ok_or(ConvertError::DomainError)?,
-                periodic: basis.is_periodic(),
-            };
+            let mut bs = GeomBSplineCurve::from_parts(
+                basis.bspline_poles().ok_or(ConvertError::DomainError)?.to_vec(),
+                basis.bspline_weights().map(|w| w.to_vec()),
+                basis.bspline_knots().ok_or(ConvertError::DomainError)?.to_vec(),
+                basis.nurbs_degree().ok_or(ConvertError::DomainError)?,
+                basis.is_periodic(),
+            );
             if bs.is_periodic() {
                 let (uf, ul) = (bs.first_parameter(), bs.last_parameter());
                 occt_core::elib::clib2d::adjust_periodic(

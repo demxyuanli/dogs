@@ -111,7 +111,7 @@ pub fn to_3d(position: &GpAx2, curve2d: &dyn Curve2d) -> Option<Arc<dyn Curve>> 
         } else {
             GeomBSplineCurve::new(poles3d, flat, degree).ok()?
         };
-        curve.periodic = periodic;
+        curve.set_periodic_flag(periodic);
         return Some(Arc::new(curve) as Arc<dyn Curve>);
     }
 

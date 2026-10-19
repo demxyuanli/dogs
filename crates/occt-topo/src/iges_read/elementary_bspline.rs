@@ -196,8 +196,8 @@ fn finish(
     let flat_v = flat_knots(&v_knots, &v_mults, deg_v as i32, v_periodic, period_v);
     let mut built = GeomBSplineSurface::rational(poles, weights, flat_u, flat_v, deg_u, deg_v)
         .map_err(|e| format!("elementary BSpline: {e}"))?;
-    built.u_periodic = u_periodic;
-    built.v_periodic = v_periodic;
+    built.set_u_periodic_flag(u_periodic);
+    built.set_v_periodic_flag(v_periodic);
     Ok(built)
 }
 
