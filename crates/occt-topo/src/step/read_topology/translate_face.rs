@@ -190,8 +190,10 @@ impl<'a> Resolver<'a> {
         // `ShapeFix_Face.cxx:1899-2330`, ported in
         // `shhealing/shape_fix_face.rs::fix_missing_seam` (verified per face:
         // a3n00 f=192 turns 2 wires / 1 edge each into 1 wire / 5 edges, the same
-        // structure the OCCT model has). `check_pcurves_and_shift` then repairs
-        // the pcurves of the rebuilt wires (`cxx:365-480` first wire round).
+        // structure the OCCT model has). The pcurves of the rebuilt wires are
+        // `ShapeFix_ComposeShell`'s own; the post-seam round is the second
+        // `ShapeFix_Wire::Perform` with `FixEdgeCurves` forced off
+        // (`cxx:508-613`), so they are not re-projected.
         let mut sff = match self.current_heal_context() {
             Some(ctx) => crate::shhealing::ShapeFixFace::with_face_and_context(&face, ctx),
             None => crate::shhealing::ShapeFixFace::with_face(&face),
@@ -226,11 +228,10 @@ impl<'a> Resolver<'a> {
                 if !sub_faces.is_empty() {
                     for rf in &sub_faces {
                         for mut w in wires_stored_on_face(rf) {
-                            crate::shhealing::check_pcurves_and_shift(
+                            crate::shhealing::perform_wire_second_round(
                                 &mut w,
                                 rf,
                                 self.precision,
-                                false,
                             );
                         }
                     }

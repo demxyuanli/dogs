@@ -1092,12 +1092,30 @@ impl ShapeFixFace {
                     };
                     let tkey = GeometryRegistry::shape_key(&tmp_f.0);
                     for e in edges_of_wire(w) {
-                        if let Some((c2d, _a, _b)) = boptools_2d::curve_on_surface_range(&e, &tmp_f) {
+                        // `sa.PCurve(E, tmpF, C, a, b)` (`ShapeFix_Face.cxx:2114`):
+                        // surface overload, so the face orientation does not
+                        // select the seam representation.
+                        if let Some((c2d, _a, _b)) = boptools_2d::curve_on_surface_oriented(&e, &tmp_f, false) {
                             let mut nc = c2d.clone_dyn();
                             let mut tr = occt_core::gp::GpTrsf2d::identity();
                             tr.set_translation_vec(&vshift);
                             nc.transform(&tr);
-                            GeometryRegistry::global().set_edge_pcurve(&e.0, tkey, Arc::from(nc));
+                            // `C->Translate(V)` (`cxx:2118`) moves the one
+                            // representation `sae.PCurve` returned; the other
+                            // seam representation keeps its values.
+                            let reg = GeometryRegistry::global();
+                            let mut pcs = reg.edge_pcurves(&e.0, tkey);
+                            let nc: Arc<dyn Curve2d> = Arc::from(nc);
+                            if pcs.len() >= 2 {
+                                if e.0.orientation().is_reversed() {
+                                    pcs[1] = nc;
+                                } else {
+                                    pcs[0] = nc;
+                                }
+                                reg.set_edge_pcurves(&e.0, tkey, pcs);
+                            } else {
+                                reg.set_edge_pcurve(&e.0, tkey, nc);
+                            }
                         }
                     }
                 }
@@ -1127,7 +1145,8 @@ impl ShapeFixFace {
             } else {
                 wd2_edges[i1 - nb1 - 1].clone()
             };
-            let (c2d, f, l) = match boptools_2d::curve_on_surface_range(&edge1, &tmp_f) {
+            // `sa.PCurve(edge1, tmpF, c2d, f, l, true)` (`ShapeFix_Face.cxx:2149`).
+            let (c2d, f, l) = match boptools_2d::curve_on_surface_oriented(&edge1, &tmp_f, true) {
                 Some(v) => v,
                 None => return false, // cxx:2149-2152
             };
@@ -1165,7 +1184,8 @@ impl ShapeFixFace {
                     break;
                 }
                 let edge2 = wd2_edges[i2 - 1].clone();
-                let (c2d2, f2, _l2) = match boptools_2d::curve_on_surface_range(&edge2, &tmp_f) {
+                // `sa.PCurve(edge2, tmpF, c2d, f, l, true)` (`ShapeFix_Face.cxx:2198`).
+                let (c2d2, f2, _l2) = match boptools_2d::curve_on_surface_oriented(&edge2, &tmp_f, true) {
                     Some(v) => v,
                     None => return false, // cxx:2198-2201
                 };

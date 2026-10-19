@@ -98,6 +98,8 @@ pub fn fix_shifted_wire(wire: &Wire, face: &Face) -> bool {
         }
         let e1 = &edges[n1 - 1];
         let e2 = &edges[n2 - 1];
+        let pi1 = n1;
+        let pi2 = n2;
         n1 = n2;
         if BRepTool::is_degenerated(e1) || BRepTool::is_degenerated(e2) {
             if !degstop {

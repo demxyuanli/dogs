@@ -91,6 +91,11 @@ fn pcurve_at(
     edge: &Edge,
     face: &Face,
 ) -> Option<(Arc<dyn Curve2d>, f64, f64, GpPnt2d, GpPnt2d)> {
+    // `ShapeAnalysis_Edge::PCurve(edge, face, c2d, cf, cl, orient=true)`
+    // (`ShapeAnalysis_Edge.cxx:171-188`): takes the face's *surface* plus its
+    // location and stays on the surface-level `BRep_Tool::CurveOnSurface`
+    // overload. The face orientation is deliberately not composed (see the
+    // "COMMENTED BACK" note at `ShapeAnalysis_Edge.cxx:178-184`).
     let (c2, a, b) = curve_on_surface_oriented(edge, face, true)?;
     Some((c2.clone(), a, b, c2.d0(a), c2.d0(b)))
 }
@@ -110,7 +115,10 @@ fn xy_dot_axis(p: &GpPnt2d, x: &GpVec2d) -> f64 {
 }
 
 /// Analytic singularities of `ShapeAnalysis_Surface::ComputeSingularities`
-/// for cone / torus / sphere (`cxx:201-246`).
+/// (`ShapeAnalysis_Surface.cxx:181-294`): the cone / torus / sphere arms
+/// (`cxx:201-246`) and the corner-based arm shared by `Geom_BoundedSurface`
+/// (BSpline / Bezier / RectangularTrimmed), `Geom_SurfaceOfRevolution` and
+/// `Geom_OffsetSurface` (`cxx:247-292`).
 pub(super) fn degenerated_values(
     surf: &dyn Surface,
     p3d: &GpPnt,
@@ -163,10 +171,18 @@ pub(super) fn degenerated_values(
             GpPnt2d::new(su1, sv1),
             GpPnt2d::new(su2, sv1),
         ));
-    } else if surf.is_surface_of_revolution() {
-        // `ShapeAnalysis_Surface::ComputeSingularities` revolution arm
-        // (`ShapeAnalysis_Surface.cxx:247-291`). Bounded and offset surfaces
-        // share this block; this call site only needs the revolution poles.
+    } else if surf.is_surface_of_revolution()
+        || surf.is_offset_surface()
+        || surf.is_bspline_surface()
+        || surf.is_bezier_surface()
+        || surf.rectangular_trimmed_basis().is_some()
+    {
+        // `ShapeAnalysis_Surface::ComputeSingularities` corner arm
+        // (`ShapeAnalysis_Surface.cxx:247-292`) for `Geom_BoundedSurface`
+        // (BSpline / Bezier / RectangularTrimmed), `Geom_SurfaceOfRevolution`
+        // and `Geom_OffsetSurface`. A revolved sphere reaches here as a
+        // `Geom_BSplineSurface`, so the arm must not be limited to
+        // `Geom_SurfaceOfRevolution`.
         let um = 0.5 * (su1 + su2);
         let vm = 0.5 * (sv1 + sv2);
         let p_u0 = surf.d0(su1, vm);
@@ -211,9 +227,13 @@ pub(super) fn degenerated_values(
         ));
     }
     let mut best: Option<(f64, GpPnt2d, GpPnt2d)> = None;
+    // `ShapeAnalysis_Surface.cxx:390`: the loop condition is
+    // `i < myNbDeg && myPreci[i] <= preci`, i.e. it stops at the first
+    // singularity whose own precision exceeds `preci`, so a later entry with a
+    // smaller precision is unreachable.
     for (pre, q, a, b) in hits {
         if pre > preci {
-            continue;
+            break;
         }
         let gap = q.distance(p3d);
         if gap <= preci && best.as_ref().is_none_or(|(g, _, _)| gap < *g) {

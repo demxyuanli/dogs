@@ -53,11 +53,66 @@ pub(in crate::shhealing) fn has_pcurve(edge: &Edge, face: &Face) -> bool {
     curve_on_surface_oriented(edge, face, true).is_some()
 }
 
+/// `ShapeExtend_WireData::Value(num)`: every `ShapeAnalysis_Wire` /
+/// `ShapeFix_Wire` `num` indexes this sequence, not the wire's child list.
+/// `ShapeExtend_WireData::Init` (`ShapeExtend_WireData.cxx:80-122`) composes
+/// each edge with the wire orientation and, for a REVERSED wire, prepends it,
+/// so the sequence is [`stored_manifold_edges`].
+fn wire_data_edges(wire: &Wire) -> Vec<Edge> {
+    stored_manifold_edges(wire)
+}
+
+/// Child slot (1-based) that holds `ShapeExtend_WireData` element `num`.
+///
+/// This port stores the wire's children as `ShapeExtend_WireData::myEdges`
+/// does (`degenerated.rs:wire_insert_edge_before`), but a REVERSED wire keeps
+/// them in the opposite order (`ShapeExtend_WireData.cxx:115-118`), and
+/// `TopoDS_Iterator` only composes the orientation, it does not reorder.
+fn wire_data_child(wire: &Wire, num: usize) -> usize {
+    let nb = wire_edges_nb(wire);
+    if wire.0.orientation() == Orientation::Reversed {
+        nb + 1 - num
+    } else {
+        num
+    }
+}
+
+/// `ShapeExtend_WireData::Add(edge, atnum)` in `ShapeExtend_WireData` numbering:
+/// insert so the edge becomes element `atnum` (`0` appends). For a REVERSED
+/// wire the child list runs the other way, so element `atnum` sits after child
+/// `nb + 1 - atnum`.
+fn wire_data_insert(wire: &mut Wire, atnum: usize, edge: &Edge) {
+    let mut e = edge.clone();
+    if wire.0.orientation() == Orientation::Reversed {
+        let nb = wire_edges_nb(wire);
+        e.0.reverse();
+        if atnum == 0 {
+            wire_insert_edge_before(wire, 1, &e);
+        } else {
+            wire_insert_edge_before(wire, nb + 2 - atnum, &e);
+        }
+    } else {
+        wire_insert_edge_before(wire, atnum, &e);
+    }
+}
+
+/// `ShapeExtend_WireData::Remove(num)` in `ShapeExtend_WireData` numbering.
+fn wire_data_remove(wire: &mut Wire, num: usize) {
+    let child = wire_data_child(wire, num);
+    wire_remove_edge(wire, child);
+}
+
+/// `ShapeExtend_WireData::Set(edge, num)` in `ShapeExtend_WireData` numbering.
+fn wire_data_set(wire: &mut Wire, num: usize, edge: &Edge) {
+    let child = wire_data_child(wire, num);
+    wire_set_edge_composed(wire, child, edge);
+}
+
 pub(in crate::shhealing) fn check_degenerated(wire: &Wire, face: &Face, prec: f64, num: usize) -> DegeneratedCheck {
     let Some(surf) = BRepTool::face_surface(face) else {
         return DegeneratedCheck::None;
     };
-    let edges = edges_of_wire(wire);
+    let edges = wire_data_edges(wire);
     let nb = edges.len();
     if nb < 1 || num > nb {
         return DegeneratedCheck::None;
@@ -320,7 +375,7 @@ pub(in crate::shhealing) fn fix_degenerated(wire: &mut Wire, face: &Face, prec: 
         DegeneratedCheck::None => (false, false),
         // `cxx:2148-2152`: FAIL2 -> `WireData()->Remove(num)` + DONE3.
         DegeneratedCheck::Remove => {
-            wire_remove_edge(wire, num);
+            wire_data_remove(wire, num);
             (true, false)
         }
         DegeneratedCheck::Found { p2d1, p2d2, lack } => {
@@ -364,7 +419,7 @@ pub(in crate::shhealing) fn fix_degenerated(wire: &mut Wire, face: &Face, prec: 
             let n2 = if num > 0 { num } else { nb };
             let n1 = if n2 > 1 { n2 - 1 } else { nb };
             let n3 = if lack { n2 } else if n2 < nb { n2 + 1 } else { 1 };
-            let edges = edges_of_wire(wire);
+            let edges = wire_data_edges(wire);
             if let Some(v1) = last_vertex(&edges[n1 - 1]) {
                 let mut v = v1.0.clone();
                 v.set_orientation(Orientation::Forward);
@@ -379,9 +434,9 @@ pub(in crate::shhealing) fn fix_degenerated(wire: &mut Wire, face: &Face, prec: 
 
             // `cxx:2188-2198`: `Add` (DONE1) inserts, `Set` (DONE2) replaces.
             if lack {
-                wire_insert_edge_before(wire, n2, &deg);
+                wire_data_insert(wire, n2, &deg);
             } else {
-                wire_set_edge(wire, n2, &deg);
+                wire_data_set(wire, n2, &deg);
             }
             (true, !lack)
         }
@@ -411,11 +466,11 @@ pub fn fix_degenerated_all(wire: &mut Wire, face: &Face, prec: f64) -> bool {
             && (prev_coded == 1 || (i == 1 && last_coded == 1))
             && wire_edges_nb(wire) > 1
         {
-            wire_remove_edge(wire, idx);
+            wire_data_remove(wire, idx);
             if prev_coded == 0 {
                 i = wire_edges_nb(wire) as isize;
             }
-            if let Some(e) = edges_of_wire(wire).get(i as usize - 1) {
+            if let Some(e) = wire_data_edges(wire).get(i as usize - 1) {
                 GeometryRegistry::global().set_degenerated(&e.0, false);
             }
             // `B.Degenerated(sbwd->Edge(i++), false)` -- the `i++` is undone by
