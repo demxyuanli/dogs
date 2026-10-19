@@ -235,6 +235,24 @@ impl MeshModel {
         Ok(&mut self.edges[index])
     }
 
+    /// The 3D discretization of an edge and one of its pcurves, borrowed
+    /// together: the pcurve is parameterized from the stored 3D polyline, so a
+    /// caller that needs both does not have to copy the polyline first.
+    pub fn edge_discretization_and_pcurve_mut(
+        &mut self,
+        edge_index: usize,
+        pcurve_index: usize,
+    ) -> Result<(&MeshCurve, &mut MeshPCurve), String> {
+        if edge_index >= self.edges.len() {
+            return Err(out_of_range(
+                "MeshModel::edge_discretization_and_pcurve_mut",
+                edge_index,
+                self.edges.len(),
+            ));
+        }
+        self.edges[edge_index].discretization_and_pcurve_mut(pcurve_index)
+    }
+
     /// Removes and returns the edge at the given index (shifts following indices).
     pub fn remove_edge(&mut self, index: usize) -> Result<MeshEdge, String> {
         if index >= self.edges.len() {

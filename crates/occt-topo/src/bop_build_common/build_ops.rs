@@ -35,22 +35,33 @@ pub trait BopBuildOps {
 // Shape-set helpers
 // ---------------------------------------------------------------------------
 
-/// `NCollection_Map` / `NCollection_IndexedMap` insert, keyed by
-/// `TopTools_ShapeMapHasher` (`aMFence`, `aMSOr`, `aMSI`,
-/// `BOPAlgo_Builder_3.cxx:637-643`) — [`same_shape`] = `TopoDS_Shape::IsSame`.
-pub(super) fn set_add(set: &mut Vec<TopoShape>, s: TopoShape) -> bool {
-    if set.iter().any(|x| same_shape(x, &s)) {
-        false
-    } else {
-        set.push(s);
-        true
-    }
+/// `TopTools_IndexedMapOfShape` (`aMSI`): `TopTools_ShapeMapHasher` membership
+/// ([`ShapeMapKey`] = `TShape` + location, i.e. [`same_shape`]) plus the append
+/// order of an `NCollection_IndexedMap`, for the fences whose contents are
+/// walked in insertion order. OCCT stores these fences in hash maps, so the
+/// linear scan they were translated into was not part of the algorithm.
+pub(super) struct ShapeIndex {
+    order: Vec<TopoShape>,
+    keys: HashSet<ShapeMapKey>,
 }
 
-/// True when `set` already holds a shape identical to `s` under
-/// [`same_shape`] (`TopTools_ShapeMapHasher`).
-pub(super) fn set_contains(set: &[TopoShape], s: &TopoShape) -> bool {
-    set.iter().any(|x| same_shape(x, s))
+impl ShapeIndex {
+    pub(super) fn new() -> Self {
+        Self { order: Vec::new(), keys: HashSet::new() }
+    }
+
+    /// Insert; returns true when the shape was not already present.
+    pub(super) fn add(&mut self, s: TopoShape) -> bool {
+        if !self.keys.insert(shape_key(&s)) {
+            return false;
+        }
+        self.order.push(s);
+        true
+    }
+
+    pub(super) fn iter(&self) -> impl Iterator<Item = &TopoShape> {
+        self.order.iter()
+    }
 }
 
 /// Direct structural children of `shape`.
@@ -226,7 +237,7 @@ pub(super) fn collect_splits<B: BopBuildOps, F: FnMut(TopoShape)>(f: &B, sub: &T
 /// recursively rebuilt from the images of its sub-shapes.
 pub fn fill_images_compounds<B: BopBuildOps>(f: &mut B) -> Result<(), String> {
     let n = f.ds().nb_source_shapes();
-    let mut fence: Vec<TopoShape> = Vec::new();
+    let mut fence: HashSet<ShapeMapKey> = HashSet::new();
     for i in 0..n {
         let Some(si) = f.ds().shape_info(i) else { continue };
         if si.shape_type() == ShapeType::Compound {
@@ -245,9 +256,9 @@ pub fn fill_images_compounds<B: BopBuildOps>(f: &mut B) -> Result<(), String> {
 pub(super) fn fill_images_compound<B: BopBuildOps>(
     f: &mut B,
     compound: &TopoShape,
-    fence: &mut Vec<TopoShape>,
+    fence: &mut HashSet<ShapeMapKey>,
 ) -> Result<(), String> {
-    if !set_add(fence, compound.clone()) {
+    if !fence_insert(fence, compound) {
         return Ok(());
     }
     let children = direct_children(compound);
@@ -378,7 +389,7 @@ pub(super) fn alone_vertices(ds: &BopdsDS, face_idx: usize) -> Vec<usize> {
 pub fn fill_internal_shapes<B: BopBuildOps>(f: &mut B) -> Result<(), String> {
     // 1.1 — shapes from the pure arguments.
     let mut lsc: Vec<TopoShape> = Vec::new();
-    let mut fence: Vec<TopoShape> = Vec::new();
+    let mut fence: HashSet<ShapeMapKey> = HashSet::new();
     for a in f.arguments() {
         treat_compound(a, &mut lsc, &mut fence);
     }
@@ -388,7 +399,7 @@ pub fn fill_internal_shapes<B: BopBuildOps>(f: &mut B) -> Result<(), String> {
         match s.shape_type() {
             ShapeType::Wire => {
                 for e in edges_of_wire(&Wire(s.clone())) {
-                    if set_add(&mut fence, e.0.clone()) {
+                    if fence_insert(&mut fence, &e.0) {
                         largs.push(e.0);
                     }
                 }
@@ -398,19 +409,20 @@ pub fn fill_internal_shapes<B: BopBuildOps>(f: &mut B) -> Result<(), String> {
         }
     }
     fence.clear();
-    let mut msi: Vec<TopoShape> = Vec::new();
+    // `aMSI`: insertion-ordered, and walked in insertion order below.
+    let mut msi = ShapeIndex::new();
     for s in &largs {
-        if !set_add(&mut fence, s.clone()) {
+        if !fence_insert(&mut fence, s) {
             continue;
         }
         let t = s.shape_type();
         if t == ShapeType::Vertex || t == ShapeType::Edge || t == ShapeType::Wire {
             if f.history().has_image(s) {
                 for im in f.history().image(s).unwrap() {
-                    set_add(&mut msi, im.clone());
+                    msi.add(im.clone());
                 }
             } else {
-                set_add(&mut msi, s.clone());
+                msi.add(s.clone());
             }
         }
     }
@@ -419,7 +431,7 @@ pub fn fill_internal_shapes<B: BopBuildOps>(f: &mut B) -> Result<(), String> {
     fence.clear();
     let mut lsd: Vec<TopoShape> = Vec::new();
     let mut msx: HashMap<ShapeMapKey, Vec<TopoShape>> = HashMap::new();
-    let mut msor: Vec<TopoShape> = Vec::new();
+    let mut msor: HashSet<ShapeMapKey> = HashSet::new();
     let n = f.ds().nb_source_shapes();
     for i in 0..n {
         let Some(si) = f.ds().shape_info(i) else { continue };
@@ -431,30 +443,30 @@ pub fn fill_internal_shapes<B: BopBuildOps>(f: &mut B) -> Result<(), String> {
         for s in own_internal_shapes(&solid) {
             if f.history().has_image(&s) {
                 for im in f.history().image(&s).unwrap() {
-                    set_add(&mut msi, im.clone());
+                    msi.add(im.clone());
                 }
             } else {
-                set_add(&mut msi, s);
+                msi.add(s);
             }
         }
         // Ancestors of the splits (or of the solid itself when unsplit).
         if f.history().has_image(&solid) {
             for sp in f.history().image(&solid).unwrap() {
-                if set_add(&mut fence, sp.clone()) {
+                if fence_insert(&mut fence, sp) {
                     map_ancestors_into(sp, &mut msx);
                     lsd.push(sp.clone());
                 }
             }
-        } else if set_add(&mut fence, solid.clone()) {
+        } else if fence_insert(&mut fence, &solid) {
             map_ancestors_into(&solid, &mut msx);
             lsd.push(solid.clone());
-            set_add(&mut msor, solid);
+            msor.insert(shape_key(&solid));
         }
     }
 
     // 3. — keep only the candidates not already tied to a face of the solids.
     let mut lsi: Vec<TopoShape> = Vec::new();
-    for s in &msi {
+    for s in msi.iter() {
         let tied = msx.contains_key(&shape_key(s));
         if !tied {
             lsi.push(s.clone());
@@ -479,7 +491,7 @@ pub fn fill_internal_shapes<B: BopBuildOps>(f: &mut B) -> Result<(), String> {
                 i += 1;
                 continue;
             }
-            if set_contains(&msor, sd) {
+            if msor.contains(&shape_key(sd)) {
                 // Make a copy of the original solid so the input stays intact.
                 let mut sdx = Solid::new();
                 for sh in direct_children(sd) {
@@ -491,7 +503,7 @@ pub fn fill_internal_shapes<B: BopBuildOps>(f: &mut B) -> Result<(), String> {
                     .entry(shape_key(&sdx.0))
                     .or_default()
                     .push(sd.clone());
-                msor.retain(|x| !same_shape(x, sd));
+                msor.remove(&shape_key(sd));
                 *sd = sdx.0;
             } else {
                 bld.add(sd, &si_shape);
@@ -504,9 +516,13 @@ pub fn fill_internal_shapes<B: BopBuildOps>(f: &mut B) -> Result<(), String> {
 
 /// Flattens `s` into `out`: a compound is expanded into its children, any other
 /// shape is appended (once, through the fence) (`BOPTools_AlgoTools::TreatCompound`).
-pub(super) fn treat_compound(s: &TopoShape, out: &mut Vec<TopoShape>, fence: &mut Vec<TopoShape>) {
+pub(super) fn treat_compound(
+    s: &TopoShape,
+    out: &mut Vec<TopoShape>,
+    fence: &mut HashSet<ShapeMapKey>,
+) {
     if s.shape_type() != ShapeType::Compound {
-        if set_add(fence, s.clone()) {
+        if fence_insert(fence, s) {
             out.push(s.clone());
         }
         return;

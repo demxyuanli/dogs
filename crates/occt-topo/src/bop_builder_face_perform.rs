@@ -404,14 +404,18 @@ pub fn perform_areas(fb: &mut FaceBuilder) -> Result<(), String> {
     }
 
     let mut face_holes: HashMap<usize, Vec<TopoShape>> = HashMap::new();
+    // `hole_face_map` is keyed by the hole, so the hole for a key is looked up
+    // once here instead of scanning `hole_faces` per entry.
+    let hole_by_key: HashMap<usize, &TopoShape> =
+        hole_faces.iter().map(|h| (sk(h), h)).collect();
     for (hk, face_val) in &hole_face_map {
-        let Some(hole) = hole_faces.iter().find(|h| sk(h) == *hk) else {
+        let Some(hole) = hole_by_key.get(hk) else {
             continue;
         };
         face_holes
             .entry(sk(face_val))
             .or_default()
-            .push(hole.clone());
+            .push((*hole).clone());
     }
 
     if hole_faces.len() != hole_face_map.len() {
@@ -521,8 +525,11 @@ pub fn perform_internal_shapes(fb: &mut FaceBuilder) -> Result<(), String> {
 
     let mut me_done: HashSet<i32> = HashSet::new();
     let mut ctx = IntToolsContext::new();
+    // `areas` is a snapshot of `fb.base.areas` and the loop only overwrites the
+    // entry it is visiting, so the enumeration index is the slot to write back;
+    // the former `position(|a| a.same_tshape(f))` scan was O(areas^2).
     let areas = fb.base.areas.clone();
-    for f in &areas {
+    for (pos, f) in areas.iter().enumerate() {
         let mut face = Face(f.clone());
         let mut box_f = occt_core::bnd::BndBox2d::new();
         add_uv_bounds_face(&face, &mut box_f);
@@ -556,9 +563,7 @@ pub fn perform_internal_shapes(fb: &mut FaceBuilder) -> Result<(), String> {
         for wi in lsi {
             b.add_wire(&mut face, &Wire(wi));
         }
-        if let Some(pos) = fb.base.areas.iter().position(|a| a.same_tshape(f)) {
-            fb.base.areas[pos] = face.0;
-        }
+        fb.base.areas[pos] = face.0;
         if me_done.len() == an_edges_map.len() {
             return Ok(());
         }

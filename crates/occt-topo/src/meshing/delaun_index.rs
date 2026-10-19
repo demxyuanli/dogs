@@ -365,11 +365,16 @@ impl VertexTool {
     pub fn find_vertex(&mut self, x: f64, y: f64, tol: f64) -> Option<usize> {
         self.inspector.set_point(x, y);
         self.inspector.set_tolerance(tol);
-        let (lo, hi) = self.grid.cell_range(x - tol, y - tol, x + tol, y + tol);
+        // The grid, the vertex list and the inspector are separate fields, so
+        // the cell contents are read in place while the inspector accumulates;
+        // copying each cell's index list here cost one allocation per visited
+        // cell on the node-insertion hot path.
+        let Self { grid, vertices, inspector, .. } = self;
+        let (lo, hi) = grid.cell_range(x - tol, y - tol, x + tol, y + tol);
         for cj in lo.1..=hi.1 {
             for ci in lo.0..=hi.0 {
-                for idx in self.grid.entries(ci, cj).to_vec() {
-                    self.inspector.inspect(idx, &self.vertices[idx]);
+                for &idx in grid.entries(ci, cj) {
+                    inspector.inspect(idx, &vertices[idx]);
                 }
             }
         }
@@ -381,11 +386,12 @@ impl VertexTool {
         self.inspector.set_point(x, y);
         self.inspector.set_tolerance(tol);
         let mut hits = Vec::new();
-        let (lo, hi) = self.grid.cell_range(x - tol, y - tol, x + tol, y + tol);
+        let Self { grid, vertices, inspector, .. } = self;
+        let (lo, hi) = grid.cell_range(x - tol, y - tol, x + tol, y + tol);
         for cj in lo.1..=hi.1 {
             for ci in lo.0..=hi.0 {
-                for idx in self.grid.entries(ci, cj).to_vec() {
-                    if self.inspector.inspect(idx, &self.vertices[idx]) {
+                for &idx in grid.entries(ci, cj) {
+                    if inspector.inspect(idx, &vertices[idx]) {
                         hits.push(idx);
                     }
                 }
@@ -580,11 +586,12 @@ impl CircleTool {
     pub fn select_circles(&mut self, u: f64, v: f64, tol: f64) -> Vec<usize> {
         self.inspector.set_point(u, v);
         self.inspector.set_tolerance(tol);
-        let (lo, hi) = self.grid.cell_range(u - tol, v - tol, u + tol, v + tol);
+        let Self { grid, circles, inspector } = self;
+        let (lo, hi) = grid.cell_range(u - tol, v - tol, u + tol, v + tol);
         for cj in lo.1..=hi.1 {
             for ci in lo.0..=hi.0 {
-                for idx in self.grid.entries(ci, cj).to_vec() {
-                    self.inspector.inspect(idx, &self.circles[idx]);
+                for &idx in grid.entries(ci, cj) {
+                    inspector.inspect(idx, &circles[idx]);
                 }
             }
         }

@@ -12,6 +12,14 @@ use crate::shape::TopoShape;
 /// should go through this helper.
 pub fn cumulated_children(s: &TopoShape) -> Vec<TopoShape> {
     let stored = s.tshape.read().expect("poisoned TShape lock").children.clone();
+    // `TopoDS_Iterator` with a FORWARD shape at an identity location composes
+    // to nothing and moves nothing (`TopoDS_Iterator.cxx:40-52` only touches
+    // the child when the parent orientation is not FORWARD or the parent
+    // location is not identity), so the stored views are already the answer.
+    // Every walk visit pays this, hence the shortcut.
+    if s.orientation().is_forward() && s.location().is_identity() {
+        return stored;
+    }
     let parent_ori = s.orientation();
     let parent_loc = s.location().clone();
     let cum_loc = !parent_loc.is_identity();

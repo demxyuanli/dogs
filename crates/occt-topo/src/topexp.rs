@@ -4,6 +4,7 @@
 //! with `cumOri`/`cumLoc` true). Callers may still seed children with
 //! [`Explorer::set_children`] or [`Explorer::with_children_fn`].
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::abs::ShapeType;
@@ -122,9 +123,10 @@ impl Explorer {
     }
 }
 
-/// Read the topological type of a shape (behind the shared `TShape` lock).
+/// Read the topological type of a shape (`TopoDS_Shape::ShapeType`). The view
+/// carries the type, so this does not touch the shared lock.
 fn shape_type_of(s: &TopoShape) -> ShapeType {
-    s.tshape.read().expect("poisoned TShape lock").shape_type()
+    s.shape_type()
 }
 
 /// Filter `shapes` to those whose type equals `target`.
@@ -159,6 +161,9 @@ pub fn nb_shapes(shapes: &[TopoShape], target: ShapeType) -> usize {
 /// explicit vertex children.
 pub fn vertices_from_edges(edges: &[TopoShape]) -> Vec<TopoShape> {
     let mut out: Vec<TopoShape> = Vec::new();
+    // Uniquify by `TShape` identity (`TopoDS_Shape::IsSame` ignores the
+    // orientation). A linear scan per vertex would make this O(V^2).
+    let mut seen: HashSet<usize> = HashSet::new();
     for e in edges {
         let has_children = !e.tshape.read().unwrap().children.is_empty();
         let mut added = false;
@@ -168,13 +173,13 @@ pub fn vertices_from_edges(edges: &[TopoShape]) -> Vec<TopoShape> {
                 if v.shape_type() != ShapeType::Vertex {
                     continue;
                 }
-                if !out.iter().any(|o| Arc::ptr_eq(&o.tshape, &v.tshape)) {
+                if seen.insert(Arc::as_ptr(&v.tshape) as usize) {
                     out.push(v);
                     added = true;
                 }
             }
         }
-        if !added && !out.iter().any(|o| Arc::ptr_eq(&o.tshape, &e.tshape)) {
+        if !added && seen.insert(Arc::as_ptr(&e.tshape) as usize) {
             out.push(e.clone());
         }
     }

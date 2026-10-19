@@ -114,7 +114,7 @@ pub(super) fn add_draft_face(bld: &TopoBuilder, shell: &mut TopoShape, face: &To
     if face_is_degenerate(&Face(face.clone())) {
         return false;
     }
-    if set_contains(&direct_children(shell), face) {
+    if direct_children(shell).iter().any(|x| same_shape(x, face)) {
         return false;
     }
     bld.add(shell, face);

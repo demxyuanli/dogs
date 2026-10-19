@@ -177,7 +177,7 @@ impl BopdsDS {
         self.ranges.clear();
         let mut start = 0usize;
         for a in arguments {
-            if self.map.contains(&ShapeKey(a.clone())) {
+            if self.map.contains_by(&ShapeKey::addr(a)) {
                 continue;
             }
             self.append(a.clone()).expect("BopdsDS::init: append failed");
@@ -233,7 +233,7 @@ impl BopdsDS {
             return Ok(i);
         }
         let kind = shape.shape_type();
-        let index = self.map.add(ShapeKey(shape.clone()));
+        let index = self.map.add(ShapeKey::new(shape.clone()));
         let bbox = shape_bbox(&shape);
         self.shape_infos
             .push(BopdsShapeInfo {
@@ -287,10 +287,10 @@ impl BopdsDS {
     /// Appends a pre-built shape info. Returns the index of the shape
     /// (existing if already present).
     pub fn append_info(&mut self, info: BopdsShapeInfo) -> usize {
-        if let Some(i) = self.map.find_index(&ShapeKey(info.shape.clone())) {
+        if let Some(i) = self.map.find_index_by(&ShapeKey::addr(&info.shape)) {
             return i;
         }
-        let index = self.map.add(ShapeKey(info.shape.clone()));
+        let index = self.map.add(ShapeKey::new(info.shape.clone()));
         let bbox = shape_bbox(&info.shape);
         self.shape_infos.push(info);
         self.boxes.push(bbox);
@@ -314,7 +314,7 @@ impl BopdsDS {
 
     /// Returns the index of the shape (by TShape identity).
     pub fn index(&self, shape: &TopoShape) -> Option<usize> {
-        self.map.find_index(&ShapeKey(shape.clone()))
+        self.map.find_index_by(&ShapeKey::addr(shape))
     }
 
     /// Returns the cached bounding box of the shape with index `i`.

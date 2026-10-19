@@ -50,7 +50,7 @@ pub(crate) use occt_core::gp::GpPnt;
 pub(crate) use crate::abs::{Orientation, ShapeType};
 pub(crate) use crate::algo_tools::AlgoTools;
 pub(crate) use crate::bop_hist::BopHistory;
-pub(crate) use crate::bop_occt_util::{same_shape, shape_key};
+pub(crate) use crate::bop_occt_util::{fence_insert, same_shape, shape_key};
 pub(crate) use crate::bopds::BopdsDS;
 pub(crate) use crate::brep_extrema::{closest_point_on_edge, closest_point_on_face, is_inside};
 pub(crate) use crate::brep_tool::BRepTool;

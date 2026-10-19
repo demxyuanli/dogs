@@ -2,7 +2,6 @@
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
-use std::sync::Arc;
 
 use crate::abs::ShapeType;
 use crate::shape::TopoShape;
@@ -13,14 +12,35 @@ use crate::shape::TopoShape;
 /// A `TopoShape` usable as a hash/equality key.
 ///
 /// `TopoShape` does not implement `Hash`/`Eq`, so this newtype hashes and
-/// compares by the shared `TShape` pointer — the same identity OCCT's
+/// compares by the shared `TShape` identity — the same identity OCCT's
 /// `TopTools_ShapeMapHasher` uses (topologically equal, not geometrically).
+///
+/// The identity is also stored on its own ([`TopoShape::shape_addr`]) so the
+/// map can be probed through `Borrow<usize>` ([`ShapeKey::addr`]): a lookup
+/// does not have to clone the shape into an owned key.
 #[derive(Clone)]
-pub(crate) struct ShapeKey(pub(crate) TopoShape);
+pub(crate) struct ShapeKey {
+    /// The occurrence the key was built from. Keeps the `TShape` alive for as
+    /// long as the map holds the key, like OCCT's handle-valued map.
+    pub(crate) shape: TopoShape,
+    /// `shape.shape_addr()` — cached, lock-free identity.
+    addr: usize,
+}
+
+impl ShapeKey {
+    pub(crate) fn new(shape: TopoShape) -> Self {
+        let addr = shape.shape_addr();
+        Self { shape, addr }
+    }
+
+    /// Borrowed key of a shape, for the `find_index_by` probes of
+    /// `IndexedMap`.
+    pub(crate) fn addr(shape: &TopoShape) -> usize { shape.shape_addr() }
+}
 
 impl PartialEq for ShapeKey {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0.tshape, &other.0.tshape)
+        self.addr == other.addr
     }
 }
 
@@ -28,13 +48,17 @@ impl Eq for ShapeKey {}
 
 impl Hash for ShapeKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        (Arc::as_ptr(&self.0.tshape) as usize).hash(state);
+        self.addr.hash(state);
     }
+}
+
+impl std::borrow::Borrow<usize> for ShapeKey {
+    fn borrow(&self) -> &usize { &self.addr }
 }
 
 impl std::fmt::Debug for ShapeKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "ShapeKey({:p})", self.0.tshape)
+        write!(f, "ShapeKey({:p})", self.shape.tshape)
     }
 }
 

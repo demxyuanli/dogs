@@ -93,13 +93,13 @@ pub(super) fn bspline_copy_of(curve: &dyn Curve) -> Option<occt_geom::bspline_cu
     let poles = curve.bspline_poles()?.to_vec();
     let knots = curve.bspline_knots()?.to_vec();
     let degree = curve.nurbs_degree()?;
-    Some(occt_geom::bspline_curve::GeomBSplineCurve {
+    Some(occt_geom::bspline_curve::GeomBSplineCurve::from_parts(
         poles,
-        weights: curve.bspline_weights().map(|w| w.to_vec()),
+        curve.bspline_weights().map(|w| w.to_vec()),
         knots,
         degree,
-        periodic: curve.is_periodic(),
-    })
+        curve.is_periodic(),
+    ))
 }
 
 /// `ArePolesPlanar` (`GeomToIGES_GeomCurve.cxx:170-199`): the area vector

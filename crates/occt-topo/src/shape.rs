@@ -7,17 +7,42 @@ use occt_core::toploc::TopLocLocation;
 
 /// Topological shape — shared data + location + orientation.
 /// Mirrors OCCT's TopoDS_Shape (handle to TShape + Location + Orientation).
+///
+/// `kind` / `id` / `addr` are an immutable copy of the TShape's own head
+/// fields (`TopoDS_TShape` is constructed with `myShapeType` and never
+/// reassigns it, `TopoDS_TShape.hxx:32-34`), so type dispatch and shape
+/// identity do not have to take the shared `RwLock`. They must stay in sync
+/// with the TShape they were read from: every constructor goes through
+/// [`TopoShape::from_handle`], and the copies are carried over by
+/// [`TopoShape::oriented`] / [`TopoShape::located`] / `Clone`.
 #[derive(Debug, Clone)]
 pub struct TopoShape {
     pub tshape: HandleTShape,
     pub location: TopLocLocation,
     pub orientation: Orientation,
+    /// `TopoDS_TShape::ShapeType()` — `TShape::shape_type`.
+    kind: ShapeType,
+    /// `TShape::id` (process-unique, assigned at construction).
+    id: u64,
+    /// Address of the `TShape` inside its lock (`GeometryRegistry::shape_key`).
+    addr: usize,
 }
 
 impl TopoShape {
     /// Wrap an existing TShape handle.
     pub fn from_handle(tshape: HandleTShape) -> Self {
-        Self { tshape, location: TopLocLocation::identity(), orientation: Orientation::Forward }
+        let (kind, id, addr) = {
+            let lock = tshape.read().expect("poisoned TShape lock");
+            (lock.shape_type, lock.id, std::ptr::addr_of!(*lock) as usize)
+        };
+        Self {
+            tshape,
+            location: TopLocLocation::identity(),
+            orientation: Orientation::Forward,
+            kind,
+            id,
+            addr,
+        }
     }
 
     /// Create a new empty shape of given type.
@@ -25,8 +50,20 @@ impl TopoShape {
         Self::from_handle(Arc::new(RwLock::new(TShape::new(shape_type))))
     }
 
+    /// `TopoDS_Shape::ShapeType()` — carried on the view, no TShape lock.
     pub fn shape_type(&self) -> ShapeType {
-        self.tshape.read().unwrap().shape_type
+        self.kind
+    }
+
+    /// The TShape's process-unique id (`TShape::id`), read at construction.
+    pub fn shape_id(&self) -> u64 {
+        self.id
+    }
+
+    /// Address of the `TShape` inside its lock — the `GeometryRegistry` key.
+    /// Stable for the lifetime of the `Arc` (the `TShape` never moves).
+    pub fn shape_addr(&self) -> usize {
+        self.addr
     }
 
     pub fn is_null(&self) -> bool {
@@ -64,12 +101,26 @@ impl TopoShape {
 
     /// Copy with reversed orientation.
     pub fn oriented(&self, o: Orientation) -> Self {
-        Self { tshape: self.tshape.clone(), location: self.location.clone(), orientation: o }
+        Self {
+            tshape: self.tshape.clone(),
+            location: self.location.clone(),
+            orientation: o,
+            kind: self.kind,
+            id: self.id,
+            addr: self.addr,
+        }
     }
 
     /// Copy with same location, no transform.
     pub fn located(&self, l: &TopLocLocation) -> Self {
-        Self { tshape: self.tshape.clone(), location: l.clone(), orientation: self.orientation }
+        Self {
+            tshape: self.tshape.clone(),
+            location: l.clone(),
+            orientation: self.orientation,
+            kind: self.kind,
+            id: self.id,
+            addr: self.addr,
+        }
     }
 
     /// Deep-ish copy (shares TShape data, copies view).

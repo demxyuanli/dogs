@@ -128,18 +128,35 @@ pub fn curve_on_surface_range(edge: &Edge, face: &Face) -> Option<(Arc<dyn Curve
 }
 
 /// `BRep_Tool::CurveOnSurface(edge, surface)`: a seam on a closed surface
-/// returns `PCurve2` when the edge is `REVERSED` (`BRep_Tool.cxx:354-361`).
-/// `ShapeAnalysis_Edge::PCurve(..., orient=true)` then swaps the range
-/// (`ShapeAnalysis_Edge.cxx:201-206`).
+/// returns `PCurve2` when the edge is `REVERSED` (`BRep_Tool.cxx:354-361`),
+/// and `orient` then swaps the range (`ShapeAnalysis_Edge.cxx:201-206`).
+///
+/// The face is read for its *surface* only, never for its orientation:
+/// `ShapeAnalysis_Edge::PCurve(edge, face, ...)` deliberately keeps the
+/// surface-level `BRep_Tool::CurveOnSurface(edge, surface, loc, ...)` overload
+/// and comments the face-level one back out
+/// (`ShapeAnalysis_Edge.cxx:178-187`, "COMMENTED BACK - NEEDS MORE CHANGES IN
+/// ALL SHAPEHEALING"). The face overload would compose `F.Orientation()` into
+/// the edge view first (`BRep_Tool.cxx:308-314`) and flip which of the two seam
+/// representations is read.
 pub fn curve_on_surface_oriented(
     edge: &Edge,
     face: &Face,
     orient: bool,
 ) -> Option<(Arc<dyn Curve2d>, f64, f64)> {
+    let reversed = edge.0.orientation().is_reversed();
+    pcurve_on_surface_rep(edge, face, reversed, orient && reversed)
+}
+
+fn pcurve_on_surface_rep(
+    edge: &Edge,
+    face: &Face,
+    pick_reversed: bool,
+    swap_range: bool,
+) -> Option<(Arc<dyn Curve2d>, f64, f64)> {
     let face_key = GeometryRegistry::shape_key(&face.0);
     let pcs = GeometryRegistry::global().edge_pcurves(&edge.0, face_key);
-    let reversed = edge.0.orientation().is_reversed();
-    let pc = if pcs.len() >= 2 && reversed {
+    let pc = if pcs.len() >= 2 && pick_reversed {
         pcs[1].clone()
     } else if let Some(stored) = pcs.first() {
         stored.clone()
@@ -165,7 +182,7 @@ pub fn curve_on_surface_oriented(
     if !(t1.is_finite() && t2.is_finite()) {
         return None;
     }
-    if orient && reversed {
+    if swap_range {
         std::mem::swap(&mut t1, &mut t2);
     }
     Some((pc, t1, t2))

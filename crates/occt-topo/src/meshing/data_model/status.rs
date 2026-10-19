@@ -477,6 +477,23 @@ impl MeshEdge {
         &mut self.discretization
     }
 
+    /// The 3D discretization and one pcurve borrowed together.
+    ///
+    /// `BRepMesh_EdgeDiscret::Tessellate2d` maps the stored 3D polyline onto
+    /// the pcurve parameters, so both are needed in the same pass. They are
+    /// separate fields here, so one call hands out the pair instead of forcing
+    /// the caller to copy the polyline before taking the pcurve mutably.
+    pub fn discretization_and_pcurve_mut(
+        &mut self,
+        index: usize,
+    ) -> Result<(&MeshCurve, &mut MeshPCurve), String> {
+        let len = self.pcurves.len();
+        let pcurve = self.pcurves.get_mut(index).ok_or_else(|| {
+            out_of_range("MeshEdge::discretization_and_pcurve_mut", index, len)
+        })?;
+        Ok((&self.discretization, pcurve))
+    }
+
     /// Number of pcurves assigned to this edge.
     pub fn pcurves_nb(&self) -> usize {
         self.pcurves.len()

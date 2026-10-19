@@ -452,17 +452,20 @@ impl BuilderSolid {
             self.loops.push(sh);
         }
         // 2. Post treatment: faces of the input that reached no loop are set
-        //    aside (OCCT appends them to myShapesToAvoid).
-        let in_loops: Vec<TopoShape> = self
+        //    aside (OCCT appends them to myShapesToAvoid). `TopoDS_Shape::IsSame`
+        //    is `TShape` plus `Location`, which is exactly the `ShapeMapKey`
+        //    content, so the membership test does not scan `in_loops`.
+        let in_loops: HashSet<ShapeMapKey> = self
             .loops
             .iter()
-            .flat_map(|l| faces_of(l).into_iter().map(|f| f.0))
+            .flat_map(|l| faces_of(l))
+            .map(|f| occt_shape_key(&f.0))
             .collect();
         for f in &self.shapes {
             if f.is_face()
                 && !is_infinite_face(f)
                 && !self.is_avoided(f)
-                && !in_loops.iter().any(|x| same_shape(x, f))
+                && !in_loops.contains(&occt_shape_key(f))
             {
                 self.shapes_to_avoid.push(f.clone());
             }

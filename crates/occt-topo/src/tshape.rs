@@ -206,8 +206,18 @@ impl Drop for TShape {
     /// growing unbounded and, critically, prevents a stale entry (keyed by a
     /// now-reused heap address) from leaking into an unrelated later shape.
     fn drop(&mut self) {
-        crate::tgeometry::GeometryRegistry::global()
-            .remove_by_ptr(self as *const TShape as usize, self.id);
+        // The registry only registers a shape through `GeometryRegistry::set_*`,
+        // and each of those also fills the corresponding geometry slot on this
+        // same `TShape`. With every slot empty there is no entry to release, so
+        // a pure-topology shape does not have to take the process-wide lock.
+        if self.edge_pcurves.is_some()
+            || self.edge_core.is_some()
+            || self.vertex_core.is_some()
+            || self.face_core.is_some()
+        {
+            crate::tgeometry::GeometryRegistry::global()
+                .remove_by_ptr(self as *const TShape as usize, self.id);
+        }
         // T-25: the geometry lives on the shape itself, so it dies with it.
         self.edge_pcurves = None;
         self.edge_core = None;

@@ -235,23 +235,31 @@ pub(crate) fn close_open_shells(shells: &[TopoShape], all_faces: &[TopoShape]) -
     let bld = TopoBuilder::new();
 
     // The loose faces: single faces of `all_faces` not already used by a
-    // closed shell (the section faces the splitter left dangling).
-    let in_closed: Vec<TopoShape> = shells
+    // closed shell (the section faces the splitter left dangling). Membership
+    // is `TopoDS_Shape::IsSame` (shared `TShape`), so a set of the cached
+    // addresses answers it without a scan; the handles stay alive through
+    // `shells`, which owns them for the whole call.
+    let in_closed: HashSet<usize> = shells
         .iter()
         .filter(|sh| !AlgoTools::is_open_shell(sh))
         .flat_map(|sh| faces_of(sh))
-        .map(|f| f.0)
+        .map(|f| f.0.shape_addr())
         .collect();
-    let is_consumed = |f: &TopoShape| in_closed.iter().any(|c| c.same_tshape(f));
     let loose: Vec<TopoShape> = all_faces
         .iter()
-        .filter(|f| f.is_face() && !is_consumed(f))
+        .filter(|f| f.is_face() && !in_closed.contains(&f.shape_addr()))
         .cloned()
         .collect();
 
     // How many open shells need each loose face (by geometry, so a face used by
     // several pieces is copied for each additional piece).
     let mut used_counts: HashMap<usize, usize> = HashMap::new();
+    // The boundary key list of each loose face, computed once. `loose` is a
+    // face list, so its own `face_edges` is the same list `faces_of` would
+    // return for it (the face is the root of its own subtree); walking the
+    // whole subtree per shell instead would re-visit every wire, edge and
+    // vertex of every candidate on every iteration.
+    let loose_keys: Vec<Vec<EKey>> = loose.iter().map(|fc| face_edges(&Face(fc.clone()))).collect();
 
     let mut out: Vec<TopoShape> = Vec::new();
     for sh in shells {
@@ -270,21 +278,20 @@ pub(crate) fn close_open_shells(shells: &[TopoShape], all_faces: &[TopoShape]) -
         // The shell's existing faces (so a loose face already inside the shell
         // is not duplicated — the splitter can produce a shell that is closed
         // topologically but reported open by the TShape-identity edge check).
-        let existing: Vec<TopoShape> = faces_of(sh).into_iter().map(|f| f.0).collect();
-        let already_in_shell = |fc: &TopoShape| existing.iter().any(|x| x.same_tshape(fc));
+        // The same traversal fills the rebuilt shell below, and membership is
+        // a `TShape`-identity set instead of a scan per candidate.
+        let existing_faces = faces_of(sh);
+        let existing: HashSet<usize> = existing_faces.iter().map(|f| f.0.shape_addr()).collect();
         let idx = if open_edges.is_empty() {
             None
         } else {
-            loose.iter().position(|fc| {
-                !already_in_shell(fc)
-                    && {
-                        let keys: Vec<EKey> = faces_of(fc).first().map(|f| face_edges(&f)).unwrap_or_default();
-                        open_edges.iter().all(|k| keys.contains(k))
-                    }
+            loose.iter().enumerate().position(|(i, fc)| {
+                !existing.contains(&fc.shape_addr())
+                    && open_edges.iter().all(|k| loose_keys[i].contains(k))
             })
         };
         let mut new_shell = Shell::new();
-        for f in faces_of(sh) {
+        for f in &existing_faces {
             let oriented = orient_face_outward(&f.0, sh);
             bld.add(&mut new_shell.0, &oriented);
         }
