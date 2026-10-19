@@ -3844,7 +3844,7 @@ int main(int argc, char** argv)
   bool       faces0 = false;
   for (int i = 2; i < argc; ++i)
   {
-    if (std::string(argv[i]) == "--nofix")
+    if (std::string(argv[i]) == "--nofix" || std::string(argv[i]) == "--degchkraw")
       nofix = true;
     if (std::string(argv[i]) == "--faces0")
       faces0 = true;
@@ -6078,15 +6078,179 @@ int main(int argc, char** argv)
     }
     return 0;
   }
+  // TEMP: `--degchk <faceIdx>` replays the reader-time wire passes up to
+  // `ShapeFix_Wire::FixEdgeCurves` and then prints
+  // `ShapeAnalysis_Wire::CheckDegenerated` per edge (endpoints, singularity
+  // list, DONE/FAIL bits) plus the edge count after each `FixDegenerated(i)`.
+  int  aDegChkFace = -1;
+  bool aDegChkSph  = false;
+  for (int i = 2; i + 1 < argc; ++i)
+  {
+    if (std::string(argv[i]) == "--degchk" || std::string(argv[i]) == "--degchkraw")
+    {
+      aDegChkFace = std::atoi(argv[i + 1]);
+      break;
+    }
+  }
+  for (int i = 2; i < argc; ++i)
+  {
+    if (std::string(argv[i]) == "--degchksph")
+    {
+      aDegChkSph = true;
+    }
+  }
+  if (aDegChkFace >= 0 || aDegChkSph)
+  {
+    TopoDS_Face aFace;
+    int         aFaceIdx = aDegChkFace;
+    if (aDegChkSph)
+    {
+      int k = 0;
+      for (TopExp_Explorer fx(aShape, TopAbs_FACE); fx.More(); fx.Next(), ++k)
+      {
+        const TopoDS_Face        fc = TopoDS::Face(fx.Current());
+        const occ::handle<Geom_Surface> sf = BRep_Tool::Surface(fc);
+        if (!sf.IsNull() && (new ShapeAnalysis_Surface(sf))->NbSingularities(Precision::Confusion()) > 0)
+        {
+          const TopoDS_Wire w0 = TopoDS::Wire(TopExp_Explorer(fc, TopAbs_WIRE).Current());
+          ShapeFix_Wire     s0;
+          s0.SetFace(fc, new ShapeAnalysis_Surface(sf));
+          s0.Load(w0);
+          s0.FixReorder();
+          s0.FixSmall(0);
+          s0.FixConnected();
+          s0.FixEdgeCurves();
+          std::cout << "SPH face=" << k << " n=" << s0.NbEdges();
+          occ::handle<ShapeExtend_WireData> wd = new ShapeExtend_WireData(s0.Wire());
+          ShapeAnalysis_Edge                se;
+          for (int j = 1; j <= wd->NbEdges(); ++j)
+          {
+            const TopoDS_Edge&        e = wd->Edge(j);
+            double                    f = 0., l = 0.;
+            occ::handle<Geom2d_Curve> c2 = BRep_Tool::CurveOnSurface(e, fc, f, l);
+            std::cout << " [" << (int)e.Orientation() << (BRep_Tool::Degenerated(e) ? "d" : "");
+            if (!c2.IsNull())
+            {
+              const gp_Pnt2d b = c2->Value(f), en = c2->Value(l);
+              std::cout << " (" << b.X() << "," << b.Y() << ")->(" << en.X() << "," << en.Y()
+                        << ")";
+            }
+            std::cout << "]";
+          }
+          std::cout << "\n";
+        }
+      }
+      return 0;
+    }
+    {
+      int k = 0;
+      for (TopExp_Explorer fx(aShape, TopAbs_FACE); fx.More(); fx.Next(), ++k)
+      {
+        if (k == aFaceIdx)
+        {
+          aFace = TopoDS::Face(fx.Current());
+          break;
+        }
+      }
+    }
+    if (aFace.IsNull())
+    {
+      std::cout << "DC no-face\n";
+      return 0;
+    }
+    occ::handle<Geom_Surface>          aSurf = BRep_Tool::Surface(aFace);
+    occ::handle<ShapeAnalysis_Surface> aSAS  = new ShapeAnalysis_Surface(aSurf);
+    const TopoDS_Wire aW = TopoDS::Wire(TopExp_Explorer(aFace, TopAbs_WIRE).Current());
+    ShapeFix_Wire aSFW;
+    aSFW.SetFace(aFace, aSAS);
+    aSFW.Load(aW);
+    aSFW.FixReorder();
+    aSFW.FixSmall(0);
+    aSFW.FixConnected();
+    aSFW.FixEdgeCurves();
+    occ::handle<ShapeExtend_WireData> aWD = new ShapeExtend_WireData(aSFW.Wire());
+    ShapeAnalysis_Wire                aWA(aWD, aFace, Precision::Confusion());
+    std::cout << "DC n=" << aWD->NbEdges() << "\n";
+    for (int j = 1; j <= aSAS->NbSingularities(Precision::Confusion()); ++j)
+    {
+      double    preci, par1, par2;
+      gp_Pnt2d  pd1, pd2;
+      gp_Pnt    p3;
+      bool      uiso = false;
+      aSAS->Singularity(j, preci, p3, pd1, pd2, par1, par2, uiso);
+      std::cout << "DC sing" << j << " preci=" << preci << " p3=(" << p3.X() << "," << p3.Y()
+                << "," << p3.Z() << ") pd1=(" << pd1.X() << "," << pd1.Y() << ") pd2=("
+                << pd2.X() << "," << pd2.Y() << ") uiso=" << (uiso ? 1 : 0) << "\n";
+    }
+    ShapeAnalysis_Edge sae;
+    for (int i = 1; i <= aWD->NbEdges(); ++i)
+    {
+      const int   n2 = i;
+      const int   n1 = (n2 > 1 ? n2 - 1 : aWD->NbEdges());
+      TopoDS_Edge E1 = aWD->Edge(n1);
+      TopoDS_Edge E2 = aWD->Edge(n2);
+      gp_Pnt2d    pd1, pd2;
+      aWA.CheckDegenerated(i, pd1, pd2);
+      std::cout << "DC i=" << i << " n1=" << n1
+                << " done=" << (aWA.LastCheckStatus(ShapeExtend_DONE) ? 1 : 0)
+                << " done1=" << (aWA.LastCheckStatus(ShapeExtend_DONE1) ? 1 : 0)
+                << " done2=" << (aWA.LastCheckStatus(ShapeExtend_DONE2) ? 1 : 0)
+                << " fail1=" << (aWA.LastCheckStatus(ShapeExtend_FAIL1) ? 1 : 0)
+                << " fail2=" << (aWA.LastCheckStatus(ShapeExtend_FAIL2) ? 1 : 0)
+                << " pd1=(" << pd1.X() << "," << pd1.Y() << ") pd2=(" << pd2.X() << ","
+                << pd2.Y() << ")";
+      TopoDS_Vertex vp = sae.FirstVertex(E1), v0 = sae.LastVertex(E1);
+      TopoDS_Vertex v1 = sae.FirstVertex(E2), v2 = sae.LastVertex(E2);
+      if (!vp.IsNull() && !v0.IsNull() && !v1.IsNull() && !v2.IsNull())
+      {
+        gp_Pnt pp = BRep_Tool::Pnt(vp), p0 = BRep_Tool::Pnt(v0);
+        gp_Pnt p1 = BRep_Tool::Pnt(v1), p2 = BRep_Tool::Pnt(v2);
+        std::cout << " pp=(" << pp.X() << "," << pp.Y() << "," << pp.Z() << ") p0=(" << p0.X()
+                  << "," << p0.Y() << "," << p0.Z() << ") p1=(" << p1.X() << "," << p1.Y()
+                  << "," << p1.Z() << ") p2=(" << p2.X() << "," << p2.Y() << "," << p2.Z()
+                  << ")";
+      }
+      std::cout << "\n";
+    }
+    for (int i = aSFW.NbEdges(); i >= 1; --i)
+    {
+      const int  aBefore = aSFW.NbEdges();
+      const bool aRes    = aSFW.FixDegenerated(i);
+      std::cout << "DC fix i=" << i << " r=" << (aRes ? 1 : 0) << " n=" << aSFW.NbEdges()
+                << " was=" << aBefore << "\n";
+    }
+    occ::handle<ShapeExtend_WireData> aEnd = new ShapeExtend_WireData(aSFW.Wire());
+    for (int i = 1; i <= aEnd->NbEdges(); ++i)
+    {
+      const TopoDS_Edge&        e  = aEnd->Edge(i);
+      double                    f  = 0., l = 0.;
+      occ::handle<Geom2d_Curve> c2 = BRep_Tool::CurveOnSurface(e, aFace, f, l);
+      std::cout << "DC e" << i << " ori=" << (int)e.Orientation() << " deg="
+                << (BRep_Tool::Degenerated(e) ? 1 : 0);
+      if (!c2.IsNull())
+      {
+        const gp_Pnt2d b = c2->Value(f), en = c2->Value(l);
+        std::cout << " uv=(" << b.X() << "," << b.Y() << ")->(" << en.X() << "," << en.Y() << ")";
+      }
+      std::cout << "\n";
+    }
+    return 0;
+  }
   // TEMP T-121: `--wirefix <faceIdx>` replays `ShapeFix_Face::Perform`'s wire
   // pass (`ShapeFix_Face.cxx:400-455`) on one face of the loaded (usually
   // `--nofix`) shape: for the full pass and then for every pass with one
   // `ShapeFix_Wire` mode disabled, it prints `ShapeAnalysis::TotCross2D`
   // (`ShapeAnalysis.cxx:115-150`) and the resulting edge orientations, so the
   // port's `perform_wire_first_round` can be compared stage by stage.
-  if (argc > 3 && std::string(argv[2]) == "--wirefix")
+  // `--wirefixraw` is the same replay on the wire as `ShapeFix_Face::Perform`
+  // sees it: `TopoDS_Iterator(face, false)` does not compose the face
+  // orientation (`ShapeFix_Face.cxx:401`), while `TopExp_Explorer` does, so
+  // `ShapeExtend_WireData` prepends here and appends there.
+  if (argc > 3
+      && (std::string(argv[2]) == "--wirefix" || std::string(argv[2]) == "--wirefixraw"))
   {
-    const int aFaceIdx = std::atoi(argv[3]);
+    const bool aRawOri = (std::string(argv[2]) == "--wirefixraw");
+    const int  aFaceIdx = std::atoi(argv[3]);
     TopoDS_Face aFace;
     int         k = 0;
     for (TopExp_Explorer fx(aShape, TopAbs_FACE); fx.More(); fx.Next(), ++k)
@@ -6104,7 +6268,28 @@ int main(int argc, char** argv)
     }
     occ::handle<Geom_Surface>          aSurf = BRep_Tool::Surface(aFace);
     occ::handle<ShapeAnalysis_Surface> aSAS  = new ShapeAnalysis_Surface(aSurf);
-    const TopoDS_Wire aW = TopoDS::Wire(TopExp_Explorer(aFace, TopAbs_WIRE).Current());
+    TopoDS_Wire                        aW;
+    if (aRawOri)
+    {
+      for (TopoDS_Iterator aIt(aFace, false); aIt.More(); aIt.Next())
+      {
+        if (aIt.Value().ShapeType() == TopAbs_WIRE)
+        {
+          aW = TopoDS::Wire(aIt.Value());
+          break;
+        }
+      }
+      std::cout << "WF face-ori=" << (int)aFace.Orientation()
+                << " wire-ori=" << (int)aW.Orientation() << "\n";
+      for (TopoDS_Iterator aE(aW, false); aE.More(); aE.Next())
+      {
+        std::cout << "WF stored-ori=" << (int)aE.Value().Orientation() << "\n";
+      }
+    }
+    else
+    {
+      aW = TopoDS::Wire(TopExp_Explorer(aFace, TopAbs_WIRE).Current());
+    }
 
     auto report = [&](const char* tag, const TopoDS_Wire& w) {
       occ::handle<ShapeExtend_WireData> aWD = new ShapeExtend_WireData(w);

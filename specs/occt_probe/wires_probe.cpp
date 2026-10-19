@@ -134,8 +134,14 @@ int main(int argc, char** argv)
           occ::handle<Geom_Curve> c = BRep_Tool::Curve(E, a, b);
           if (c.IsNull()) { std::cout << "[?]"; continue; }
           gp_Pnt p0 = c->Value(a), p1 = c->Value(b);
+          const TopoDS_Vertex vf = TopExp::FirstVertex(E, Standard_True);
+          const TopoDS_Vertex vl = TopExp::LastVertex(E, Standard_True);
+          const gp_Pnt q0 = BRep_Tool::Pnt(vf), q1 = BRep_Tool::Pnt(vl);
           std::cout << " [" << p0.X() << "," << p0.Y() << "," << p0.Z() << "->"
-                    << p1.X() << "," << p1.Y() << "," << p1.Z() << "]";
+                    << p1.X() << "," << p1.Y() << "," << p1.Z() << "]"
+                    << " ori=" << (int)E.Orientation()
+                    << " trav=" << q0.X() << "," << q0.Y() << "," << q0.Z() << "->"
+                    << q1.X() << "," << q1.Y() << "," << q1.Z();
         }
         std::cout << "\n";
       }

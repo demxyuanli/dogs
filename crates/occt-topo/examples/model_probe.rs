@@ -250,8 +250,11 @@ fn main() {
                 .unwrap_or(((0.0, 0.0), (0.0, 0.0)));
             let bb = brep_bnd_lib::shape_bnd_box(&f.0);
             let (b0, b1) = (bb.corner_min(), bb.corner_max());
+            let trim = surf
+                .as_ref()
+                .and_then(|s| s.rectangular_trimmed_spec());
             println!(
-                "UVF face={i} type={st} u=[{u0:.6},{u1:.6}] v=[{v0:.6},{v1:.6}] nat_u={su:?} nat_v={sv:?} bbox=({:.6},{:.6},{:.6})-({:.6},{:.6},{:.6})",
+                "UVF face={i} type={st} u=[{u0:.6},{u1:.6}] v=[{v0:.6},{v1:.6}] nat_u={su:?} nat_v={sv:?} trim={trim:?} bbox=({:.6},{:.6},{:.6})-({:.6},{:.6},{:.6})",
                 b0.x(), b0.y(), b0.z(), b1.x(), b1.y(), b1.z()
             );
         }
