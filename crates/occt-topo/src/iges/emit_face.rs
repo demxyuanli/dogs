@@ -10,7 +10,7 @@ impl IgesWriter {
     pub(super) fn emit_curve2d_range(&mut self, curve: &dyn Curve2d, first: f64, last: f64) -> Option<usize> {
         let promoted = promote_curve2d(curve)?;
         let idx = self.emit_curve_range(promoted.as_ref(), first, last);
-        if std::env::var("IGES_TRACE").is_ok() {
+        if crate::debug_flags::iges_trace() {
             eprintln!(
                 "TRACE c2d de={:?} lin2d={} circ2d={} elips2d={} bsp2d={} -> kind={:?} a={first} b={last}",
                 idx,
@@ -103,7 +103,7 @@ impl IgesWriter {
                 }
             }
         }
-        if std::env::var("IGES_TRACE").is_ok() {
+        if crate::debug_flags::iges_trace() {
             eprintln!(
                 "TRACE raw pcurve lin2d={} circ2d={} elips2d={} bsp2d={} trimmed={} nbpol={} deg={:?} rng=({first},{last}) rev={} | surf pln={} cyl={is_cyl} cone={is_cone} sph={is_sphere} tor={is_torus} rev={is_rev} extr={is_extr} bsp={is_bspline} rect={} off={} kind={:?}",
                 curve2d.gp_lin2d().is_some(),
@@ -282,7 +282,7 @@ impl IgesWriter {
         }
 
         // 'cxx:566-568': 'Geom2dToIGES_Geom2dCurve::Transfer2dCurve'.
-        if std::env::var("IGES_TRACE").is_ok() {
+        if crate::debug_flags::iges_trace() {
             let a = curve2d.d0(first);
             let b = curve2d.d0(last);
             eprintln!(
@@ -330,7 +330,7 @@ impl IgesWriter {
         let reversal = face_reversal(f);
         let surf_idx = self.emit_face_surface(f, reversal.as_ref())?;
         let wires = wires_of_face(f);
-        if std::env::var("IGES_TRACE_WIRE").is_ok() {
+        if crate::debug_flags::iges_trace_wire() {
             for w in &wires {
                 let raw = w.0.tshape.read().expect("poisoned TShape lock").children.clone();
                 eprintln!("WIRE ori={:?} n={}", w.0.orientation(), raw.len());
@@ -378,7 +378,7 @@ impl IgesWriter {
                 }
             }
         }
-        if std::env::var("IGES_TRACE_FACE").is_ok() {
+        if crate::debug_flags::iges_trace_face() {
             let b = face_uv_bounds_finite(f);
             let kind = match BRepTool::face_surface(f) {
                 Some(s) if s.gp_cylinder().is_some() => "cyl",

@@ -180,7 +180,7 @@ pub(super) fn face_reversal(f: &Face) -> Option<FaceReversal> {
     } else {
         ELEMENTARY_REVERSED_TWO_CENTER
     };
-    if std::env::var("IGES_TRACE_FACE").is_ok() {
+    if crate::debug_flags::iges_trace_face() {
         eprintln!(
             "TRACEREV ptr={:?} surf={:?} two_center={two_center}",
             Arc::as_ptr(&f.0.tshape) as usize,

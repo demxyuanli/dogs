@@ -11,6 +11,7 @@
 pub mod abs;
 pub mod tshape;
 pub mod shape;
+pub mod debug_flags;
 pub mod builder;
 pub mod iterator;
 pub mod tools;

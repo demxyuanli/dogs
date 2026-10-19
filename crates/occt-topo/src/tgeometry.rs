@@ -209,14 +209,16 @@ pub struct GeometryRegistry {
 /// `RwLock`. This is stable for the lifetime of the `Arc` (the `TShape` never
 /// moves) and matches what `TShape::drop` can recover from `&self`, so entries
 /// are reliably removed when the last handle to a shape is dropped.
+///
+/// `TopoShape::shape_addr` caches the same value at construction, so this is
+/// lock-free.
 fn key(s: &TopoShape) -> usize {
-    let lock = s.tshape.read().expect("poisoned TShape lock");
-    std::ptr::addr_of!(*lock) as usize
+    s.shape_addr()
 }
 
-/// The shape's process-unique id (see `TShape::id`).
+/// The shape's process-unique id (see `TShape::id`), cached on the view.
 fn shape_id(s: &TopoShape) -> u64 {
-    s.tshape.read().expect("poisoned TShape lock").id
+    s.shape_id()
 }
 
 impl GeometryRegistry {
@@ -268,7 +270,7 @@ impl GeometryRegistry {
     /// TEMP RANGEW: log edge-range writes whose span is about `4*PI`, the T0M
     /// determinism seed, with a short backtrace so the writer site is identified.
     pub(crate) fn probe_range_write(&self, s: &TopoShape, first: f64, last: f64, site: &str) {
-        if std::env::var("RANGEW").is_err() {
+        if !crate::debug_flags::range_w() {
             return;
         }
         let span = last - first;
@@ -299,24 +301,25 @@ impl GeometryRegistry {
         // T-25: drain the carrier onto the edge's own `TShape`. A geom that
         // carries no pcurve must NOT clear the slot (clearing is the explicit
         // `remove_pcurves_on_surface`, `ShapeBuild_Edge::RemovePCurve`).
+        //
+        // One guard covers both slots: they belong to the same `BRep_TEdge`.
+        let mut ts = s.tshape.write().unwrap();
         if !(geom.pcurves.is_empty() && geom.pcurve_ranges.is_empty()) {
-            s.tshape.write().unwrap().edge_pcurves = Some(EdgePcurves {
+            ts.edge_pcurves = Some(EdgePcurves {
                 curves: geom.pcurves.clone(),
                 ranges: geom.pcurve_ranges.clone(),
             });
         }
-        {
-            let mut ts = s.tshape.write().unwrap();
-            let c = ts.edge_core_mut();
-            c.curve = Some(geom.curve.clone());
-            c.curve3d_null = geom.curve3d_null;
-            c.first = geom.first;
-            c.last = geom.last;
-            c.tolerance = geom.tolerance;
-            c.same_parameter = geom.same_parameter;
-            c.same_range = geom.same_range;
-            c.degenerated = geom.degenerated;
-        }
+        let c = ts.edge_core_mut();
+        c.curve = Some(geom.curve.clone());
+        c.curve3d_null = geom.curve3d_null;
+        c.first = geom.first;
+        c.last = geom.last;
+        c.tolerance = geom.tolerance;
+        c.same_parameter = geom.same_parameter;
+        c.same_range = geom.same_range;
+        c.degenerated = geom.degenerated;
+        drop(ts);
         self.probe_range_write(s, geom.first, geom.last, "set_edge");
     }
 
@@ -343,9 +346,10 @@ impl GeometryRegistry {
             let c = ts.edge_core_mut();
             c.first = first;
             c.last = last;
-        }
-        if let Some(pc) = s.tshape.write().unwrap().edge_pcurves.as_mut() {
-            pc.ranges.for_each_mut(|_, r| *r = (first, last));
+            // Both the 3D range and every pcurve range of this edge.
+            if let Some(pc) = ts.edge_pcurves.as_mut() {
+                pc.ranges.for_each_mut(|_, r| *r = (first, last));
+            }
         }
         self.probe_range_write(s, first, last, "set_ranges_all");
     }
@@ -439,8 +443,14 @@ impl GeometryRegistry {
     /// want what `BRepAdaptor_Curve(E, F)` evaluates read
     /// [`GeometryRegistry::edge_geom`] instead.
     pub fn edge_curve(&self, s: &TopoShape) -> Option<Arc<dyn Curve>> {
-        self.edge_geom(s)
-            .and_then(|g| if g.curve3d_null { None } else { Some(g.curve) })
+        // Read the 3D slot directly: `edge_geom` also clones both pcurve maps
+        // and all six `BRep_TEdge` scalars, which this answer does not use.
+        let ts = s.tshape.read().unwrap();
+        let c = ts.edge_core()?;
+        if c.curve3d_null {
+            return None;
+        }
+        c.curve.clone()
     }
 
     pub fn edge_parameters(&self, s: &TopoShape) -> (f64, f64) {

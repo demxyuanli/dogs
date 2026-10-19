@@ -234,7 +234,7 @@ impl DelaunayDeflectionControlMeshAlgo {
         DBG_NORM_FAIL.store(0, std::sync::atomic::Ordering::Relaxed);
         DBG_ANG_NEED.store(0, std::sync::atomic::Ordering::Relaxed);
 
-        let dc_dbg = std::env::var("DCDBG").is_ok();
+        let dc_dbg = crate::debug_flags::dc_dbg();
         let mut is_inserted = true;
         for pass in 0..MAX_PASSES {
             if !is_inserted || self.is_all_degenerated {
@@ -581,7 +581,7 @@ impl DelaunayDeflectionControlMeshAlgo {
             // Non-zero `GeomLib::NormEstim` status: accept the link (cxx:358-368).
             _ => {
                 DBG_NORM_FAIL.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                if std::env::var("DCDBG").is_ok()
+                if crate::debug_flags::dc_dbg()
                     && DBG_NORM_FAIL.load(std::sync::atomic::Ordering::Relaxed) <= 8
                 {
                     eprintln!(

@@ -524,7 +524,7 @@ impl DelaunayNodeInsertionMeshAlgo {
                 if factory_uses_deflection_control(surf.as_ref(), params)
                     && !delaun.result().elements_of_domain().is_empty()
                 {
-                    if std::env::var("DCDBG").is_ok() {
+                    if crate::debug_flags::dc_dbg() {
                         let ds = delaun.result();
                         let mut edge_fp: u64 = 0;
                         for &tid in ds.elements_of_domain() {
@@ -588,7 +588,7 @@ impl DelaunayNodeInsertionMeshAlgo {
                         }
                     }
                     self.optimize_mesh(&mut delaun, surf.as_ref(), params, face_deflection, _face_index);
-                    if std::env::var("DCDBG").is_ok() {
+                    if crate::debug_flags::dc_dbg() {
                         eprintln!(
                             "DCDBG post_dc nodes={} tris={}",
                             delaun.result().nb_nodes(),
@@ -633,7 +633,7 @@ impl DelaunayNodeInsertionMeshAlgo {
             let pre_nodes = mesh.delaun.result().nb_nodes();
             let pre_dom = mesh.delaun.result().elements_of_domain().len();
             let inserted = mesh.insert_parametric(self, surface, nodes);
-            if std::env::var("DCDBG").is_ok() {
+            if crate::debug_flags::dc_dbg() {
                 eprintln!(
                     "DCDBG insert f={face_index} pass={pass_no} ctrl={} pre_nodes={} pre_dom={} post_nodes={} post_dom={} inserted={}",
                     nodes.len(),
@@ -765,7 +765,7 @@ impl DelaunayNodeInsertionMeshAlgo {
         params: &MeshParameters,
     ) -> Result<TriangulationResult, String> {
         let (uv, _p3d, _constraints, wires_uv) = Self::collect_boundary_uv(model, face_index)?;
-        if std::env::var("MBDIAG").is_ok() && uv.len() <= 1 {
+        if crate::debug_flags::mbdiag() && uv.len() <= 1 {
             eprintln!(
                 "MBDIAG thin face={face_index} uv={} wires={} edges={:?}",
                 uv.len(),
@@ -875,7 +875,7 @@ first=({:.15},{:.15}) last=({:.15},{:.15})",
                             .register_wire(w, sp.tolerance_uv(), sp.range_u(), sp.range_v());
                     }
                 } else {
-                    if std::env::var("MBDIAG").is_ok() {
+                    if crate::debug_flags::mbdiag() {
                         let (su0, su1) = surface.as_ref().u_range();
                         let (sv0, sv1) = surface.as_ref().v_range();
                         let (ru0, ru1) = sp.range_u();
@@ -1203,23 +1203,21 @@ u=[{:.17e},{:.17e}] v=[{:.17e},{:.17e}]",
             // order - OCCT never consults the CheckOrder slot orientation here.
             // The link orientation is `fixSeamEdgeOrientation` (`cxx:197-225`).
             for edge_index in slot_edges {
-                let jobs: Vec<(usize, Orientation, Vec<GpPnt2d>, Vec<GpPnt>)> = {
-                    let edge = model.edge(edge_index)?;
-                    let pts3d = edge.discretization().points().to_vec();
-                    let mut jobs = Vec::new();
-                    for pc_index in edge.pcurves_for(face_index) {
-                        let pc = edge.pcurve(pc_index)?;
-                        let ori = Self::fix_seam_edge_orientation(&edge, pc_index, face_index)?;
-                        jobs.push((pc_index, ori, pc.points().to_vec(), pts3d.clone()));
-                    }
-                    jobs
-                };
-                for (pc_index, ori, pts, pts3d) in jobs {
+                // `model` is borrowed independently of `self`, so the pcurve
+                // and discretization point slices can be read in place while
+                // nodes and links are registered; copying them per pcurve
+                // (a seam edge contributes two) only churned memory.
+                let edge = model.edge(edge_index)?;
+                let pts3d = edge.discretization().points();
+                for pc_index in edge.pcurves_for(face_index) {
+                    let pc = edge.pcurve(pc_index)?;
+                    let ori = Self::fix_seam_edge_orientation(&edge, pc_index, face_index)?;
+                    let pts = pc.points();
                     // TEMPORARY diagnostic (DELREGSKEL): the registration skeleton in the
                     // `occt_probe --structdump` `OCCTSTRUCT E` line format, so the pcurve
                     // visit order and the effective link orientation can be diffed against
                     // `BRepMesh_BaseMeshAlgo::initDataStructure`.
-                    if std::env::var("DELREGSKEL").is_ok() {
+                    if crate::debug_flags::del_reg_skel() {
                         let first = pts.first().copied().unwrap_or_else(GpPnt2d::zero);
                         let last = pts.last().copied().unwrap_or_else(GpPnt2d::zero);
                         eprintln!(
@@ -1638,7 +1636,7 @@ impl ParametricDelaun<'_> {
             }
             idxs.push(idx);
         }
-        if std::env::var("DCDBG").is_ok() {
+        if crate::debug_flags::dc_dbg() {
             eprintln!(
                 "DCDBG insert in={} out_cls={} added={}",
                 nodes.len(),

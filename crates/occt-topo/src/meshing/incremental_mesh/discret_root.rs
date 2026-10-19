@@ -429,7 +429,7 @@ impl IncrementalMesh {
                     .face(i)
                     .map_err(|e| format!("IncrementalMesh::triangulate_model_faces: {e}"))?;
                 if f.is_status(MeshStatus::FAILURE) || f.is_status(MeshStatus::REUSED) {
-                    if std::env::var("MBDIAG").is_ok() {
+                    if crate::debug_flags::mbdiag() {
                         eprintln!(
                             "MBDIAG skip face={i} bits={} selftint={} failure={} reused={}",
                             f.status().bits(),
@@ -461,7 +461,7 @@ impl IncrementalMesh {
 
             let tri = match outcome {
                 Ok(Ok(result)) => {
-                    if std::env::var("MBDIAG").is_ok() {
+                    if crate::debug_flags::mbdiag() {
                         eprintln!(
                             "MBDIAG ok face={i} nodes={} tris={}",
                             result.nodes.len(),
@@ -497,12 +497,12 @@ impl IncrementalMesh {
                         .map(|f| f.is_status(MeshStatus::FAILURE))
                         .unwrap_or(false)
                     {
-                        if std::env::var("MBDIAG").is_ok() {
+                        if crate::debug_flags::mbdiag() {
                             eprintln!("MBDIAG err face={i} FAILURE=1 msg={e}");
                         }
                         None
                     } else {
-                        if std::env::var("MBDIAG").is_ok() {
+                        if crate::debug_flags::mbdiag() {
                             eprintln!("MBDIAG fatal face={i} msg={e}");
                         }
                         return Err(format!(
@@ -511,7 +511,7 @@ impl IncrementalMesh {
                     }
                 }
                 Err(_) => {
-                    if std::env::var("MBDIAG").is_ok() {
+                    if crate::debug_flags::mbdiag() {
                         eprintln!("MBDIAG panic face={i}");
                     }
                     None
@@ -599,7 +599,7 @@ impl IncrementalMesh {
         let mut intersecting: HashMap<usize, std::collections::HashSet<usize>> = HashMap::new();
         for i in 0..model.faces_nb() {
             if let Some(edges) = self.face_intersecting_edges(model, i)? {
-                if std::env::var("MBDIAG").is_ok() {
+                if crate::debug_flags::mbdiag() {
                     let mut v: Vec<usize> = edges.iter().copied().collect();
                     v.sort_unstable();
                     eprintln!("MBDIAG selfint face={i} edges={v:?}");
@@ -1208,9 +1208,10 @@ impl IncrementalMesh {
             let surface = BRepTool::face_surface_world(&topo_face).ok_or_else(|| {
                 "IncrementalMesh::discretize_pcurves: face has no surface".to_string()
             })?;
-            let pts3d: Vec<GpPnt> = model.edge(edge_index)?.discretization().points().to_vec();
             let same_param = model.edge(edge_index)?.same_param();
-            let pcurve = model.edge_mut(edge_index)?.pcurve_mut(pcurve_index)?;
+            let (discretization, pcurve) =
+                model.edge_discretization_and_pcurve_mut(edge_index, pcurve_index)?;
+            let pts3d = discretization.points();
             pcurve.clear(false);
             let _pcurve_face = pcurve.face();
             // The pcurve's parameter range over this edge. A bounded curve is its

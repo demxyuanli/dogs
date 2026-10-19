@@ -598,10 +598,37 @@ pub(super) fn generate_nurbs_grid(s: &dyn RangeSplitter, params: &MeshParameters
         }
         let mut u_iv = ParamSet::new();
         let mut v_iv = ParamSet::new();
+        let dbg_none = std::env::var("NURBSGRID").is_ok();
+        let fkey_dbg = s
+            .base()
+            .dface
+            .as_ref()
+            .map(|df| crate::tgeometry::GeometryRegistry::shape_key(&df.face().0))
+            .unwrap_or(0);
         if !init_params_from_intervals(&u_intervals, range_u, is_split, &mut u_iv) {
+            if dbg_none {
+                eprintln!(
+                    "NURBSGRID none key={fkey_dbg} why=u iv_n={} range=[{:.17e},{:.17e}]",
+                    u_intervals.len(),
+                    range_u.0,
+                    range_u.1
+                );
+            }
             return None;
         }
         if !init_params_from_intervals(&v_intervals, range_v, is_split, &mut v_iv) {
+            if dbg_none {
+                eprintln!(
+                    "NURBSGRID none key={fkey_dbg} why=v iv_n={} range=[{:.17e},{:.17e}]",
+                    v_intervals.len(),
+                    range_v.0,
+                    range_v.1
+                );
+                for (i, &v) in v_intervals.iter().enumerate() {
+                    eprint!("{}[{:.17e}]", if i == 0 { "" } else { "," }, v);
+                }
+                eprintln!();
+            }
             return None;
         }
         for &p in u_iv.iter() {
@@ -1028,8 +1055,14 @@ pub trait RangeSplitter {
         if std::env::var("SPLITDBG").is_ok() {
             let (tu, tv) = self.base().tolerance_uv();
             let (da, db) = self.base().delta();
+            let fkey = self
+                .base()
+                .dface
+                .as_ref()
+                .map(|df| crate::tgeometry::GeometryRegistry::shape_key(&df.face().0))
+                .unwrap_or(0);
             eprintln!(
-                "SPLITDBG ru=[{:.17e},{:.17e}] rv=[{:.17e},{:.17e}] len_u={:.17e} len_v={:.17e} tol=[{:.17e},{:.17e}] delta=[{:.17e},{:.17e}] defl={:.17e} valid={}",
+                "SPLITDBG key={fkey} ru=[{:.17e},{:.17e}] rv=[{:.17e},{:.17e}] len_u={:.17e} len_v={:.17e} tol=[{:.17e},{:.17e}] delta=[{:.17e},{:.17e}] defl={:.17e} valid={}",
                 self.base().range_u().0,
                 self.base().range_u().1,
                 self.base().range_v().0,

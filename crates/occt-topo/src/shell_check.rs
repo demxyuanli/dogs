@@ -124,7 +124,7 @@ pub fn validate_shell_closed(shell: &Shell) -> Result<(), String> {
         .map(|(k, u)| (format!("{:#x}@{:?}", k.0, k.1), u.count))
         .collect();
     offending.sort();
-    if std::env::var("SHELLDBG").is_ok() {
+    if crate::debug_flags::shell_dbg() {
         eprintln!(
             "[shelldbg] total_edges={} offending={:?}",
             usage.len(),

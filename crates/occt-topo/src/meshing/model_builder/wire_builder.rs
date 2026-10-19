@@ -801,7 +801,7 @@ impl ModelBuilder {
         // failure on an inner wire only marks it unoriented.
         let mut edge_index: HashMap<usize, usize> = HashMap::new();
         for f in faces_of(shape) {
-            if std::env::var("SWEEP_DBG").is_ok() {
+            if crate::debug_flags::sweep_dbg() {
                 let s = BRepTool::face_surface(&f);
                 let sd = match &s {
                     Some(s) => {

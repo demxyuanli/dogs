@@ -175,7 +175,7 @@ impl IgesWriter {
     /// `BRepToIGES_BRShell::TransferShell` (`BRepToIGES_BRShell.cxx:411-476`): the
     /// shell's faces are transferred as trimmed surfaces (144) and grouped.
     pub(super) fn emit_shell(&mut self, sh: &Shell) -> Option<usize> {
-        if std::env::var("IGES_TRACE_FACE").is_ok() {
+        if crate::debug_flags::iges_trace_face() {
             eprintln!("TRACESHELL ori={:?}", sh.0.orientation());
         }
         // `TopExp_Explorer(shell, FACE)` composes the shell orientation
