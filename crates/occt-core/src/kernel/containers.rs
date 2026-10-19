@@ -73,6 +73,26 @@ impl<T: std::hash::Hash + Eq + Clone> IndexedMap<T> {
 
     pub fn contains(&self, item: &T) -> bool { self.index.contains_key(item) }
     pub fn find_index(&self, item: &T) -> Option<usize> { self.index.get(item).copied() }
+
+    /// Lookup through a borrowed form of the key (`Borrow`), so callers whose
+    /// key owns a handle -- `BOPDS_DS` keys a shape to its index -- can probe
+    /// the map without building and dropping an owned key.
+    pub fn contains_by<Q>(&self, key: &Q) -> bool
+    where
+        T: std::borrow::Borrow<Q>,
+        Q: std::hash::Hash + Eq + ?Sized,
+    {
+        self.index.contains_key(key)
+    }
+
+    /// Same as [`IndexedMap::find_index`], through a borrowed key form.
+    pub fn find_index_by<Q>(&self, key: &Q) -> Option<usize>
+    where
+        T: std::borrow::Borrow<Q>,
+        Q: std::hash::Hash + Eq + ?Sized,
+    {
+        self.index.get(key).copied()
+    }
     pub fn value(&self, i: usize) -> &T { &self.items[i] }
     pub fn len(&self) -> usize { self.items.len() }
     pub fn is_empty(&self) -> bool { self.items.is_empty() }
