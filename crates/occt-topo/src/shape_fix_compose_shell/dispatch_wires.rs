@@ -9,7 +9,7 @@ use occt_geom::Surface;
 use crate::abs::{Orientation, ShapeType};
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
-use crate::shape::{Edge, TopoShape};
+use crate::shape::{Edge, Face, TopoShape};
 use crate::shhealing::fix_shifted_wire;
 use crate::tgeometry::{EdgeGeom, GeometryRegistry};
 use crate::shhealing::{ShapeBuildEdge, ShapeFixEdge};
@@ -27,6 +27,93 @@ fn oriented_forward(edge: &Edge) -> Edge {
     e
 }
 
+/// `ShapeFix_ComposeShell.cxx:3287-3327` ("pdn: shift pcurves in the seam to
+/// make OK shape w/o fixshifted"): for every REVERSED closed-on-face edge whose
+/// two representations coincide, translate one of them by a period so the two
+/// occurrences of the seam land on the two ends of the periodic range.
+///
+/// `c21` is `BRep_Tool::CurveOnSurface(E, myFace)` and `c22` is
+/// `CurveOnSurface(E.Reversed(), myFace)` (`cxx:3303-3307`), i.e. the *face*
+/// overload: `myFace`'s own orientation decides which representation each call
+/// returns (`BRep_Tool.cxx:308-314` composes `F.Orientation()` into the edge
+/// view before the closed-surface arm at `cxx:354-357` picks `PCurve1` /
+/// `PCurve2`). `myFace` is the FORWARD view always (`cxx:163-167` in `Init`), so
+/// for a REVERSED `E` `c21` reads `PCurve2` and `c22` reads `PCurve1`; `c22` is
+/// the translated one (`cxx:3322`), i.e. the period goes on `PCurve1` of the
+/// EDGE's own orientation. Picking the slot by the stored edge orientation
+/// alone swaps the pair and flips the UV winding of the wire.
+fn shift_closed_seam_pcurves(
+    face: &Face,
+    wires: &[WireSegment],
+    u_closed: bool,
+    v_closed: bool,
+    u_period: f64,
+    v_period: f64,
+) {
+    let reg = GeometryRegistry::global();
+    let face_key = GeometryRegistry::shape_key(&face.0);
+    for w in wires.iter() {
+        if w.is_vertex() {
+            continue; // cxx:3291-3294
+        }
+        for jl in 1..=w.nb_edges() {
+            let Some(e) = w.edge(jl) else { continue };
+            // cxx:3300: `E.Orientation() == REVERSED && IsClosed(E, myFace)`.
+            if e.0.orientation() != Orientation::Reversed || !BRepTool::is_closed_edge_face(e, face) {
+                continue;
+            }
+            let mut erev = e.clone();
+            erev.0.reverse();
+            let (Some((c21, f1, l1)), Some((c22, f2, l2))) = (
+                crate::boptools_2d::curve_on_surface_range(e, face),
+                crate::boptools_2d::curve_on_surface_range(&erev, face),
+            ) else {
+                continue;
+            };
+            let pf1 = c21.d0(f1);
+            let pl1 = c21.d0(l1);
+            let pf2 = c22.d0(f2);
+            let pl2 = c22.d0(l2);
+            let d_preci = PCONFUSION * PCONFUSION;
+            if !(Arc::ptr_eq(&c21, &c22) // cxx:3312
+                || pf1.square_distance(&pf2) < d_preci
+                || pl1.square_distance(&pl2) < d_preci)
+            {
+                continue;
+            }
+            let mut shift = GpVec2d::new(0.0, 0.0);
+            if u_closed && (pf2.x() - pl2.x()).abs() < PCONFUSION {
+                shift = GpVec2d::new(u_period, shift.y()); // cxx:3316-3319
+            }
+            if v_closed && (pf2.y() - pl2.y()).abs() < PCONFUSION {
+                shift = GpVec2d::new(shift.x(), v_period);
+            }
+            // cxx:3322: `c22->Translate(shift)` on the shared handle, so the
+            // same-object case moves both slots.
+            let mut nc = c22.clone_dyn();
+            let mut tr = occt_core::gp::GpTrsf2d::identity();
+            tr.set_translation_vec(&shift);
+            nc.transform(&tr);
+            let mut pcs = reg.edge_pcurves(&e.0, face_key);
+            if Arc::ptr_eq(&c21, &c22) {
+                // A single shared representation: OCCT translates the object
+                // once, so every slot that held it reads the shifted curve.
+                for p in pcs.iter_mut() {
+                    let mut c = p.clone_dyn();
+                    c.transform(&tr);
+                    *p = Arc::from(c);
+                }
+            } else {
+                match pcs.iter().position(|p| Arc::ptr_eq(p, &c22)) {
+                    Some(k) => pcs[k] = Arc::from(nc),
+                    None => continue,
+                }
+            }
+            reg.set_edge_pcurves(&e.0, face_key, pcs);
+        }
+    }
+}
+
 impl ComposeShell {
     /// `DispatchWires(faces, wires)` (`cxx:3275-3584`).
     pub fn dispatch_wires(&mut self, faces: &mut Vec<TopoShape>, wires: &mut Vec<WireSegment>) {
@@ -38,58 +125,15 @@ impl ComposeShell {
 
         // cxx:3280-3360: closed mode fixes.
         if self.closed_mode {
-            // cxx:3287-3327: shift the seam pcurves. `CurveOnSurface(E)` reads
-            // `PCurve2` for a REVERSED edge, `CurveOnSurface(E.Reversed())`
-            // reads `PCurve1` (`BRep_Tool.cxx:347-357`).
-            let face_key_val = GeometryRegistry::shape_key(&face_val.0);
-            for wi in 0..wires.len() {
-                if wires[wi].is_vertex() {
-                    continue;
-                }
-                for jl in 1..=wires[wi].nb_edges() {
-                    let e = wires[wi].edge(jl).expect("edge").clone();
-                    if e.0.orientation() != Orientation::Reversed {
-                        continue; // cxx:3300
-                    }
-                    if !crate::brep_tool::BRepTool::is_closed_edge_face(&e, &face_val) {
-                        continue; // BRep_Tool::IsClosed(E, myFace)
-                    }
-                    let pcs = GeometryRegistry::global().edge_pcurves(&e.0, face_key_val);
-                    let c21 = pcs[1].clone();
-                    let c22 = pcs[0].clone();
-                    let (f1, l1) = GeometryRegistry::global()
-                        .pcurve_range(&e.0, face_key_val)
-                        .unwrap_or((c21.first_parameter(), c21.last_parameter()));
-                    let (f2, l2) = (f1, l1);
-                    let pf1 = c21.d0(f1);
-                    let pl1 = c21.d0(l1);
-                    let pf2 = c22.d0(f2);
-                    let pl2 = c22.d0(l2);
-                    let d_preci = PCONFUSION * PCONFUSION;
-                    if Arc::ptr_eq(&c21, &c22)
-                        || pf1.square_distance(&pf2) < d_preci // cxx:3312
-                        || pl1.square_distance(&pl2) < d_preci
-                    {
-                        let mut shift = GpVec2d::new(0.0, 0.0);
-                        if self.u_closed && (pf2.x() - pl2.x()).abs() < PCONFUSION {
-                            shift = GpVec2d::new(self.u_period, shift.y());
-                        }
-                        if self.v_closed && (pf2.y() - pl2.y()).abs() < PCONFUSION {
-                            shift = GpVec2d::new(shift.x(), self.v_period);
-                        }
-                        // c22->Translate(shift): c22 is PCurve1; keep PCurve2.
-                        let mut nc = c22.clone_dyn();
-                        let mut tr = occt_core::gp::GpTrsf2d::identity();
-                        tr.set_translation_vec(&shift);
-                        nc.transform(&tr);
-                        GeometryRegistry::global().set_edge_pcurves(
-                            &e.0,
-                            face_key_val,
-                            vec![Arc::from(nc), c21.clone()],
-                        );
-                    }
-                }
-            }
+            // cxx:3287-3327: shift the seam pcurves.
+            shift_closed_seam_pcurves(
+                &face_val,
+                wires,
+                self.u_closed,
+                self.v_closed,
+                self.u_period,
+                self.v_period,
+            );
 
             let mut i = 0usize;
             while i < wires.len() {
@@ -159,68 +203,10 @@ impl ComposeShell {
         let reg = GeometryRegistry::global();
         let (u1, u2, v1, v2) = self.grid.bounds();
 
-        // cxx:3281-3327 (pdn: "shift pcurves in the seam to make OK shape w/o
-        // fixshifted"): in closed mode, before dispatching, every REVERSED
-        // closed-on-face edge whose two pcurves coincide gets its second pcurve
-        // translated by a period, so the seam edge's two occurrences land on the
-        // two ends of the UV range. Without it the periodic boundary chain stays
-        // open and the Delaunay fills nothing (a3n00 f176: frontier=0).
-        if self.closed_mode {
-            let face_key = GeometryRegistry::shape_key(&face_val.0);
-            for w in wires.iter() {
-                for e in w.edges() {
-                    if e.0.orientation() != Orientation::Reversed
-                        || !BRepTool::is_closed_edge_face(e, &face_val)
-                    {
-                        continue;
-                    }
-                    let mut pcs = reg.edge_pcurves(&e.0, face_key);
-                    if pcs.len() < 2 {
-                        continue;
-                    }
-                    let (f1, l1) = reg.pcurve_range(&e.0, face_key).unwrap_or((0.0, 0.0));
-                    // c21 = CurveOnSurface(E) (REVERSED occurrence) = pcs[1];
-                    // c22 = CurveOnSurface(E.Reversed()) (FORWARD) = pcs[0].
-                    let (c21, c22) = (pcs[1].clone(), pcs[0].clone());
-                    let pf1 = c21.d0(f1);
-                    let pl1 = c21.d0(l1);
-                    let pf2 = c22.d0(f1);
-                    let pl2 = c22.d0(l1);
-                    let d = PCONFUSION * PCONFUSION;
-                    if Arc::ptr_eq(&c21, &c22)
-                        || pf1.square_distance(&pf2) < d
-                        || pl1.square_distance(&pl2) < d
-                    {
-                        let sx = if self.u_closed && (pf2.x() - pl2.x()).abs() < PCONFUSION {
-                            self.u_period
-                        } else {
-                            0.0
-                        };
-                        let sy = if self.v_closed && (pf2.y() - pl2.y()).abs() < PCONFUSION {
-                            self.v_period
-                        } else {
-                            0.0
-                        };
-                        if sx != 0.0 || sy != 0.0 {
-                            let mut nc = c22.clone_dyn();
-                            let mut t = occt_core::gp::GpTrsf2d::identity();
-                            t.set_translation_vec(&occt_core::gp::GpVec2d::new(sx, sy));
-                            nc.transform(&t);
-                            pcs[0] = Arc::from(nc);
-                            reg.set_edge_pcurves(&e.0, face_key, pcs);
-                            reg.set_pcurve_range(&e.0, face_key, f1, l1);
-                        }
-                    }
-                }
-            }
-        }
-
-        // cxx:3345-3346 / 3358: `sfw.Load(sbwd); sfw.FixShifted(); sfw.FixDegenerated();`
-        // run on each wire after the seam pcurve shift above.
-        for w in wires.iter() {
-            let dw = builder.make_wire(w.edges());
-            let _ = crate::shhealing::fix_shifted_wire(&dw, &face_val);
-        }
+        // cxx:3362: `DispatchWires` has a single closed-mode pass - the seam
+        // period shift (cxx:3287-3327) followed by one `FixShifted` /
+        // `FixDegenerated` per wire (cxx:3330-3360), both run above. Nothing
+        // re-shifts or re-fixes here; the wire data is already final.
 
         // cxx:3387-3533.
         for i in 0..nb {

@@ -11,9 +11,32 @@ copy lives under `.target-gate/`, which is git-ignored).
 specs\occt_probe\build_run.bat <step-file> [mode]
 ```
 
-* `build.bat` — `vcvars64.bat` + `cl /std:c++17 /EHsc /MD` against
+* `build.bat` — `vcvars64.bat` + `cl /std:c++17 /EHsc /MD /MP` against
   `D:\source\occt-8.0.0\inc` and the `win64\vc14\lib` import libraries.
   `TKGeomAlgo.lib` is required for `GeomAPI_ProjectPointOnSurf`.
+
+## Source layout
+
+The probe is one executable built from several translation units (the monolithic
+`occt_probe.cpp` exceeded the line budget and was split by command group in T-193):
+
+| file | contents |
+|---|---|
+| `occt_probe.cpp` | `main`: argument parsing, file read, the `run*` dispatch loop |
+| `occt_probe_common.h` | the OCCT/STL include set, `ProbeCtx`, cross-file declarations |
+| `modes_*.cpp` | the `argv[2]` command groups (`runXxxModes`, returning `std::optional<int>`) |
+| `delaun_probe.cpp` | `--delauncheck` / `--delaunfeed` / `--delaunstruct` / `--delaunsteps` / `--delaunwhy` |
+| `boundary_probe.cpp` | `--boundary` |
+| `structdump_probe.cpp` | `--lens`, `--structdump`, `--dcstruct`, `--srfnodes` (`ZZ*Algo` subclasses) |
+| `srfparams_probe.cpp` | `--srparams`, `--facestats`, `--facedump`, `--edgedu` |
+| `meshdbg_probe.cpp` | `--torusdbg`, `--healerdbg`, `--ctxdbg`, `--rangereplay`, `--algospy` |
+| `wiredbg_probe.cpp` | `--orderdbg`, `--wiredbg`, `--wiredbgi` |
+| `iges_probe.cpp` | `--iges`, `--igespc` |
+| `extrema_probe.cpp` | `--offsetsurf`, `--ssx` |
+| `modes_default.cpp` | the fallback `BRepCheck` / `BRepGProp` / per-face report |
+
+Splitting changed no control flow: the dispatch blocks were moved verbatim into
+their group function and are tried in the original order.
 * `run_probe.bat` — the probe is `/MD`, so the exe is copied next to the OCCT
   DLLs before it is started.
 * `probe.bat` — `THIRDPARTY_DIR` **must be absolute** (`env.bat`'s default is

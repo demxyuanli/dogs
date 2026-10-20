@@ -33,6 +33,7 @@ use occt_core::gp::{GpPnt, GpVec2d};
 use occt_core::precision::{ANGULAR, PCONFUSION, RESOLUTION};
 use occt_geom2d::curve::Curve2d;
 
+use crate::abs::Orientation;
 use crate::brep_surface::SurfaceKind;
 use crate::pcurve_full::classify_surface_kind;
 use crate::shape::{Edge, Face};
@@ -189,22 +190,48 @@ fn pcurve_on_surface_rep(
 }
 
 /// `ShapeBuild_Edge::ReplacePCurve` (`ShapeBuild_Edge.cxx:474-503`).
+///
+/// `cxx:483-486` reads both seam representations through the *face* overload of
+/// `BRep_Tool::CurveOnSurface` on `F = face.Oriented(FORWARD)`: `pcurve0` is the
+/// view of `edge` itself and `c2d` the view of `edge.Reversed()`. On a FORWARD
+/// face the closed-surface arm (`BRep_Tool.cxx:354-361`) hands `PCurve1` to the
+/// FORWARD view and `PCurve2` to the REVERSED one, so the pair to store is
+/// decided by `edge.Orientation()` (`cxx:492-499`), not by a fixed slot table.
 pub fn replace_pcurve(edge: &Edge, face: &Face, pcurve: Arc<dyn Curve2d>) {
     let face_key = GeometryRegistry::shape_key(&face.0);
     let reg = GeometryRegistry::global();
     // `ShapeBuild_Edge::ReplacePCurve` (`cxx:479-502`) reads COS `f,l`
     // before UpdateEdge, then `B.Range(edge, face, f, l)` restores it.
     let saved = reg.pcurve_range(&edge.0, face_key);
-    let pcs = reg.edge_pcurves(&edge.0, face_key);
-    if pcs.len() < 2 || Arc::ptr_eq(&pcs[0], &pcs[1]) {
-        reg.set_edge_pcurve(&edge.0, face_key, pcurve);
-    } else {
-        let pair = if edge.0.orientation().is_reversed() {
-            vec![pcs[0].clone(), pcurve]
-        } else {
-            vec![pcurve, pcs[1].clone()]
-        };
-        reg.set_edge_pcurves(&edge.0, face_key, pair);
+    // cxx:483-486.
+    let mut forward_face = face.clone();
+    forward_face.0.set_orientation(Orientation::Forward);
+    let mut edge_rev = edge.clone();
+    edge_rev.0.reverse();
+    // Both reads go through the face overload, including the
+    // `BRep_Tool.cxx:367-372` fallback to `CurveOnPlane` when no
+    // `BRep_CurveOnSurface` is stored: `CurveOnPlane` (`cxx:379-449`) builds a
+    // fresh curve per call, so on a planar face without stored p-curves the two
+    // handles differ and OCCT takes the seam arm below.
+    let pcurve0 = curve_on_surface_oriented(edge, &forward_face, false).map(|(c, _, _)| c);
+    let c2d = curve_on_surface_oriented(&edge_rev, &forward_face, false).map(|(c, _, _)| c);
+    // cxx:488-500.
+    match (&pcurve0, c2d) {
+        // `c2d.IsNull() || c2d == pcurve0`: non-seam, a single representation.
+        (_, None) => reg.set_edge_pcurve(&edge.0, face_key, pcurve),
+        (Some(p0), Some(c)) if Arc::ptr_eq(p0, &c) => {
+            reg.set_edge_pcurve(&edge.0, face_key, pcurve)
+        }
+        // Seam: `UpdateEdge(edge, pcurve, c2d)` when FORWARD,
+        // `UpdateEdge(edge, c2d, pcurve)` when REVERSED.
+        (_, Some(c)) => {
+            let pair = if edge.0.orientation().is_reversed() {
+                vec![c, pcurve]
+            } else {
+                vec![pcurve, c]
+            };
+            reg.set_edge_pcurves(&edge.0, face_key, pair);
+        }
     }
     if let Some((f, l)) = saved {
         reg.set_pcurve_range(&edge.0, face_key, f, l);

@@ -1,9 +1,61 @@
 use super::*;
 
-/// `ShapeFix_Wire::FixShifted` (`ShapeFix_Wire.cxx:1661-2126`).
+/// `ShapeFix_Wire::myLastFixStatus` for `FixShifted` (`ShapeFix_Wire.cxx:1663`).
+///
+/// OCCT keeps the outcome of the fix in two separate channels: the `bool`
+/// returned by the method ("did not bail out") and these `ShapeExtend` bits,
+/// which the callers read with `LastFixStatus(ShapeExtend_DONE / FAIL)`
+/// (`cxx:940-950`). The port carries both so `FixEdgeCurves`' `DONE7` /
+/// `FAIL7` aggregation can be reproduced.
+#[derive(Clone, Copy, Default)]
+pub(in crate::shhealing) struct FixShiftedStatus {
+    /// `ShapeExtend_DONE1`: a junction period shift or the bi-meridian arm ran
+    /// (`cxx:1961`, `cxx:2045`).
+    pub done1: bool,
+    /// `ShapeExtend_DONE2`: the whole-wire shift ran (`cxx:2106`).
+    pub done2: bool,
+    /// `ShapeExtend_FAIL1`: a p-curve the analysis needed could not be read
+    /// (`cxx:1883`, `cxx:2010`).
+    pub fail1: bool,
+}
+
+impl FixShiftedStatus {
+    /// `LastFixStatus(ShapeExtend_DONE)`, which `FixEdgeCurves` folds into
+    /// `DONE7` and so turns into its own return value (`cxx:940-948`,
+    /// `cxx:1029`). `FAIL1` has no such consumer: OCCT only encodes it as
+    /// `FAIL7` in `myStatusEdgeCurves`, and `StatusEdgeCurves(DONE)` ignores
+    /// `FAIL`.
+    pub fn done(&self) -> bool {
+        self.done1 || self.done2
+    }
+}
+
+/// The two channels of one `FixShifted` call: `ok` is OCCT's returned `bool`,
+/// `status` is `myLastFixStatus` as left behind when that value was returned.
+#[derive(Clone, Copy, Default)]
+pub(in crate::shhealing) struct FixShiftedOutcome {
+    pub ok: bool,
+    pub status: FixShiftedStatus,
+}
+
+/// `ShapeFix_Wire::FixShifted` (`ShapeFix_Wire.cxx:1661-2127`), returning only
+/// OCCT's `bool`. Callers that need `myLastFixStatus` use
+/// [`fix_shifted_outcome`].
 pub fn fix_shifted_wire(wire: &Wire, face: &Face) -> bool {
+    fix_shifted_outcome(wire, face).ok
+}
+
+/// `ShapeFix_Wire::FixShifted` (`ShapeFix_Wire.cxx:1661-2127`) with
+/// `myLastFixStatus`.
+pub(in crate::shhealing) fn fix_shifted_outcome(
+    wire: &Wire,
+    face: &Face,
+) -> FixShiftedOutcome {
+    // `cxx:1663`: `myLastFixStatus = ShapeExtend_OK`.
+    let mut status = FixShiftedStatus::default();
     let Some(surf) = BRepTool::face_surface(face) else {
-        return false;
+        // `cxx:1664-1668`: `!IsReady()`.
+        return FixShiftedOutcome::default();
     };
     // `ShapeFix_Wire.cxx:1671-1673`: `surf->IsUClosed(Precision())` /
     // `IsVClosed(Precision())` are the `ShapeAnalysis_Surface` versions, not the
@@ -45,7 +97,8 @@ pub fn fix_shifted_wire(wire: &Wire, face: &Face) -> bool {
         }
     }
     if !u_closed && !v_closed {
-        return false;
+        // `cxx:1675-1678`.
+        return FixShiftedOutcome::default();
     }
     let (suf, sul) = surf.u_range();
     let (svf, svl) = surf.v_range();
@@ -64,7 +117,7 @@ pub fn fix_shifted_wire(wire: &Wire, face: &Face) -> bool {
         };
     }
     if !u_range.is_finite() && !v_range.is_finite() {
-        return false;
+        return FixShiftedOutcome::default();
     }
     let u_tol = 0.2 * u_range;
     let v_tol = 0.2 * v_range;
@@ -76,9 +129,10 @@ pub fn fix_shifted_wire(wire: &Wire, face: &Face) -> bool {
         .collect();
     let nb = edges.len();
     if nb == 0 {
-        return false;
+        // `cxx:1756` leaves `end` true and `box` void, so `cxx:2056-2058`
+        // returns false.
+        return FixShiftedOutcome::default();
     }
-    let mut done = false;
     let mut stop = nb;
     let mut ended = nb == 0;
     let mut degstop = false;
@@ -98,8 +152,6 @@ pub fn fix_shifted_wire(wire: &Wire, face: &Face) -> bool {
         }
         let e1 = &edges[n1 - 1];
         let e2 = &edges[n2 - 1];
-        let pi1 = n1;
-        let pi2 = n2;
         n1 = n2;
         if BRepTool::is_degenerated(e1) || BRepTool::is_degenerated(e2) {
             if !degstop {
@@ -161,25 +213,42 @@ pub fn fix_shifted_wire(wire: &Wire, face: &Face) -> bool {
                 pdeg = p;
             } else if pdeg.square_distance(&p) < CONFUSION * CONFUSION {
                 degn2 = n2;
-            } else if try_bi_meridian(
-                &edges,
-                face,
-                degn2,
-                n2,
-                nb,
-                e1,
-                e2,
-                u_closed,
-                if u_closed { u_range } else { v_range },
-            ) {
-                done = true;
-                continue;
+            } else {
+                // `cxx:1875-1966`.
+                match try_bi_meridian(
+                    &edges,
+                    face,
+                    degn2,
+                    n2,
+                    nb,
+                    e1,
+                    e2,
+                    u_closed,
+                    if u_closed { u_range } else { v_range },
+                ) {
+                    // `cxx:1883`: a p-curve read failure aborts this junction
+                    // without falling through to the period-shift arm.
+                    BiMeridian::ReadFailed => {
+                        status.fail1 = true;
+                        continue;
+                    }
+                    // `cxx:1961`: `DONE1`, then `continue`.
+                    BiMeridian::Fixed => {
+                        status.done1 = true;
+                        continue;
+                    }
+                    BiMeridian::NotApplicable => {}
+                }
             }
         }
+        // `cxx:2007-2013`: `c2d1` / `c2d2` unreadable sets `FAIL1` and skips
+        // this junction.
         let Some((_, _, _, _, p2d1)) = pcurve_at(e1, face) else {
+            status.fail1 = true;
             continue;
         };
         let Some((c2, _, _, p2d2, _)) = pcurve_at(e2, face) else {
+            status.fail1 = true;
             continue;
         };
         box2.add_point(&p2d1);
@@ -205,20 +274,22 @@ pub fn fix_shifted_wire(wire: &Wire, face: &Face) -> bool {
             let mut shift = GpTrsf2d::default();
             shift.set_translation_vec(&GpVec2d::new(du, dv));
             replace_pcurve(e2, face, Arc::from(c2.transformed(&shift)));
-            done = true;
+            status.done1 = true; // `cxx:2045`
         }
     }
 
-    // `cxx:2056-2067`: early-out uses the first-pass `p2d1` box, not `[a,mid]`.
+    // `cxx:2056-2058`: `if (box.IsVoid()) return false;` -- the status already
+    // raised by the junction pass is still reported to the caller.
     if box2.is_void() {
-        return false;
+        return FixShiftedOutcome { ok: false, status };
     }
     let (umin, vmin, umax, vmax) = box2.get().expect("non-void box");
     if (umin + umax - suf - sul).abs() < u_range
         && (vmin + vmax - svf - svl).abs() < v_range
-        && !done
+        && !status.done()
     {
-        return false;
+        // `cxx:2061-2067`.
+        return FixShiftedOutcome { ok: false, status };
     }
     // `cxx:2069-2082`: rebuild from `Value(a)` and `Value((a+b)/2)`.
     box2.set_void();
@@ -230,7 +301,8 @@ pub fn fix_shifted_wire(wire: &Wire, face: &Face) -> bool {
         box2.add_point(&c2.d0(0.5 * (a + b)));
     }
     let Some((umin, vmin, umax, vmax)) = box2.get() else {
-        return done;
+        // `cxx:2083`: the second box cannot be void once edges exist.
+        return FixShiftedOutcome { ok: true, status };
     };
     let mut du = 0.0;
     let mut dv = 0.0;
@@ -240,8 +312,10 @@ pub fn fix_shifted_wire(wire: &Wire, face: &Face) -> bool {
     if v_closed {
         dv = adjust_by_period(0.5 * (vmin + vmax), sv_mid, v_range);
     }
+    // `cxx:2100-2104`: no second-pass shift still returns `true`, keeping the
+    // `DONE1` bit raised by the junction pass (or by the bi-meridian arm).
     if du == 0.0 && dv == 0.0 {
-        return done;
+        return FixShiftedOutcome { ok: true, status };
     }
     for e in edges_of_wire(wire) {
         let Some((c2, _, _, _, _)) = pcurve_at(&e, face) else {
@@ -251,10 +325,20 @@ pub fn fix_shifted_wire(wire: &Wire, face: &Face) -> bool {
         shift.set_translation_vec(&GpVec2d::new(du, dv));
         replace_pcurve(&e, face, Arc::from(c2.transformed(&shift)));
     }
-    true
+    status.done2 = true; // `cxx:2106`
+    FixShiftedOutcome { ok: true, status }
 }
 
-pub(in crate::shhealing) fn try_bi_meridian(
+/// `ShapeFix_Wire::FixShifted` bi-meridian arm (`ShapeFix_Wire.cxx:1873-1966`):
+/// a wire that runs twice along the same meridian of a closed surface is
+/// detected through the four corner points of the junction and repaired by
+/// translating the edges of one pass by a whole period.
+///
+/// `degn2` is the index recorded by the caller at `cxx:1859-1860` (the first
+/// edge after the singular point), `n2` the current junction edge, `nb` the edge
+/// count; `period` is `URange` when the surface is `uclosed` and `VRange`
+/// otherwise, exactly as `cxx:1889-1901` selects `x` and `period`.
+fn try_bi_meridian(
     edges: &[Edge],
     face: &Face,
     degn2: usize,
@@ -263,26 +347,35 @@ pub(in crate::shhealing) fn try_bi_meridian(
     e1: &Edge,
     e2: &Edge,
     u_closed: bool,
-    u_range: f64,
-) -> bool {
+    period: f64,
+) -> BiMeridian {
+    // `cxx:1879-1880`: `cx1 = PCurve(Edge(degn2 > 1 ? degn2 - 1 : nb))`,
+    // `cx2 = PCurve(Edge(degn2))`.
     let prev = if degn2 > 1 { degn2 - 1 } else { nb };
+    // `cxx:1882-1885`: `c2d1`, `c2d2`, `cx1`, `cx2` - any unreadable p-curve
+    // makes OCCT set `FAIL1` and `continue` the outer junction loop
+    // (`cxx:1883-1886`), which is a different outcome from "not a bi-meridian".
     let Some((_, _, _, _, pn1)) = pcurve_at(e1, face) else {
-        return false;
+        return BiMeridian::ReadFailed;
     };
     let Some((_, _, _, pn2, _)) = pcurve_at(e2, face) else {
-        return false;
+        return BiMeridian::ReadFailed;
     };
+    // `cxx:1885-1888`: `pd1 = cx1->Value(bx1)`, `pd2 = cx2->Value(ax2)`,
+    // `pn1 = c2d1->Value(b1)`, `pn2 = c2d2->Value(a2)`.
     let Some((_, _, _, _, pd1)) = pcurve_at(&edges[prev - 1], face) else {
-        return false;
+        return BiMeridian::ReadFailed;
     };
     let Some((_, _, _, pd2, _)) = pcurve_at(&edges[degn2 - 1], face) else {
-        return false;
+        return BiMeridian::ReadFailed;
     };
-    let (x, period) = if u_closed {
-        (GpVec2d::new(1.0, 0.0), u_range)
+    // `cxx:1889-1901`.
+    let x = if u_closed {
+        GpVec2d::new(1.0, 0.0)
     } else {
-        (GpVec2d::new(0.0, 1.0), u_range)
+        GpVec2d::new(0.0, 1.0)
     };
+    // `cxx:1902-1908`.
     let rot1 = xy_cross(&pn1, &pd2, &x);
     let rot2 = xy_cross(&pd1, &pn2, &x);
     let scld = xy_dot_delta(&pd2, &pd1, &x);
@@ -294,26 +387,31 @@ pub(in crate::shhealing) fn try_bi_meridian(
         && rot1 * scld > PCONFUSION
         && rot2 * scln > PCONFUSION)
     {
-        return false;
+        // `cxx:1908`: the two passes do not describe a doubled meridian, so
+        // the caller falls through to the ordinary junction period shift.
+        return BiMeridian::NotApplicable;
     }
+    // `cxx:1910-1929`: `deep1` is the min and `deep2` the max of the six
+    // projected samples, so `deep = deep2 - deep1` is the wire's current size
+    // along `x`.
     let sign = if rot2 > 0.0 { 1.0 } else { -1.0 };
     let Some((_, a2, b2, _, pb2)) = pcurve_at(e2, face) else {
-        return false;
+        return BiMeridian::ReadFailed;
     };
     let Some((_, ax1, bx1, _, _)) = pcurve_at(&edges[prev - 1], face) else {
-        return false;
+        return BiMeridian::ReadFailed;
     };
     let Some((cx1, _, _, _, _)) = pcurve_at(&edges[prev - 1], face) else {
-        return false;
+        return BiMeridian::ReadFailed;
     };
     let Some((c2d2, _, _, _, _)) = pcurve_at(e2, face) else {
-        return false;
+        return BiMeridian::ReadFailed;
     };
     let Some((c2d1, a1, b1, _, _)) = pcurve_at(e1, face) else {
-        return false;
+        return BiMeridian::ReadFailed;
     };
     let Some((cx2, ax2, bx2, _, _)) = pcurve_at(&edges[degn2 - 1], face) else {
-        return false;
+        return BiMeridian::ReadFailed;
     };
     let deep1 = [
         sign * xy_dot_axis(&pn2, &x),
@@ -336,8 +434,16 @@ pub(in crate::shhealing) fn try_bi_meridian(
     .into_iter()
     .fold(f64::NEG_INFINITY, f64::max);
     let deep = deep2 - deep1;
+    // `cxx:1932-1936`: `AdjustToPeriod(deep, PConfusion, period + PConfusion)`
+    // is `AdjustByPeriod(deep, 0.5*(lo+hi), hi-lo)` with those bounds, i.e.
+    // `AdjustByPeriod(deep, 0.5*period + PConfusion, period)`.
     let dx = adjust_by_period(deep, 0.5 * (PCONFUSION + period + PCONFUSION), period);
     let scale = if scld > 0.0 { -dx } else { dx };
+    // `cxx:1938-1961`: translate every edge from `degn2` up to (excluding)
+    // `n2`, wrapping past `nb` back to 1. `cxx:1960` also calls
+    // `UpdateEdgeUVPoints`, which re-reads `BRep_Tool::Range(E, F)` and writes
+    // it back unchanged (`cxx:1652-1656`); [`replace_pcurve`] already restores
+    // that same range (`ShapeBuild_Edge.cxx:502`), so the call is a no-op.
     let mut k = degn2;
     loop {
         if k > nb {
@@ -353,5 +459,17 @@ pub(in crate::shhealing) fn try_bi_meridian(
         }
         k += 1;
     }
-    true
+    // `cxx:1961`: `DONE1`.
+    BiMeridian::Fixed
+}
+
+/// Outcome of one [`try_bi_meridian`] call. OCCT's arm has three exits:
+/// `cxx:1883` (unreadable p-curve: `FAIL1` and `continue`), `cxx:1908` (not a
+/// doubled meridian: fall through to the junction shift) and `cxx:1961`
+/// (`DONE1` and `continue`).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BiMeridian {
+    NotApplicable,
+    Fixed,
+    ReadFailed,
 }

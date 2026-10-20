@@ -20,7 +20,7 @@
 //! `CreateMDGPR` (`cxx:341-379`), `CreateNAUOSRD` (`cxx:380-444`),
 //! `FindContext` (`cxx:445-495`) and `AddStyle` (`cxx:283-340`). The crate's
 //! STEP writer emits the plain `COLOUR_RGB` `STYLED_ITEM` form directly
-//! (`step/transfer.rs::write_step_model_with_colors`), so none of them has a
+//! (`step/transfer/write_api.rs::write_step_model_with_colors`), so none of them has a
 //! caller; they are documented here rather than faked.
 //!
 //! Entity order: OCCT walks `Interface_InterfaceModel::Value(1..NbEntities())`,

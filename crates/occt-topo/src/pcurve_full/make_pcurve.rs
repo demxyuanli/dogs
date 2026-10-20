@@ -112,21 +112,6 @@ pub fn make_pcurve_full(edge: &Edge, face: &Face) -> Result<Arc<dyn Curve2d>, St
     // sides); pick the one matching the edge's traversal orientation.
     let face_key = GeometryRegistry::shape_key(&face.0);
     let pcs = GeometryRegistry::global().edge_pcurves(&edge.0, face_key);
-    if std::env::var("PCSRC").is_ok() {
-        let (a3, b3) = GeometryRegistry::global().edge_parameters(&edge.0);
-        let tag = if pcs.len() >= 2 {
-            "stored2".to_string()
-        } else if !pcs.is_empty() {
-            "stored1".to_string()
-        } else {
-            "none".to_string()
-        };
-        let info = pcs
-            .first()
-            .map(|p| format!("deg={:?} np={:?}", p.bspline_degree(), p.bspline_copy2d().map(|b| b.xs.len())))
-            .unwrap_or_default();
-        eprintln!("PCSRC e3range=({a3:.17e},{b3:.17e}) face_key={face_key} tag={tag} n={} {info}", pcs.len());
-    }
     if pcs.len() >= 2 {
         // `BRep_Tool::CurveOnSurface(E, F)` (`BRep_Tool.cxx:310-314`, `:354-357`):
         // a REVERSED face flips the edge before the closed-surface arm picks

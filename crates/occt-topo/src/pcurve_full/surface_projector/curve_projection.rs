@@ -93,6 +93,71 @@ pub fn project_curve_on_surface_perform(
         .collect();
     let mut pts3d: Vec<GpPnt> = t_vals.iter().map(|&t| curve.d0(t)).collect();
 
+    // TEMP PC3D: the 3-D sample points this p-curve is interpolated through, so
+    // they can be diffed against the OCCT probe's `C3VAL` dump.
+    if std::env::var("PC3D").is_ok()
+        && (first - 1.1414320265529101).abs() < 1e-12
+        && (last - 1.5714265148303701).abs() < 1e-12
+    {
+        for (i, p) in pts3d.iter().enumerate() {
+            eprintln!(
+                "PC3D i={i} t={:.17e} p=({:.17e},{:.17e},{:.17e})",
+                t_vals[i],
+                p.x(),
+                p.y(),
+                p.z()
+            );
+        }
+    }
+    // TEMP SURFD2: surface `D0` / `D2` at the Newton seed and at the point the
+    // p-curve sample should land on, for a bitwise comparison against the OCCT
+    // probe's `OCCTSRFD2` dump.
+    if let Ok(spec) = std::env::var("SURFD2") {
+        if std::env::var("PC3D").is_ok()
+            && (first - 1.1414320265529101).abs() < 1e-12
+            && (last - 1.5714265148303701).abs() < 1e-12
+        {
+            for pair in spec.split(';') {
+                let mut it = pair.split(',').filter_map(|s| s.trim().parse::<f64>().ok());
+                if let (Some(u), Some(v)) = (it.next(), it.next()) {
+                    let p0 = surf.value(u, v);
+                    let (pd, ru, rv, ruu, rvv, ruv) = surf.d2(u, v);
+                    eprintln!(
+                        "SURFD2 uv=({u:.17e},{v:.17e}) d0=({:.17e},{:.17e},{:.17e}) \
+d2p=({:.17e},{:.17e},{:.17e}) ru=({:.17e},{:.17e},{:.17e}) rv=({:.17e},{:.17e},{:.17e}) \
+ruu=({:.17e},{:.17e},{:.17e}) rvv=({:.17e},{:.17e},{:.17e}) ruv=({:.17e},{:.17e},{:.17e})",
+                        p0.x(), p0.y(), p0.z(),
+                        pd.x(), pd.y(), pd.z(),
+                        ru.x(), ru.y(), ru.z(),
+                        rv.x(), rv.y(), rv.z(),
+                        ruu.x(), ruu.y(), ruu.z(),
+                        rvv.x(), rvv.y(), rvv.z(),
+                        ruv.x(), ruv.y(), ruv.z(),
+                    );
+                }
+            }
+        }
+    }
+
+    // TEMP PCUV2: `ShapeAnalysis_Surface::ValueOfUV` for every sample, i.e. the
+    // seed-independent projection, so it can be diffed point by point against
+    // the OCCT probe's `OCCTUV` dump (no cache / previous-sample chaining).
+    if std::env::var("PCUV2").is_ok()
+        && (first - 1.1414320265529101).abs() < 1e-12
+        && (last - 1.5714265148303701).abs() < 1e-12
+    {
+        for (i, p) in pts3d.iter().enumerate() {
+            let q = value_of_uv(surf, p, preci);
+            let d = surf.value(q.x(), q.y()).distance(p);
+            eprintln!(
+                "PCUV2 i={i} t={:.17e} preci={preci:.17e} uv=({:.17e},{:.17e}) d={d:.17e}",
+                t_vals[i],
+                q.x(),
+                q.y()
+            );
+        }
+    }
+
     // `approxPCurve` (`cxx:1106-1143`) tries the straight-pcurve shortcut
     // `getLine` before everything else (`cxx:1119`); a hit gives the exact
     // `Geom2d_Line` / 2-pole pcurve OCCT stores for an isoparametric edge and
@@ -381,6 +446,22 @@ pub fn project_curve_on_surface_perform(
             gap = g;
         }
         pts[pnt_index - 1] = p2d;
+        // TEMP PCUV: every projected sample, so the port's `NextValueOfUV`
+        // chain can be diffed sample by sample against OCCT's interpolant
+        // knots (a clamped interpolant passes through its samples).
+        if std::env::var("PCUV").is_ok()
+            && (first - 1.1414320265529101).abs() < 1e-12
+            && (last - 1.5714265148303701).abs() < 1e-12
+        {
+            eprintln!(
+                "PCUV i={} t={:.17e} uv=({:.17e},{:.17e}) gap={:.17e}",
+                pnt_index - 1,
+                t_vals[pnt_index - 1],
+                p2d.x(),
+                p2d.y(),
+                gap
+            );
+        }
         // `cxx:1436-1451`: `needResolveUJump` / `needResolveVJump`. A sample
         // whose U (V) parameter moved a full period while its 3D point stayed
         // within `myPreci` of the previous one is a seam crossing the point-wise
@@ -555,7 +636,7 @@ pub(crate) fn is_line(curve: &dyn Curve) -> bool {
 /// trimmed one). Deliberately NOT a geometric test - a `Geom_BSplineCurve`
 /// whose image is a circle stays `GeomAbs_BSplineCurve` in OCCT
 /// (`GeomAdaptor_Curve::load`, `GeomAdaptor_Curve.cxx:252-311`; the same order
-/// as `edge_edge/find_solutions.rs:78-98`), and
+/// as `edge_edge/find_solutions/curve_kind.rs`), and
 /// `ProjLib_ProjectedCurve::Project` (`ProjLib_ProjectedCurve.cxx:242-270`)
 /// only has analytic overloads for `GeomAbs_Line` (`:247`), `GeomAbs_Circle`
 /// (`:250`), `GeomAbs_Ellipse` (`:253`), `GeomAbs_Hyperbola` (`:256`) and

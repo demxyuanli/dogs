@@ -33,7 +33,7 @@ pub struct TShape {
     /// shapes — each with its own orientation.
     pub children: Vec<TopoShape>,
     /// Per-face 2D pcurves of an EDGE shape (T-25: lifted from the
-    /// `GeometryRegistry` side table, `tgeometry.rs:64-83`). `None` on
+    /// `GeometryRegistry` side table, `tgeometry/mod.rs`). `None` on
     /// non-edge shapes and on edges that never got one.
     ///
     /// `TopoShape` already carries `Arc<RwLock<TShape>>`, so the guard
@@ -235,7 +235,7 @@ pub struct VertexShape {
 }
 
 /// The geometry of a face (T-25 batch 4: lifted from `FaceGeom`,
-/// `tgeometry.rs:143-148`).
+/// `tgeometry/mod.rs`).
 ///
 /// `surface` is optional because a face is built without one
 /// (`BRep_Builder::MakeFace(F)` leaves it null in OCCT).
@@ -284,7 +284,7 @@ impl fmt::Debug for FaceGeomCore {
 }
 
 /// The geometry of a vertex (T-25 batch 3: lifted from `VertexGeom`,
-/// `tgeometry.rs:27-30`).
+/// `tgeometry/mod.rs`).
 #[derive(Clone, Copy, PartialEq)]
 pub struct VertexGeomCore {
     pub point: occt_core::gp::GpPnt,
@@ -300,7 +300,7 @@ impl Default for VertexGeomCore {
 }
 
 /// The 3D geometry of an edge (T-25 batch 2: lifted from `EdgeGeom`,
-/// `tgeometry.rs:64-83` — `curve` plus the six `BRep_TEdge` scalars).
+/// `tgeometry/mod.rs` — `curve` plus the six `BRep_TEdge` scalars).
 ///
 /// `curve` is optional because a `BRep_TEdge` may carry no 3D curve.
 #[derive(Clone)]
@@ -507,7 +507,7 @@ impl<V: fmt::Debug> fmt::Debug for OrderedSlots<V> {
 
 /// Per-face 2D pcurves of an edge, and their `BRep_GCurve` ranges.
 ///
-/// Lifted from `GeometryRegistry`'s `EdgeGeom` payload (`tgeometry.rs:64-83`)
+/// Lifted from `GeometryRegistry`'s `EdgeGeom` payload (`tgeometry/mod.rs`)
 /// as part of T-25: the two maps are kept under **one** lock so that a
 /// `(curves, ranges)` pair can never be observed half-updated.
 ///
@@ -515,7 +515,7 @@ impl<V: fmt::Debug> fmt::Debug for OrderedSlots<V> {
 /// `BRep_Tool::CurveOnSurface` keys a representation by the `Geom_Surface`, so
 /// faces sharing one surface share these pcurves: `GeometryRegistry`'s
 /// lookup falls back to another face key on the same surface (see
-/// `GeometryRegistry::edge_pcurves`, `tgeometry.rs:310-337`).
+/// `GeometryRegistry::edge_pcurves`, `tgeometry/registry_pcurves.rs`).
 /// `Debug` is manual because `dyn Curve2d` is not `Debug`.
 #[derive(Default, Clone)]
 pub struct EdgePcurves {
@@ -527,7 +527,7 @@ pub struct EdgePcurves {
 
 impl EdgePcurves {
     /// Attach the (single) pcurve on `face_key`, replacing any previous ones
-    /// (`EdgeGeom::set_pcurve`, `tgeometry.rs:104-107`).
+    /// (`EdgeGeom::set_pcurve`, `tgeometry/mod.rs`).
     pub fn set_pcurve(&mut self, face_key: usize, c: Arc<dyn Curve2d>, first: f64, last: f64) {
         self.curves.set(face_key, vec![c.clone()]);
         self.init_range(face_key, Some(c.as_ref()), first, last);

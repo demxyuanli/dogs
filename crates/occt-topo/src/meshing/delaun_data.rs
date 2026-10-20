@@ -524,18 +524,6 @@ impl DelaunDataStructure {
         idx
     }
 
-    /// TEMPORARY diagnostic (ADDDUM): appends `count` dead element slots so the
-    /// ids handed out by [`Self::add_element`] skip ahead, emulating an OCCT
-    /// element that was created and deleted (`BRepMesh_DataStructureOfDelaun::
-    /// AddElement` `cxx:169-181` + `RemoveElement` `cxx:186-198`: the id is the
-    /// append position, never reused, and the slot keeps its `Deleted` state).
-    pub fn push_dead_element_slots(&mut self, count: usize) {
-        for _ in 0..count {
-            self.elements.push(DelaunTriangle::default());
-            self.element_states.push(VertexState::Deleted);
-        }
-    }
-
     /// Triangle by 1-based index.
     pub fn element(&self, index: i32) -> DelaunTriangle {
         self.elements[(index - 1) as usize]

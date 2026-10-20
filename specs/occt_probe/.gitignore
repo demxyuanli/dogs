@@ -35,3 +35,11 @@ ZZ_*.map
 _*.txt
 _*.log
 _bd/
+
+# split probe sources (T-193): build artifacts of build.bat
+modes_*.obj
+modes_*.exp
+modes_*.lib
+*_probe.obj
+*_probe.exp
+*_probe.lib

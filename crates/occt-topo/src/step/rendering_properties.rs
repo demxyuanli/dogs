@@ -12,7 +12,7 @@
 //! `XCAFDoc_VisMaterialCommon` / `XCAFDoc_VisMaterial` / `Quantity_ColorRGBA`
 //! `Init` overloads (`cxx:446-631`) — because this crate has no
 //! `XCAFDoc_VisMaterial` and its STEP writer emits the plain `COLOUR_RGB`
-//! `STYLED_ITEM` form only (`step/transfer.rs::write_step_model_with_colors`).
+//! `STYLED_ITEM` form only (`step/transfer/write_api.rs::write_step_model_with_colors`).
 //! The reflectance fields are still carried, because `Init` sets `myIsDefined`
 //! through them: a `SURFACE_STYLE_RENDERING_WITH_PROPERTIES` whose only property
 //! is a reflectance makes the style defined even without a color.

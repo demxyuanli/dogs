@@ -326,7 +326,7 @@ pub(crate) fn surface_newton(
     let rs_first = GpVec::from_pnts(&s.value(u, v), p3d);
     for _ in 0..25 {
         // `cxx:1088` `SurfAdapt.D2(U, V, pnt, ru, rv, ruu, rvv, ruv)`.
-        let (pnt, ru, rv, ruu, rvv, ruv) = s.d2(u, v);
+        let (_, ru, rv, ruu, rvv, ruv) = s.d2(u, v);
         // `cxx:1090-1096`.
         let ru2 = ru.dot(&ru);
         let rv2 = rv.dot(&rv);
@@ -335,8 +335,12 @@ pub(crate) fn surface_newton(
         if nrm2 < 1e-10 || occt_core::precision::Precision::is_positive_infinite(nrm2) {
             break;
         }
-        // `cxx:1098-1107`.
-        let rs = GpVec::from_pnts(&pnt, p3d);
+        // `cxx:1098` `gp_Vec rs = P3D.XYZ() - Value(U, V).XYZ();`: OCCT calls the
+        // adaptor's `Value` (`D0`) again instead of reusing the point `D2` just
+        // returned. For a B-spline the `D2` point comes from the Bohm pass, so
+        // the two differ in the last bits; reusing it here shifts every Newton
+        // step and drifts the p-curve samples near a singular pole.
+        let rs = GpVec::from_pnts(&s.value(u, v), p3d);
         let r_suu = rs.dot(&ruu);
         let r_svv = rs.dot(&rvv);
         let r_suv = rs.dot(&ruv);

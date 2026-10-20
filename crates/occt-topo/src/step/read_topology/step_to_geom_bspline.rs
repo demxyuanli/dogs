@@ -185,7 +185,7 @@ pub(super) fn make_bspline_curve_2d_with_knots(
 /// The resolver sees two layouts: a plain instance `(name, degree, poles,
 /// curve_form, closed, …)` with `closed` at index 4, and a merged rational
 /// complex `(name, degree, poles, weights, curve_form, closed, …)` with
-/// `closed` at index 5 (`transfer.rs::merge_complex_body`). The weights slot
+/// `closed` at index 5 (`transfer/entity_parse.rs::merge_complex_body`). The weights slot
 /// distinguishes them: the merged body puts `SELF` or a `(…)` list there, a
 /// plain body a `.FORM.` marker.
 pub(super) fn curve_record_closed(rec: &Record) -> bool {

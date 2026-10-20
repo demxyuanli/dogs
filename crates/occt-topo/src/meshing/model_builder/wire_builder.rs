@@ -145,8 +145,12 @@ fn add_wire(
                 .collect::<Vec<_>>()
                 .join(" ");
             eprintln!(
-                "WIRE face={} wire={} work_ori={:?} raw_children=[{}]",
-                face_index, wire_index, work.0.orientation(), rawlist
+                "WIRE face={} wire={} wptr={:#x} work_ori={:?} raw_children=[{}]",
+                face_index,
+                wire_index,
+                Arc::as_ptr(&work.0.tshape) as usize,
+                work.0.orientation(),
+                rawlist
             );
         }
         let list = stored

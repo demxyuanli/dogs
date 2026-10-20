@@ -104,18 +104,6 @@ impl<'a> Resolver<'a> {
                     .into_iter()
                     .map(|r| self.resolve_point_2d(r))
                     .collect::<Result<Vec<_>, _>>()?;
-                if std::env::var("PCRAW").is_ok() {
-                    eprintln!(
-                        "PCRAW id=#{id} np={} deg={} nmult={} nknot={} args={}",
-                        pts.len(),
-                        degree,
-                        parse_usize_list(rec.args.get(6).map(|s| s.as_str()).unwrap_or("()"))
-                            .len(),
-                        parse_real_list(rec.args.get(7).map(|s| s.as_str()).unwrap_or("()"))
-                            .len(),
-                        rec.args.len()
-                    );
-                }
                 // `StepToGeom::MakeBSplineCurve2d` (`StepToGeom.cxx:952-963`) runs
                 // the same `MakeBSplineCurveCommon`: duplicate knots merged,
                 // multiplicities clamped, poles trimmed, periodic descriptors and

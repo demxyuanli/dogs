@@ -248,13 +248,6 @@ impl Delaun {
         &self.circles
     }
 
-    /// TEMPORARY diagnostic (ADDDUM): advances the element id counter by `count`
-    /// dead slots, so a caller can line up the ids of the elements it is about
-    /// to create with OCCT's for the same geometry.
-    pub fn debug_bump_elements(&mut self, count: usize) {
-        self.mesh_data.push_dead_element_slots(count);
-    }
-
     /// Gives the list of frontier edges. Source: `Frontier()`.
     pub fn frontier(&self) -> BTreeSet<i32> {
         self.edges_by_type(VertexState::Frontier)

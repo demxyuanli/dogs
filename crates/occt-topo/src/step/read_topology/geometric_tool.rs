@@ -185,21 +185,8 @@ impl<'a> Resolver<'a> {
                 }
             }
         }
-        if std::env::var("PASSOC").is_ok() {
-            let np = matched
-                .first()
-                .and_then(|c| c.bspline_copy2d())
-                .map(|b| b.xs.len());
-            eprintln!(
-                "PASSOC edge={:p} facekey={face_key} edgeref={curve_ref} surf={surf_ref} nmatch={} np={:?}",
-                Arc::as_ptr(&edge.0.tshape),
-                matched.len(),
-                np
-            );
-        }
         let is_seam = self.is_seam_curve(curve_ref, surf_ref, nb_oe);
         let is_like_seam = !is_seam && self.is_like_seam(curve_ref, surf_ref, nb_oe);
-        let matched_n = matched.len();
         let stored: Vec<Arc<dyn Curve2d>> = if is_seam {
             // `cxx:736-767`: a seam edge carries two pcurves on the same face
             // (one per side of the seam, e.g. the cone's `u = 0` and `u = 2pi`),
@@ -217,7 +204,6 @@ impl<'a> Resolver<'a> {
             // `cxx:786-793` does `B.UpdateEdge(E, C2d, Face, 0.)` with it.
             matched.pop().into_iter().collect()
         };
-        let stored_count = stored.len();
         if !stored.is_empty() {
             GeometryRegistry::global().set_edge_pcurves(&edge.0, face_key, stored);
         }

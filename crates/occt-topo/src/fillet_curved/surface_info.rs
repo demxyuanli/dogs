@@ -1,16 +1,5 @@
 use super::prelude::*;
 
-
-/// TEMPORARY BUILD FIX (concurrent agent): component `i` of a `GpXyz`.
-
-pub(super) fn xyz_component(c: &occt_core::gp::xyz::GpXyz, i: usize) -> f64 {
-    match i {
-        0 => c.x(),
-        1 => c.y(),
-        _ => c.z(),
-    }
-}
-
 /// Number of sampled points on a rolling-ball centerline circle.
 pub(super) const CENTERLINE_SAMPLES: usize = 48;
 

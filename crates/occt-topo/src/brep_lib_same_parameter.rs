@@ -503,7 +503,7 @@ fn same_parameter_edge(edge: &Edge, tol: f64) -> f64 {
         }
         if pcs_changed && !out_pcs.is_empty() {
             // `fk` is the surface-pointer Cos key; `repr_key` leaves it unchanged
-            // when it is not a face shape key (`tgeometry.rs:587-593`).
+            // when it is not a face shape key (`tgeometry/registry_faces.rs`).
             reg.set_edge_pcurves(&edge.0, fk, out_pcs);
             reg.set_pcurve_range(&edge.0, fk, f3d, l3d);
         }

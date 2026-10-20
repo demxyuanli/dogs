@@ -213,11 +213,17 @@ impl ComposeShell {
                 }
             }
         }
+        // cxx:163-167: `myFace` is always the FORWARD view of the input face
+        // ("for correct dealing with seams"); the input orientation is kept in
+        // `myOrient` and re-applied to the result (`cxx:251`). Every internal
+        // pcurve lookup therefore composes a FORWARD face.
         self.orient = face.0.orientation();
         self.precision = prec;
         self.status = SHAPEEXTEND_OK;
         self.grid = grid;
-        self.face = Some(face.clone());
+        let mut forward_face = face.clone();
+        forward_face.0.set_orientation(Orientation::Forward);
+        self.face = Some(forward_face);
 
         // cxx:170-193: the UV resolution is the smallest per-patch value
         // GeomAdaptor_Surface resolution scaled by the joint/patch range ratio.

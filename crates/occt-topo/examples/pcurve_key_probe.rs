@@ -3,7 +3,7 @@
 //! For every face `F` of the read shape, verify that each of `F`'s edges has a
 //! pcurve resolvable under `repr_key(F)` - i.e. call
 //! `GeometryRegistry::edge_pcurves(edge, shape_key(F))`, which goes through
-//! `repr_key` (`tgeometry.rs:524-531`) and therefore answers the question the
+//! `repr_key` (`tgeometry/registry_faces.rs`) and therefore answers the question the
 //! mesher asks: "does this face have a pcurve for this edge *on my surface*?"
 //!
 //! Reports the (face, edge) pairs that have none. Run against the baseline and

@@ -256,7 +256,7 @@ pub(in crate::shhealing) fn fix_lacking_one(
     // `cxx:3652`.
     let tol = BRepTool::vertex_tolerance(&v1).max(BRepTool::vertex_tolerance(&v2));
     let dist2d = check.max2d;
-    let inctol = check.max3d;
+    let mut inctol = check.max3d;
     let p2d1 = check.p2d1;
     let p2d2 = check.p2d2;
     let Some(surf) = BRepTool::face_surface(face) else {
@@ -318,9 +318,14 @@ pub(in crate::shhealing) fn fix_lacking_one(
     } else if inctol < preci {
         do_increase = true; // `cxx:3735-3738`
     } else if !reg.is_degenerated_edge(&e2.0) && !reg.is_degenerated_edge(&e1.0) {
-        // `cxx:3744-3745`: `myTopoMode` is forced true for the face path by
-        // `ShapeFix_Shape.cxx:200`, so this block always runs.
-        {
+        // `cxx:3745` / `cxx:3806`: `myTopoMode` is false — `ShapeFix_Wire::
+        // ClearModes` (`ShapeFix_Wire.cxx:169`) sets it, and no OCCT caller of
+        // `FixLacking` ever turns it on (`SetTopoMode` has no call site in
+        // TKShHealing). So the 3D "long edge" analysis stays off and the
+        // `doAddLong` arm is dead; the selector falls through to the
+        // `dist <= MaxTolerance()` test at `cxx:3810-3814`.
+        let topo_mode = false;
+        if topo_mode {
             // `cxx:3748-3762`: `sae.Curve3d(E1, c3d, a, b, true)` gives `b` at
             // LastVertex and `a` at FirstVertex.
             let Some(c1) = BRepTool::edge_curve(&e1) else {
@@ -378,11 +383,13 @@ pub(in crate::shhealing) fn fix_lacking_one(
             let dist = pv.distance(&pm);
             if dist <= tol {
                 do_add_degen = true;
-            } else {
-                // `cxx:3806`: `myTopoMode`, which is true here. The
-                // `dist <= MaxTolerance()` fallback at `cxx:3810-3814` belongs
-                // to the `!myTopoMode` arm and is unreachable.
-                do_add_closed = true;
+            } else if topo_mode {
+                do_add_closed = true; // `cxx:3806-3808`
+            } else if dist <= max_tol {
+                // `cxx:3810-3814`: `!myTopoMode` fallback.
+                do_add_degen = true;
+                do_increase = true;
+                inctol = dist;
             }
         }
     }

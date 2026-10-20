@@ -16,7 +16,7 @@
 //! VIsoEdge / Face square distances), `BuildTree`'s B-spline sample raise and
 //! `CorrectNbSamples`, `FindSolution` over `math_FunctionSetRoot` with the
 //! analytic `Extrema_FuncPSNorm` system, and the MIN / MAX scans of
-//! `Perform`. See `gen_ext_ps.rs` for the exact `cxx` lines.
+//! `Perform`. See `gen_ext_ps/mod.rs` for the exact `cxx` lines.
 //!
 //! The **layer above it is ported**: [`ExtPs`] (`point_surface_extrema.rs`) is `Extrema_ExtPS` —
 //! the type dispatch to the analytic `Extrema_ExtPElS` arms, the ±1e10 window

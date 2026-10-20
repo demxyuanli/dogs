@@ -771,7 +771,12 @@ pub fn perform_wire_constructor_defaults(wire: &mut Wire, face: &Face, precision
         let _ = fix_add_pcurve(edge, face, is_seam, precision, &mut cache);
     }
     if reorder_ok {
-        fixed |= fix_shifted_wire(wire, face);
+        // `ShapeFix_Wire.cxx:939-951`: `FixEdgeCurves` runs `FixShifted()` and
+        // folds `LastFixStatus(DONE)` into `myStatusEdgeCurves` as `DONE7`;
+        // `FixEdgeCurves` then returns `StatusEdgeCurves(DONE)` (`cxx:1029`).
+        // The `bool` returned by `FixShifted` itself is discarded there, so the
+        // `fixed` flag follows the status bit, not the return value.
+        fixed |= fix_shifted_outcome(wire, face).status.done();
     }
     let edges = edges_of_wire(wire);
     let reg = GeometryRegistry::global();

@@ -250,7 +250,8 @@ impl<'a> Resolver<'a> {
                     let mut healed: Vec<crate::shape::TopoShape> =
                         Vec::with_capacity(sub_faces.len());
                     for rf in &sub_faces {
-                        healed.push(fix_face_second_part(&mut sff, rf));
+                        let h = fix_face_second_part(&mut sff, rf);
+                        healed.push(h);
                     }
                     let split_happened = healed
                         .iter()

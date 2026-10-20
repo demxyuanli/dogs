@@ -208,6 +208,19 @@ impl TopoBuilder {
         for e in edges {
             self.add_edge(&mut wire, e);
         }
+        if std::env::var("WDBGNEW").is_ok() {
+            let oris = edges
+                .iter()
+                .map(|e| format!("{:?}", e.0.orientation()))
+                .collect::<Vec<_>>()
+                .join(",");
+            eprintln!(
+                "MAKEWIRE wptr={:#x} n={} [{}]",
+                Arc::as_ptr(&wire.0.tshape) as usize,
+                edges.len(),
+                oris
+            );
+        }
         wire
     }
 
