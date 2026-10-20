@@ -35,6 +35,17 @@ ZZ_*.map
 _*.txt
 _*.log
 _bd/
+tmp_*.txt
+o.txt
+e.txt
+err_loader.txt
+
+# runtime DLLs copied next to the exe by run_probe.bat / probe.bat
+jemalloc.dll
+tbb12.dll
+tbb12_debug.dll
+tbbmalloc.dll
+tbbmalloc_proxy.dll
 
 # split probe sources (T-193): build artifacts of build.bat
 modes_*.obj

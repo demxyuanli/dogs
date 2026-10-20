@@ -23,10 +23,13 @@ data/                   模型与参考基线
 specs/                  规格与对拍记录
   _a3n00_gap_analysis.md  a3n00 缺口分析（§9.x 逐轮记录，含每次实测数字与口径）
   occt_probe/           **OCCT 侧**只读探针（C++，需本机 OCCT 构建）
+    occt_probe.cpp       入口（参数解析 + `run*` 分发），`*_probe.cpp` / `modes_*.cpp` 为各命令组
+    occt_probe_common.h  共享 include 集、`ProbeCtx`、跨文件声明
 tools/, engine/, docs/  辅助脚本 / 引擎侧代码 / 文档
 output/                 OBJ 导出目录（`export_data_obj` 的产物）
 CLAUDE.md               **本仓库的工作纪律**（门禁、命名、TEMP 插桩、提交要求）——改代码前先读
 .target-gate/           gitignored 的临时产物（门禁输出、对拍脚本、探针 dump）
+tmp_*, out*.txt 等      gitignored 的会话临时文件（见「临时文件」一节）
 ```
 
 ---
@@ -118,6 +121,25 @@ specs\occt_probe\probe.bat data\occ\a3n00.stp --facestats 1.076007 0.349066   # 
 - IGES 对拍：`_igesdump/oracle/` 是 OCCT 写出的 14 个样例。端口导出用 `iges_check`，`IGES_DUMP` 只作人工对照，不入库
   - **降级 oracle：`_igesdump/oracle/Torus.iges` 只作写侧参数对照，不作"读回正确输出"基准。** 它复现的是 **OCCT 8.0.0 Faces 模式往返缺陷**（2026-10-12 定位，详见 `docs/goals/iges-read-full/state.yaml` T027）：Faces 模式（`IGESControl_Writer("MM", 0)`，`GeomToIGES_GeomSurface.cxx:576-598` 的 `myBRepMode && myAnalytic` 为假）把解析环面写成 `144 + 120` 回转面 + 相位不自洽的 `142`；OCCT 8.0.0 自己读回得到 **1 面 / 2 wires / v 跨 4π ≈ 302 节点 146 三角**（面积 67.24，真值 789.57），而 OCCT **7.8.1**（FreeCAD 1.1 内置）读同一文件是 **1 面 / 1 wire / v 跨 2π / 完整环面**（1639 点 3122 面，面积 786.66）。同一 IGES 若按 **BRep 模式**写出则是 `198,9,11,10.,2.,13`（解析环面），OCCT 8.0.0 读回 **1 面 / 1 wire / 1369 节点 2592 三角 / bbox ±12**（完整环面）。端口在此条上与规格 8.0.0 **逐点一致**（302/146 到 1e-7），故 Torus 的读侧 sweep 仍可作 parity 检查，但 **302/146 不得判为端口缺陷或"正确输出"**。
 - 临时：`.target-gate/`（已 gitignore）存放门禁输出、对拍脚本与探针 dump
+
+### 临时文件（一律 gitignore，不入库）
+
+对拍与排查过程中产生的读数是**一次性证据**，只贴进 `specs/` 的结论里，文件本身不进仓库。
+以下模式已写进 `.gitignore` / `specs/occt_probe/.gitignore`：
+
+| 位置 | 忽略的模式 | 来源 |
+|---|---|---|
+| 仓库根 | `/tmp_*`（含 `tmp_dd1499/` 等目录） | 逐面/逐边对拍 dump、`occt_probe` 重定向输出 |
+| 仓库根 | `/out*.txt`、`/err*.txt`、`/t1.txt`、`/t0m_steps.txt` | 编译/运行重定向、T0M 步序清单 |
+| 仓库根 | `/_*`、`/zz_*.txt`、`/zz_*.obj` | 早期会话的 dump 与临时 OBJ |
+| `data/` | `data/output*/`、`data/output/gates/` | `export_data_obj` / `step_obj_gates` 的产物 |
+| `data/` | `/data/tmp_t0m/`、`/data/occ/flex/` | 单次对拍用的本地 STEP 拷贝（数 MB 级） |
+| `specs/occt_probe/` | `_*.txt`、`tmp_*.txt`、`e.txt`、`o.txt`、`err_loader.txt` | 探针 stdout/stderr 与本地面序号 dump |
+| `specs/occt_probe/` | `jemalloc.dll`、`tbb12*.dll`、`tbbmalloc*.dll` | `probe.bat` / `run_probe.bat` 从 OCCT 发行版拷来的运行库 |
+| `specs/occt_probe/` | `*.obj`/`*.lib`/`*.exp`（含 `modes_*`、`*_probe`、`ZZ_*`、`zz_*`）、`*.pdb`、`*_probe.exe`、`_dbg/` | `build.bat` 及各 `build_*.bat` 的编译产物 |
+
+约束：`.gitignore` 只按**位置+模式**拦截，不用通配去猜内容；新增一次性产物时先补规则再跑，
+提交前用 `git status --porcelain` 确认剩下的都是源码与文档。
 
 ---
 

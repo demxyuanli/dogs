@@ -35,8 +35,19 @@ crates/occt-topo/_*.txt
 /zz_*.txt
 /zz_*.obj
 
+# Session scratch at the repo root: probe dumps, stdout/stderr redirects and
+# their scratch directories, all produced by ad-hoc `occt_probe` / example runs
+/tmp_*
+/out*.txt
+/err*.txt
+/t1.txt
+/t0m_steps.txt
+
 # gate-run evidence logs (docs/goals/drift-and-gap-autofix)
 /.target-gate/
 
 # Large local STEP inputs (flex assembly sweep) - not tracked
 /data/occ/flex/
+
+# Local STEP copies extracted for a single parity run (T0M sweep) - not tracked
+/data/tmp_t0m/
