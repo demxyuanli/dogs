@@ -37,7 +37,7 @@
 **根因链**：
 1. `edge_params_for_curve`（`step.rs`）用 `classify_curve` 几何启发式判曲线类型：
    采样 6 个 `d2`（曲率），`|d²|` 近恒定（`(max-min)/max < 0.02`）且 `is_periodic()==false`
-   → 判成 **Parabola**（`step.rs:205-206`）。
+   → 判成 **Parabola**（`step.rs:205-206`；`step.rs` 已于 `09e227c2`（2026-09-12）拆成 `step/` 目录，本条是更早的历史读数）。
 2. Parabola 分支做点积，把参数域算成 `[0, 28.82]`，而曲线真实 knot 域是 `[0, 0.7633]`。
 3. 网格在 t=28.82（超域 ~37.8 倍）处求值曲线 → 多项式外推鼓包 → bbox ±128。
 
@@ -69,7 +69,7 @@ if f.is_finite() && l.is_finite() && !curve.is_periodic() {
 1. **pcurve 存储覆盖**：seam 边 #55 有两条 pcurve——#63（u=2π）和 #70（u=0），
    是锥切缝的两侧。`EdgeGeom.pcurves` 是 `HashMap<face, 单条>`，`set_pcurve`
    用 `insert` 覆盖，第二条冲掉第一条，只剩 u=0。
-2. **wire 去重丢朝向**：`orient_edges_on_wire`（`algo_tools.rs:398`）按 **TShape**
+2. **wire 去重丢朝向**：`orient_edges_on_wire`（`algo_tools.rs:398`；`algo_tools.rs` 已拆成 `algo_tools/` 目录，`orient_edges_on_wire` 现于 `algo_tools/construct.rs:369`）按 **TShape**
    去重，把 seam 边的两个朝向（Reversed + Forward）合并成一个。实测
    `stored=2 orient=["Reversed","Reversed"]`——Forward 侧被丢弃。
 3. 结果：网格模型里 seam 只有**一个** pcurve slot（Reversed），UV 多边形缺了

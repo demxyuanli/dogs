@@ -7,7 +7,7 @@
 | 管线 | 入口 | 使用 BOPDS/BOPAlgo | shell 闭合 |
 |---|---|---|---|
 | **平面布尔** | `bop_builder::boolean` → `bop_builder2::builder_bop`（legacy 2D 排列仅作错误回退） | ✅ bopds + bop_build_faces/common/solids | ✅ `ShellSplitter` + 共面片跨 solid 合并 |
-| **通用 fuse** | `bop_builder2::BopBuilder::build_bop`（bop_builder2.rs:411） | ✅ bopds + bop_build_faces/common/solids | ✅ `ShellSplitter` + `close_open_shells`（几何 EKey 身份） |
+| **通用 fuse** | `bop_builder2::BopBuilder::build_bop`（`bop_builder2/arguments.rs:338` `build_bop`；原写 `bop_builder2.rs:411` 是 2026-09-12 拆分前的读数） | ✅ bopds + bop_build_faces/common/solids | ✅ `ShellSplitter` + `close_open_shells`（几何 EKey 身份） |
 
 **正确的机制已经移植**（bop_builder2 路径：`fill_images_vertices→edges→faces→solids`，BOPDS pave-block 边分裂、`shapes_sd` 顶点统一、几何 shell 闭合）。平面 `bop_builder::boolean` 是**另一套简化重复实现**，未接入。
 

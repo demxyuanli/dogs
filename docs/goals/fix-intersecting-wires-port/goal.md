@@ -1,5 +1,10 @@
 # FixIntersectingWires 端口对齐审计与收敛
 
+> **Source-path note (2026-10-20, T-200).** This charter already records the T-192 split of
+> `intersection_tool.rs` into `shhealing/intersection_tool/`. The remaining bare
+> `intersection_tool.rs` / `shape_fix_face.rs` mentions are pre-split receipts; `shape_fix_face.rs`
+> is now `shhealing/shape_fix_face/` and pre-split line numbers do not map one-to-one.
+
 ## Objective
 
 对照 OCCT `ShapeFix_IntersectionTool::FixIntersectingWires`（`D:\source\OCCT-src\src\ModelingAlgorithms\TKShHealing\ShapeFix\ShapeFix_IntersectionTool.cxx:1834-2530`，共 697 行）审计 Rust 端口 `crates/occt-topo/src/shhealing/intersection_tool/fix_intersecting_wires.rs`（934 行／非空 901 行；自 2026-10-09 建档 `da0d0253` 起未变）。逐段核实控制流，仅修复被证实的偏差（且修复必须走 OCCT 同一 `.cxx` 分支），并保持 STEP→OBJ 门禁通过。
@@ -25,7 +30,7 @@
   1. 把规格 §9.633 的"逐段对照"当作已验证结论直接采信，而不重新核对。
   2. 为凑某个 STEP 的顶点/面数，加入面积比、长度滤边、体积门或按模型的特例分支。
   3. 只跑 `cargo check` 就宣称对齐。
-  4. 把 `shape_fix_face.rs:1002`、`:1223` 的 UNPORTED 注释（引用的是 `ShapeFix_Face.cxx` 的 FixMissingSeam / ComposeShell 段）误算为本 tranche 缺口。
+  4. 把 `shape_fix_face.rs:1002`（现 `shape_fix_face/mod.rs:7-9`）、`:1223` 的 UNPORTED 注释（引用的是 `ShapeFix_Face.cxx` 的 FixMissingSeam / ComposeShell 段）误算为本 tranche 缺口。
 - Blind spots considered:
   - §9.633 的逐段对照是文档自述，不是独立证据，需要 Scout 重新逐段核对。
   - `intersection_tool.rs` intake 时为 1465 行（该数为 intake 快照现测；仓库无该单体版本的提交，无法从 git 复核），超过项目"单文件超过 800 行需分拆"规则，属本 tranche 相邻的结构债；现已拆为 `intersection_tool/`（括号内均为**非空行数**，总行数见括注：`helpers.rs` 80／92、`edge_split.rs` 302／330、`vertex_union.rs` 184／194、`self_intersect.rs` 759／786、`fix_intersecting_wires.rs` 901／934），模块根 `intersection_tool.rs` 66 行。余下 `fix_intersecting_wires.rs` 仍超 800 行，属未决项。

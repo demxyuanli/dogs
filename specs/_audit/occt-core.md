@@ -1,5 +1,7 @@
 # occt-core 移植忠实度审查（2026-09-20）
 
+> **文件/行号口径（2026-10-20）**：本报告的路径与物理行号是 2026-09-20 基线的记录。本报告引用的是 `occt-core` 自己的 `gcpnts.rs`（该文件仍在），与 T-192 拆成 `gcpnts/` 目录的 **`occt-geom`** 同名文件不是同一个模块；其余路径按当前树复核，需要子文件映射时见 `_index.md` §0 的表 A / 表 B。
+
 > 范围：`crates/occt-core/src/**`（196 个 `.rs` / 33,919 行）。只读审查，未改任何源码。
 > 方法：① 关键词扫描（`not ported|UNPORTED|PARKED|simplif|fallback|heuristic|sampled|empiric|for now|workaround` → **40 命中**；`Source:` → **198 命中**；`ponytail` → **7 命中**）；② 对 12 个候选逐条读上下文并回查 `D:\source\OCCT-src`；③ 抽样逐行对读 7 个"声称移植"的函数（见 §4）。
 
@@ -20,7 +22,7 @@
   `if dev > tol && depth < MAX_DEPTH && params.len() < max_pts { subdivide(...) }`
   `crates/occt-core/src/gcpnts.rs:122` `let dev = point_segment_dist(&pm, &pa, &pb);`（只看中点，不是真最大偏差）
 - OCCT 对应：`GCPnts_UniformDeflection.cxx:311-352`（`initialize`：`GetDefType` 分派 + `Controle` 末尾点修正）、`:192-206`（Circular 解析点数）、`CPnts_UniformDeflection.cxx:190-249`（Curved 推进器）。**OCCT 没有深度截断**。
-- 影响：**会改变结果**。直线/圆走 OCCT 的解析分支（直线上恰好 2 点）；此实现永远走二分，点数与参数分布都不同。live：`occt-topo/src/wireframe.rs:48` → `edge_to_polyline` → `brepmesh.rs`/`shape_mesh.rs`/`geometry_query.rs`；另 `occt-geom/src/curve_approx.rs:26`、`occt-geom/src/gcpnts.rs:288`。
+- 影响：**会改变结果**。直线/圆走 OCCT 的解析分支（直线上恰好 2 点）；此实现永远走二分，点数与参数分布都不同。live：`occt-topo/src/wireframe.rs:48` → `edge_to_polyline` → `brepmesh.rs`/`shape_mesh.rs`/`geometry_query.rs`；另 `occt-geom/src/curve_approx.rs:26`、`occt-geom/src/gcpnts.rs:288`（自创二分族已随 T-42 删除；现 `gcpnts/{abscissa,length,sampling}.rs` 为忠实件）。
 - 建议：删掉 `subdivide`，改调 `GCPnts_UniformDeflection.cxx:311-352` 的四分支 + `Controle`（`:142-160`）；Curved 分支按 `CPnts_UniformDeflection.cxx` 移植。当前实现按 `:30` 标"未移植"。
 
 - **处置（✅ 已完成：T-42，2026-09-20）**：自创的 `UniformDeflection` 二分族（含 `subdivide*`/`enforce_min_points`/`MAX_DEPTH`）整体删除；`gcpnts.rs:8-14` 模块头把 `GCPnts_UniformDeflection`/`QuasiUniformDeflection`/`UniformAbscissa` 登记为 **UNPORTED**（不伪造 OCCT 分支）；两个 live 消费者（`wireframe::edge_to_polyline`、`meshing/geom_tool::{discretize_curve,discretize_iso_curve}`）改走 `gcpnts_perform.rs:52` 的 `CurveTessellator`/`perform_tangential_curve`（= `GCPnts_TangentialDeflection.cxx:522-916`）。门禁逐项等于基线。
@@ -31,7 +33,7 @@
   `let base = UniformDeflection::from_curve(c, a, b, tol, max_pts); ... 插入中点`
   `crates/occt-core/src/gcpnts.rs:214` `if (dev > tol || dangle > angle_tol) && depth < MAX_DEPTH {`
 - OCCT 对应：`GCPnts_QuasiUniformDeflection.cxx`（独立迭代器，非"二分+插中点"）；`GCPnts_TangentialDeflection.cxx:522-916`（已由 `gcpnts_perform.rs:52` 逐行移植）。
-- 影响：会改变点数与参数。live：`occt-topo/src/meshing/geom_tool.rs:421,443`（`GeomTool::discretize_curve`/`discretize_iso_curve`）、`occt-geom/src/gcpnts.rs:298`。
+- 影响：会改变点数与参数。live：`occt-topo/src/meshing/geom_tool.rs:421,443`（`GeomTool::discretize_curve`/`discretize_iso_curve`）、`occt-geom/src/gcpnts.rs:298`（同上，已随 T-42 删除）。
 - 建议：`from_curve_with_deriv` 改为委托 `perform_tangential_curve`（`gcpnts_perform.rs:52`，即 `TangentialDeflection.cxx:522-916`）；`QuasiUniformDeflection` 按 `GCPnts_QuasiUniformDeflection.cxx` 重写，否则标"未移植"。
 
 - **处置（✅ 已完成：T-42）**：`from_curve_with_deriv` 已委托忠实 `perform_tangential_curve`；`QuasiUniformDeflection` 与 `UniformDeflection` 一并在 `gcpnts.rs:8` 标 **UNPORTED**（OCCT 侧对应 `GCPnts_QuasiUniformDeflection.cxx`/`GCPnts_UniformAbscissa.cxx`）。
@@ -89,12 +91,12 @@
 
 ### 8. `elib/measure.rs` 整套自造积分/采样，无 `Source:`、无未移植标记
 - 判定：**自创（未登记）**
-- 证据：`crates/occt-core/src/elib/measure.rs:52` `pub fn simpson<F: Fn(f64) -> f64>(...)`；`:64-76` `curve_arc_length`（累加弦长）；`:111` `point_at_arc_length`（"Walk samples"）；`:133` `surface_patch_area`（中点矩形和）
+- 证据：`crates/occt-core/src/elib/measure.rs:52` `pub fn simpson<F: Fn(f64) -> f64>(...)`；`:64-76` `curve_arc_length`（累加弦长）；`:111` `point_at_arc_length`（"Walk samples"）；`:133` `surface_patch_area`（中点矩形和）—— **整文件已于 `82e0caf6`（2026-10-14）删除**：`simpson`/`point_at_arc_length`/`surface_patch_area` 在三 crate 内均无残留（`rg` 零命中），仅 `curve_arc_length` 仍有同名件 `occt-core/src/geom/curve_frenet.rs:156`。以上为该文件内的删除前读数
 - OCCT 对应：**未找到对应分支**。`ElCLib`/`ElSLib` 无弧长/面积函数；等价物是 `GCPnts_AbscissaPoint`（对弧长积分做 Newton 迭代，带容差）与 `GProp_*`。
 - 影响：**会改变数值**。`curve_arc_length` 被 `occt-topo/src/inttools_range.rs:28,175` 调用（该处 `:13,26` 已登记为近似）。同 crate 另有一份重复实现：`geom/curve_frenet.rs:156`（`curve_arc_length`）与 `:116` `arc_length_parameters`（弦长参数化，声称用于 `GCPnts_UniformAbscissa`，而 OCCT 该函数基于精确弧长）。
 - 建议：统一换 `GCPnts_AbscissaPoint`（`CPnts_AbscissaPoint.cxx` + `CPnts_MyRootFunction.cxx`）；`measure.rs` 保留部分在文件头写 `UNPORTED`。
 
-- **处置（✅ 已完成：T-50）**：`elib/measure.rs:3` 文件头已加 **UNPORTED**（真实件 `GCPnts_AbscissaPoint` + `GProp_*`）；`curve_arc_length` 的重复实现（`geom/curve_frenet.rs`）仍待统一。
+- **处置（✅ 已完成：T-50；文件已于 `82e0caf6` 删除）**：`elib/measure.rs:3` 当时在文件头加 **UNPORTED**（真实件 `GCPnts_AbscissaPoint` + `GProp_*`）；整文件随后在 `82e0caf6` 移除，唯一存活件是 `geom/curve_frenet.rs:156 curve_arc_length`（累加弦长，仍待换成 `GCPnts_AbscissaPoint`）。
 
 ### 9. 体素 CSG 被当作布尔实现
 - 判定：**自创**（理由写在注释，但无 OCCT 出处、无 UNPORTED）

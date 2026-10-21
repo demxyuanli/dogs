@@ -97,7 +97,7 @@
 1. ~~**`data/occ/bottom.step`（面积比约 0.976，缺约 2.4%）**~~ —— **✅ 已闭环（2026-10-16，包 P045 / T999 复测）**：当前 HEAD 上 `bottom` 面积比 **1.0000**（80932.92 / 80932.92），三角 23550 vs OCCT 23557（Δ −7，2026-10-13 读数 −5 的下一位）。原记录里「face 316 只输出 104 个三角、OCCT 为 184」这一现象在当前 HEAD 已不复现；该行的门禁容差 `area_tol` 未改（`tests/common/mod.rs` 登记值），故不是靠放宽容差通过。保留原始分析（见下）作为历史：
    - 包围盒与 OCCT 完全一致；323 个面可按包围盒一一配对，三角数合计只差 53。
    - 偏差主要集中在 `face 316`（竖直圆柱带孔，三通管区域）：端口 184 个顶点只用到 110 个，输出 104 个三角，OCCT 为 184 个。
-   - ~~下一步方向：对照 `BRepMesh_Delaun` 与 `FixMissingSeam` 的孔洞处理，逐段核对 face 316 的环与边界离散。~~ 该方向已随缝隙边 pcurve 注册修正（2026-10-13，`meshing/node_insertion.rs::init_data_structure` 按边全部 pcurve 建链）与 10-15～10-16 各包落地而收束，见 `specs/_audit/mesh-exchange.md` 的补记。
+   - ~~下一步方向：对照 `BRepMesh_Delaun` 与 `FixMissingSeam` 的孔洞处理，逐段核对 face 316 的环与边界离散。~~ 该方向已随缝隙边 pcurve 注册修正（2026-10-13，`meshing/node_insertion/build.rs::init_data_structure` — 拆分前 `meshing/node_insertion.rs::init_data_structure` — 按边全部 pcurve 建链）与 10-15～10-16 各包落地而收束，见 `specs/_audit/mesh-exchange.md` 的补记。
 2. 周期面 `ShapeFix_ComposeShell` 的个别分支仍有未对拍项（见 §4 的 round 194 之后记录）。
 3. 历史曾关闭的 `FixMissingSeam` 接线已在 round 96 打开；如要回退，需同时保留 `bottom.step` 门禁。
 

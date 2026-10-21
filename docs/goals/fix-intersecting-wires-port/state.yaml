@@ -1,6 +1,11 @@
 # GoalBuddy v2 state.yaml
 # Board truth lives here. goal.md is the editable charter; notes/ holds long receipts only.
 
+# Source-path note (2026-10-20, T-200): intersection_tool.rs was split into
+# shhealing/intersection_tool/ (mod, helpers, edge_split, vertex_union, self_intersect,
+# fix_intersecting_wires) and shhealing/shape_fix_face.rs into shhealing/shape_fix_face/ during
+# T-192. The receipts below keep the pre-split single-file readings; their line numbers do not
+# map one-to-one onto the new files. Tables: specs/_audit/_index.md section 0.
 version: 2
 
 goal:
@@ -28,7 +33,7 @@ goal:
       - "step_obj_gates takes about 11-12 minutes per run; full cargo test is pre-commit only."
       - "Worktree has large uncommitted diff including the is_outer_bound fix in shape_analysis.rs; Worker must not revert unrelated changes."
       - "26 lib tests fail on %TEMP% write permission (environment), not a regression signal."
-      - "shape_fix_face.rs:1002 and :1223 UNPORTED notes cite ShapeFix_Face.cxx FixMissingSeam and ComposeShell sections, out of this tranche."
+      - "shape_fix_face.rs:1002（现 `shape_fix_face/mod.rs:7-9`） and :1223 UNPORTED notes cite ShapeFix_Face.cxx FixMissingSeam and ComposeShell sections, out of this tranche."
       - "Code comments and strings must be ASCII English per project rule."
     existing_plan_facts:
       - "specs/_a3n00_gap_analysis.md section 9.633 segment table and fidelity points 1-6."
@@ -95,7 +100,7 @@ tasks:
       - "Classify each cxx segment as faithful, divergent (with proposed same-branch fix), or unported (with reason)."
       - "Check the section 9.633 fidelity points 1-6 against the code; mark each confirmed or refuted."
       - "Check for banned constructs: area ratios, length filters, volume gates, predicates not present in OCCT."
-      - "Treat shape_fix_face.rs:1002 and :1223 as out of scope; they cite ShapeFix_Face.cxx FixMissingSeam and ComposeShell."
+      - "Treat shape_fix_face.rs:1002（现 `shape_fix_face/mod.rs:7-9`） and :1223 as out of scope; they cite ShapeFix_Face.cxx FixMissingSeam and ComposeShell."
     expected_output:
       - "Segment table: cxx range, Rust location, status."
       - "Helper table: OCCT function, Rust function, status."
@@ -117,16 +122,16 @@ tasks:
         - "cxx:2507-2528 rebuild -> rs:898-913 faithful for face (FORWARD, location, geom copy, NM add, ctx.replace face)"
       helper_table:
         - "GetPointOnEdge -> wire_self_inter.rs point_on_edge:70-80 faithful"
-        - "SplitEdge1 -> intersection_tool.rs:255-303 faithful (ctx.replace edge, boxes update)"
-        - "SelectIntPnt -> intersection_tool.rs:544-555 faithful; IntPntStatus 557-565 faithful"
-        - "FindVertAndSplitEdge -> intersection_tool.rs:574-630 faithful (tol max, IsSame, NeedSplit, aTmpKey, num1--)"
-        - "CutEdge -> intersection_tool.rs:204-252 DIVERGENT (D-CUT1); range writes faithful (set_ranges_all = Only3d false, set_edge_range = Only3d true)"
+        - "SplitEdge1 -> intersection_tool.rs:255-303（现 `intersection_tool/edge_split.rs:146` `split_edge1`） faithful (ctx.replace edge, boxes update)"
+        - "SelectIntPnt -> intersection_tool.rs:544-555（现 `intersection_tool/vertex_union.rs:107` `select_int_pnt`） faithful; IntPntStatus 557-565 faithful"
+        - "FindVertAndSplitEdge -> intersection_tool.rs:574-630（现 `intersection_tool/vertex_union.rs:137` `find_vert_and_split_edge`） faithful (tol max, IsSame, NeedSplit, aTmpKey, num1--)"
+        - "CutEdge -> intersection_tool.rs:204-252（现 `intersection_tool/edge_split.rs:91` `cut_edge`） DIVERGENT (D-CUT1); range writes faithful (set_ranges_all = Only3d false, set_edge_range = Only3d true)"
         - "FirstVertex/LastVertex -> wire_fix/mod.rs:70-86 faithful (stored vertex semantics = TopExp default CumOri=false)"
         - "SplitEdge2, UnionVertexes, CreateBoxes2d, SplitEdge core -> NOT AUDITED (T005)"
       divergences:
         - id: D-CUT1
           cxx: "ShapeFix_IntersectionTool.cxx:242-245 (returns false when PCurve is not Geom2d_TrimmedCurve; only the trimmed branch returns true)"
-          rust: "intersection_tool.rs:218-238 (returns true for any PCurve found)"
+          rust: "intersection_tool.rs:218-238（现 `intersection_tool/edge_split.rs:91` `cut_edge` 的 PCurve 分支） (returns true for any PCurve found)"
           severity: behavioral (caller skips or proceeds differently when SameParameter is false and pcurve is non-trimmed)
           fix: "Return false when the pcurve is not a trimmed curve, mirroring cxx:245."
         - id: D-WIRE-REPLACE (includes D-WIRE-ORI)
@@ -143,7 +148,7 @@ tasks:
         "6 EmptyCopied location and geometry ordering": confirmed for face (set_location before add; set_face copies surface, tol, natural restriction); child location compensation in builder.add not audited
       side_findings:
         - "intersection_tool.rs 1465 lines and fix_intersecting_wires.rs 916 lines exceed the 800-line rule"
-        - "shape_fix_face.rs:1002 and :1223 UNPORTED notes are out of scope"
+        - "shape_fix_face.rs:1002（现 `shape_fix_face/mod.rs:7-9`） and :1223 UNPORTED notes are out of scope"
         - "26 lib test failures are %TEMP% permission (environment), not regression"
         - "npx goalbuddy fetched 0.4.3 while local skill is 0.3.8"
   - id: T002
@@ -398,7 +403,7 @@ tasks:
       - "crates/occt-topo/src/step/read_topology/shape_fix_face_perform.rs"
     constraints:
       - "Read-only. Use grep physical line numbers for evidence."
-      - "Do not audit shape_fix_face.rs:1002 and :1223 (out of scope)."
+      - "Do not audit shape_fix_face.rs:1002（现 `shape_fix_face/mod.rs:7-9`） and :1223 (out of scope)."
     expected_output:
       - "Wrapper status: faithful | divergent | unported with reason"
       - "Wiring order status against cxx:676-685"
@@ -407,14 +412,14 @@ tasks:
       result: done
       executed_by: "PM inline (Scout role; no subagent installed)"
       summary: "ShapeFixFace::fix_intersecting_wires wrapper and fix_face_wire_pairs wiring are faithful to ShapeFix_Face cxx:676-685 and 2821-2825. No divergence."
-      evidence: "ShapeFix_Face.cxx:674-690 and 2819-2825 read; shape_fix_face.rs:342-361; shape_fix_face_perform.rs:59-74; ShapeFix_Root::NeedFix semantics checked in ShapeFix_Root.hxx:112"
-      wrapper: "shape_fix_face.rs:351-361 faithful to ShapeFix_Face::FixIntersectingWires (cxx:2821-2825): builds the tool over Context(), commits the face only when done (cxx:2527 face = newface)."
+      evidence: "ShapeFix_Face.cxx:674-690 and 2819-2825 read; shape_fix_face.rs:342-361（现 `shape_fix_face/mod.rs:341-350`）; shape_fix_face_perform.rs:59-74; ShapeFix_Root::NeedFix semantics checked in ShapeFix_Root.hxx:112"
+      wrapper: "shape_fix_face.rs:351-361（现 `shape_fix_face/mod.rs:350`） faithful to ShapeFix_Face::FixIntersectingWires (cxx:2821-2825): builds the tool over Context(), commits the face only when done (cxx:2527 face = newface)."
       wiring: "shape_fix_face_perform.rs:67-74 faithful to cxx:676-685: FixWiresTwoCoincEdges first, then NeedFix(mode) gate, then FixIntersectingWires; face taken back from sff.face. NeedFix default -1 maps to true (ShapeFix_Root::NeedFix(flag, def=true))."
       precision_args: "ShapeFix_IntersectionTool(Context(), Precision(), MaxTolerance()) constructor args are not read by FixIntersectingWires (cxx:1834-2530 uses only Precision::Confusion(), tolint 1e-10, MaxTolVert). Rust uses CONFUSION, TOLINT and max_tol_vert, so the mismatch has no effect. Confirmed."
       side_findings:
         - "shape_fix_face_perform.rs:68-71 does not record ShapeExtend_DONE7/DONE6 status bits; comment-only, no geometry effect"
         - "FixWiresTwoCoincEdges body (shape_fix_face_wires.rs:28) was not audited in this goal; out of T001 scope"
-        - "shape_fix_face.rs:1002 and :1223 out of scope as instructed"
+        - "shape_fix_face.rs:1002（现 `shape_fix_face/mod.rs:7-9`） and :1223 out of scope as instructed"
     
   - id: T005
     type: scout
@@ -436,13 +441,13 @@ tasks:
       result: done
       executed_by: "PM inline (Scout role; no subagent installed)"
       summary: "Helpers SplitEdge core, SplitEdge2, UnionVertexes (all four arms), CreateBoxes2d audited. One latent divergence (D-SPLIT-LOC), fixed by T006."
-      evidence: "ShapeFix_IntersectionTool.cxx:87-190, 363-491, 495-879, 884-920 read in full; intersection_tool.rs:122-546 read; BRep_Builder::UpdateVertex semantics checked at BRep_Builder.cxx:1442-1453"
+      evidence: "ShapeFix_IntersectionTool.cxx:87-190, 363-491, 495-879, 884-920 read in full; intersection_tool.rs:122-546（现 `intersection_tool/edge_split.rs` + `vertex_union.rs`） read; BRep_Builder::UpdateVertex semantics checked at BRep_Builder.cxx:1442-1453"
       helper_table:
-        - "SplitEdge core cxx:87-190 -> intersection_tool.rs:122-202: faithful except D-SPLIT-LOC"
-        - "SplitEdge2 cxx:367-491 -> intersection_tool.rs:313-390: faithful (cut branches, sewd Set/Add order, context Replace(edge, wire), box UnBind/Bind)"
-        - "replace_in_neighbours cxx:564-605, 653-696, 742-784, 831-873 -> intersection_tool.rs:392-447: faithful (keep/drop pairs, bound-box copy, Replace, Set)"
-        - "UnionVertexes cxx:495-879 -> intersection_tool.rs:449-528: faithful in all four arms (d11/d12/d21/d22 selection, tolv max, IsSame and d<tolv gate, UpdateVertex, CopyReplaceVertices first/last pairs, neighbour blocks)"
-        - "CreateBoxes2d cxx:884-920 -> intersection_tool.rs:533-546: faithful (Bind equals insert on a cleared map; Bnd add equals add_box)"
+        - "SplitEdge core cxx:87-190 -> intersection_tool.rs:122-202（现 `intersection_tool/edge_split.rs:146` `split_edge1`）: faithful except D-SPLIT-LOC"
+        - "SplitEdge2 cxx:367-491 -> intersection_tool.rs:313-390（现 `intersection_tool/edge_split.rs:201` `split_edge2`）: faithful (cut branches, sewd Set/Add order, context Replace(edge, wire), box UnBind/Bind)"
+        - "replace_in_neighbours cxx:564-605, 653-696, 742-784, 831-873 -> intersection_tool.rs:392-447（现 `intersection_tool/edge_split.rs:279` `replace_in_neighbors`）: faithful (keep/drop pairs, bound-box copy, Replace, Set)"
+        - "UnionVertexes cxx:495-879 -> intersection_tool.rs:449-528（现 `intersection_tool/vertex_union.rs:8` `union_vertexes`）: faithful in all four arms (d11/d12/d21/d22 selection, tolv max, IsSame and d<tolv gate, UpdateVertex, CopyReplaceVertices first/last pairs, neighbour blocks)"
+        - "CreateBoxes2d cxx:884-920 -> intersection_tool.rs:533-546（现 `intersection_tool/vertex_union.rs:92` `create_boxes_2d`）: faithful (Bind equals insert on a cleared map; Bnd add equals add_box)"
       divergences:
         - id: D-SPLIT-LOC
           cxx: "ShapeFix_IntersectionTool.cxx:130-136 (BRep_Tool::Surface(face, L), then P1.Transformed(L) when L is not identity)"
@@ -512,7 +517,7 @@ tasks:
       open_required:
         - id: T004
           status: done
-          why: "Resolved by user option A via T009 and T010. Original reason: T002 put the intersection_tool.rs split in scope. Move-only split cannot satisfy the 800-line rule because fix_self_intersect_wire alone is 799 lines (intersection_tool.rs:657-1455). Reaching 800 lines needs a behavior-preserving logic-level extraction of that function, which T004 forbids."
+          why: "Resolved by user option A via T009 and T010. Original reason: T002 put the intersection_tool.rs split in scope. Move-only split cannot satisfy the 800-line rule because fix_self_intersect_wire alone is 799 lines (intersection_tool.rs:657-1455（现 `intersection_tool/self_intersect.rs:10` `fix_self_intersect_wire`）). Reaching 800 lines needs a behavior-preserving logic-level extraction of that function, which T004 forbids."
           decision_needed: "Approve a stage-extraction Worker task (behavior-preserving, verified by step_obj_gates and export counts), or accept an 800-line exception for this one function."
       missing_evidence: "none for oracle items 1, 2, 4; item 3 caveat above"
       next_task_if_not_complete: "Decision on T004 (user)."

@@ -1,5 +1,10 @@
 # IGES 读侧：读入 IGES 并输出 OBJ
 
+> **Source-path note (2026-10-20, T-200).** `iges.rs` no longer exists as a single file: it is the
+> `occt-topo/src/iges/` directory since `82e0caf6`, and `iges_read/iges_to_brep_topo_curve.rs` /
+> `iges_read/iges_data_iges_model.rs` became directory modules in T-192. Full map:
+> `specs/_audit/_index.md` section 0.
+
 ## Objective
 
 把 OCCT IGES 读侧移植到 Rust：读入 IGES，重建形状，再走现有网格路径写出 OBJ。第一批证明只用写侧已经与 `_igesdump/oracle` 参数段一致的模型，对照这些模型既有的 STEP 网格基线。

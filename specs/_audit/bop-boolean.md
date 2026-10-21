@@ -1,16 +1,18 @@
 # BOP/布尔 移植忠实度审查（2026-09-20）
 
+> **文件/行号口径（2026-10-20）**：本报告的路径与物理行号是 2026-09-20 基线的记录；其中 `edge_edge/find_solutions.rs` 已被 T-192 拆成 `find_solutions/` 模块目录，复核时按 `_index.md` §0 的表 A / 表 B 定位。
+
 范围：`crates/occt-topo/src/` 的 `bop_*`/`pave_*`/`bopds*`/`int*`/`fclass2d*`/`builder_solid.rs`/`builder_area.rs`/
-`shell_splitter*`/`wire_splitter*`/`brep_extrema.rs`/`bop_classify_occt.rs`/`algo_tools*`/`boptools_*`/
+`shell_splitter*`/`wire_splitter*`/`brep_extrema.rs`/`bop_classify_occt.rs`（R2 `57206a5f` 改名 `algo_tools_classify_faces.rs`）/`algo_tools*`/`boptools_*`/
 `intcurvesurface*`/`bean_face*`/`edge_face*`。只读审查：未改任何源码（`specs/_audit/` 为新建）。OCCT 侧对照 `D:\source\OCCT-src`（V8_0_0）。
 
 ## 结论摘要（哪条 live 路径上仍是非忠实实现）
 
 忠实内核**存在**：`bop_builder2::BopBuilder` 走 OCCT `BOPAlgo_Builder`/`BOPAlgo_BOP` 的
 `FillImages(V/E/W/F/Sh/Sol) → BuildSplitSolids → FillInternalShapes → BuildShape`
-（`bop_builder2/arguments.rs:373-475`、`bop_bop.rs:548`、`bop_split_solids_occt.rs:79`）；点分类用
+（`bop_builder2/arguments.rs:373-475`、`bop_bop.rs:548`、`bop_builder_split_solids.rs:79`（R2 `57206a5f` 改名，行号未变））；点分类用
 `brep_class3d::SolidClassifier`（`algo_tools/construct.rs:191`）；同域用 `BopToolsSet`（`bop_tools_set.rs:107`）；
-growth/hole 用 `FClass2d::is_hole`（`builder_face_occt.rs:318`）。**历史上点名的三条 live 入口至此两条已收口、一条仍登记**（第 1 条 `bop_builder::boolean` 家族与第 2 条 `curved_boolean_full` 曲面分派均已收口，第 3 条 `brepfeat::boolean_feature` 仍登记）：
+growth/hole 用 `FClass2d::is_hole`（`bop_builder_face_perform.rs:318`（R2 `57206a5f` 改名；`is_hole` 现于 `:347`））。**历史上点名的三条 live 入口至此两条已收口、一条仍登记**（第 1 条 `bop_builder::boolean` 家族与第 2 条 `curved_boolean_full` 曲面分派均已收口，第 3 条 `brepfeat::boolean_feature` 仍登记）：
 
 1. **`bop_builder::boolean`/`boolean_dispatch` 家族**（`bop_builder.rs:45`；被 `brep_pattern.rs:81`、
    `boolean_multi/with_check/compound/...` 使用）：BOPAlgo 之前加了**包围盒不相交短路**（原 `bop_builder.rs:88-89`，**✅ 2026-10-16 已删除，包 P038 / T-168 `ff235d37`** —— `BOPAlgo_BOP::CheckData`（`BOPAlgo_BOP.cxx:106-160`）只要求参数 ≥ 2，`Perform`（`cxx:364`）无条件跑 pave filler，全树无该早退；见发现 12）。
@@ -19,9 +21,9 @@ growth/hole 用 `FClass2d::is_hole`（`builder_face_occt.rs:318`）。**历史�
    `boolean_degenerate` 整套（含 `degenerate_empty`/`degenerate_non_solid`/`shape_centroid`）删于 T-47；
    空/非实体输入改走 `bop_builder2::builder_bop_with_fuzzy`（= `BOPAlgo_BOP::Perform`+`BuildShape`），
    合法性只由已移植的 `bop_bop::check_data`（`BOPAlgo_BOP::CheckData`，`cxx:140-210`）判定。`boolean_with_check` 的 tol×10/×100 重算**已删除**（2026-10-13，见发现 16）。
-2. **`curved_boolean_full` 曲面分派**（`bop_curved/region_trim.rs:409` ← `boolean_dispatch:215`、`curved_boolean_ext`
+2. **`curved_boolean_full` 曲面分派**（`bop_curved/region_trim.rs:409`（该模块已删：T-41 摘除调度、文件 `e77be18e` 删除） ← `boolean_dispatch:215`、`curved_boolean_ext`
    ← `draw/interpreter.rs:422`、`brepfeat/features.rs:320`）：非平面非球面一律走 `general_boolean_trimmed`（样点**多数表决**
-   分区 + UV 网格重建 + 空间哈希焊接，`region_trim.rs:42-70,325-401`），球面走解析球冠网格组装（`face_meshing.rs:487`）。
+   分区 + UV 网格重建 + 空间哈希焊接，`bop_curved/region_trim.rs:42-70,325-401`），球面走解析球冠网格组装（`bop_curved/face_meshing.rs:487`）；**两文件已随 `e77be18e` 删除，以下为删除前读数**。
    **✅ 已摘除（2026-10-14）**：`boolean_dispatch` 的曲面分支改调 `bop_builder::boolean_via_bopalgo`，网格装配已无生产调用点；
    忠实路径的曲面布尔对齐（`FUSE`/`CUT`/`COMMON`）亦已闭环（T-79，见发现 3 处置）。
 3. **`brepfeat::boolean_feature`**（`brepfeat/features.rs:318`，公开特征 API）：任何曲面输入**直接体素布尔**
@@ -54,15 +56,15 @@ growth/hole 用 `FClass2d::is_hole`（`builder_face_occt.rs:318`）。**历史�
 - 证据：`bop_builder_core.rs:85` `let mesh = crate::boolean_ops::voxel_boolean(a, b, 32, vop)?;`；`:86` `crate::mesh_to_brep::shape_mesh_to_brep(&mesh)`；`:87` `"non-planar input: fell back to voxel boolean"`
 - 是否在 live 路径：**是**。`bop_builder.rs:48-50`（任一操作数无 face）；亦作 `bop_builder_planar.rs:46,51` 的平面性门。
 - OCCT 对应：**未找到**。OCCT 无体素/网格布尔；空 shape 由 `CheckData` 报错或按 GF 正常处理。
-- 影响：**静默产生错误几何**：阶梯状、分辨率相关的实体替换真解（测试自承 "voxel staircase inflates"，`bop_builder_tests.rs:170-177`）。
+- 影响：**静默产生错误几何**：阶梯状、分辨率相关的实体替换真解（测试自承 "voxel staircase inflates"，`bop_builder/tests.rs:170-177`（R9 `cdc60599` 改名，行号未变））。
 - 建议：删该分支，标为未移植（空输入返回 OCCT alert/空 compound）。
 
 - **处置（✅ 已修：T-41，2026-09-20 第 59 轮）**：`bop_builder_core::voxel_fallback` 已删除（`bop_builder.rs:3-8` 文件头登记）；`bop_builder::boolean` 与 `bop_builder_planar` 的空/非平面输入改走忠实 `bop_builder2::builder_bop_with_fuzzy`（`bop_builder_planar.rs:47-58`），门禁逐项不变。**余项（2026-10-14 订正）**：`boolean_ops.rs:173` 的 `voxel_boolean` 仍在，但已无任何生产调用点（`crates/` 内除自身单测外，唯一出现处是 `bop_builder_planar.rs:46-48` 的说明注释）；`brepfeat::boolean_feature` 的体素曲面路径**已废**——该函数现调 `crate::bop_builder::boolean`（`brepfeat/features.rs:304-311`）。
 
 ### 3. `curved_boolean`/`boolean_mesh`：自创网格曲面布尔（球冠 + 网格分类 + 焊接）
 - 判定：**自创**
-- 证据：`bop_curved/face_meshing.rs:549` `let mesh = boolean_mesh(a, b, op, tol)?;`；`face_meshing.rs:456` `parts.push(mesh_crossing_face(f, a, keep_in, rim_shared, tol));`；`face_meshing.rs:115` `let inside = point_in_solid(centroid, other, tol);`
-- 是否在 live 路径：**否（2026-10-14 订正）**。`boolean_dispatch` 的曲面分支已改调 `bop_builder::boolean_via_bopalgo`（`bop_builder_dispatch.rs:227-232`），`boolean_repaired` 亦经 `boolean_dispatch`（`bop_builder_repair.rs:240`）；`curved_boolean_full`（`region_trim.rs:418`）、`curved_boolean_ext`（`general_mesh.rs:298`）、`curved_boolean_volume` 在 `crates/` 内只剩测试调用（`tests/massprops_draw_render_gates.rs:39-43`）与 `bop_curved/mod.rs` 单测，无生产调用点。
+- 证据：`bop_curved/face_meshing.rs:549` `let mesh = boolean_mesh(a, b, op, tol)?;`；`face_meshing.rs:456` `parts.push(mesh_crossing_face(f, a, keep_in, rim_shared, tol));`；`face_meshing.rs:115` `let inside = point_in_solid(centroid, other, tol);`（`bop_curved/` 已随 `e77be18e` 删除，三行为删除前读数）
+- 是否在 live 路径：**否（2026-10-14 订正）**。`boolean_dispatch` 的曲面分支已改调 `bop_builder::boolean_via_bopalgo`（`bop_builder_dispatch.rs:227-232`），`boolean_repaired` 亦经 `boolean_dispatch`（`bop_builder_repair.rs:240`）；`curved_boolean_full`（`bop_curved/region_trim.rs:418`）、`curved_boolean_ext`（`bop_curved/general_mesh.rs:298`）——两文件已随 `e77be18e` 删除、`curved_boolean_volume` 在 `crates/` 内只剩测试调用（`tests/massprops_draw_render_gates.rs:39-43`）与 `bop_curved/mod.rs` 单测，无生产调用点。
 - OCCT 对应：**未找到**。OCCT 曲面布尔 = `IntTools_FaceFace` 求交曲线 → `BOPAlgo_Builder` 分片 → `BOPAlgo_SplitSolid`，全程解析曲面、无球-球特例。
 - 影响：**静默产生错误几何**（结果被 faceted 化、丢解析面；面数随 24×24/32×32 网格而变）。门禁：`tests/massprops_draw_render_gates.rs:39-43`、draw `bool`。
 - 建议：标为未移植；曲面分派改走 `bop_builder2::builder_bop_with_fuzzy`，删网格装配。**（✅ 2026-10-14 收口：分派已改走 `boolean_via_bopalgo`，网格引擎已无生产调用点；忠实路径的三项失配亦已修，见下条处置）**
@@ -70,21 +72,21 @@ growth/hole 用 `FClass2d::is_hole`（`builder_face_occt.rs:318`）。**历史�
 
 ### 4. `general_boolean_trimmed` + `region_inside_other` 多数表决
 - 判定：**自创**
-- 证据：`bop_curved/region_trim.rs:65` `} else if inside * 2 >= total { FaceRegion::Inside } else { FaceRegion::Outside }`；`:379` `let reg_class = region_inside_other(f, surf.as_ref(), region, other, tol);`
+- 证据：`bop_curved/region_trim.rs:65` `} else if inside * 2 >= total { FaceRegion::Inside } else { FaceRegion::Outside }`（模块已删 `e77be18e`）；`:379` `let reg_class = region_inside_other(f, surf.as_ref(), region, other, tol);`
 - 是否在 live 路径：**是**。`curved_boolean_full:413-414`（任何含 `Other`/圆/锥/环面的实体）。
 - OCCT 对应：**未找到**。"过半点即 Inside" 不属任何 OCCT 分支；OCCT 由 `BOPAlgo_BuilderFace::PerformAreas` + `FClass2d::IsHole` + `IsInside`（`BOPAlgo_BuilderFace.cxx:441-447,518-527`）做拓扑判定。
 - 影响：**静默产生错误几何**：薄壁/临界区域整块误判，切掉或保留整片面。
 - 建议：标为未移植。
 
-- **处置（2026-10-06 复核：仍未修）**：`inside * 2 >= total` 计票仍在（现 `bop_curved/region_trim.rs:74`，`:388` 调用 `region_inside_other`），文件内 `:49` 自承 "port-invented"。
+- **处置（2026-10-06 复核：仍未修）**：`inside * 2 >= total` 计票仍在（现 `bop_curved/region_trim.rs:74`（文件已删 `e77be18e`），`:388` 调用 `region_inside_other`），文件内 `:49` 自承 "port-invented"。
 - **处置（✅ 已删除：2026-10-14）**：整个 `bop_curved` 模块（含 `region_trim.rs`）随发现 3 一并删除，计票式 `region_inside_other` 不再存在于源码。
-- **补充证据（2026-10-14，网格体积链改精确积分后暴露）**：该引擎唯一还断言"体积"的单测 `bop_curved::tests::trimmed_face_box_cylinder_fuse`（`bop_curved/mod.rs:325-346`）本轮失败。实测 `curved_boolean_full(box[-1,1]^3 ∪ cylinder(r=0.4,h=2))` 的结果 **不是实体**：`faces=8 shells=1 closed=false euler=-49 solids=0`，其中 2 个面三角化为零面积、柱侧面只铺出 46% 面积（1.1654 vs 解析 2.5133），与 `volume_via_bopalgo` 的 `faces=8 solids=1 closed=[true] vol=8.50265` 对照可见缺陷在引擎自身。旧的 `brep_gprop::volume`（32×32 UV 栅格 + 顶点散度和，发现 11）对同一结果给 8.749648，恰好落进该单测 `|v - 8.5027| < 5.0` 的带内，因此该断言此前是**靠测量误差蒙过**：新精确积分给 3.167771（网格路径 5.297540），均值都无意义——开壳的"体积"本无定义。- **待定**：`bop_curved` 网格/区域引擎（`region_mesh`/`region_trim`/`face_meshing`/`general_mesh` 的 `curved_boolean*`，仅测试调用）与发现 7 的一并处置（删除 vs 标未移植 + `#[ignore]`）待确认，详见本轮报告。
+- **补充证据（2026-10-14，网格体积链改精确积分后暴露）**：该引擎唯一还断言"体积"的单测 `bop_curved::tests::trimmed_face_box_cylinder_fuse`（`bop_curved/mod.rs:325-346`；模块已删 `e77be18e`，该单测随之移除）本轮失败。实测 `curved_boolean_full(box[-1,1]^3 ∪ cylinder(r=0.4,h=2))` 的结果 **不是实体**：`faces=8 shells=1 closed=false euler=-49 solids=0`，其中 2 个面三角化为零面积、柱侧面只铺出 46% 面积（1.1654 vs 解析 2.5133），与 `volume_via_bopalgo` 的 `faces=8 solids=1 closed=[true] vol=8.50265` 对照可见缺陷在引擎自身。旧的 `brep_gprop::volume`（32×32 UV 栅格 + 顶点散度和，发现 11）对同一结果给 8.749648，恰好落进该单测 `|v - 8.5027| < 5.0` 的带内，因此该断言此前是**靠测量误差蒙过**：新精确积分给 3.167771（网格路径 5.297540），均值都无意义——开壳的"体积"本无定义。- **待定**：`bop_curved` 网格/区域引擎（`region_mesh`/`region_trim`/`face_meshing`/`general_mesh` 的 `curved_boolean*`，仅测试调用）与发现 7 的一并处置（删除 vs 标未移植 + `#[ignore]`）待确认，详见本轮报告。
 - **处置（✅ 已删除：2026-10-14）**：`crates/occt-topo/src/bop_curved/` 整个目录（`region_mesh.rs`/`region_trim.rs`/`face_meshing.rs`/`general_mesh.rs`/`mod.rs`）与 `lib.rs` 的 `pub mod bop_curved;` 已删除；唯一还引用它的测试 `tests/massprops_draw_render_gates.rs::trimmed_boolean_preserves_curved_face` 一并删除。计票式 `region_inside_other`（发现 4）与 5×5/8×8 采样分类（发现 7）作为自创项随之从源码消失；`_audit` 保留本条作为历史记录。忠实替代 = `bop_builder::boolean_via_bopalgo`（`BOPAlgo_BOP`）+ `algo_tools_face::compute_state_face_in_solid`。
 
 ### 5. `builder_solid::classify_point`/`shell_inside_solid`/`solid_inside_solid`（live 空腔归属）
 - 判定：**等价替换未登记**（实为自创分类）
 - 证据：`builder_solid.rs:121` `if is_inside(solid, p) { FaceState::In } else { FaceState::Out }`；`:171` `let Some(p) = face_sample_point(&f) else { return false };`（只取首面中心点）；`:521` `if !shell_inside_solid(&self.loops[i], &solids[j], tol) { continue; }`
-- 是否在 live 路径：**是**。`BuilderSolid::perform_areas` ← `bop_split_solids_occt.rs:126-131` ← `bop_builder2/arguments.rs:472`（所有 Fuse/Cut/Common）。
+- 是否在 live 路径：**是**。`BuilderSolid::perform_areas` ← `bop_builder_split_solids.rs:126-131`（R2 `57206a5f` 改名，行号未变） ← `bop_builder2/arguments.rs:472`（所有 Fuse/Cut/Common）。
 - OCCT 对应：`BOPAlgo_BuilderSolid.cxx:835-860`（`IsInside`）→ `BOPTools_AlgoTools::ComputeState(Face,Solid)`（`BOPTools_AlgoTools.cxx:889`）→ 点分类 `BOPTools_AlgoTools.cxx:790-802`（`BRepClass3d_SolidClassifier::Perform`）。Rust 换算法（网格奇偶）+ 换输入（单点 vs 整 face 边/角方法）。
 - 影响：**静默产生错误几何**：空腔归错 growth → 多算/少算内部空腔。门禁：phase20 / boss / 任意带孔 Cut。
 - 建议：改用 `AlgoTools::compute_state`（`algo_tools/construct.rs:191`），并按 `algo_tools_face.rs:533-567` 移植 `ComputeState(Face,Solid)`。
@@ -100,7 +102,7 @@ growth/hole 用 `FClass2d::is_hole`（`builder_face_occt.rs:318`）。**历史�
 ### 6. `brep_extrema::is_inside`：7×7 网格三角化射线奇偶（#1/#3/#5 的共同根）
 - 判定：**自创**
 - 证据：`brep_extrema.rs:267` `let meshes = mesh_faces(shape, 7, 7);`；`:283` `ray_plus_x_hits(&verts[*i], &verts[*j], &verts[*k], &jittered)`；`:269-273` 网格化失败时**用包围盒包含兜底**
-- 是否在 live 路径：**是**（经 #1/#3/#5：`bop_builder_dispatch.rs:572,590`、`builder_solid.rs:121`、`bop_builder_splitapi.rs:255`；原列 `bop_curved/region_mesh.rs:90,110` 已随该模块删除，2026-10-14）。
+- 是否在 live 路径：**是**（经 #1/#3/#5：`bop_builder_dispatch.rs:572,590`、`builder_solid.rs:121`、`bop_builder_splitapi.rs:255`；原列 `bop_curved/region_mesh.rs:90,110` 已随该模块删除（commit `e77be18e`，2026-10-15；本条记录写于删除前 2026-10-14））。
 - OCCT 对应：`BRepClass3d_SolidClassifier`（`BOPTools_AlgoTools.cxx:797`）；OCCT 无"网格失败→包围盒"兜底。
 - 影响：**静默产生错误几何**：边界附近/薄壳/曲面体大量误判；兜底会把整 box 判为内部。
 - 建议：删掉该函数在 BOP 路径的用法，改调 `SolidClassifier`（`brep_class3d.rs`）。
@@ -109,13 +111,13 @@ growth/hole 用 `FClass2d::is_hole`（`builder_face_occt.rs:318`）。**历史�
 
 ### 7. `bop_curved::classify_face`/`point_in_solid`：5×5 UV 样点 + 网格射线构成的面分类
 - 判定：**自创**
-- 证据：`bop_curved/region_mesh.rs:246` `let (nu, nv) = (5usize, 5usize);`；`:254` `let p = surf.d0(u, v);`；`:258` `if point_in_solid(p, solid, tol) { inside += 1; }`（`classify_face_general` 用 8×8，`:274`）
-- 是否在 live 路径：**是**。`classify_face` ← `face_meshing.rs:412-413,506-507`；`classify_face_general` ← `region_trim.rs:356`。
+- 证据：`bop_curved/region_mesh.rs:246` `let (nu, nv) = (5usize, 5usize);`；`:254` `let p = surf.d0(u, v);`；`:258` `if point_in_solid(p, solid, tol) { inside += 1; }`（`classify_face_general` 用 8×8，`:274`）；**该模块已随 `e77be18e` 删除，以下为删除前读数**
+- 是否在 live 路径：**是**。`classify_face` ← `bop_curved/face_meshing.rs:412-413,506-507`；`classify_face_general` ← `bop_curved/region_trim.rs:356`（两文件已随 `e77be18e` 删除）。
 - OCCT 对应：面-实体状态见 `BOPTools_AlgoTools::ComputeState(Face,Solid)`（`BOPTools_AlgoTools.cxx:660-717`，边/角方法）；同一分类在 `algo_tools_face.rs:533` 已有忠实实现，本文件是**重复且不等价的第二套**。
 - 影响：**静默产生错误几何**：跨边界曲面片可被整体当 Inside/Outside，网格密度决定结果。
 - 建议：标为未移植，改用 `algo_tools_face::is_internal_face`/`compute_state_face_in_solid`。
 
-- **处置（2026-10-06 复核：仍未修）**：`bop_curved/region_mesh.rs:246` 的 `(5usize, 5usize)` 与 `:254` `point_in_solid` 仍在（`classify_face:240` / `classify_face_general:274` 用 8×8）；忠实件 `algo_tools_face::compute_state_face_in_solid` 已存在但仍未接线。
+- **处置（2026-10-06 复核：仍未修）**：`bop_curved/region_mesh.rs:246` 的 `(5usize, 5usize)` 与 `:254` `point_in_solid` 当时仍在（`classify_face:240` / `classify_face_general:274` 用 8×8）。**2026-10-20 复核**：该模块已随 `e77be18e` 整体删除，上述采样分类已不存在；忠实件 `algo_tools_face.rs:581 compute_state_face_in_solid` 现被同文件分类器 `:525` 调用。
 - **处置（✅ 已删除：2026-10-14）**：`bop_curved` 模块随发现 3 一并删除，5×5/8×8 采样分类与第二套 `point_in_solid` 不再存在；接线需求转向现存的 `algo_tools_face::compute_state_face_in_solid`（发现 7 原"忠实件未接线"的缺口仍在 `algo_tools_face.rs` 侧）。
 
 ### 8. `IntToolsContext::project_point_on_face`：32×32 网格 + 坐标下降代替 `GeomAPI_ProjectPointOnSurf`
@@ -130,7 +132,7 @@ growth/hole 用 `FClass2d::is_hole`（`builder_face_occt.rs:318`）。**历史�
 
 ### 9. `bop_draft_solid_occt::face_is_degenerate`（顶点<3 丢面）+ 同 TShape 去重
 - 判定：**自创**（注释自述 OCCT 会加该面）
-- 证据：`bop_draft_solid_occt.rs:41` `crate::topo_tools::vertices_of(&face.0).len() < 3`；`:49` `if face_is_degenerate(&fc) { return false; }`；`:54` `if iter_children(&shell.0).iter().any(|c| c.same_tshape(face)) { return false; }`
+- 证据：`bop_builder_draft_solid.rs:41`（R2 `57206a5f` 改名；该「顶点<3 丢面」谓词已按 T-47 删除，`rg vertices_of` 在该文件零命中） `crate::topo_tools::vertices_of(&face.0).len() < 3`；`:49` `if face_is_degenerate(&fc) { return false; }`；`:54` `if iter_children(&shell.0).iter().any(|c| c.same_tshape(face)) { return false; }`
 - 是否在 live 路径：**是**。`build_draft_solid_occt` ← `bop_fill_in3d.rs:75` ← `bop_builder2/arguments.rs:470`（每个源实体）。
 - OCCT 对应：`BOPAlgo_Builder_3.cxx:329`（`aBB.Add(aShD, aFx);`）与 `:341-343` **无条件 Add**，无退化门、无 TShape 去重。
 - 影响：**静默产生错误几何**：合法 split 面被丢弃 → draft shell 开口/少面 → `SplitSolid` 出错误 pieces；去重可吞掉合法重复面。
@@ -205,8 +207,8 @@ growth/hole 用 `FClass2d::is_hole`（`builder_face_occt.rs:318`）。**历史�
 
 ### 17. `bop_build_solids_leftover`：包围盒量化去重 + 已删的 `merge_sharing_faces`
 - 判定：**自创**（模块自述 UNPORTED）
-- 证据：`bop_build_solids_leftover.rs:176-186` `UNPORTED: a merge_sharing_faces pass used to run here. ... OCCT has no such stage`；`:452` `let q = |x: f64| (x / 1e-6).round() as i64;`；`:135` `if piece_bbox_volume(&p) < 1e-9 { continue; }`
-- 是否在 live 路径：**否（死代码，仅测试）**。`bop_build_solids_leftover_tests.rs:263,418`；模块头 `:3-6` 自述 "Not called by `BopBuilder`"。
+- 证据：`bop_build_solids_leftover.rs:176-186`（模块已删：T-27，commit `32a51e41`） `UNPORTED: a merge_sharing_faces pass used to run here. ... OCCT has no such stage`；`:452` `let q = |x: f64| (x / 1e-6).round() as i64;`；`:135` `if piece_bbox_volume(&p) < 1e-9 { continue; }`
+- 是否在 live 路径：**否（死代码，仅测试）**。`bop_build_solids_leftover_tests.rs:263,418`（同批 `32a51e41` 删除）；模块头 `:3-6` 自述 "Not called by `BopBuilder`"。
 - OCCT 对应：`BOPAlgo_Builder_3.cxx:579-616`（只有 `aMST` face-set intern，无合并、无包围盒去重）。
 - 影响：无（死代码）；但 `piece_center`（`:465`）按包围盒中心分类、包围盒体积丢件是第二批自创规则，若误接线会截断合法区域。
 - 建议：保留 UNPORTED 标注，或删除以免误用。
@@ -214,7 +216,7 @@ growth/hole 用 `FClass2d::is_hole`（`builder_face_occt.rs:318`）。**历史�
 ### 18. `bop_build_faces::group_wires_as_areas`：用"严格包含"替代 `FClass2d::IsHole`
 - 判定：**自创**
 - 证据：`bop_build_faces/builder_like.rs:197-203` `/// FClass2d::IsHole is deliberately *not* used for the growth/hole decision`；`:227` `if j != i && loop_contains(oes, &wire_edges[i]) { hole = true; break; }`
-- 是否在 live 路径：**否（仅测试）**。调用点仅 `bop_build_faces/mod.rs:336-388` 两个 `#[cfg(test)]`；live 的是 `builder_face_occt.rs:292`（`:318-319` 正确用 `FClass2d::is_hole`）。
+- 是否在 live 路径：**否（仅测试）**。调用点仅 `bop_build_faces/mod.rs:336-388` 两个 `#[cfg(test)]`；live 的是 `bop_builder_face_perform.rs:292`（`:318-319` 正确用 `FClass2d::is_hole`；R2 `57206a5f` 改名，`is_hole` 现于 `:347`）。
 - OCCT 对应：`BOPAlgo_BuilderFace.cxx:441-447`（`IsGrowthWire` + `aClsf.IsHole()`）。
 - 影响：无（live 已用忠实实现）；风险是这套"故意不用 FClass2d"的实现被接线回主路径，会把 growth/hole 判成"嵌套即孔"，对分离片/相切环出错。
 - 建议：删除该实现，或让测试改调 `builder_face_occt`。

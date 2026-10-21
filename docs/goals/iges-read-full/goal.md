@@ -1,5 +1,10 @@
 # IGES read side, complete against OCCT ReadIges
 
+> **Source-path note (2026-10-20, T-200).** `iges.rs` no longer exists as a single file: it is the
+> `occt-topo/src/iges/` directory since `82e0caf6`. The `iges_read/` receipts below also predate
+> the T-192 split into `iges_read/iges_to_brep_topo_curve/` and `iges_read/iges_data_iges_model/`.
+> Full map: `specs/_audit/_index.md` section 0.
+
 ## Objective
 
 Finish the IGES read path so the seven oracle files mesh like OCCT 8.0.0 `ReadIges`, by porting the remaining cxx branches on that path. Unported branches stay marked with the OCCT file and line. No per-model heuristics.

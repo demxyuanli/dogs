@@ -1,6 +1,11 @@
 # GoalBuddy v2 state.yaml
 # Board truth lives here. goal.md is the editable charter; notes/ holds long receipts only.
 
+# Source-path note (2026-10-20, T-200): the receipts below predate the T-192 splits.
+# Current locations: iges.rs -> iges/ (82e0caf6); shape_fix_face.rs -> shhealing/shape_fix_face/;
+#   iges_read/iges_to_brep_topo_curve.rs -> iges_read/iges_to_brep_topo_curve/;
+#   iges_read/iges_data_iges_model.rs -> iges_read/iges_data_iges_model/.
+# Tables: specs/_audit/_index.md section 0.
 version: 2
 
 goal:
@@ -107,7 +112,7 @@ tasks:
         - "IGESToBRep_Actor.cxx:135-196 Transfer calls TransferGeometry at :196. ProcessShape at :204-218 is a separate branch."
         - "IGESToBRep_CurveAndSurface::TransferGeometry :214-445, 402 form 1 at :369-445. TopoSurface trimmed plane :209-212 and :229-232."
         - "Entity counts: Cube and Extrusion 402/144/108/142/102/110 only. HoledPlate same types, 32 faces. Sphere, Cone, rev, Offset also need 100, 120, 124; Offset also needs 126."
-        - "crates/occt-topo/src/iges/ is write-only (write_shape_iges, iges/entry.rs:23; was iges.rs:4239 before the split). crates/occt-topo/examples/export_data_obj.rs:96 calls brep_to_obj(&shape, 0.1). prs3d_get_deflection uses DEVIATION_COEFFICIENT 0.001."
+        - "crates/occt-topo/src/iges/ is write-only (write_shape_iges, iges/entry.rs:23; was iges.rs:4239（现 `iges/entry.rs:29`） before the split). crates/occt-topo/examples/export_data_obj.rs:96 calls brep_to_obj(&shape, 0.1). prs3d_get_deflection uses DEVIATION_COEFFICIENT 0.001."
         - "tests/common/mod.rs:38-45: BBOX_EXACT 1e-6, AREA_EXACT 1e-3, AREA_CURVED 0.04, AREA_COMPLEX 0.05. Cube and Extrusion use the exact pair."
       ambiguity:
         - "Actor::Transfer always runs XSAlgo_ShapeProcessor::ProcessShape at IGESToBRep_Actor.cxx:204-218. First geometry slice can mark that pass unported."
@@ -219,7 +224,7 @@ tasks:
       result: blocked
       summary: "No edits. parse_own in iges_data_iges_model.rs drops entities 100, 120, 124, and 126 to EntityData::Raw and discards their parameter text. That file was not in allowed_files."
       evidence:
-        - "crates/occt-topo/src/iges_read/iges_data_iges_model.rs:137 parse_own, :241 Raw fallback."
+        - "crates/occt-topo/src/iges_read/iges_data_iges_model.rs:137（现 `iges_data_iges_model/entities.rs:18`） parse_own, :241 Raw fallback."
   - id: T005
     type: worker
     assignee: Worker

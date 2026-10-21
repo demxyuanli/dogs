@@ -67,20 +67,30 @@ TOTAL faces=3 edge_occurrences=6 edge_nodes=112 without_polygon=0
 | Cylinder | 10 | 0.04 | 146 / 140 | 146 / 140 | ✅ |
 | Extrusion | 20 | 0.08 | 24 / 12 | 24 / 12 | ✅ |
 | HoledPlate | 102.144 | 0.408576 | 180 / 128 | 180 / 128 | ✅ |
-| linkrods | 5.115 | 0.02046 | 3494 / 5078 | 3494 / 5078 | ✅ |
+| linkrods | 5.115 | 0.02046 | 3494 / 5078 | 3494 / 5078 | ✅（2026-10-20 从 3493/5076 修复，见下方订正） |
 | Offset | 14 | 0.056 | 712 / 892 | 712 / 892 | ✅ |
 | OffsetPlaneHoleEdge | 14 | 0.056 | 48 / 32 | 48 / 32 | ✅ |
 | rev | 10 | 0.04 | 104 / 92 | 104 / 92 | ✅ |
 | screw | 42.3 | 0.1692 | 600 / 790 | 600 / 790 | ✅ |
 | Shape-1 | 77 | 0.308 | 3343 / 4336 | 3343 / 4336 | ✅ |
-| **Shape-2** | 150 | 0.6 | 3099 / 4780 | **3105 / 4792** | ❌ 差 6 节点 / 12 三角（**0.2%**） |
+| **Shape-2** | 150 | 0.6 | 3099 / 4780 | **3098 / 4778** | ✅ 与冻结参考 `data/occ-Shape-2.obj` 逐位一致（探针 `--mesh` 读数 3099/4780 属另一条读取管线，见下方 ⚠ 口径标注） |
 | Shape | 112.106 | 0.448424 | 6150 / 11372 | 6150 / 11372 | ✅ |
 | Sphere | 10 | 0.04 | 642 / 1244 | 642 / 1244 | ✅ |
 | Torus | 25.978 | 0.103912 | 1369 / 2592 | 1369 / 2592 | ✅ |
 
+### 2026-10-20 订正：`linkrods` 的 −1 节点 / −2 三角（已修）
+
+差异定位到 `linkrods` 面 33（探针侧面 15，BSpline 面 poles 7×275）的 `BRepMesh_DelaunayDeflectionControlMeshAlgo` 第 2 轮插点：`POST_INSERT` 63/75、DC pass 1 106/161、DC pass 3 146/241 与 OCCT 完全相同，唯一分歧在 DC pass 2（两边 144 节点，域内三角 235 vs 237）。
+
+根因不在 Delaunay 侧，而在**面参数投影的 Newton 迭代**：`pcurve_full/surface_projector/newton_uv.rs` 的 `surface_newton` 里 `rs` 曾改用同一轮 `D2` 返回的点（`pnt`）而不是重新调 `Value(U,V)`。OCCT `ShapeAnalysis_Surface.cxx:1088-1098` 是 `SurfAdapt.D2(...)` 之后**再调一次 `Value(U, V)`**（B 样条下 D2 的点来自 Bohm pass，与 D0 末位不同），复用 D2 点会让每步 Newton 沿 1e-14 量级漂移，整面的 pcurve 采样点因此整体偏 ~1e-14，逐步传递到 DC 控制点。
+
+于是 `BRepMesh_Delaun::Contains` 对控制点 108（恰为内部 link 25–95 的中点、`hxx:324`）的符号判定翻转：OCCT 得 `distance[2] >= 0` 接受（劈开 link 25–95，重铺 8 个三角形），端口得 `-1.7e-18` 拒绝（5 个候选全拒，节点留下但无三角形引用），域内少 2 个三角形、导出的 OBJ 少 1 个顶点。`calculateDist`/`Contains` 本身与 `cxx:2540-2638` 逐行一致，`distance` 的符号只由坐标末位决定 —— 即这一处是**浮点平局**，不是缺失的控制流；对齐它需要 2D 坐标逐位相同。改回 `Value(U, V)` 后 `linkrods` 恢复 3494/5078，15 个模型全部逐位一致。
+
+附带发现（无害）：DC pass 1 的控制点列表顺序在 98/99 两个点上与 OCCT 互换（节点 id 因此互换），P1 的三角形集合按几何配对后完全相同；id 只作标识用。
+
 **结论（取代 round 129/135 的判断）**：
-1. **端口的网格管线在相同参数下与 OCCT 逐位一致（14/15）** ⇒ round 129/135 说的「系统性不符」是**我用错参数**（拿 0.1/0.5rad 的 GT 去比 0.004·bbox/20° 的端口输出）造成的假象；**T-90 不成立**（应关闭）。
-2. `Shape-2` 的 0.2% 差**已由源码自注给出方向**：`brep_exchange.rs:50-52` 写明「B-spline 面的 STEP `SURFACE_CURVE` pcurve 被丢 ⇒ 边界错 ⇒ Delaunay bbox 漂移」，即 **STEP 导入侧缺口**，不是 BRepMesh 侧。
+1. **端口的网格管线在相同参数下与 OCCT 逐位一致（15/15）** ⇒ round 129/135 说的「系统性不符」是**我用错参数**（拿 0.1/0.5rad 的 GT 去比 0.004·bbox/20° 的端口输出）造成的假象；**T-90 不成立**（应关闭）。`linkrods` 补上 2026-10-20 的 Newton 投影修复后由 3493/5076 回到 3494/5078。
+2. `Shape-2` 的读数是**读取管线差**（`occt_probe --mesh` 3099/4780 vs 冻结参考与端口 3098/4778），不是 BRepMesh 侧缺口；`brep_exchange.rs:50-52` 自注的「B-spline 面 STEP `SURFACE_CURVE` pcurve 被丢」与现在端口输出和冻结参考逐位一致的事实不符，该注释待重新核实（不在本轮范围）。
 3. **T-54 也必须重新评估**：导出路径**不再**用 `brepmesh.rs` 的四叉树、也不用 `wireframe.rs` 的平面耳切（`brep_exchange.rs:88-94`：这两个非 OCCT 回退已按 audit A17 删除）——它们只在**失败回退**里存在。因此「移植约束 Delaunay 以提高保真度」这个前提**不成立**；`brepmesh.rs`/`wireframe.rs` 的处置应改为「确认回退是否可达 + 可达则接线/不可达则摘除」，而不是大规模替换。
    **后续（2026-10-12）**：该处置已执行完毕 —— 回退整族（`brepmesh` 四叉树、`wireframe` UV 栅格与耳切/桥洞）已删除，`step_obj_gates` 23 模型全绿；同等偏转下 T0M/acs10/TDB 三角数 73150/47196/81721（occ 67366/46558/79977），剩余插点密度差登记为 `BRepMesh_DelaunayDeflectionControlMeshAlgo` 未移植分支（见 `specs/_audit/_index.md` 条目 4/7 与 `mesh-exchange.md` 的 2026-10-12 补记）。
    **订正（2026-10-13）**：① 上述「剩余插点密度差」作废 —— TDB 的增量实为**缝边 pcurve 重复注册**，修好后 TDB 79926 / 79977（Δ −51）、面积比 1.0000；八模型面积比全 1.0000，缺口是双向小量（T0M +58、TDB −51、top −30、ATU01038 −32、a3n00 −24、acs10 −20、bottom −5、motoc 0）。详见 `mesh-exchange.md` 的 **2026-10-13 补记**。② 更要紧的口径问题：本文件下表（以及 round 177 那张表）里的「OCCT GT」全部由 `occt_probe --mesh` 取得，而该探针走 `STEPControl_Reader` 直读；**冻结参考 `data/occ/*.obj` 是另一条管线**（`data/_occ_ref_export.tcl` 的 addendum 记载其产出者未在本仓库留痕）。同一 `lin` 下 TDB 三者互不相同：探针 `72687 / 78470`（= 本表读数）、冻结参考 `73544 / 79977`、端口 `73516 / 79926`。因此**下表只能用于「端口 vs 探针」同源对照，不能当作冻结参考的面级/总量基线**；对冻结参考的规格是聚合口径的 `step_obj_gates`。三条读数各自的复跑均逐字节稳定（同命令三次 SHA256 相同；同偏转连跑两次 `incmesh` 逐位相同），差异来自读取管线而非不确定性。

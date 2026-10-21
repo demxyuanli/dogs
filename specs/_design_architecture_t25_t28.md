@@ -15,15 +15,15 @@
 
 ### 现状（实测）
 
-- 唯一定义 `crates/occt-topo/src/tgeometry.rs`（612 行）：
+- 唯一定义 `crates/occt-topo/src/tgeometry/`（2026-10-20 起为模块目录，拆分前为 `tgeometry.rs`，612 行；入口 `tgeometry/mod.rs`）：
   `GeometryRegistry { vertices/edges/faces: RwLock<HashMap<usize, _>>, ids: RwLock<HashMap<usize, u64>> }`（`:162-170`），
   键 = `TShape` 在 `RwLock` 内的堆地址 `std::ptr::addr_of!(*lock) as usize`（`:176-179`）；`global()` 为 `OnceLock` 单例（`:189-197`）。
 - 条目：`VertexGeom{point, tolerance}`（`:26-30`）；`EdgeGeom{curve: Arc<dyn Curve>, first, last, tolerance,
   same_parameter, same_range, degenerated, pcurves: HashMap<usize, Vec<Arc<dyn Curve2d>>>, pcurve_ranges}`（`:64-83`）；
   `FaceGeom{surface: Arc<dyn Surface>, tolerance, natural_restriction}`（`:143-147`）。读侧封口在 `brep_tool.rs:24-95`。
-- `shape_key`：`tgeometry.rs:473-475`；生命周期 = `TShape::drop → remove_by_ptr`（`tshape.rs:73-82` + `tgeometry.rs:534-547`），
+- `shape_key`：`tgeometry/registry_pcurves.rs:216`（拆分前 `tgeometry.rs:473-475`）；生命周期 = `TShape::drop → remove_by_ptr`（`tshape.rs:73-82` + `tgeometry/registry_lifecycle.rs:24`，拆分前 `tgeometry.rs:534-547`），
   `ids` 用于防地址复用（`tshape.rs:18-24`）。
-- 侧表的自述理由：`tgeometry.rs:1-14`（让 `TShape` 保持轻量、不含 trait object），并已在
+- 侧表的自述理由：`tgeometry/mod.rs:1-14`（拆分前 `tgeometry.rs:1-14`；让 `TShape` 保持轻量、不含 trait object），并已在
   `specs/_coverage.md:19/31/48/81`、`specs/_tasks.md:42`、`brep_builder_full/mod.rs:56-61` 登记为**语义偏差**。
 - 半成品：`tshape.rs:84-131` 已有 `VertexShape/EdgeShape/FaceShape` 壳，**生产零消费**（仅 `lib.rs:24` re-export 与 `tshape.rs:142` 测试）。
 
@@ -42,8 +42,8 @@
 - 清/拷贝依赖：`shape_ops.rs:24-73`（`transform_shape`）、`:100-218`（`transformed_copy`，`:180-217` 按 `key_map` 重键 pcurve）、
   `:228-259`（`has_geometry`）、`:262-275`（`clear_shape_geometry`）；`clear_shape` **34 处 / 29 文件**，其中多数是
   测试夹具在**共享全局表**上互相清理 —— 迁移后这些夹具应删除。
-- pcurve 的**面表回退**是硬依赖：`tgeometry.rs:304-337`、`:364-387` 用 `Arc::ptr_eq(face.surface)` 在同 surface 的另一 face key 上回退；
-  删面表后裸 `usize` 无法解析出 surface ⇒ 须按 `BRep_CurveOnSurface.hxx:78-79` 改为**以 surface 句柄为键**；`remove_pcurves_on_surface :439-469` 同理。
+- pcurve 的**面表回退**是硬依赖：`tgeometry/registry_pcurves.rs:12`/`:18` 的 `edge_pcurve`/`edge_pcurves`（拆分前 `tgeometry.rs:304-337`、`:364-387`）用 `Arc::ptr_eq(face.surface)` 在同 surface 的另一 face key 上回退；
+  删面表后裸 `usize` 无法解析出 surface ⇒ 须按 `BRep_CurveOnSurface.hxx:78-79` 改为**以 surface 句柄为键**；`remove_pcurves_on_surface :439-469` 同理（现 `registry_pcurves.rs:202`）。
 - 序列化读表：`bincaf/format.rs:140-243`、`xmlcaf/document.rs:212/293/365`。
 - 可行性：`TShape` 已在 `Arc<RwLock<..>>` 内（`shape.rs:12`），`Curve`/`Surface` 已 `Send + Sync`（`occt-geom/src/curve.rs:4`、`surface.rs:8`），
   故 `Arc<dyn Curve>` 可入 `TShape`；`TShape` 已手写 `Debug`（`tshape.rs:39-45`）。
@@ -72,13 +72,13 @@
 
 ### 现状（实测）
 
-- `is_covering_face`（`bop_build_solids_leftover.rs:394-403`）自创谓词：「面在实体边界上、至少一条边压在自身分割面上、且边集不与已有面完全相同」；
+- `is_covering_face`（`bop_build_solids_leftover.rs:394-403`（模块已删：T-27，commit `32a51e41`））自创谓词：「面在实体边界上、至少一条边压在自身分割面上、且边集不与已有面完全相同」；
   唯一调用点 `:285`（`classify_faces_in_solid` 内），无任何测试直接断言它。
 - 值链在模块内**确实影响出体**（`:285 → :286-288 → :289-296 in_faces → :107 → :121 → :124 → :135/:151 → :161 → :165 → :188 add_image`），
-  但**整条链对生产是死路**：`build_split_solids_full` 的调用者只有合成测试（`bop_build_solids_leftover_tests.rs:263`、`:418`）；
+  但**整条链对生产是死路**：`build_split_solids_full` 的调用者只有合成测试（`bop_build_solids_leftover_tests.rs:263`、`:418`（同批 `32a51e41` 删除））；
   该模块头注 `:1-11` 自述 *Not called by `BopBuilder`*，声明处 `bop_build_solids.rs:503-504`（`#[path=…] mod leftover;`，**非 pub**、无 re-export）⇒
   grep `leftover::` 生产 **0 命中**。
-- 绿路径另有其道：`bop_builder2/arguments.rs:470 fill_in_3d_parts_builder → :472 build_split_solids_occt（bop_split_solids_occt.rs:79）
+- 绿路径另有其道：`bop_builder2/arguments.rs:470 fill_in_3d_parts_builder → :472 build_split_solids_occt（`bop_builder_split_solids.rs:79`；R2 `57206a5f` 改名，行号未变）
   → :126/:131 SplitSolid::perform → builder_solid.rs:329-333`。
 - 内容来源：`FillIn3DParts`（`BOPAlgo_Builder_3.cxx:97-263`）+ `BuildSplitSolids`（同文件 `:413-618`），并用 `ShellSplitter` 顶替 `BOPAlgo_SplitSolid`（`:17-34`、`:53-54`）。
 
@@ -98,7 +98,7 @@
 - `BuilderSolid` = `crates/occt-topo/src/builder_solid.rs`；`perform :328-336` ↔ OCCT `Perform`（`cxx:76`），
   四段 `perform_shapes_to_avoid(:349↔cxx:129)`、`perform_loops(:430↔cxx:223)`、`perform_areas(:495↔cxx:397)`、`perform_internal_shapes(:591↔cxx:602)`。
 - 两条活链：a) `perform_loops :435/:451 → ShellSplitter → shell_splitter_block.rs:359-363 get_face_off`（↔ `ShellSplitter.cxx:359`）；
-  b) `perform_internal_shapes :629 classify_faces_occt → bop_classify_occt.rs:289 is_internal_face → algo_tools_face.rs:433 get_face_off`
+  b) `perform_internal_shapes :629 classify_faces_occt → `algo_tools_classify_faces.rs:289` is_internal_face（R2 `57206a5f` 改名；调用现于 `:291`，被调函数 `algo_tools_face.rs:478`；`get_face_off` 在当前树已无同名符号）`
   （线性版 `bopalgo_tools_class.rs:292`）↔ `ClassifyFaces`（`cxx:673`）。growth/hole（`perform_areas:495`、`is_growth_shell:165`）在 OCCT 侧走
   `IsGrowthShell`/`BRepClass3d`（`cxx:864`），与面偏移无关。
 
@@ -161,7 +161,7 @@
   **plane∩torus 三路**：`int_face_face_helpers.rs:161`、`intana_torus.rs:79`、`intpatch_analytic.rs:244`。
 - **两套 surface×surface 分派器**：`intpatch.rs:138 surface_surface_intersection`（解析 arm + 网格 tracer，**不含 ImpPrm**）与
   `intpatch_intersection.rs:41 PatchIntersection::perform`（ImpImp/ImpPrm/PrmPrm）；`int_face_face.rs:414` 先走前者、`:448` 才退后者；
-  BOP 侧 `bop_builder_dispatch.rs:412`、`bop_builder_repair.rs:120`/`:511`、`bop_curved/general_mesh.rs:182` **只走前者**。
+  BOP 侧 `bop_builder_dispatch.rs:412`、`bop_builder_repair.rs:120`/`:511`、`bop_curved/general_mesh.rs:182`（模块已删：`e77be18e`，2026-10-15） **只走前者**。
 - **OCCT 权威**：`IntPatch_ImpImpIntersection.cxx` 的 `:9489`/`:7902`/`:8137+8266`/`:8697+9024`/`:9208+9351`/`:3119+3173`/`:3800+9574-9628`
   全部调 `IntAna_QuadQuadGeo`/`IntAna_IntQuadQuad` ⇒ **intpatch 自己没有解析 closed form** ⇒ 合并方向 = **删 intpatch 版、统一到 intana**。
 
@@ -174,7 +174,7 @@
 3. **补 `attach_wline_ends` 的 `SetVertex`**（`cxx:1149-1151`/`1255-1257`），删 `intpatch_impprm_ends.rs:210` 的 `IsNew` 假设。
    验证：`fuse_box_cylinder_is_closed_solid`、phase5/20。
 4. **合并 closed form**：删 `intpatch_analytic.rs:69-260` 的五个重复件，改由 intana 提供，保留 `IntersectionCurve` 适配；
-   调用点 `intpatch.rs:77` 的 re-export 与 `int_face_face_analytic.rs:141/163/198` 改接 intana。验证：`intpatch.rs:374-507`、`int_face_face_tests.rs:219-244`。
+   调用点 `intpatch.rs:77` 的 re-export 与 `int_face_face_analytic.rs:141/163/198` 改接 intana。验证：`intpatch.rs:374-507`、`int_face_face/tests.rs:219-244`（R9 `cdc60599` 改名，行号未变）。
 5. **合并分派器**：让 `intpatch.rs:138` 内部改调 `PatchIntersection::perform`，单一入口覆盖 analytic + ImpPrm + tracer。
    验证：BOP 三处调用点（`bop_builder_dispatch.rs:412`、`bop_builder_repair.rs:120`/`:511`）的 phase 套件。
 6. **全门禁**：四道 STEP + end-to-end gate suites + `export_data_obj` 逐位对齐基线；失配即停并报告。
@@ -198,7 +198,7 @@
 `bop_builder_dispatch.rs:195-197` → `boolean_non_solid:214-231` → `bop_builder2::builder_bop_with_fuzzy`（`bop_builder2/data_access.rs:150-169`）。
 
 残留的体素实现：`boolean_ops::voxel_boolean`（`boolean_ops.rs:173`），唯一 live 调用 = `brepfeat/features.rs:335`（**曲面输入**，属 A12/T-48 另批）；
-`solid_union::voxel_union`（`solid_union.rs:237`）只被 `bop_builder_tests.rs:174` 用。旧 warning 串全仓已无。
+`solid_union::voxel_union`（`solid_union.rs:237`）只被 `bop_builder/tests.rs:174`（R9 `cdc60599` 改名，行号未变） 用。旧 warning 串全仓已无。
 
 ### OCCT 权威
 
@@ -216,7 +216,7 @@
 
 - 空 operand **不 Err**，只在 `bop_builder_dispatch.rs:216-221` 加 warning `"BOPAlgo_AlertEmptyShape (objects/tools)"`；
   `bop_bop::check_data`（`bop_bop.rs:71-98`）返回 `"BOPAlgo_AlertTooFewArguments"`（`:73`）/`"BOPAlgo_AlertBOPNotAllowed"`（`:79`/`:82`/`:92`）。
-- 真正 `Err("无面")` 的三处（`bop_curved/face_meshing.rs:503`、`general_mesh.rs:209`、`region_trim.rs:337`）经 `dispatch:195` 分流后**对无面 operand 不可达**。
+- 真正 `Err("无面")` 的三处（`bop_curved/face_meshing.rs:503`、`bop_curved/general_mesh.rs:209`、`bop_curved/region_trim.rs:337`（三者随 `bop_curved/` 于 `e77be18e` 删除））经 `dispatch:195` 分流后**对无面 operand 不可达**。
 - **关键偏差**：端口 `is_empty_shape`（`bop_bop.rs:42-44`）＝「无顶点且无面」，与 OCCT 的「无几何」**不等价** ⇒ 本设计要钉的就是这一点。
 
 ### 分步方案
@@ -231,7 +231,7 @@
 ### 风险
 
 - 门禁里**没有任何用例传无面 operand**，也没有断言旧 fallback ⇒ 本项属"语义订正 + 清零偏差"，**不会**带来红转绿，但会消掉一处已登记的语义偏差（`specs/_coverage.md`）。
-- 唯一体素耦合断言是 `bop_builder_tests.rs:170-177`（与 `solid_union::union_volume` 对拍 < 15%），第 4 步前不要动它。
+- 唯一体素耦合断言是 `bop_builder/tests.rs:170-177`（R9 `cdc60599` 改名，行号未变；断言仍在）（与 `solid_union::union_volume` 对拍 < 15%），第 4 步前不要动它。
 
 ---
 

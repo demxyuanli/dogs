@@ -1,5 +1,10 @@
 # 偏移与缺口自动收敛
 
+> **Source-path note (2026-10-20, T-200).** Receipts in this directory were written against the
+> tree of their package date. `bop_curved/*` was deleted in `e77be18e` (T-41) and `brepmesh.rs` in
+> `93b076b4`; the T-192 splits and the R2/R9/R3/R10 renames are mapped in
+> `specs/_audit/_index.md` section 0. Resolve an old path there before opening a file.
+
 ## Objective
 
 对全仓残留的「范围/语义偏移」（`~/.cursor/projects/d-source-repos-dogs/canvases/occt-code-review-status.canvas.tsx`、`specs/_audit/*.md` 的 SEMANTIC

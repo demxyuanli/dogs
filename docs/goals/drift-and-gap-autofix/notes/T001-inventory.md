@@ -7,6 +7,17 @@ Method: four read-only Scout passes over `~/.cursor/projects/d-source-repos-dogs
 `not ported` marker in the five crates. Each line re-verified against `D:/source/OCCT-src/src`.
 No file was edited; no gate was run for this task.
 
+> **Source-path note (2026-10-20, T-200).** This receipt was written against the tree of
+> 2026-10-15. Since then T-192 turned `edge_discret.rs`, `param_set.rs`, `extrema_ss.rs` and
+> `shape_fix_face.rs` into directory modules; R2 renamed `bop_classify_occt.rs` into
+> `algo_tools_classify_faces.rs`, `builder_face_occt.rs` into `bop_builder_face_perform.rs`,
+> `bop_draft_solid_occt.rs` into `bop_builder_draft_solid.rs` and `bop_split_faces_occt.rs` into
+> `bop_builder_split_faces.rs`; R9 renamed `phase3_integration.rs` into
+> `tests/geometry_pipeline_gates.rs`; `bop_curved/*` was deleted (`e77be18e`). The `occt-math/`
+> receipts merely omit `src/` (`globoptmin.rs`, `newton.rs`, `newton_minimum.rs` all exist under
+> `occt-math/src/`), as do `brep_class/intersector_checks.rs` and
+> `shape_fix_compose_shell/split_wire.rs`. Full tables: `specs/_audit/_index.md` section 0.
+
 ## A. Registered findings that are already CLOSED (evidence recorded, docs still say live)
 
 | id | area | current evidence | note |
@@ -17,8 +28,8 @@ No file was edited; no gate was run for this task.
 | topo-rest 11 | brep_gprop | `brep_gprop.rs:40` -> `brep_gprop_full::{volume,surface}_properties`; mesh path only as the `NoSurf` arm `:56` | matches `BRepGProp.cxx:344-360` |
 | topo-rest 18 (classifier half) | brep_class3d | `other_segment.rs:100` matches `BRepClass3d_SolidExplorer.cxx:74-186`; `aTestInvert` at `:398-410` | bbox half still live, see B |
 | bop 1,2,3,4,7,16,17 | BOP | symbols/files absent; `bop_curved/` deleted 2026-10-14; `bop_builder_dispatch.rs:233` -> `boolean_via_bopalgo` | residual self-invented voxel engine left in `boolean_ops.rs:173` (no caller) |
-| bop 8,9,10,6 | BOP | `int_tools_full/context.rs:195` `Extrema_ExtPS`; `bop_draft_solid_occt.rs:50`; `edge_edge/edge_edge.rs:150-175` | new gaps spawned, see C |
-| bop 18 | BOP | `bop_build_faces/builder_like.rs:208` test-only; live path `builder_face_occt.rs:318` uses `FClass2d::is_hole` | delete tests or redirect |
+| bop 8,9,10,6 | BOP | `int_tools_full/context.rs:195` `Extrema_ExtPS`; `bop_draft_solid_occt.rs:50`（现 `bop_builder_draft_solid.rs:50`，R2 改名，行号未变）; `edge_edge/edge_edge.rs:150-175` | new gaps spawned, see C |
+| bop 18 | BOP | `bop_build_faces/builder_like.rs:208` test-only; live path `builder_face_occt.rs:318`（现 `bop_builder_face_perform.rs:347` `is_hole`） uses `FClass2d::is_hole` | delete tests or redirect |
 | mesh 1-14,19,19b | meshing/exchange | each verified against its cxx arm | see per-line evidence in the Scout output |
 | occt-geom 1,2,3,4,6,11,12,13,14,15 | geom/geom2d | offset-curve utils, `Extrema_GGExtPC`, `GeomConvert_CompCurveToBSplineCurve`, `ElCLib` D2, Gauss `gcpnts`, `BSplCLib_2` | |
 | occt-core 1,2,4,5,6,8,9,10,11,12,13,14,15 | core | per-line evidence recorded | |
@@ -77,7 +88,7 @@ Ranked by (pipeline centrality x blast radius x fix confidence).
 
 ### B3. `bbox_from_geometry.rs:46,56-67` — bbox by sampling (not in the audit) — ✅ CLOSED 2026-10-15 (T-134)
 - 64-point edge bbox and 16x16 UV surface bbox instead of `BRepBndLib`/`BndLib` analytic extrema.
-- Broadly used: `bop_builder.rs:86`, `bop_builder_dispatch.rs:109`, `bop_classify_occt.rs:78`,
+- Broadly used: `bop_builder.rs:86`, `bop_builder_dispatch.rs:109`, `bop_classify_occt.rs:78`（现 `algo_tools_classify_faces.rs:71` `solid_box_for_classify`）,
   `builder_solid.rs:128`.
 - **Closed (T-134)**: `shape_bbox` now delegates to `brep_bnd_lib::shape_bnd_box` =
   `BRepBndLib::Add(S, B, /*useTriangulation*/ false)` (`BRepBndLib.cxx:81-215`; faces via
@@ -153,7 +164,7 @@ Ranked by (pipeline centrality x blast radius x fix confidence).
   `ShrunkRange` <- `pave_shrunk.rs:87`, `pave_ff_se.rs:39`, `pave_common/mod.rs:51`.
 
 ### B6. `occt-geom` Extrema failure fabrication — ✅ ALL SUB-ITEMS CLOSED 2026-10-15 (B6a–B6g through P006/P007/P008/P017/P018/P019/P020/P021); only B6h stays open
-- **B6a ✅ CLOSED 2026-10-15 (T-136, package P006).** `extrema_ss.rs:449,506` and
+- **B6a ✅ CLOSED 2026-10-15 (T-136, package P006).** `extrema_ss.rs:449,506`（现 `extrema_ss/mod.rs:319` `surface_surface_extrema_all`） and
   `extrema_surf/numeric_extrema.rs:153,374,433,514` fabricated a `fallback_*` pair where OCCT
   returns `myDone = false`. All three fallbacks are deleted and the three minimum-distance
   entries return `Option<ExtremaPair>` (`None` = `!IsDone()` / `NbExt() == 0`); the live consumer
@@ -202,7 +213,7 @@ Ranked by (pipeline centrality x blast radius x fix confidence).
   What the port has instead: `extrema2d/analytic_solvers.rs::build_samples2d` (`span/0.1`,
   clamp 24..256) as the seed grid plus `newton_point_curve_all2d` (`:569`) and
   `curve_curve::newton_curve_curve_all2d` (`:361`) as the grid -> bracket -> Newton solvers.
-  Live consumers of the substitute: `topo/brep_class/intersector_checks.rs:157`
+  Live consumers of the substitute: `occt-topo/src/brep_class/intersector_checks.rs:157`
   (`BRepClass_Intersector` = `Extrema_ExtPC2d`), `curve_ops::curve2d_closest_point` (=
   `Extrema_ExtPC2d`, A16 projection half / R2-18 remainder) and
   `extrema2d/general_extrema.rs:550` (`Extrema_GGenExtCC_ProjPOnC`, explicitly marked
@@ -437,7 +448,7 @@ Ranked by (pipeline centrality x blast radius x fix confidence).
   pairs to `GGenExtCC` = `Extrema_GGenExtCC` with `GlobOptFuncCCC2` + `math_GlobOptMin`
   (`extrema_cc/general_extrema.rs:245-292`); the `is_line`/`classify_circle` sampler the header
   describes is gone. Only the doc comment needs correcting (next doc pass).
-- `occt-math/globoptmin.rs:590` **CLOSED (2026-10-16, T-173 / package P043) — the earlier
+- `occt-math/src/globoptmin.rs:590` **CLOSED (2026-10-16, T-173 / package P043) — the earlier
   "STALE (doc-only), re-verified 2026-10-15" reading was wrong.** The 2026-10-15 pass reasoned that
   because the faithful `math_NewtonMinimum` port exists at `occt-math/newton_minimum.rs`
   (re-exported `lib.rs:59`) the marker was doc-only. A faithful port existing is not the same as the
@@ -449,7 +460,7 @@ Ranked by (pipeline centrality x blast radius x fix confidence).
   `math_Powell.cxx:107-229` port), drops the `has_gradient`/`has_hessian` boolean stand-ins for the
   `cxx:273`/`cxx:294` `dynamic_cast`s in favour of
   `MathMultipleVarFunction::as_gradient`/`as_hessian`, and deletes `numeric_gradient`. The `:590`
-  marker and the `occt-math/newton.rs:81,91` family are gone (`rg UNPORTED` is empty across
+  marker and the `occt-math/src/newton.rs:81,91` family are gone (`rg UNPORTED` is empty across
   `globoptmin.rs`, `powell.rs` and `bracket_minimum.rs`).
 - `occt-core/src/quantity/mod.rs:33`: `Color::from_name` returns sRGB columns and only 23 names
   (`Quantity_ColorTable.pxx:185`, `Quantity_Color.hxx:49-51`); test-only reachability.
@@ -474,13 +485,13 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
   `occt-core` `csg`/`delaunay`/`triangulate`, `gp` `DumpJson` family.
 - **C-D (stale markers)** — `shhealing/shape_build_edge.rs:104`, `int_tools_segpln.rs:153`,
   `bop_builder_core.rs:83`, `iges/emit_face.rs:243`, `pcurve_full/make_pcurve.rs:259`,
-  `meshing/geom_tool.rs:188,228`, `wireframe.rs:12`, `extrema_ss.rs:64,138`, many more.
+  `meshing/geom_tool.rs:188,228`, `wireframe.rs:12`, `extrema_ss.rs:64,138`（现 `extrema_ss/mod.rs:7-20` UNPORTED 段）, many more.
 
 ## D. Banned constructs found (must not be extended; listed for the report)
 
 - Area ratio / length filter / volume gate: **zero hits** in `occt-geom`, `occt-geom2d`, `occt-core`.
 - Sampled/heuristic substitute for a downcast or a closed form: B1a, B1b, B2, B6, plus
-  `meshing/deflection.rs:109,138`, `meshing/range_splitter/param_set.rs:203`, `hlr.rs:129-156`,
+  `meshing/deflection.rs:109,138`, `meshing/range_splitter/param_set.rs:203`（现 `param_set/surface_type.rs:147`）, `hlr.rs:129-156`,
   `gprop_analytic/mass_properties.rs:405`, `shape_metrics.rs:146`, `solid_union.rs:99-111,144-182`,
   `brep_offset/curve_face_offset.rs:509`-adjacent, `brep_pipe.rs:24-53,78-95`,
   `brepfeat/features.rs:326-370`, `brep_class3d` probe half is closed. B3 closed in T-134.
@@ -878,7 +889,7 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
   a pole-classified pcurve on a **plane** surface, and the new answer matches what
   `Extrema_CurveTool` forwards in cxx. `plane_k_part` gained the `is_bezier2d() || is_bspline2d()` arm
   and reuses the one faithful implementation of both cxx bodies, `geom_lib::to_3d`
-  (`GeomLib.cxx:582-632`); `KPart` carries the lifted curve (`edge_discret.rs:1025`) and the six
+  (`GeomLib.cxx:582-632`); `KPart` carries the lifted curve (`edge_discret.rs:1025`（现 `edge_discret/split_2d.rs:126-140`）) and the six
   accessors forward it (`:1390`/`:1394`/`:1398`/`:1402`/`:1406`/`:1411`). The second half of the gap
   was outside `occt-topo`: `Geom2dTrimmedCurve` forwarded only `trimmed_basis`, while
   `Geom2dAdaptor_Curve::load` (`Geom2dAdaptor_Curve.cxx:283-287`) unwraps a trimmed curve to its basis
@@ -949,7 +960,7 @@ Count: ~115 markers over 55 files. Bucketed in the Scout sweep; the actionable s
   the target is an analytic cylinder or the tool has exact cylindrical/planar faces; the existing
   baseline is green only because both operands are pre-faceted (the lathe tool cuts each ring into
   `steps` arcs, `faceted_cyl` is itself a mesh). One more guess was excluded: the seam branch at
-  `bop_split_faces_occt.rs:145-153` (`BOPTools_AlgoTools3D::DoSplitSEAMOnFace`,
+  `bop_split_faces_occt.rs:145-153`（现 `bop_builder_split_faces.rs:145-153`，R2 改名，行号未变） (`BOPTools_AlgoTools3D::DoSplitSEAMOnFace`,
   `BOPAlgo_Builder_2.cxx:429-446`) does **not** raise
   `BOPAlgo_AlertUnableToMakeClosedEdgeOnFace` for the failing pair (a temporary probe on that
   failure path produced no output), so the source-edge seam doubling is wired and the gap sits
