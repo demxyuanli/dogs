@@ -511,7 +511,7 @@ impl DelaunDataStructure {
         let idx = (self.elements.len() + 1) as i32;
         // TEMPORARY diagnostic (DELADDT): logs every element creation so it can be
         // diffed against OCCT's `OCCTEL` dump of the same structure.
-        if std::env::var("DELADDT").is_ok() {
+        if crate::debug_flags::del_addt() {
             let n = self.element_nodes(&element);
             eprintln!("ADDE {idx} {} {} {}", n[0], n[1], n[2]);
         }

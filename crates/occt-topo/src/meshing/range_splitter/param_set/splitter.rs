@@ -89,7 +89,7 @@ pub trait RangeSplitter {
         }
         // TEMPORARY diagnostic (SPLITDBG): raw splitter inputs/outputs so they can
         // be diffed against `occt_probe --uvsum` with `OCCT_TOPO_TRACE_SPLITTER=1`.
-        if std::env::var("SPLITDBG").is_ok() {
+        if crate::debug_flags::split_dbg() {
             let (tu, tv) = self.base().tolerance_uv();
             let (da, db) = self.base().delta();
             let fkey = self

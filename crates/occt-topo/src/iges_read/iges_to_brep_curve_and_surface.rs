@@ -261,7 +261,7 @@ fn transfer_group(session: &mut Session<'_>, index: usize) -> Result<Option<Topo
         };
         shapes.push(item);
     }
-    if problem_in_group && std::env::var("IGES_TRACE_GROUP").is_ok() {
+    if problem_in_group && crate::debug_flags::iges_trace_group() {
         eprintln!(
             "TRACEGROUP index={index} problem_in_group kept={} skipped={skipped:?}",
             shapes.len()

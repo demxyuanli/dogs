@@ -126,7 +126,7 @@ impl DelaunayNodeInsertionMeshAlgo {
             return Ok(Vec::new());
         };
         let mut out = Vec::new();
-        let cls_dbg = std::env::var("CLSNODE").is_ok();
+        let cls_dbg = crate::debug_flags::cls_node();
         let (mut n_in, mut n_out, mut n_on) = (0usize, 0usize, 0usize);
         for n in nodes {
             let st = self.classifier.perform(&n);

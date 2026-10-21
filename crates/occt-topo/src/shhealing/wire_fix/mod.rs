@@ -19,6 +19,7 @@ use crate::brep_tool::BRepTool;
 use crate::meshing::wire_order::{WireOrder, WireOrderStatus};
 use crate::pcurve_full::{
     classify_surface_kind, project_curve_on_surface_perform, reparam_curve2d,
+    SurfaceSingularities,
 };
 use super::shape_analysis_curve::{project_adaptor, Projection};
 use super::transfer_params::TransferParametersProj;
@@ -114,133 +115,24 @@ fn xy_dot_axis(p: &GpPnt2d, x: &GpVec2d) -> f64 {
     p.x() * x.x() + p.y() * x.y()
 }
 
-/// Analytic singularities of `ShapeAnalysis_Surface::ComputeSingularities`
-/// (`ShapeAnalysis_Surface.cxx:181-294`): the cone / torus / sphere arms
-/// (`cxx:201-246`) and the corner-based arm shared by `Geom_BoundedSurface`
-/// (BSpline / Bezier / RectangularTrimmed), `Geom_SurfaceOfRevolution` and
-/// `Geom_OffsetSurface` (`cxx:247-292`).
+/// `ShapeAnalysis_Surface::DegeneratedValues(P3d, preci, firstP2d, lastP2d,
+/// firstPar, lastPar)` (`ShapeAnalysis_Surface.cxx:373-411`): the singularity
+/// whose 3D point is closest to `p3d`, walked in ascending `preci` order over
+/// the `ComputeSingularities` arrays (`SortSingularities`, `cxx:1845-1883`,
+/// called from `cxx:293`).
+///
+/// This used to keep its own copy of the cone / torus / sphere / corner arms
+/// without the sort, so the `myPreci[i] <= preci` loop condition at `cxx:390`
+/// stopped at whichever corner came first instead of the one with the smallest
+/// precision. `ShapeAnalysis_Surface::ComputeSingularities` is a pure function
+/// of the surface and its bounds, so the port keeps one copy:
+/// `pcurve_full::SurfaceSingularities` (whose `min_gap` is this function).
 pub(super) fn degenerated_values(
     surf: &dyn Surface,
     p3d: &GpPnt,
     preci: f64,
 ) -> Option<(GpPnt2d, GpPnt2d, f64, f64)> {
-    let (su1, su2) = surf.u_range();
-    let (sv1, sv2) = surf.v_range();
-    let mut hits: Vec<(f64, GpPnt, GpPnt2d, GpPnt2d)> = Vec::new();
-    if let Some((radius, alpha)) = surf.cone_ref() {
-        let sin_a = alpha.sin();
-        if sin_a.abs() > 1e-16 {
-            let v_apex = -radius / sin_a;
-            let apex = surf.d0(0.0, v_apex);
-            hits.push((
-                0.0,
-                apex,
-                GpPnt2d::new(su1, v_apex),
-                GpPnt2d::new(su2, v_apex),
-            ));
-        }
-    } else if let Some(tor) = surf.gp_torus() {
-        let minor = tor.minor_radius();
-        let major = tor.major_radius();
-        let ang = (major / minor).min(1.0).acos();
-        let pre = (major - minor).max(0.0);
-        hits.push((
-            pre,
-            surf.d0(0.0, std::f64::consts::PI - ang),
-            GpPnt2d::new(su1, std::f64::consts::PI - ang),
-            GpPnt2d::new(su2, std::f64::consts::PI - ang),
-        ));
-        if major <= minor {
-            hits.push((
-                pre,
-                surf.d0(0.0, std::f64::consts::PI + ang),
-                GpPnt2d::new(su2, std::f64::consts::PI + ang),
-                GpPnt2d::new(su1, std::f64::consts::PI + ang),
-            ));
-        }
-    } else if surf.gp_sphere().is_some() {
-        hits.push((
-            0.0,
-            surf.d0(su1, sv2),
-            GpPnt2d::new(su2, sv2),
-            GpPnt2d::new(su1, sv2),
-        ));
-        hits.push((
-            0.0,
-            surf.d0(su1, sv1),
-            GpPnt2d::new(su1, sv1),
-            GpPnt2d::new(su2, sv1),
-        ));
-    } else if surf.is_surface_of_revolution()
-        || surf.is_offset_surface()
-        || surf.is_bspline_surface()
-        || surf.is_bezier_surface()
-        || surf.rectangular_trimmed_basis().is_some()
-    {
-        // `ShapeAnalysis_Surface::ComputeSingularities` corner arm
-        // (`ShapeAnalysis_Surface.cxx:247-292`) for `Geom_BoundedSurface`
-        // (BSpline / Bezier / RectangularTrimmed), `Geom_SurfaceOfRevolution`
-        // and `Geom_OffsetSurface`. A revolved sphere reaches here as a
-        // `Geom_BSplineSurface`, so the arm must not be limited to
-        // `Geom_SurfaceOfRevolution`.
-        let um = 0.5 * (su1 + su2);
-        let vm = 0.5 * (sv1 + sv2);
-        let p_u0 = surf.d0(su1, vm);
-        let p_u1 = surf.d0(su2, vm);
-        let p_v0 = surf.d0(um, sv1);
-        let p_v1 = surf.d0(um, sv2);
-        let c00 = surf.d0(su1, sv1);
-        let c01 = surf.d0(su1, sv2);
-        let c10 = surf.d0(su2, sv1);
-        let c11 = surf.d0(su2, sv2);
-        hits.push((
-            c00.distance(&c01)
-                .max(p_u0.distance(&c00))
-                .max(p_u0.distance(&c01)),
-            p_u0,
-            GpPnt2d::new(su1, sv2),
-            GpPnt2d::new(su1, sv1),
-        ));
-        hits.push((
-            c10.distance(&c11)
-                .max(p_u1.distance(&c10))
-                .max(p_u1.distance(&c11)),
-            p_u1,
-            GpPnt2d::new(su2, sv1),
-            GpPnt2d::new(su2, sv2),
-        ));
-        hits.push((
-            c00.distance(&c10)
-                .max(p_v0.distance(&c00))
-                .max(p_v0.distance(&c10)),
-            p_v0,
-            GpPnt2d::new(su1, sv1),
-            GpPnt2d::new(su2, sv1),
-        ));
-        hits.push((
-            c01.distance(&c11)
-                .max(p_v1.distance(&c01))
-                .max(p_v1.distance(&c11)),
-            p_v1,
-            GpPnt2d::new(su2, sv2),
-            GpPnt2d::new(su1, sv2),
-        ));
-    }
-    let mut best: Option<(f64, GpPnt2d, GpPnt2d)> = None;
-    // `ShapeAnalysis_Surface.cxx:390`: the loop condition is
-    // `i < myNbDeg && myPreci[i] <= preci`, i.e. it stops at the first
-    // singularity whose own precision exceeds `preci`, so a later entry with a
-    // smaller precision is unreachable.
-    for (pre, q, a, b) in hits {
-        if pre > preci {
-            break;
-        }
-        let gap = q.distance(p3d);
-        if gap <= preci && best.as_ref().is_none_or(|(g, _, _)| gap < *g) {
-            best = Some((gap, a, b));
-        }
-    }
-    best.map(|(_, a, b)| (a, b, su1, su2))
+    SurfaceSingularities::compute(surf).min_gap(p3d, preci)
 }
 
 /// `ShapeAnalysis_Surface::IsDegenerated(p2d1, p2d2, tol, ratio)`

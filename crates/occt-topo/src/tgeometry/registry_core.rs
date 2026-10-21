@@ -46,32 +46,6 @@ impl GeometryRegistry {
             .unwrap_or(occt_core::precision::REAL_EPSILON)
     }
 
-    /// TEMP RANGEW: log edge-range writes whose span is about `4*PI`, the T0M
-    /// determinism seed, with a short backtrace so the writer site is identified.
-    pub(crate) fn probe_range_write(&self, s: &TopoShape, first: f64, last: f64, site: &str) {
-        if !crate::debug_flags::range_w() {
-            return;
-        }
-        let span = last - first;
-        if !(12.5..=12.7).contains(&span) {
-            return;
-        }
-        let bt = std::backtrace::Backtrace::force_capture().to_string();
-        let mut frames: Vec<String> = Vec::new();
-        for l in bt.lines() {
-            if l.contains("occt_topo") {
-                frames.push(l.trim().to_string());
-            }
-            if frames.len() >= 6 {
-                break;
-            }
-        }
-        eprintln!(
-            "RANGEW site={site} eptr={:?} f={first:.16e} l={last:.16e} from={frames:?}",
-            Arc::as_ptr(&s.tshape)
-        );
-    }
-
     // ---- edges ----
 
     pub fn set_edge(&self, s: &TopoShape, geom: EdgeGeom) {
@@ -98,8 +72,6 @@ impl GeometryRegistry {
         c.same_parameter = geom.same_parameter;
         c.same_range = geom.same_range;
         c.degenerated = geom.degenerated;
-        drop(ts);
-        self.probe_range_write(s, geom.first, geom.last, "set_edge");
     }
 
     /// `BRep_Builder::Range(E, First, Last)`: set the edge's parameter range.
@@ -112,8 +84,6 @@ impl GeometryRegistry {
         let c = ts.edge_core_mut();
         c.first = first;
         c.last = last;
-        drop(ts);
-        self.probe_range_write(s, first, last, "set_edge_range");
     }
     /// `BRep_Builder::Range(E, First, Last, Only3d=false)`
     /// (`BRep_Builder.cxx:1091-1117`): the range is written to *every*
@@ -130,7 +100,6 @@ impl GeometryRegistry {
                 pc.ranges.for_each_mut(|_, r| *r = (first, last));
             }
         }
-        self.probe_range_write(s, first, last, "set_ranges_all");
     }
 
     /// `BRep_Builder::UpdateEdge(E, C, Tol)` for the 3D curve

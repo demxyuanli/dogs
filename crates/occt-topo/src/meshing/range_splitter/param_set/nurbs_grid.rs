@@ -137,7 +137,7 @@ pub(in crate::meshing::range_splitter) fn generate_nurbs_grid(
         let u_intervals = undefined_interval(s, true, GEOM_ABS_CN, range_u);
         let v_intervals = undefined_interval(s, false, GEOM_ABS_CN, range_v);
         let is_split = to_split_intervals(surface.as_ref(), &u_intervals, &v_intervals);
-        if std::env::var("NURBSGRID").is_ok() {
+        if crate::debug_flags::nurbs_grid() {
             eprintln!(
                 "NURBSGRID intervals split={is_split} u_n={} v_n={} surf_u=[{:.17e},{:.17e}] surf_v=[{:.17e},{:.17e}]",
                 u_intervals.len(),
@@ -166,7 +166,7 @@ pub(in crate::meshing::range_splitter) fn generate_nurbs_grid(
         }
         let mut u_iv = ParamSet::new();
         let mut v_iv = ParamSet::new();
-        let dbg_none = std::env::var("NURBSGRID").is_ok();
+        let dbg_none = crate::debug_flags::nurbs_grid();
         let fkey_dbg = s
             .base()
             .dface
@@ -209,7 +209,7 @@ pub(in crate::meshing::range_splitter) fn generate_nurbs_grid(
 
     let tol_u = param_resolution(surface.as_ref(), deflection, true);
     let tol_v = param_resolution(surface.as_ref(), deflection, false);
-    if std::env::var("NURBSGRID").is_ok() {
+    if crate::debug_flags::nurbs_grid() {
         // TEMP: tag each dump with the discrete face's shape key so a dump can be
         // paired with `FSTAT face=<i> key=<k>` (and with the probe's per-face rows).
         let fkey = s
@@ -255,7 +255,7 @@ pub(in crate::meshing::range_splitter) fn generate_nurbs_grid(
         compute_grain_and_filter(s, &u_params, tol_u, range_u.1 - range_u.0, delta.0, params);
     let mut v_seq =
         compute_grain_and_filter(s, &v_params, tol_v, range_v.1 - range_v.0, delta.1, params);
-    if std::env::var("NURBSGRID").is_ok() {
+    if crate::debug_flags::nurbs_grid() {
         eprintln!(
             "NURBSGRID grain u_seq={} v_seq={}",
             u_seq.len(),
@@ -336,10 +336,6 @@ pub(in crate::meshing::range_splitter) fn generate_nurbs_grid(
     for k in &v_fixed {
         v_remove.remove(k);
     }
-    if std::env::var("NOAFRM").is_ok() {
-        u_remove.clear();
-        v_remove.clear();
-    }
 
     let mut nodes = Vec::with_capacity(u_seq.len() * v_seq.len());
     for &u in &u_seq {
@@ -353,7 +349,7 @@ pub(in crate::meshing::range_splitter) fn generate_nurbs_grid(
             nodes.push(GpPnt2d::new(u, v));
         }
     }
-    if std::env::var("NURBSGRID").is_ok() {
+    if crate::debug_flags::nurbs_grid() {
         let nu = u_seq.iter().filter(|u| !u_remove.contains(&u.to_bits())).count();
         let nv = v_seq.iter().filter(|v| !v_remove.contains(&v.to_bits())).count();
         eprintln!(

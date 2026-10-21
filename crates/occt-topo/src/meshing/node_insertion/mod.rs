@@ -86,56 +86,6 @@ pub trait NodeInsertionMeshAlgo {
     fn insert_internal_nodes(&mut self, uv_points: &[GpPnt2d]) -> Result<usize, String>;
 }
 
-/// TEMPORARY diagnostic (DELDIAG): dumps the result triangles of the face whose
-/// structure contains the node at (13.0176, -24.7899, 290).
-pub fn diag_dump_result(result: &TriangulationResult, face_index: usize) {
-    if std::env::var("DELDIAG").is_err() {
-        return;
-    }
-    let is_target = result.nodes.iter().any(|n| {
-        (n.p3d.x() - 13.017621944).abs() < 1e-3
-            && (n.p3d.y() + 24.789947988).abs() < 1e-3
-            && (n.p3d.z() - 290.0).abs() < 1e-3
-    });
-    if !is_target {
-        return;
-    }
-    eprintln!(
-        "DELDIAGRES face={face_index} nodes={} tris={}",
-        result.nodes.len(),
-        result.triangles.len()
-    );
-    for (i, n) in result.nodes.iter().enumerate() {
-        eprintln!(
-            "DELDIAGRES n i={} state={} uv=({:.6},{:.6}) p=({:.6},{:.6},{:.6})",
-            i + 1,
-            n.state.to_str(),
-            n.location.x(),
-            n.location.y(),
-            n.p3d.x(),
-            n.p3d.y(),
-            n.p3d.z()
-        );
-    }
-    for (i, t) in result.triangles.iter().enumerate() {
-        let v = t.vertex_indices;
-        let p = |k: i32| -> &DelaunVertex { &result.nodes[(k - 1) as usize] };
-        let (a, b, c) = (p(v[0]), p(v[1]), p(v[2]));
-        eprintln!(
-            "DELDIAGRES t i={i} v=({},{},{}) uv=[({:.6},{:.6}),({:.6},{:.6}),({:.6},{:.6})]",
-            v[0],
-            v[1],
-            v[2],
-            a.location.x(),
-            a.location.y(),
-            b.location.x(),
-            b.location.y(),
-            c.location.x(),
-            c.location.y()
-        );
-    }
-}
-
 /// Result of a node-insertion triangulation run.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TriangulationResult {
@@ -238,7 +188,6 @@ impl DelaunayNodeInsertionMeshAlgo {
 
 mod algo_impl;
 mod build;
-mod debug_dump;
 mod links;
 mod mesh_finish;
 mod parametric;

@@ -208,7 +208,7 @@ impl TopoBuilder {
         for e in edges {
             self.add_edge(&mut wire, e);
         }
-        if std::env::var("WDBGNEW").is_ok() {
+        if crate::debug_flags::wire_dbg_new() {
             let oris = edges
                 .iter()
                 .map(|e| format!("{:?}", e.0.orientation()))

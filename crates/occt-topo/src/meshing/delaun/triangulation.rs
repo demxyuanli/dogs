@@ -18,7 +18,6 @@ impl Delaun {
             init_circles: false,
             failed: false,
             sup_trian: DelaunTriangle::default(),
-            diag_tag: -1,
         };
         delaun.perform(&mut indices, -1, -1);
         delaun
@@ -45,130 +44,9 @@ impl Delaun {
             init_circles: false,
             failed: false,
             sup_trian: DelaunTriangle::default(),
-            diag_tag: -1,
         };
         delaun.perform(vertex_indices, cells_u, cells_v);
         delaun
-    }
-
-    /// TEMPORARY diagnostic (DELSTAGE): tags this triangulator so `diag_stage`
-    /// prints the structure sizes when `DELSTAGE` equals this tag.
-    pub fn set_diag_tag(&mut self, tag: i32) {
-        self.diag_tag = tag;
-    }
-
-    /// `BRepMesh_Delaun(oldMesh, vertices, cellsU, cellsV)` with a DELSTAGE tag
-    /// applied before the pipeline runs (TEMPORARY diagnostic).
-    pub fn new_with_data_cells_diag(
-        data_structure: DelaunDataStructure,
-        vertex_indices: &mut Vec<i32>,
-        cells_u: i32,
-        cells_v: i32,
-        tag: i32,
-    ) -> Self {
-        let mut delaun = Self {
-            mesh_data: data_structure,
-            circles: GridCircleTool::new(),
-            sup_vert: Vec::new(),
-            init_circles: false,
-            failed: false,
-            sup_trian: DelaunTriangle::default(),
-            diag_tag: tag,
-        };
-        delaun.perform(vertex_indices, cells_u, cells_v);
-        delaun
-    }
-
-    /// TEMPORARY diagnostic (DCWHY): on when `DCWHY` names this face, so
-    /// `create_triangles_on_new_vertices` prints the candidate list, the
-    /// `Contains` verdict per candidate and the triangle the caller's skip rule
-    /// selects (`BRepMesh_Delaun.cxx:645-670`), to be diffed against
-    /// `occt_probe --delaunwhy`.
-    pub(super) fn diag_why_on(&self) -> bool {
-        self.diag_tag >= 0
-            && std::env::var("DCWHY").ok().and_then(|v| v.parse::<i32>().ok())
-                == Some(self.diag_tag)
-    }
-
-    /// TEMPORARY diagnostic (DELSTAGE).
-    pub(super) fn diag_on(&self) -> bool {
-        self.diag_tag >= 0
-            && std::env::var("DELSTAGE").ok().and_then(|v| v.parse::<i32>().ok())
-                == Some(self.diag_tag)
-    }
-
-    /// TEMPORARY diagnostic (DELSTAGE).
-    pub(super) fn diag_stage(&self, stage: &str) {
-        if self.diag_tag < 0 {
-            return;
-        }
-        match std::env::var("DELSTAGE") {
-            Ok(v) if v.parse::<i32>() == Ok(self.diag_tag) => {}
-            _ => return,
-        }
-        eprintln!(
-            "DELSTAGE tag={} {} tris={} links={} nodes={} frontier={} fixed={} free={}",
-            self.diag_tag,
-            stage,
-            self.mesh_data.elements_of_domain().len(),
-            self.mesh_data.nb_links(),
-            self.mesh_data.nb_nodes(),
-            self.frontier().len(),
-            self.internal_edges().len(),
-            self.free_edges().len(),
-        );
-        // TEMPORARY diagnostic (DELTRIS): dumps the live triangles of the tagged
-        // face, one line per triangle, so each stage of `processConstraints` can
-        // be classified against the face's boundary polygon in UV space.
-        if std::env::var("DELTRIS").is_err() {
-            return;
-        }
-        let ids: Vec<i32> = self.mesh_data.elements_of_domain().iter().copied().collect();
-        for id in ids {
-            let element = self.mesh_data.element(id);
-            let n = self.mesh_data.element_nodes(&element);
-            let p = |k: i32| self.mesh_data.node(k).location;
-            let (a, b, c) = (p(n[0]), p(n[1]), p(n[2]));
-            eprintln!(
-                "DELTRI {stage} {id} {:.9} {:.9} {:.9} {:.9} {:.9} {:.9}",
-                a.x(),
-                a.y(),
-                b.x(),
-                b.y(),
-                c.x(),
-                c.y()
-            );
-        }
-        // TEMPORARY diagnostic (DELTRIS): link/adjacency dump at the same stages.
-        let mut link_ids: Vec<i32> = self.mesh_data.links_of_domain().iter().copied().collect();
-        link_ids.sort_unstable();
-        for lid in link_ids {
-            let link = self.mesh_data.link(lid);
-            let pair = self.mesh_data.elements_connected_to(lid);
-            let state = self.mesh_data.link_movability(lid);
-            let na = self.mesh_data.node(link.first_node()).location;
-            let nb = self.mesh_data.node(link.last_node()).location;
-            let mut conn = String::new();
-            for it in 1..=pair.extent() {
-                let tid = pair.index(it);
-                let el = self.mesh_data.element(tid);
-                let mut orient = ' ';
-                for k in 0..3 {
-                    if el.link_at(k).abs() == lid {
-                        orient = if el.link_at(k) > 0 { '+' } else { '-' };
-                    }
-                }
-                conn.push_str(&format!(" {tid}{orient}"));
-            }
-            eprintln!(
-                "DELLINK {stage} {lid} {state} {:.9} {:.9} {:.9} {:.9}{conn}",
-                na.x(),
-                na.y(),
-                nb.x(),
-                nb.y(),
-                state = state.to_str()
-            );
-        }
     }
 
     /// `BRepMesh_MeshTool::EraseFreeLinks` (`BRepMesh_MeshTool.cxx:204-219`).
@@ -300,16 +178,6 @@ impl Delaun {
             let p = mesh_data.node(*i).location;
             (p.x(), p.y())
         });
-        // TEMPORARY diagnostic (SORTDUMP): the index order `AddVertices` hands to
-        // `createTrianglesOnNewVertices`, so it can be diffed index by index
-        // against the probe's `OCCTSORT` dump.
-        if std::env::var("SORTDUMP").is_ok() {
-            eprint!("SORTDUMP");
-            for v in vertices.iter() {
-                eprint!(" {v}");
-            }
-            eprintln!();
-        }
         self.create_triangles_on_new_vertices(vertices);
     }
 
@@ -323,11 +191,15 @@ impl Delaun {
     /// Forces insertion of constraint edges and frontier adjustment.
     /// Source: `ProcessConstraints`.
     pub fn process_constraints(&mut self) {
-        self.diag_stage("before_insert_internal_edges");
+        if crate::debug_flags::post_dump() {
+            eprintln!(
+                "POSTDUMP PC face={} stage={}",
+                crate::debug_flags::post_face(),
+                crate::debug_flags::post_stage()
+            );
+        }
         self.insert_internal_edges();
-        self.diag_stage("after_insert_internal_edges");
         self.frontier_adjust();
-        self.diag_stage("after_frontier_adjust");
     }
 
     /// `BRepMesh_DataStructureOfDelaun::ElementNodes` (`cxx:259-286`).
@@ -463,11 +335,9 @@ impl Delaun {
         if vertex_indexes.len() > 0 {
             let first = vertex_indexes[0];
             self.create_triangles(first, &mut loop_edges);
-            self.diag_stage("after_first_triangle");
             self.create_triangles_on_new_vertices(vertex_indexes);
         }
         self.remove_aux_elements();
-        self.diag_stage("after_remove_aux");
     }
 
     pub(super) fn delete_triangle(&mut self, index: i32, loop_edges: &mut IntBoolDataMap) {
@@ -617,53 +487,12 @@ impl Delaun {
             let vertex = *self.mesh_data.node(vertex_idx);
             let mut loop_edges: IntBoolDataMap = IntBoolDataMap::new();
             let mut circles_list = self.circles.select(vertex.location.coord);
-
-            // TEMPORARY diagnostic (DCWHY): the inputs of this iteration -
-            // candidate list from `myCircles.Select` (`cxx:642`), the `Contains`
-            // verdict (`cxx:645-670`) for every candidate, and the triangle the
-            // caller's skip rule would pick. The order of these lines is the only
-            // thing that can differ from OCCT: both sides run the same sorted
-            // insertion order, so a diff here names the missing `.cxx` arm.
-            if self.diag_why_on() {
-                eprintln!(
-                    "DCWHY v={vertex_idx} uv={:.17e} {:.17e} mov={} sqtol={:.17e} ntri={} ncand={}",
-                    vertex.location.x(),
-                    vertex.location.y(),
-                    vertex.state.index(),
-                    sq_tol,
-                    self.mesh_data.elements_of_domain().len(),
-                    circles_list.len(),
-                );
-                for &t in circles_list.iter() {
-                    eprintln!("DCWHY CAND t={t}");
-                }
-                let mut chosen = 0;
-                for &t in circles_list.iter() {
-                    let mut edge_on = 0;
-                    let contains = self.contains(t, &vertex, sq_tol, &mut edge_on);
-                    let edge_mov = if edge_on != 0 {
-                        self.mesh_data.link_movability(edge_on).index() as i32
-                    } else {
-                        -1
-                    };
-                    eprintln!(
-                        "DCWHY CTEST t={t} contains={} edge={edge_on} edgemov={edge_mov}",
-                        if contains { 1 } else { 0 }
-                    );
-                    if chosen != 0 || !contains {
-                        continue;
-                    }
-                    if edge_on != 0
-                        && self.mesh_data.link_movability(edge_on) != VertexState::Free
-                    {
-                        if vertex.state == VertexState::Free {
-                            continue;
-                        }
-                    }
-                    chosen = t;
-                }
-                eprintln!("DCWHY CHOSEN t={chosen}");
-            }
+            let n_shot = circles_list.len();
+            let candidates_copy: Vec<i32> = if crate::debug_flags::post_dump() {
+                circles_list.clone()
+            } else {
+                Vec::new()
+            };
 
             let _on_edge_id = 0;
             let mut triangle_id = 0;
@@ -708,9 +537,82 @@ impl Delaun {
                 }
                 self.create_triangles(vertex_idx, &mut loop_edges);
             }
+            if crate::debug_flags::post_dump() && (triangle_id == 0 || n_shot == 0) {
+                eprintln!(
+                    "POSTDUMP MISS stage={} v={} uv=({:.17e},{:.17e}) tri={} shot={}",
+                    crate::debug_flags::post_stage(),
+                    vertex_idx,
+                    vertex.location.x(),
+                    vertex.location.y(),
+                    triangle_id,
+                    n_shot
+                );
+                if triangle_id == 0 && n_shot > 0 {
+                    for &t in &candidates_copy {
+                        let e = self.mesh_data.element(t);
+                        let p = self.element_nodes_cxx(&e);
+                        let pts = [
+                            self.mesh_data.node(p[0]).location,
+                            self.mesh_data.node(p[1]).location,
+                            self.mesh_data.node(p[2]).location,
+                        ];
+                        let ve = [
+                            pts[1].coord.subtracted(&pts[0].coord),
+                            pts[2].coord.subtracted(&pts[1].coord),
+                            pts[0].coord.subtracted(&pts[2].coord),
+                        ];
+                        let mut d = [0.0; 3];
+                        let mut m = [0.0; 3];
+                        let mut eo = 0usize;
+                        let sq = self.calculate_dist(&ve, &pts, &vertex, &mut d, &mut m, &mut eo);
+                        eprintln!(
+                            "POSTDUMP CAND t={} n=[{} {} {}] sqmin={:.17e} eo={} mov={:?} d=[{:.6e} {:.6e} {:.6e}]",
+                            t,
+                            p[0],
+                            p[1],
+                            p[2],
+                            sq,
+                            self.mesh_data.element(t).link_at(eo).abs(),
+                            self.mesh_data
+                                .link_movability(self.mesh_data.element(t).link_at(eo).abs()),
+                            d[0],
+                            d[1],
+                            d[2]
+                        );
+                    }
+                }
+            }
+            // TEMP PREDCDUMP: per-vertex insertion trace, the counterpart of the
+            // probe's `OCCTDC REPLAY<n>` states (`--dcreplay`). Node ids `> 53`
+            // are the surface nodes this stage inserts.
+            if crate::debug_flags::pre_dc_dump() {
+                eprintln!(
+                    "PREDCDUMP INS step={} v={} uv=({:.17e},{:.17e}) tri={} shot={}",
+                    i + 1,
+                    vertex_idx,
+                    vertex.location.x(),
+                    vertex.location.y(),
+                    triangle_id,
+                    n_shot
+                );
+                let ids: Vec<i32> = self.mesh_data.elements_of_domain().iter().copied().collect();
+                for tid in ids {
+                    let e = self.mesh_data.element(tid);
+                    let n = self.mesh_data.element_nodes(&e);
+                    if n.iter().any(|&x| x > 53) {
+                        eprintln!(
+                            "PREDCDUMP INS step={} T {} {} {} {}",
+                            i + 1,
+                            tid,
+                            n[0],
+                            n[1],
+                            n[2]
+                        );
+                    }
+                }
+            }
             i += 1;
         }
-        self.diag_stage("after_vertex_loop");
 
         // `ProcessConstraints()` is called UNCONDITIONALLY at the tail of
         // `BRepMesh_Delaun::createTrianglesOnNewVertices`
@@ -726,6 +628,26 @@ impl Delaun {
         // swallowed by `BRepMesh_BaseMeshAlgo.cxx:52-62`.
         if self.failed {
             return;
+        }
+        if crate::debug_flags::post_dump() {
+            let ids = self.mesh_data.elements_of_domain();
+            let with_sup = ids
+                .iter()
+                .filter(|&&t| {
+                    let e = self.mesh_data.element(t);
+                    let n = self.mesh_data.element_nodes(&e);
+                    n.iter().any(|&x| self.sup_vert.contains(&x))
+                })
+                .count();
+            eprintln!(
+                "POSTDUMP PREPC face={} stage={} domain={} with_sup={} free={} nodes={}",
+                crate::debug_flags::post_face(),
+                crate::debug_flags::post_stage(),
+                ids.len(),
+                with_sup,
+                self.free_edges().len(),
+                self.mesh_data.nb_nodes()
+            );
         }
         self.process_constraints();
     }
@@ -810,19 +732,10 @@ impl Delaun {
     }
 
     pub(super) fn is_bound_to_frontier(&self, ref_node_id: i32, ref_link_id: i32) -> bool {
-        let trace = self.diag_on()
-            && std::env::var("FBPROBE").ok().and_then(|v| v.parse::<i32>().ok())
-                == Some(ref_link_id);
         let mut stack: Vec<i32> = vec![ref_link_id];
         let mut visited: BTreeSet<i32> = BTreeSet::new();
         while let Some(cur) = stack.pop() {
             let pair = self.mesh_data.elements_connected_to(cur);
-            if trace {
-                eprintln!(
-                    "FBPROBE node={ref_node_id} link={ref_link_id} pop={cur} extent={}",
-                    pair.extent()
-                );
-            }
             if pair.is_empty() {
                 return false;
             }
@@ -840,12 +753,6 @@ impl Delaun {
                     let edge = self.mesh_data.link(edge_id);
                     if edge.first_node() != ref_node_id && edge.last_node() != ref_node_id {
                         continue;
-                    }
-                    if trace {
-                        eprintln!(
-                            "FBPROBE   tri={tri_id} edge={edge_id} mov={} hit",
-                            self.mesh_data.link_movability(edge_id).to_str()
-                        );
                     }
                     if self.mesh_data.link_movability(edge_id) != VertexState::Free {
                         return true;
@@ -925,19 +832,6 @@ impl Delaun {
                 if !is_connected[0] || !is_connected[1] {
                     del_triangles.insert(tri_id);
                 }
-                if self.diag_on() {
-                    eprintln!(
-                        "CMPROBE free={} mov={} ext={} tri={} cnr={} c0={} c1={} del={}",
-                        free_edge_id,
-                        self.mesh_data.link_movability(free_edge_id).to_str(),
-                        pair.extent(),
-                        tri_id,
-                        can_not_be_removed,
-                        is_connected[0],
-                        is_connected[1],
-                        !is_connected[0] || !is_connected[1]
-                    );
-                }
             }
 
             let mut deleted_nb = 0;
@@ -958,8 +852,6 @@ impl Delaun {
             if deleted_nb == 0 {
                 break;
             }
-            self.diag_stage(&format!("cleanup_mesh_iter deleted={deleted_nb}"));
         }
-        self.diag_stage("cleanup_mesh_done");
     }
 }

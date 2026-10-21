@@ -310,7 +310,7 @@ impl DelaunayDeflectionControlMeshAlgo {
             DBG_CTRL_TOTAL.fetch_add(self.control_nodes.len(), std::sync::atomic::Ordering::Relaxed);
             // TEMP DCDBGCTRL: the control node list this pass hands to `insert`,
             // to be lined up with the OCCT probe's `OCCTCTRL P<pass> <idx> <x> <y>`.
-            if dc_dbg && std::env::var("DCDBGCTRL").is_ok() {
+            if dc_dbg && crate::debug_flags::dc_dbg_ctrl() {
                 for (i, p) in self.control_nodes.iter().enumerate() {
                     eprintln!(
                         "DCDBGCTRL P{} {} {:.17e} {:.17e}",

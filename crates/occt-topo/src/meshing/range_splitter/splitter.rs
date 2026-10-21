@@ -112,7 +112,7 @@ impl DefaultRangeSplitter {
         let mut p31 = s.d0(u0, v1);
         // TEMP T-133 (LENSDBG): sample dump for `occt_probe --lens`, so the two
         // `computeLengthU/V` replays can be diffed point by point.
-        let lens_dbg = std::env::var("LENSDBG").is_ok();
+        let lens_dbg = crate::debug_flags::lens_dbg();
         if lens_dbg {
             eprintln!(
                 "LENS U k=0 ({:.17e},{:.17e},{:.17e}) ({:.17e},{:.17e},{:.17e}) ({:.17e},{:.17e},{:.17e})",
@@ -153,7 +153,7 @@ impl DefaultRangeSplitter {
         let mut p11 = s.d0(u0, v0);
         let mut p21 = s.d0(u_ave, v0);
         let mut p31 = s.d0(u1, v0);
-        let lens_dbg = std::env::var("LENSDBG").is_ok();
+        let lens_dbg = crate::debug_flags::lens_dbg();
         if lens_dbg {
             eprintln!(
                 "LENS V k=0 ({:.17e},{:.17e},{:.17e}) ({:.17e},{:.17e},{:.17e}) ({:.17e},{:.17e},{:.17e})",
@@ -655,57 +655,6 @@ impl RangeSplitter for TorusRangeSplitter {
                     }
                 }
             }
-        }
-        // TEMP diagnostic (TORSDBG): the same fields as the probe's `ZZTORDBG`
-        // line (`specs/occt_probe/_dbg/ZZ_TorusRangeSplitter.cxx`), plus the
-        // face's 3D bbox so the two runs can be paired without relying on the
-        // face index (the port and `IMeshTools_ShapeExplorer` order faces
-        // differently).
-        if std::env::var("TORSDBG").is_ok() {
-            let bbox = self
-                .dface()
-                .map(|f| crate::brep_bnd_lib::shape_bnd_box(&f.face().0))
-                .map(|b| {
-                    let (mn, mx) = (b.corner_min(), b.corner_max());
-                    format!(
-                        "({:.6},{:.6},{:.6})-({:.6},{:.6},{:.6})",
-                        mn.x(),
-                        mn.y(),
-                        mn.z(),
-                        mx.x(),
-                        mx.y(),
-                        mx.z()
-                    )
-                })
-                .unwrap_or_else(|| "none".to_string());
-            let mut up: Vec<f64> = self.inner.u_params.iter().copied().collect();
-            let mut vp: Vec<f64> = self.inner.v_params.iter().copied().collect();
-            up.sort_by(|a, b| a.partial_cmp(b).unwrap());
-            vp.sort_by(|a, b| a.partial_cmp(b).unwrap());
-            eprintln!(
-                "TORSDBG bbox={bbox} R={R:.15} r={r:.15} defl={:.15} ang={:.15e} ru=[{:.6},{:.6}] \
-rv=[{:.6},{:.6}] diff_u={diff_u:.15} diff_v={diff_v:.15} nb_u={nb_u} nb_v={nb_v} du={du:.15} \
-dv={dv:.15} old_dv={old_dv:.15} nup={} nvp={} nu={} nv={} nodes={}",
-                deflection,
-                params.angle,
-                range_u.0,
-                range_u.1,
-                range_v.0,
-                range_v.1,
-                self.inner.u_params.len(),
-                self.inner.v_params.len(),
-                param_u.len(),
-                param_v.len(),
-                nodes.len(),
-            );
-            let list = |v: &[f64]| {
-                v.iter()
-                    .map(|x| format!("{x:.15}"))
-                    .collect::<Vec<_>>()
-                    .join(",")
-            };
-            eprintln!("TORSDBGU bbox={bbox} n={} u={}", up.len(), list(&up));
-            eprintln!("TORSDBGV bbox={bbox} n={} v={}", vp.len(), list(&vp));
         }
         Some(nodes)
     }

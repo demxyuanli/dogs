@@ -77,8 +77,6 @@ pub fn rep_ranges(s: &TopoShape) -> Vec<RepRange> {
         if ts.edge_pcurves().is_some() {
             ts.edge_pcurves_mut().ranges.for_each_mut(|_, r| *r = (first, last));
         }
-        drop(ts);
-        GeometryRegistry::global().probe_range_write(s, first, last, "same_range");
     }
 
 /// `BRepLib::CheckSameRange(E, Tolerance)` (`BRepLib.cxx:149-183`): are the

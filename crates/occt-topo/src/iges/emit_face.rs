@@ -79,30 +79,6 @@ impl IgesWriter {
         // 'cxx:359-360': the p-curve and the range of its CurveOnSurface
         // representation.
         let (curve2d, mut first, mut last) = crate::boptools_2d::curve_on_surface_range(e, f)?;
-        if let Ok(path) = std::env::var("IGES_TRACE3D") {
-            let (e3a, e3b) = BRepTool::edge_parameters(e);
-            let c3 = BRepTool::edge_curve(e);
-            let (sa, sb) = surf_base.u_range();
-            let (ta, tb) = surf_base.v_range();
-            if let Some(k) = c3.as_ref().and_then(|c| c.gp_circ()) {
-                use std::io::Write;
-                if let Ok(mut f) = std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&path)
-                {
-                    let _ = writeln!(
-                        f,
-                        "e3=({e3a:.17e},{e3b:.17e}) c3kind={:?} rad={:.17e} | uv2=({first:.17e},{last:.17e}) | u_rng=({sa:.17e},{sb:.17e}) v_rng=({ta:.17e},{tb:.17e}) up={} sph={is_sphere} rev={is_rev} loc=({:.17e},{:.17e},{:.17e}) ax=({:.17e},{:.17e},{:.17e})",
-                        crate::iges::iges_curve_kind(c3.as_ref().unwrap().as_ref()),
-                        k.radius(),
-                        surf_base.is_u_periodic(),
-                        k.position().location().x(), k.position().location().y(), k.position().location().z(),
-                        k.position().direction().x(), k.position().direction().y(), k.position().direction().z(),
-                    );
-                }
-            }
-        }
         if crate::debug_flags::iges_trace() {
             eprintln!(
                 "TRACE raw pcurve lin2d={} circ2d={} elips2d={} bsp2d={} trimmed={} nbpol={} deg={:?} rng=({first},{last}) rev={} | surf pln={} cyl={is_cyl} cone={is_cone} sph={is_sphere} tor={is_torus} rev={is_rev} extr={is_extr} bsp={is_bspline} rect={} off={} kind={:?}",
@@ -123,40 +99,6 @@ impl IgesWriter {
                 "TRACE stored pcurve={}",
                 crate::boptools_2d::curve_on_surface(e, f).is_some()
             );
-            if let Ok(pcs) = std::env::var("IGES_TRACE_PC") {
-                let fk = crate::tgeometry::GeometryRegistry::shape_key(&f.0);
-                let list = crate::tgeometry::GeometryRegistry::global().edge_pcurves(&e.0, fk);
-                let kinds: Vec<String> = list
-                    .iter()
-                    .map(|c| {
-                        format!(
-                            "lin{} circ{} elips{} bsp{} np{} trim{}",
-                            c.gp_lin2d().is_some() as u8,
-                            c.gp_circ2d().is_some() as u8,
-                            c.gp_elips2d().is_some() as u8,
-                            c.bspline_poles2d().is_some() as u8,
-                            c.bspline_poles2d().map_or(0, |(x, _)| x.len()),
-                            c.trimmed_basis().is_some() as u8
-                        )
-                    })
-                    .collect();
-                use std::io::Write;
-                if let Ok(mut fp) = std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&pcs)
-                {
-                    let _ = writeln!(
-                        fp,
-                        "PC face={:?} edge={:?} rev={} n={} [{}]",
-                        Arc::as_ptr(&f.0.tshape) as usize,
-                        Arc::as_ptr(&e.0.tshape) as usize,
-                        e.0.orientation() == crate::abs::Orientation::Reversed,
-                        list.len(),
-                        kinds.join(" ")
-                    );
-                }
-            }
         }
 
         // `BRepToIGES_BRShell.cxx:186-201`: on a REVERSED face every p-curve was

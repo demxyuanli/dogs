@@ -15,23 +15,6 @@ pub(crate) const THE_NCONTROL: usize = 23;
 /// `generateCurvePoints` count (`cxx:531-581`).
 pub(crate) fn generate_curve_point_count(curve: &dyn Curve, first: f64, last: f64) -> usize {
     let mut n = THE_NCONTROL;
-    if std::env::var("PCNT_OLD").is_ok() {
-        if curve.bspline_poles().is_some() {
-            let knots = curve.parameter_intervals(0);
-            let mut used = 0usize;
-            for w in knots.windows(2) {
-                if w[1] > first && w[0] < last {
-                    used += 1;
-                }
-            }
-            let deg = curve.nurbs_degree().unwrap_or(1);
-            let min_pnt = used * (deg + 1);
-            while n < min_pnt {
-                n += THE_NCONTROL - 1;
-            }
-        }
-        return n.max(2);
-    }
     if curve.bspline_poles().is_some() {
         if let Some(flat) = curve.bspline_knots() {
             // `cxx:541-550`: `NbKnots()` / `Knot(i)` index the *distinct* knots

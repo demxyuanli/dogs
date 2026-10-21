@@ -87,8 +87,7 @@ impl IncrementalMesh {
                             result.triangles.len()
                         );
                     }
-                    crate::meshing::node_insertion::diag_dump_result(&result, i);
-                    if std::env::var("SWEEP_FACE").is_ok() {
+                    if crate::debug_flags::sweep_face() {
                         let o = surface.d0(0.0, 0.0);
                         eprintln!(
                             "[facedbg] face={i} surf_orgin=({:.3},{:.3},{:.3}) nodes={} tris={}",

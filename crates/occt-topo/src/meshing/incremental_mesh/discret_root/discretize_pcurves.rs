@@ -292,7 +292,7 @@ impl IncrementalMesh {
             };
             // TEMP PC2D: the port's own pcurve definition for this edge, in the
             // same shape as the OCCT probe's `OCCTPC2D` line.
-            if std::env::var("PC2D").is_ok() {
+            if crate::debug_flags::pc2d() {
                 let mid = 0.5 * (pf + pl);
                 let a0 = pc.d0(pf);
                 let am = pc.d0(mid);
@@ -313,7 +313,7 @@ impl IncrementalMesh {
             // TEMP T-191 PCDEF: the port's own 2-D curve definition, in the same
             // format as the OCCT probe's `--pcdef` dump, so the two can be diffed
             // pole by pole.
-            if std::env::var("PCDEF").is_ok() {
+            if crate::debug_flags::pc_def() {
                 eprintln!(
                     "PCDEF f={pc_face} e={edge_index} pc={pcurve_index} edge={:p} type={} pf={:.17e} pl={:.17e}",
                     std::sync::Arc::as_ptr(&topo_edge.0.tshape),
@@ -339,8 +339,6 @@ impl IncrementalMesh {
                         let p = pc.d0(u);
                         s.push_str(&format!(" [{k}]{:.17e},{:.17e}", p.x(), p.y()));
                     }
-                    let q = pc.d0(-0.19481982426506805);
-                    s.push_str(&format!(" [t]{:.17e},{:.17e}", q.x(), q.y()));
                     eprintln!("PCDEF  val{s}");
                 }
                 if let Some(b) = pc.bspline_copy2d() {
@@ -379,7 +377,7 @@ impl IncrementalMesh {
                 }
             }
             // TEMP EINFO: edge/pcurve provenance for the determinism hunt.
-            if let Ok(spec) = std::env::var("EINFO") {
+            if let Some(spec) = crate::debug_flags::value("EINFO") {
                 let wanted: Vec<usize> = spec
                     .split(',')
                     .filter_map(|s| s.trim().parse::<usize>().ok())
@@ -445,7 +443,7 @@ impl IncrementalMesh {
             }
             // TEMP PCW: full precision pcurve point dump, to be lined up with
             // the OCCT probe's `OCCTEPC w= e= pcId= k= u= v= t=` entries.
-            if std::env::var("PCW").is_ok() {
+            if crate::debug_flags::pcw() {
                 let n_pc = pcurve.parameters_nb();
                 for k in 0..n_pc {
                     let p = pcurve.point(k)?;
@@ -458,7 +456,7 @@ impl IncrementalMesh {
                 }
             }
         }
-        if let Ok(spec) = std::env::var("EPROBE") {
+        if let Some(spec) = crate::debug_flags::value("EPROBE") {
             let parts: Vec<f64> =
                 spec.split(',').filter_map(|s| s.trim().parse().ok()).collect();
             if parts.len() == 4 {

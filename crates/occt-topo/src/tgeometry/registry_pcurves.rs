@@ -26,7 +26,7 @@ impl GeometryRegistry {
     /// Attach a pcurve to edge `s` for the face identified by `face_key`.
     /// Mirrors `BRep_Builder::UpdateEdge(edge, curve2d, face, tol)`.
     pub fn set_edge_pcurve(&self, s: &TopoShape, face_key: usize, curve: Arc<dyn Curve2d>) {
-        if std::env::var("PCSET").is_ok() {
+        if crate::debug_flags::pc_set() {
             let info = curve
                 .bspline_copy2d()
                 .map(|b| format!("bs np={} nk={}", b.xs.len(), b.knots.len()))
@@ -38,24 +38,6 @@ impl GeometryRegistry {
                 curve.last_parameter()
             );
         }
-        if std::env::var("PCBTRACE").is_ok()
-            && curve.bspline_copy2d().map(|b| b.xs.len()) == Some(25)
-            && curve.first_parameter() < -0.2
-        {
-            let bt = std::backtrace::Backtrace::force_capture();
-            let text = format!("{bt}");
-            let mut names: Vec<String> = Vec::new();
-            for line in text.lines() {
-                if let Some(pos) = line.find("occt_topo::") {
-                    let f = line[pos..].trim().to_string();
-                    names.push(f);
-                    if names.len() >= 8 {
-                        break;
-                    }
-                }
-            }
-            eprintln!("PCBTRACE edge={:p} {}", Arc::as_ptr(&s.tshape), names.join(" <- "));
-        }
         let (first, last) = self.edge_parameters(s);
         let key = self.repr_key(face_key);
         s.tshape.write().unwrap().edge_pcurves_mut().set_pcurve(key, curve, first, last);
@@ -64,7 +46,7 @@ impl GeometryRegistry {
     /// Replace the pcurves of edge `s` on the face identified by `face_key`.
     /// Mirrors the seam overload `BRep_Builder::UpdateEdge(edge, c1, c2, face)`.
     pub fn set_edge_pcurves(&self, s: &TopoShape, face_key: usize, curves: Vec<Arc<dyn Curve2d>>) {
-        if std::env::var("PCSET").is_ok() {
+        if crate::debug_flags::pc_set() {
             for c in &curves {
                 let info = c
                     .bspline_copy2d()
@@ -78,7 +60,7 @@ impl GeometryRegistry {
                 );
             }
         }
-        if std::env::var("PCS2DBG").is_ok() && curves.len() >= 2 {
+        if crate::debug_flags::pc_s2d() && curves.len() >= 2 {
             let (e0, e1) = self.edge_parameters(s);
             let mut line = format!("PCS2 edge={:p} face={face_key} n={}", Arc::as_ptr(&s.tshape), curves.len());
             for (q, c) in curves.iter().enumerate() {
@@ -109,104 +91,6 @@ impl GeometryRegistry {
                 }
             }
             eprintln!("{line} {}", names.join(" <- "));
-        }
-        if std::env::var("PCBTRACE2").is_ok() {
-            let hit = curves.iter().any(|c| {
-                c.bspline_copy2d().map(|b| b.xs.len()) == Some(25)
-                    && (c.first_parameter() - 1.1414320265529101).abs() < 1e-12
-            });
-            if hit {
-                let bt = std::backtrace::Backtrace::force_capture();
-                let text = format!("{bt}");
-                let mut names: Vec<String> = Vec::new();
-                for line in text.lines() {
-                    if let Some(pos) = line.find("occt_topo::") {
-                        names.push(line[pos..].trim().to_string());
-                        if names.len() >= 12 {
-                            break;
-                        }
-                    }
-                }
-                for (q, c) in curves.iter().enumerate() {
-                    let (f, l) = (c.first_parameter(), c.last_parameter());
-                    match c.bspline_copy2d() {
-                        Some(bs) => {
-                            let ys: Vec<String> =
-                                bs.ys.iter().map(|y| format!("{y:.17e}")).collect();
-                            let xs: Vec<String> =
-                                bs.xs.iter().take(3).map(|x| format!("{x:.17e}")).collect();
-                            eprintln!(
-                                "PCB2 edge={:p} face={face_key} q={q} f={f:.17e} l={l:.17e} \
-deg={} np={} nk={} x[:3]=[{}] y=[{}] {}",
-                                Arc::as_ptr(&s.tshape),
-                                bs.degree(),
-                                bs.xs.len(),
-                                bs.knots.len(),
-                                xs.join(","),
-                                ys.join(","),
-                                names.join(" <- ")
-                            );
-                        }
-                        None => eprintln!(
-                            "PCB2 edge={:p} face={face_key} q={q} f={f:.17e} l={l:.17e} nobs {}",
-                            Arc::as_ptr(&s.tshape),
-                            names.join(" <- ")
-                        ),
-                    }
-                }
-            }
-        }
-        if std::env::var("PCBTRACE").is_ok() {
-            for c in &curves {
-                if c.bspline_copy2d().map(|b| b.xs.len()) == Some(25)
-                    && (c.first_parameter() - 1.1414320265529101).abs() < 1e-12
-                {
-                    let bt = std::backtrace::Backtrace::force_capture();
-                    let text = format!("{bt}");
-                    let mut names: Vec<String> = Vec::new();
-                    for line in text.lines() {
-                        if let Some(pos) = line.find("occt_topo::") {
-                            names.push(line[pos..].trim().to_string());
-                            if names.len() >= 10 {
-                                break;
-                            }
-                        }
-                    }
-                    let mut info = String::new();
-                    for c in &curves {
-                        let (f, l) = (c.first_parameter(), c.last_parameter());
-                        let a = c.d0(f);
-                        let m = c.d0(0.5 * (f + l));
-                        let b = c.d0(l);
-                        let poles = c
-                            .bspline_copy2d()
-                            .map(|bs| {
-                                let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
-                                for y in &bs.ys {
-                                    lo = lo.min(*y);
-                                    hi = hi.max(*y);
-                                }
-                                let head: Vec<String> =
-                                    bs.ys.iter().take(4).map(|y| format!("{y:.17e}")).collect();
-                                format!(" pymin={lo:.17e} pymax={hi:.17e} py=[{}]", head.join(","))
-                            })
-                            .unwrap_or_default();
-                        info.push_str(&format!(
-                            " [f={f:.17e} y0={:.17e} ym={:.17e} y1={:.17e} x0={:.17e}{poles}]",
-                            a.y(),
-                            m.y(),
-                            b.y(),
-                            a.x()
-                        ));
-                    }
-                    eprintln!(
-                        "PBTRACE edge={:p} n={} face={face_key}{info} {}",
-                        Arc::as_ptr(&s.tshape),
-                        curves.len(),
-                        names.join(" <- ")
-                    );
-                }
-            }
         }
         let (first, last) = self.edge_parameters(s);
         let key = self.repr_key(face_key);

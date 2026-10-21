@@ -62,68 +62,6 @@ impl DelaunayNodeInsertionMeshAlgo {
         }
         self.boundary_uv = uv.clone();
 
-        // TEMP diagnostic (TORSBD=<x1>,<y1>,<z1>,<x2>,<y2>,<z2>): per-wire-edge
-        // pcurve point arrays of the matching face, so they can be diffed against
-        // `occt_probe --healerdbg` (the same six bbox coordinates).
-        if let Ok(spec) = std::env::var("TORSBD") {
-            let t: Vec<f64> = spec
-                .split(',')
-                .filter_map(|s| s.trim().parse::<f64>().ok())
-                .collect();
-            if t.len() == 6 {
-                let bb = crate::brep_bnd_lib::shape_bnd_box(&model.face(face_index)?.face().0);
-                let (mn, mx) = (bb.corner_min(), bb.corner_max());
-                {
-                    let hit = (mn.x() - t[0]).abs() < 1e-6
-                        && (mn.y() - t[1]).abs() < 1e-6
-                        && (mn.z() - t[2]).abs() < 1e-6
-                        && (mx.x() - t[3]).abs() < 1e-6
-                        && (mx.y() - t[4]).abs() < 1e-6
-                        && (mx.z() - t[5]).abs() < 1e-6;
-                    if hit {                        let face = model.face(face_index)?;
-                        for (wi, &wire_index) in face.wires().iter().enumerate() {
-                            let wire = model.wire(wire_index)?;
-                            for j in 0..wire.edges_nb() {
-                                let edge_index = wire.edge(j)?;
-                                let orientation = wire.edge_orientation(j)?;
-                                let rev = wire.edge_reverse_walk(j);
-                                let edge = model.edge(edge_index)?;
-                                let Some(pc) = edge.pcurve_for(face_index, orientation) else {
-                                    eprintln!("TORSBD face={face_index} w={wi} e={j} pc=none");
-                                    continue;
-                                };
-                                let pts = pc.points();
-                                let n = pts.len();
-                                let f = pts.first().copied().unwrap_or(GpPnt2d::new(0.0, 0.0));
-                                let l = pts.last().copied().unwrap_or(GpPnt2d::new(0.0, 0.0));
-                                eprintln!(
-                                    "TORSBD face={face_index} w={wi} e={j} nb={n} fwd={} rev={rev} \
-same_param={} same_range={} free={} degen={} defl={:.15} ang={:.15} \
-first=({:.15},{:.15}) last=({:.15},{:.15})",
-                                    pc.is_forward() as u8,
-                                    edge.same_param() as u8,
-                                    edge.same_range() as u8,
-                                    edge.is_free() as u8,
-                                    edge.is_degenerated() as u8,
-                                    edge.deflection(),
-                                    edge.angular_deflection(),
-                                    f.x(),
-                                    f.y(),
-                                    l.x(),
-                                    l.y()
-                                );
-                                let mut s = format!("TORSBDV face={face_index} w={wi} e={j} v=");
-                                for p in pts {
-                                    s += &format!("{:.15},", p.y());
-                                }
-                                eprintln!("{s}");
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
         // `BRepMesh_NodeInsertionMeshAlgo::initDataStructure` (`hxx:47-112`):
         // Reset the splitter, feed the discrete wire points (`collectWirePoints`
         // calls `myRangeSplitter.AddPoint` per pcurve sample, `hxx:179`),
@@ -210,43 +148,6 @@ first=({:.15},{:.15}) last=({:.15},{:.15})",
             }
         }
         self.init_data_structure(model, face_index)?;
-        self.diag_dump_structure(face_index);
-        if let Ok(spec) = std::env::var("DPROBE") {
-            if spec.trim().parse::<i32>().ok() == Some(face_index as i32) {
-                let nb = self.structure.nb_nodes() as i32;
-                let (mut nfree, mut nfront, mut nfixed) = (0usize, 0usize, 0usize);
-                for i in 1..=nb {
-                    match self.structure.node(i).state {
-                        VertexState::Free => nfree += 1,
-                        VertexState::Frontier => nfront += 1,
-                        VertexState::Fixed => nfixed += 1,
-                        _ => {}
-                    }
-                }
-                eprintln!(
-                    "DPROBE face={face_index} nb_nodes={nb} nb_links={} uv={} free={nfree} frontier={nfront} fixed={nfixed}",
-                    self.structure.nb_links(),
-                    uv.len()
-                );
-                for i in 1..=nb {
-                    let n = self.structure.node(i);
-                    let p3d = self
-                        .nodes_map
-                        .get(i as usize - 1)
-                        .copied()
-                        .unwrap_or_else(GpPnt::zero);
-                    eprintln!(
-                        "DPROBE n i={i} st={} uv=({:.6},{:.6}) p=({:.6},{:.6},{:.6})",
-                        n.state.to_str(),
-                        n.location.x(),
-                        n.location.y(),
-                        p3d.x(),
-                        p3d.y(),
-                        p3d.z()
-                    );
-                }
-            }
-        }
 
         // Internal (in-face) 3D points -> UV via the face surface, dropped when
         // outside the face (`insertInternalVertex` classifier check).
@@ -288,30 +189,6 @@ first=({:.15},{:.15}) last=({:.15},{:.15})",
         }
         let insert = self.list_surface_nodes(model, face_index, params)?;
         let result = self.finish_mesh(&insert, params, face_deflection, face_index);
-        if std::env::var("DPROBE").ok().and_then(|v| v.trim().parse::<i32>().ok())
-            == Some(face_index as i32)
-        {
-            if let Ok(res) = &result {
-                eprintln!(
-                    "DPROBE result face={face_index} nodes={} tris={} insert={}",
-                    res.nodes.len(),
-                    res.triangles.len(),
-                    insert.len()
-                );
-                for (i, n) in res.nodes.iter().enumerate() {
-                    eprintln!(
-                        "DPROBE r i={} st={} uv=({:.6},{:.6}) p=({:.6},{:.6},{:.6})",
-                        i + 1,
-                        n.state.to_str(),
-                        n.location.x(),
-                        n.location.y(),
-                        n.p3d.x(),
-                        n.p3d.y(),
-                        n.p3d.z()
-                    );
-                }
-            }
-        }
         if let Some(d) = self.optimized_face_deflection.take() {
             model
                 .face_mut(face_index)
@@ -376,7 +253,7 @@ first=({:.15},{:.15}) last=({:.15},{:.15})",
                 if n == 0 {
                     continue;
                 }
-                if std::env::var("BPUV").is_ok() {
+                if crate::debug_flags::bpuv() {
                     let (mut minv, mut maxv) = (f64::INFINITY, f64::NEG_INFINITY);
                     let (mut minu, mut maxu) = (f64::INFINITY, f64::NEG_INFINITY);
                     for p in pts {

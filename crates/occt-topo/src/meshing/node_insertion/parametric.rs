@@ -92,6 +92,9 @@ impl ParametricDelaun<'_> {
         }
         // `hxx:125`: `AddVertices` is called even when every node was
         // classified out, so `ProcessConstraints()` still runs.
+        if crate::debug_flags::post_dump() {
+            crate::debug_flags::set_post_stage(2);
+        }
         self.delaun.add_vertices(&mut idxs);
         // `hxx:130`: only the RETURN VALUE reflects the classifier's output.
         !idxs.is_empty()

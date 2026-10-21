@@ -58,27 +58,21 @@ impl DelaunayNodeInsertionMeshAlgo {
             .filter(|&i| structure.node(i).state != VertexState::Deleted)
             .collect();
         let (cells_u, cells_v) = self.cells_count(indices.len() as i32);
-        // TEMPORARY diagnostic (DELAUNDUMP): writes the exact pre-triangulation
-        // structure (nodes, links, insertion order) of the `DELSTAGE` face so
-        // `occt_probe --delaunstruct` can run OCCT's own `BRepMesh_Delaun` over
-        // the identical input.
-        if let Ok(dir) = std::env::var("DELAUNDUMP") {
-            let tagged = std::env::var("DELSTAGE")
-                .ok()
-                .and_then(|v| v.parse::<i32>().ok())
-                == Some(_face_index as i32);
-            if tagged {
-                let free_xy: Vec<(f64, f64)> = insert
-                    .iter()
-                    .map(|(uv, _p3d)| {
-                        let c = self.scale_to_face(*uv);
-                        (c.x(), c.y())
-                    })
-                    .collect();
-                Self::dump_delaun_structure(&structure, &dir, _face_index, cells_u, cells_v, &indices, &free_xy);
-            }
+        if crate::debug_flags::post_dump() {
+            crate::debug_flags::set_post_stage(1);
+            crate::debug_flags::set_post_face(_face_index);
+            let (tu, tv) = structure.tolerance();
+            eprintln!(
+                "POSTDUMP face={} struct_nodes={} indices={} tol=({:.17e},{:.17e}) sq={:.17e}",
+                _face_index,
+                structure.nb_nodes(),
+                indices.len(),
+                tu,
+                tv,
+                tu * tu + tv * tv
+            );
         }
-        let mut delaun = Delaun::new_with_data_cells_diag(structure, &mut indices, cells_u, cells_v, _face_index as i32);
+        let mut delaun = Delaun::new_with_data_cells(structure, &mut indices, cells_u, cells_v);
         // `BRepMesh_Delaun::addTriangle` overflowed a link's triangle pair:
         // OCCT's `Standard_OutOfRange` (`BRepMesh_PairOfIndex.hxx:41`) unwinds out
         // of `generateMesh`, `BRepMesh_BaseMeshAlgo::Perform` swallows it
@@ -107,6 +101,25 @@ impl DelaunayNodeInsertionMeshAlgo {
         let _bnd_nodes = delaun.result().nb_nodes();
         let _bnd_tris = delaun.result().elements_of_domain().len();
 
+        // TEMP PREDCDUMP: the boundary-only base mesh, the state the probe dumps
+        // as `OCCTDC POST_BASE` (`structdump_probe.cpp:235`). Same node ids as
+        // OCCT only for the boundary nodes; the super-triangle nodes are still
+        // registered at that point in OCCT and already gone here.
+        if crate::debug_flags::pre_dc_dump() {
+            let ds = delaun.result();
+            eprintln!(
+                "PREDCDUMP BASE f={} nodes={} domain={}",
+                _face_index,
+                ds.nb_nodes(),
+                ds.elements_of_domain().len()
+            );
+            for &tid in ds.elements_of_domain() {
+                let e = ds.element(tid);
+                let n = ds.element_nodes(&e);
+                eprintln!("PREDCDUMP BASE T {} {} {} {}", tid, n[0], n[1], n[2]);
+            }
+        }
+
         if !insert.is_empty() {
             let mut idxs: Vec<i32> = Vec::with_capacity(insert.len());
             for &(uv, p3d) in insert {
@@ -117,63 +130,36 @@ impl DelaunayNodeInsertionMeshAlgo {
                 }
                 idxs.push(idx);
             }
-            // TEMPORARY diagnostic (DELAUNDUMP_GRID): two-phase replay dump of
-            // the state right before `AddVertices` (base mesh + registered
-            // surface nodes), so `occt_probe --delaunstruct` can replay OCCT's
-            // own `BRepMesh_Delaun` over the identical structure and order.
-            let grid_dump_dir = std::env::var("DELAUNDUMP_GRID").ok().filter(|_| {
-                std::env::var("DELSTAGE").ok().and_then(|v| v.parse::<i32>().ok())
-                    == Some(_face_index as i32)
-            });
-            if let Some(dir) = grid_dump_dir.as_deref() {
-                Self::dump_delaun_grid(
-                    delaun.result(),
-                    dir,
-                    _face_index,
-                    cells_u,
-                    cells_v,
-                    &indices,
-                    &idxs,
+            delaun.add_vertices(&mut idxs);
+        }
+
+        // TEMP PREDCDUMP: the state the deflection control starts from, i.e. the
+        // probe's `OCCTDC POST_INSERT` stage (`structdump_probe.cpp` `dumpState`):
+        // node 2D coordinates plus the domain triangles by structure index. The
+        // port-side dump T-195 deleted only carried the input structure; this one
+        // carries the triangulation, so the base mesh can be diffed triangle by
+        // triangle before the control passes diverge.
+        if crate::debug_flags::pre_dc_dump() {
+            let ds = delaun.result();
+            eprintln!(
+                "PREDCDUMP f={} nodes={} domain={}",
+                _face_index,
+                ds.nb_nodes(),
+                ds.elements_of_domain().len()
+            );
+            for i in 1..=ds.nb_nodes() as i32 {
+                let v = ds.node(i);
+                eprintln!(
+                    "PREDCDUMP N {} {:.17e} {:.17e}",
+                    i,
+                    v.location.x(),
+                    v.location.y()
                 );
             }
-            if let Some(dir) = grid_dump_dir.as_deref() {
-                Self::dump_domain_triangles(delaun.result(), dir, _face_index, "base");
-            }
-            // TEMPORARY diagnostic (DELONESTEP): instead of one batched
-            // `AddVertices`, feed the surface nodes one at a time (the OCCT
-            // `AddVertices(single)` call) and dump the domain triangle set after
-            // every step, so `occt_probe --delaunsteps` can be diffed step by
-            // step and the first divergent insertion identified.
-            //
-            // The batched path heap sorts first (`AddVertices`, `cxx:2415-2417`),
-            // so the step dump applies the same sort: otherwise the steps walk an
-            // order neither OCCT run uses. `DELONESTEP_RAW` keeps the raw
-            // registration order.
-            if let Ok(dir) = std::env::var("DELONESTEP") {
-                let mut order: Vec<i32> = idxs.clone();
-                if std::env::var("DELONESTEP_RAW").is_err() {
-                    let ds = delaun.result();
-                    crate::meshing::delaun::heap_sort_by_xy_sum(&mut order, |i| {
-                        let p = ds.node(*i).location;
-                        (p.x(), p.y())
-                    });
-                }
-                let mut out = String::new();
-                for (k, &idx) in order.iter().enumerate() {
-                    let mut one = vec![idx];
-                    delaun.add_vertices(&mut one);
-                    Self::append_step_triangles(&mut out, k, delaun.result());
-                }
-                let path = std::path::Path::new(&dir)
-                    .join(format!("delaun_steps_port_f{_face_index}.txt"));
-                if std::fs::write(&path, out).is_err() {
-                    eprintln!("DELONESTEP: cannot write {}", path.display());
-                }
-            } else {
-                delaun.add_vertices(&mut idxs);
-            }
-            if let Some(dir) = grid_dump_dir.as_deref() {
-                Self::dump_domain_triangles(delaun.result(), dir, _face_index, "grid");
+            for &tid in ds.elements_of_domain() {
+                let e = ds.element(tid);
+                let n = ds.element_nodes(&e);
+                eprintln!("PREDCDUMP T {} {} {} {}", tid, n[0], n[1], n[2]);
             }
         }
 
@@ -212,42 +198,6 @@ impl DelaunayNodeInsertionMeshAlgo {
                             insert.len(),
                         );
                     }
-                    // TEMP STRUCTDUMP: full pre-DC node/element dump, so it can
-                    // be diffed entry by entry against the OCCT probe's
-                    // `OCCTDC PRE` / `OCCTDCN PRE` / `OCCTEL PRE` lines.
-                    if std::env::var("PORTDUMP").ok().filter(|_| {
-                        std::env::var("DELSTAGE").ok().and_then(|v| v.parse::<i32>().ok())
-                            == Some(_face_index as i32)
-                    }).is_some() {
-                        let ds = delaun.result();
-                        eprintln!(
-                            "PORTDC PRE f={} struct_nodes={} nodes={} domain={}",
-                            _face_index,
-                            ds.nb_nodes(),
-                            ds.nb_nodes(),
-                            ds.elements_of_domain().len()
-                        );
-                        for tid in ds.elements_of_domain() {
-                            let e = ds.element(*tid);
-                            let n = ds.element_nodes(&e);
-                            eprintln!("PORTT PRE T {} {} {} {}", tid, n[0], n[1], n[2]);
-                        }
-                        for i in 1..=ds.nb_nodes() as i32 {
-                            let v = ds.node(i);
-                            eprintln!(
-                                "PORTN PRE {} {:.17e} {:.17e} {}",
-                                i,
-                                v.location.x(),
-                                v.location.y(),
-                                v.state.index()
-                            );
-                        }
-                        for i in 1..=ds.nb_elements() as i32 {
-                            let e = ds.element(i);
-                            let n = ds.element_nodes(&e);
-                            eprintln!("PORTEL PRE E {} {} {} {} {}", i, n[0], n[1], n[2], 0 as i32);
-                        }
-                    }
                     self.optimize_mesh(&mut delaun, surf.as_ref(), params, face_deflection, _face_index);
                     if crate::debug_flags::dc_dbg() {
                         eprintln!(
@@ -260,7 +210,7 @@ impl DelaunayNodeInsertionMeshAlgo {
             }
         }
 
-        self.collect_triangles(delaun)
+        self.collect_triangles(delaun, _face_index)
     }
 
     /// `BRepMesh_DelaunayDeflectionControlMeshAlgo::optimizeMesh` + `insertNodes`.
@@ -272,28 +222,53 @@ impl DelaunayNodeInsertionMeshAlgo {
         face_deflection: f64,
         face_index: usize,
     ) {
+        if crate::debug_flags::post_dump() {
+            crate::debug_flags::set_post_face(face_index);
+        }
         let (ru, rv, delta) = match self.splitter.as_ref() {
             Some(sp) => (sp.range_u(), sp.range_v(), sp.delta()),
             None => return,
         };
         let mut ctrl = DelaunayDeflectionControlMeshAlgo::new(params);
         let mut view = ParametricDelaun { delaun, ru, rv, delta };
-        // TEMPORARY diagnostic (DELAUNDUMP_GRID): per-pass domain triangles, to
-        // line up each `optimizeMesh` pass against the probe's `OCCTDCPASS`.
-        let dump_dir = std::env::var("DELAUNDUMP_GRID").ok().filter(|_| {
-            std::env::var("DELSTAGE").ok().and_then(|v| v.parse::<i32>().ok())
-                == Some(face_index as i32)
-        });
         let mut pass_no = 0usize;
-        let ctrl_dump = std::env::var("CTRLDUMP").ok().filter(|_| {
-            std::env::var("DELSTAGE").ok().and_then(|v| v.parse::<i32>().ok())
-                == Some(face_index as i32)
-        });
         let max_defl = ctrl.post_process(&mut view, surface, face_deflection, &mut |mesh, nodes| {
             pass_no += 1;
             let pre_nodes = mesh.delaun.result().nb_nodes();
             let pre_dom = mesh.delaun.result().elements_of_domain().len();
             let inserted = mesh.insert_parametric(self, surface, nodes);
+            // TEMP POSTDUMP: per-pass triangle set, the counterpart of the probe's
+            // `OCCTDC P<n>` (`structdump_probe.cpp:369-373`, dumped right after
+            // `insertNodes`). `POSTFACE` narrows it to one face index.
+            if crate::debug_flags::post_dump()
+                && crate::debug_flags::value("POSTFACE")
+                    .and_then(|v| v.parse::<usize>().ok())
+                    .map_or(true, |f| f == face_index)
+            {
+                let ds = mesh.delaun.result();
+                eprintln!(
+                    "POSTDUMP P{} face={} nodes={} domain={}",
+                    pass_no,
+                    face_index,
+                    ds.nb_nodes(),
+                    ds.elements_of_domain().len()
+                );
+                for &tid in ds.elements_of_domain() {
+                    let e = ds.element(tid);
+                    let n = ds.element_nodes(&e);
+                    eprintln!("POSTDUMP P{} T {} {} {} {}", pass_no, tid, n[0], n[1], n[2]);
+                }
+                for id in 1..=ds.nb_nodes() as i32 {
+                    let p = ds.node(id).location.coord;
+                    eprintln!(
+                        "POSTDUMP P{} N {} {:.17e} {:.17e}",
+                        pass_no,
+                        id,
+                        p.x(),
+                        p.y()
+                    );
+                }
+            }
             if crate::debug_flags::dc_dbg() {
                 eprintln!(
                     "DCDBG insert f={face_index} pass={pass_no} ctrl={} pre_nodes={} pre_dom={} post_nodes={} post_dom={} inserted={}",
@@ -303,28 +278,6 @@ impl DelaunayNodeInsertionMeshAlgo {
                     mesh.delaun.result().nb_nodes(),
                     mesh.delaun.result().elements_of_domain().len(),
                     inserted
-                );
-            }
-            // TEMPORARY diagnostic (CTRLDUMP): the control node list this pass
-            // hands to `insertNodes`, in face-basis coordinates.
-            if let Some(dir) = ctrl_dump.as_deref() {
-                use std::fmt::Write as _;
-                let mut out = String::new();
-                for n in nodes {
-                    let _ = writeln!(out, "{:.17e} {:.17e}", n.x(), n.y());
-                }
-                let path = std::path::Path::new(dir)
-                    .join(format!("ctrl_pass{pass_no}_f{face_index}.txt"));
-                if std::fs::write(&path, out).is_err() {
-                    eprintln!("CTRLDUMP: cannot write {}", path.display());
-                }
-            }
-            if let Some(dir) = dump_dir.as_deref() {
-                Self::dump_domain_state(
-                    mesh.delaun.result(),
-                    dir,
-                    face_index,
-                    &format!("pass{pass_no}"),
                 );
             }
             inserted
@@ -362,7 +315,11 @@ impl DelaunayNodeInsertionMeshAlgo {
     /// Frontier/Fixed are pre-bound to their structure index; Free enter only
     /// when a domain triangle references them (`ElementNodes` from links, not
     /// unused Free and not cached `vertex_indices`).
-    pub(super) fn collect_triangles(&mut self, delaun: Delaun) -> Result<TriangulationResult, String> {
+    pub(super) fn collect_triangles(
+        &mut self,
+        delaun: Delaun,
+        face_index: usize,
+    ) -> Result<TriangulationResult, String> {
         let ds = delaun.result();
         let mut used = self.used_nodes.clone();
         let mut triangles: Vec<DelaunTriangle> = Vec::new();
@@ -406,6 +363,14 @@ impl DelaunayNodeInsertionMeshAlgo {
         self.used_nodes = used;
 
         let result = TriangulationResult { triangles, nodes };
+        if crate::debug_flags::post_dump() {
+            eprintln!(
+                "POSTDUMP face={} nodes={} tris={}",
+                face_index,
+                result.nodes.len(),
+                result.triangles.len()
+            );
+        }
         self.last_result = Some(result.clone());
         Ok(result)
     }

@@ -472,7 +472,7 @@ pub(super) fn cone_from_surface_nappe(s: &dyn Surface, sign: f64) -> Option<Cone
     if nrm.iter().any(|n| n.xyz().square_modulus() < 1e-30) {
         return None;
     }
-    if std::env::var("CONE_DBG").is_ok() {
+    if crate::debug_flags::cone_dbg() {
         eprintln!("[cone] nrm[0..6]={:?}", &nrm[..6.min(nrm.len())]);
     }
     // The cone axis: the direction perpendicular to every normal difference
@@ -489,7 +489,7 @@ pub(super) fn cone_from_surface_nappe(s: &dyn Surface, sign: f64) -> Option<Cone
             }
         }
     }
-    if std::env::var("CONE_DBG").is_ok() {
+    if crate::debug_flags::cone_dbg() {
         eprintln!("[cone] diff1={diff1:?}");
     }
     let mut diff2: Option<GpVec> = None;
@@ -508,7 +508,7 @@ pub(super) fn cone_from_surface_nappe(s: &dyn Surface, sign: f64) -> Option<Cone
         (Some(a), Some(b)) => a.crossed(&b).normalized(),
         _ => return None,
     };
-    if std::env::var("CONE_DBG").is_ok() {
+    if crate::debug_flags::cone_dbg() {
         eprintln!("[cone] axis(raw)={axis:?}");
     }
     // Apex: the common intersection of the tangent planes n_i·(A − P_i) = 0.
@@ -535,7 +535,7 @@ pub(super) fn cone_from_surface_nappe(s: &dyn Surface, sign: f64) -> Option<Cone
     let apex_xyz = match solve3x3(&mm, &rhs) {
         Some(a) => a,
         None => {
-            if std::env::var("CONE_DBG").is_ok() {
+            if crate::debug_flags::cone_dbg() {
                 eprintln!("[cone] apex solve failed");
             }
             return None;
@@ -551,7 +551,7 @@ pub(super) fn cone_from_surface_nappe(s: &dyn Surface, sign: f64) -> Option<Cone
     if h_sum < 0.0 {
         axis = axis.multiplied_scalar(-1.0);
     }
-    if std::env::var("CONE_DBG").is_ok() {
+    if crate::debug_flags::cone_dbg() {
         eprintln!("[cone] apex={apex:?} axis={axis:?} h_sum={h_sum}");
     }
     // Semi-angle: |n·axis| = sin(α) for a cone (the normal leans toward the
@@ -562,7 +562,7 @@ pub(super) fn cone_from_surface_nappe(s: &dyn Surface, sign: f64) -> Option<Cone
     }
     let s_avg = s_sum / nrm.len() as f64;
     if s_avg < 1e-3 || s_avg > 1.0 - 1e-6 {
-        if std::env::var("CONE_DBG").is_ok() {
+        if crate::debug_flags::cone_dbg() {
             eprintln!("[cone] bad s_avg {s_avg}");
         }
         return None;
@@ -573,14 +573,14 @@ pub(super) fn cone_from_surface_nappe(s: &dyn Surface, sign: f64) -> Option<Cone
     for (p, n) in pts.iter().zip(nrm.iter()) {
         let plane_res = n.dot(&GpVec::from_pnts(p, &apex)).abs();
         if plane_res > 1e-3 {
-            if std::env::var("CONE_DBG").is_ok() {
+            if crate::debug_flags::cone_dbg() {
                 eprintln!("[cone] plane_res {plane_res} > 1e-3");
             }
             return None;
         }
         let h = GpVec::from_pnts(&apex, p).dot(&axis);
         if h < -1e-6 {
-            if std::env::var("CONE_DBG").is_ok() {
+            if crate::debug_flags::cone_dbg() {
                 eprintln!("[cone] mixed nappes h={h}");
             }
             return None; // mixed nappes
@@ -590,7 +590,7 @@ pub(super) fn cone_from_surface_nappe(s: &dyn Surface, sign: f64) -> Option<Cone
             .subtracted(&axis.multiplied_scalar(h))
             .magnitude();
         if (radial - expect).abs() > 1e-2 * expect.max(1.0) {
-            if std::env::var("CONE_DBG").is_ok() {
+            if crate::debug_flags::cone_dbg() {
                 eprintln!("[cone] radius mismatch radial={radial} expect={expect}");
             }
             return None;

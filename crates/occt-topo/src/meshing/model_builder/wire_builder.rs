@@ -136,7 +136,7 @@ fn add_wire(
     // TEMPORARY diagnostic (DELREGSKEL): the `ShapeExtend_WireData` list fed to
     // `ShapeAnalysis_WireOrder::Perform` and the `Ordered(i)` chain it returns, in
     // the `occt_probe --orderdbg` `ODBG` line format.
-    if std::env::var("DELREGSKEL").is_ok() {
+    if crate::debug_flags::del_reg_skel() {
         {
             let raw = work.0.tshape.read().expect("lock").children.clone();
             let rawlist = raw

@@ -195,7 +195,7 @@ pub(in crate::meshing::range_splitter) fn undefined_interval(
     };
     let geom_range = if is_u { surf.u_range() } else { surf.v_range() };
     let iv = adaptor_surface_intervals(surf.as_ref(), is_u, continuity, geom_range);
-    if std::env::var("NURBSGRID").is_ok() {
+    if crate::debug_flags::nurbs_grid() {
         eprint!("NURBSGRID iv is_u={is_u} geom=[{:.17e},{:.17e}] n={} vals=", geom_range.0, geom_range.1, iv.len());
         for (i, &v) in iv.iter().enumerate() {
             if i > 0 {
