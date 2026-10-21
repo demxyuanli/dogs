@@ -115,7 +115,9 @@ int runOrderDbg(const TopoDS_Shape& theShape, const double* theBBox)
 }
 
 // --- TEMP T-103 (`--wiredbg <defl> <angle> <x1> <y1> <z1> <x2> <y2> <z2>`) ------------
-// Ground truth for the port's `CWDBG`/`CBWIN`. Replays the real `IMeshTools_MeshBuilder`
+// Ground truth for the port's wire discretization dumps (its `CWDBG`/`CBWIN` writers
+// were removed by T-195; the comparison now runs against archived output).
+// Replays the real `IMeshTools_MeshBuilder`
 // prefix (`BuildModel` -> `DiscretizeEdges` -> `HealModel`) and dumps, for every wire
 // slot of the target face, the `IMeshData_Wire` order: the slot orientation, the
 // pcurve orientation / `IsForward`, `SameParam` / `SameRange`, both parameter ranges

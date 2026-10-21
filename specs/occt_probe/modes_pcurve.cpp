@@ -61,8 +61,10 @@ std::optional<int> runPcurveModes(const ProbeCtx& theCtx)
                       << " pf=" << pf << " pl=" << pl << "\n";
             if (std::getenv("SURFD2") != nullptr)
             {
-              // TEMP: surface `D0` / `D2` at the same (u, v) pairs the port's
-              // `SURFD2` dump uses, from the adaptor the mesher itself evaluates.
+              // TEMP: surface `D0` / `D2` at the (u, v) pairs given in `SURFD2`,
+              // from the adaptor the mesher itself evaluates. The port-side
+              // `SURFD2` dump was removed by T-195; the coordinates are now passed
+              // in directly.
               const BRepAdaptor_Surface aS(aFace);
               const std::string         aSpec = std::getenv("SURFD2");
               size_t                    aPos  = 0;
@@ -96,9 +98,10 @@ std::optional<int> runPcurveModes(const ProbeCtx& theCtx)
             }
             if (std::getenv("OCCTUV") != nullptr)
             {
-              // TEMP: `ShapeAnalysis_Surface::ValueOfUV` for the same 23 samples
-              // the port's `PCUV2` dump projects, so the projectors can be
-              // compared without the `NextValueOfUV` chain or `getLine` seed.
+              // TEMP: `ShapeAnalysis_Surface::ValueOfUV` for 23 samples along the
+              // edge, so the projectors can be compared without the
+              // `NextValueOfUV` chain or `getLine` seed. The port-side `PCUV2`
+              // dump was removed by T-195.
               const char* aPrecEnv = std::getenv("OCCTUV_PRECI");
               const double aPreci = (aPrecEnv != nullptr) ? std::atof(aPrecEnv) : 1.e-7;
               ShapeAnalysis_Surface aSAS(BRep_Tool::Surface(aFace));
@@ -121,7 +124,8 @@ std::optional<int> runPcurveModes(const ProbeCtx& theCtx)
             if (std::getenv("C3VAL") != nullptr)
             {
               // TEMP: the 3-D curve points `ShapeConstruct_ProjectCurveOnSurface`
-              // samples before projecting them, matching the port's `PC3D` dump.
+              // samples before projecting them. The port-side `PC3D` dump was removed
+              // by T-195.
               double f3 = 0., l3 = 0.;
               const occ::handle<Geom_Curve> aC3 = BRep_Tool::Curve(anE, f3, l3);
               if (!aC3.IsNull())

@@ -4,7 +4,7 @@
 // --- TEMP T-101 (`--facestats <defl> <angle>`) -------------------------------------
 // Per-model-face `nodes/triangles/bbox` with the *same* mesher parameters the port
 // uses, in the model's own face order (`IMeshData_Model::GetFace`), so a face can be
-// paired with the port's `zz_probe_a3n00 --fstats` by the six bbox coordinates.
+// paired with the port's `model_probe --fstats` by the six bbox coordinates.
 // `--uvsum` cannot be used for this: that branch meshes with a hard-coded 0.5 rad
 // angle (its per-face `triangles=` sums to 8054 on a3n00 while the 20-degree mesh has
 // 12324), so its counts are not comparable with the port's.
@@ -229,7 +229,8 @@ int runSrfParams(const TopoDS_Shape& theShape, const int theFaceIdx,
               }
               // TEMP: knot values and the interpolant's values there, i.e. the
               // projected UV samples the curve was built through (a clamped
-              // interpolant passes through them), matching the port's `knotval`.
+              // interpolant passes through them). The port's `PCDEF` dump prints
+              // `knot[i]` plus `flat=` instead of this evaluated value.
               for (int k = 1; k <= aBS->NbKnots(); ++k)
               {
                 const gp_Pnt2d aVal = aBS->Value(aBS->Knot(k));

@@ -42,6 +42,21 @@ their group function and are tried in the original order.
 * `probe.bat` — `THIRDPARTY_DIR` **must be absolute** (`env.bat`'s default is
   relative, and a missing `tbb12.dll`/`jemalloc.dll` shows up as `0xC0000135`).
 
+## Port-side counterparts
+
+T-195 removed the port's ad-hoc diagnostic writers (`DELAUNDUMP`,
+`DELAUNSTEPS`/`DELONESTEP`, `DELSTAGE`/`DELTRIS`/`DCWHY`, `CTRLDUMP`, `PORTDUMP`,
+`SORTDUMP`, `CWDBG`/`CBWIN`, `PC3D`/`SURFD2`/`PCUV2`, the model-specific
+`PCBTRACE`/`RANGEW`/`GDBG` probes) so that library code no longer writes dump
+files. Any probe mode whose input came from one of those writers is **archival**:
+it still runs and still prints the OCCT half of the comparison, but the
+`delaun_f*.txt` / `delaun_in_f*.txt` / per-step files it reads (or the port output
+it is diffed against) now have to come from a run archive, not from the current
+port. Live port diagnostics are the flags exported by
+`crates/occt-topo/src/debug_flags.rs` (`PCW`, `PCDEF`, `PC2D`, `NURBSGRID`,
+`BPUV`, `DELREGSKEL`, `IGES_TRACE*`, ...); everything else in the tables above
+describes OCCT behavior only.
+
 ## Modes
 
 | mode | prints |

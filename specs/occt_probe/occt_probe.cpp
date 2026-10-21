@@ -410,8 +410,8 @@ int main(int argc, char** argv)
       return runOrderDbg(aShape, aBB);
     }
     // TEMP T-103: `--wiredbg <defl> <angle> <x1> <y1> <z1> <x2> <y2> <z2>` -- ground
-    // truth for the port's `CWDBG`/`CBWIN` (per-slot pcurve point arrays after
-    // DiscretizeEdges + HealModel).
+    // truth for the port's per-slot pcurve point arrays after DiscretizeEdges +
+    // HealModel (the port-side dump that printed them was removed by T-195).
     if (std::string(argv[i]) == "--wiredbg" && i + 8 < argc)
     {
       double aBB[6];

@@ -5,9 +5,11 @@
 
 // --- TEMP T-104 (`--structdump <faceIdx>`) -----------------------------------------
 // Prints the exact `BRepMesh_DataStructureOfDelaun` OCCT's own node-insertion algo
-// hands to `BRepMesh_Delaun` for one discrete face, in the port dump's `N`/`L` line
-// format (`crates/occt-topo/src/meshing/node_insertion.rs::dump_delaun_structure`),
-// so the two files diff line by line. The model is built exactly like `--boundary`
+// hands to `BRepMesh_Delaun` for one discrete face, in the `N`/`L` line format the
+// port-side structure dump used to write, so the two files diff line by line. That
+// port-side dump was removed by T-195 (`meshing/node_insertion/build.rs` still
+// builds the structure it described), so the format is now consumed from archives
+// only. The model is built exactly like `--boundary`
 // (same deflection/angle as the port's `prs3d_get_deflection(shape, 0.1)`), and the
 // face index is the `IMeshData_Model` order - pair it with the port's face by the
 // printed bbox, not by index.
@@ -15,9 +17,10 @@ template <class Splitter>
 class ZZStructDumpAlgo
     : public BRepMesh_DelaunayNodeInsertionMeshAlgo<Splitter, BRepMesh_DelaunayBaseMeshAlgo>
 {protected:
-  // TEMP T-105: dumps, in the port's own `N`/`L`/`TOL`/`CELLS`/`V` format, the exact
+  // TEMP T-105: dumps, in the `N`/`L`/`TOL`/`CELLS`/`V` line format the port-side
+  // structure dump used, the exact
   // structure the *real* algo passes to `BRepMesh_Delaun` (the moment `generateMesh`
-  // is entered). Diffing this against the port's `delaun_in_f*.txt` says whether the
+  // is entered). Diffing this against an archived `delaun_in_f*.txt` says whether the
   // two sides really start from the same input.
   void generateMesh(const Message_ProgressRange& theRange) override
   {
@@ -230,15 +233,72 @@ protected:
     // surface node is registered (`BRepMesh_DelaunayNodeInsertionMeshAlgo::
     // postProcessMesh` -> `InsertionBaseClass::postProcessMesh`).
     this->dumpState("POST_BASE", theMesher);
+    // TEMP DCREPLAY (`OCCT_DCREPLAY=1`): replay the surface-node insertion one
+    // node at a time so the port's per-step dump (`PREDCDUMP INS`) can be lined
+    // up step by step. The batched `AddVertices` sorts its index vector by
+    // `x + y` (`BRepMesh_Delaun.cxx:2415-2417`), so replaying one-element vectors
+    // in that same order walks the same insertion sequence. The real path calls
+    // `ProcessConstraints()` once at the tail (`cxx:703`), this replay calls it
+    // after every step; the run stops after the replay, so `INSERT`/`P*` states
+    // from it are not the real ones.
+    if (std::getenv("OCCT_DCREPLAY") != nullptr)
+    {
+      replaySurfaceNodeInsertion(theMesher);
+      return;
+    }
     BaseDC::postProcessMesh(theMesher, theRange);
+  }
+
+  // TEMP DCREPLAY: see the `OCCT_DCREPLAY` branch in `postProcessMesh`.
+  void replaySurfaceNodeInsertion(BRepMesh_Delaun& theMesher)
+  {
+    const Handle(IMeshData::ListOfPnt2d) aSurfaceNodes =
+      this->getRangeSplitter().GenerateSurfaceNodes(this->getParameters());
+    std::vector<int> aIds;
+    if (!aSurfaceNodes.IsNull())
+    {
+      IMeshData::ListOfPnt2d::Iterator aNodesIt(*aSurfaceNodes);
+      for (; aNodesIt.More(); aNodesIt.Next())
+      {
+        const gp_Pnt2d& aPnt2d = aNodesIt.Value();
+        if (this->getClassifier()->Perform(aPnt2d) != TopAbs_IN)
+        {
+          continue;
+        }
+        aIds.push_back(this->registerNode(
+          this->getRangeSplitter().Point(aPnt2d), aPnt2d, BRepMesh_Free, false));
+      }
+    }
+
+    const occ::handle<BRepMesh_DataStructureOfDelaun>& aSt = this->getStructure();
+    auto aLess = [&aSt](int theLeft, int theRight) {
+      const gp_XY& aL = aSt->GetNode(theLeft).Coord();
+      const gp_XY& aR = aSt->GetNode(theRight).Coord();
+      return aL.X() + aL.Y() < aR.X() + aR.Y();
+    };
+    std::make_heap(aIds.begin(), aIds.end(), aLess);
+    std::sort_heap(aIds.begin(), aIds.end(), aLess);
+
+    for (size_t k = 0; k < aIds.size(); ++k)
+    {
+      IMeshData::VectorOfInteger aOne;
+      aOne.Append(aIds[k]);
+      theMesher.AddVertices(aOne);
+      std::printf("OCCTINSSTEP %zu v=%d\n", k + 1, aIds[k]);
+      std::fflush(stdout);
+      char aTag[32];
+      std::snprintf(aTag, sizeof(aTag), "INS%zu", k + 1);
+      this->dumpState(aTag, theMesher);
+      std::fflush(stdout);
+    }
   }
 
   void optimizeMesh(BRepMesh_Delaun& theMesher, const Message_ProgressRange& theRange) override
   {
     this->dumpState("POST_INSERT", theMesher);
     // TEMP DCPASS: verbatim copy of `BaseDC::optimizeMesh`'s loop with a per-pass
-    // print, so the port's `DELSTAGE after_vertex_loop` chain can be lined up
-    // pass by pass against OCCT.
+    // print, so the port's per-pass chain (its removed `DELSTAGE` dump) can be lined
+    // up pass by pass against OCCT.
     occ::handle<NCollection_IncAllocator> aTmpAlloc =
       new NCollection_IncAllocator(IMeshData::MEMORY_BLOCK_SIZE_HUGE);
 
@@ -282,7 +342,8 @@ protected:
                   this->myIsAllDegenerated ? 1 : 0);
       std::fflush(stdout);
       // TEMP CTRLDUMP: the exact control node list this pass hands to
-      // `insertNodes`, in face-basis coordinates.
+      // `insertNodes`, in face-basis coordinates. `OCCTCTRL` lines are the OCCT half
+      // of the control-node comparison whose port-side dump T-195 removed.
       {
         int aIdx = 0;
         for (IMeshData::ListOfPnt2d::Iterator aCtrlIt(*this->myControlNodes); aCtrlIt.More();
@@ -394,8 +455,9 @@ protected:
 // `BRepMesh_Classifier::Perform` gives each of them, i.e. exactly the filter
 // `BRepMesh_DelaunayNodeInsertionMeshAlgo::insertNodes` applies
 // (`BRepMesh_DelaunayNodeInsertionMeshAlgo.hxx:115-123`). Ground truth for the
-// port's `list_surface_nodes` (`node_insertion.rs`) drop (Sphere.iges: 323
-// generated, 255 IN, 68 ON). The classifier filter is identical in the DC variant,
+// port's `list_surface_nodes` (`meshing/node_insertion/surface_nodes.rs`) drop
+// (Sphere.iges: 323 generated, 255 IN, 68 ON). The classifier filter is identical
+// in the DC variant,
 // so the non-DC node-insertion algo is used here.
 template <class Splitter>
 class ZZSrfNodeCountAlgo

@@ -377,7 +377,8 @@ std::optional<int> runUvModes(const ProbeCtx& theCtx)
         // and OCCT (see specs/_a3n00_gap_analysis.md §9.343/§9.344/§9.346), so if the
         // cell counts agree the divergence must be downstream of it. Printed twice
         // because OCCT passes `aStructure->NbNodes()` (Deleted included) while the
-        // port's `node_insertion.rs:362` excludes Deleted nodes.
+        // port's `meshing/node_insertion/mesh_finish.rs` (the `indices` filter before
+        // `Delaun::new_with_data_cells`) excludes Deleted nodes.
         const std::pair<int, int> aCellsZero =
           BRepMesh_GeomTool::CellsCount(aDF->GetSurface(), 0, aParams.Deflection, &aSplitter);
         std::cout << " cells_vnb0=[" << aCellsZero.first << "," << aCellsZero.second << "]";

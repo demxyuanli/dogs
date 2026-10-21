@@ -29,11 +29,14 @@ int runDelaunCheck()
 // `domain=0` this mode prints is an artifact of the missing constraints - it is **not**
 // evidence that the point set cannot be triangulated. Kept only as a record of the
 // §9.367 run; use `--delaunstruct` for comparisons.
-// Feeds the port's own registered Delaun points (dumped by `OCCT_TOPO_DUMP_DELAUN`)
-// straight into OCCT's `BRepMesh_Delaun`, bypassing the reader and the whole
-// `IMeshData` pipeline. §9.365 showed OCCT meshes all 226 faces (min 2 triangles)
-// while the port's Delaun yields 0 domain elements on 16 of them; this decides
-// whether that is a data problem or a code problem.
+// Feeds the port's own registered Delaun points straight into OCCT's
+// `BRepMesh_Delaun`, bypassing the reader and the whole `IMeshData` pipeline.
+// §9.365 showed OCCT meshes all 226 faces (min 2 triangles) while the port's
+// Delaun yields 0 domain elements on 16 of them; this decides whether that is a
+// data problem or a code problem.
+// ARCHIVAL: the point files (`delaun_f<face>.txt`) came from a port-side dump that
+// T-195 removed, so this mode only replays dump archives; nothing in the current
+// port writes them.
 int runDelaunFeed(const std::string& theDir)
 {
   for (int f : {169, 174, 189, 192, 193, 194, 195, 196, 197, 198, 199, 204, 206, 209, 210, 212})
@@ -112,18 +115,20 @@ int runDelaunFeed(const std::string& theDir)
 // --- TEMP T-99 (`--delaunstruct <dir>`) -------------------------------------------
 // Feeds OCCT's `BRepMesh_Delaun` the *identical* structure the port builds: same
 // nodes (face-basis coordinates), same constraint links, same tolerance/cell size
-// and the same vertex order (dumped by `OCCT_TOPO_DUMP_DELAUN`). §9.367 could only
+// and the same vertex order. §9.367 could only
 // feed the bare points (0 constraints), and with no frontier links `cleanupMesh`
 // deletes every triangle, so that run's `domain=0` said nothing about the points.
 // This closes the gap: constraints are inserted through the public
 // `AddLink` + `BRepMesh_Delaun(structure, indices, cellsU, cellsV)` constructor,
 // which reaches `ProcessConstraints()` as a member call (§9.366's LNK2019 trap is
 // avoided entirely).
+// ARCHIVAL: `delaun_in_f<face>.txt` came from the port-side structure dump that
+// T-195 removed; the mode replays dump archives only.
 int runDelaunStruct(const std::string& theDir)
 {
   // TEMP T-123: the face list is scanned from the directory (`delaun_in_f<face>.txt`)
-  // instead of being hard-coded, so replaying a newly tagged `DELSTAGE=<face>` run needs
-  // no probe edit (T-121's fixed list only covered Shape-2 / T-119 faces).
+  // instead of being hard-coded, so replaying an archived face needs no probe edit
+  // (T-121's fixed list only covered Shape-2 / T-119 faces).
   std::vector<int> aFaces;
   {
     const std::string aPrefix  = "delaun_in_f";
@@ -429,9 +434,10 @@ int runDelaunStruct(const std::string& theDir)
 // nodes are fed to `BRepMesh_Delaun::AddVertices` ONE AT A TIME (each call is the
 // exact `AddVertices({v})` control flow: a one-element heap sort is a no-op, the
 // insertion loop runs for that one vertex, then `ProcessConstraints()`), and the
-// domain triangle set is written after every step. Diffed against the port's
-// `DELONESTEP` dump, the first divergent insertion index identifies the step whose
-// cavity/selection differs, instead of only seeing the end state.
+// domain triangle set is written after every step. Diffed against an archived
+// per-step port dump (the producer, `DELONESTEP`, was removed by T-195), the first
+// divergent insertion index identifies the step whose cavity/selection differs,
+// instead of only seeing the end state.
 int runDelaunSteps(const std::string& theDir, const int theFace)
 {
   char aName[512];
@@ -576,8 +582,8 @@ int runDelaunSteps(const std::string& theDir, const int theFace)
   // TEMP T-119: the batched `BRepMesh_Delaun::AddVertices` (`cxx:2415-2417`)
   // heap sorts the index vector before `createTrianglesOnNewVertices`, so the
   // real path walks the sorted order. `OCCT_DELAUNSTEPS_SORT=1` replays that
-  // same order one vertex at a time, to be diffed against the port's
-  // `DELONESTEP` dump of its own batched order.
+  // same order one vertex at a time, to be diffed against an archived per-step
+  // port dump of its own batched order.
   std::vector<int> aOrder(aOrder2);
   if (std::getenv("OCCT_DELAUNSTEPS_SORT") != nullptr)
   {
@@ -627,8 +633,10 @@ int runDelaunSteps(const std::string& theDir, const int theFace)
 //   * `Contains()` per candidate (`BRepMesh_Delaun.cxx:2578-2637`) together with the
 //     `theEdgeOn` link id and that link's movability,
 //   * the triangle the caller's own skip rule (`cxx:653-660`) would select.
-// The port prints the same lines under `DCWHY`, so the first field that differs
-// names the missing `.cxx` arm instead of only showing the divergent triangle set.
+// ARCHIVAL: the port-side counterpart (`DCWHY`) was removed by T-195, so this mode
+// now prints the OCCT half of the comparison into its own output stream; a diff of
+// the two still names the missing `.cxx` arm instead of only showing the divergent
+// triangle set.
 int runDelaunWhy(const std::string& theDir, const int theFace, const int theStep)
 {
   char aName[512];
