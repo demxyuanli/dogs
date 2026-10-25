@@ -22,6 +22,7 @@ pub mod point_in_ds;
 pub mod project_pcurv;
 pub mod reparam_pcurv;
 pub mod solid_index;
+pub mod stripe_edge_inter;
 
 pub use boite::{ch_fi3d_boite, ch_fi3d_boite4};
 pub use bound_surf::ch_fi3d_bound_surf;
@@ -49,3 +50,4 @@ pub use point_in_ds::{
 pub use project_pcurv::ch_fi3d_project_pcurv;
 pub use reparam_pcurv::ch_fi3d_reparam_pcurv;
 pub use solid_index::ch_fi3d_solid_index;
+pub use stripe_edge_inter::ch_fi3d_stripe_edge_inter;

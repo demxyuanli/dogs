@@ -34,39 +34,41 @@
 
 ## 1. 全景：Rust 侧体量、测试与门禁现状
 
-### 1.1 五个 crate 的实测体量（2026-10-25，T-303 收口后）
+### 1.1 五个 crate 的实测体量（2026-10-25，T-304 收口后）
 
-口径：文件数 = 该 crate 下全部 `.rs`（`src` + `tests` + `examples`）；行数 = 非空行（去掉纯空白行）。
+口径：文件数 = 该 crate 下全部 `.rs`（`src` + `tests` + `examples`，`Get-ChildItem -Recurse`，排除 `target/`）；行数 = 非空行（`Get-Content | Where-Object { $_.Trim().Length -gt 0 }`）。
 
 | crate | `.rs` 文件 | 非空行 | lib 单测 | `UNPORTED` 出现 | 分布文件 |
 |---|---:|---:|---:|---:|---:|
-| `occt-core` | 235 | 47,892 | 283 passed / 0 failed (2 ignored) | 25 | 20 |
-| `occt-math` | 74 | 16,588 | 210 passed / 0 failed | 4 | 3 |
-| `occt-geom` | 336 | 89,821 | 143 passed / 0 failed | 82 | 38 |
-| `occt-geom2d` | 80 | 20,643 | 72 passed / 0 failed | 9 | 6 |
-| `occt-topo` | 1,323 | 363,820 | 1254 passed / 0 failed | 239 | 171 |
-| **合计** | **2,048** | **538,764** | **1,962** | **359** | **238** |
+| `occt-core` | 227 | 47,848 | 283 passed / 0 failed (2 ignored) | 25 | 20 |
+| `occt-math` | 68 | 16,555 | 210 passed / 0 failed | 4 | 3 |
+| `occt-geom` | 330 | 89,788 | 143 passed / 0 failed | 82 | 38 |
+| `occt-geom2d` | 76 | 20,621 | 72 passed / 0 failed | 10 | 7 |
+| `occt-topo` | 1,315 | 364,826 | 1254 passed / 0 failed | 247 | 174 |
+| **合计** | **2,016** | **539,638** | **1,962** | **368** | **242** |
 
 - 全部 `UNPORTED` 标记**均带 OCCT 文件与行号出处**，无「假出处」。
 - OCCT 全树（`.cxx/.hxx/.lxx/.gxx`）：**13,803 文件 / 2,439,487 行**。
 - 本仓 Rust 行数 / OCCT 全树 ≈ **22.1%**；下一轮 7 波次再加 390,414 行 OCCT 对应实现。
-- `UNPORTED` 总数与 2026-10-24 快照（354 处 / 232 文件）相比为 359 处 / 238 文件，增量全部在
-  `occt-topo/src/chfi3d/` 与 `occt-geom/src/`：T-294～T-303 的 `ChFi3d_Builder` 各层按 `.cxx` 分支先标出
-  未接线的惰性挂点（`ChFiKPart_ComputeData::Compute` / `SplitKPart` /
-  `SimulKPart` / `Compute` / `ExtentAnalyse` 等），以及 T-303 的
-  `GeomAPI_PointsToBSpline` 变分重载与 `Geom_BSplineCurve::C0BSplineToC1BSplineCurve` 臂，
-  属「先按分支标出来再补」，不是回退。T-303 同时摘掉了 `ChFi3d_PerformElSpine` 的惰性占位，
-  `occt-topo` 的 `UNPORTED` 由 240 降到 239。
+- `UNPORTED` 总数 368 处 / 242 文件，较 T-303 快照（359 处）增 9 处，增量集中在
+  `occt-topo/src/chfi3d/builder/`：T-304 把 `ChFi3d_Builder::Compute` 的角点入口按 OCCT 的
+  `ChFi3d_Builder_C1.cxx` 五个成员 + `ChFi3d_Builder.hxx` 六个纯虚拆成 `ChFi3dCornerOps`
+  （`corner_ops.rs` 5 处）、`ChFi3d_FilDS` 的显式挂点（`fil_ds.rs` 2 处）、
+  `PerformFilletOnVertex` 的分派说明（`perform_fillet_on_vertex.rs` 1 处），
+  另 `occt-geom` 的 `GeomAPI_PointsToBSpline` 变分重载（T-303）1 处 —— 属「先按分支标出来再补」，
+  不是回退。T-304 同时摘掉了 `ChFi3d_Builder::Compute` / `ExtentAnalyse` /
+  `PerformFilletOnVertex` / `PerformSingularCorner` 四个「未移植」记录（它们此前只写在
+  `builder/mod.rs` 的头注里，不占 `UNPORTED` 计数）。
 
 ### 1.2 门禁基线（本轮实跑，2026-10-25）
 
 | 门禁 | 命令 | 读数 |
 |---|---|---|
 | 编译 | `cargo check --manifest-path crates/<crate>/Cargo.toml --offline --all-targets`（5 个 crate） | **0 errors**（警告为既有基线数） |
-| 单元测试 | `cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --lib` | **1254 passed / 0 failed**（28.4s） |
+| 单元测试 | `cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --lib` | **1254 passed / 0 failed**（40.59s） |
 | 其余四 crate | `cargo test --manifest-path crates/<crate>/Cargo.toml --offline --lib` | core 283 / math 210 / geom 143 / geom2d 72，**全 0 failed** |
 | 门禁套件 | `cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --tests` | **13 个套件、69 passed / 0 failed**；加 lib 与 doc 共 15 套件 / **1325 passed / 0 failed, 1 ignored**（265s） |
-| STEP 对拍 | `cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --test step_obj_gates` | **4 passed**（23 个模型对 `data/occ-*.obj`，162.4s） |
+| STEP 对拍 | `cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --test step_obj_gates` | **4 passed**（23 个模型对 `data/occ-*.obj`，229.26s） |
 | 整体导出 | `cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example export_data_obj` | **15 ok / 0 err** |
 
 **13 个门禁套件**（`crates/occt-topo/tests/`，套件名沿用不改）：
@@ -527,6 +529,7 @@ S1 的 `occt-geom/src/law/` 存在但**未接线**（见 §7.3）。
 - [x] `ChFi3d_Builder` 特例角行走层（T-301）：`ChFi3d_Builder::PerformSetOfKPart`（`ChFi3d_Builder_2.cxx:3004-3281`）→ `chfi3d/builder/perform_set_of_k_part.rs`（边扫描 + `SurfData` 序列 + 周期乱序重排 `:3082-3121` + `ElSpine` 配对 `:3170-3213` + 收尾区间 `:3222-3265` + 两个 `PerformElSpine` 循环 `:3267-3278`）；前置：`ChFi3d_KParticular`（`ChFi3d_Builder_0.cxx:604-683`）→ `chfi3d/builder_0_helpers/k_particular.rs`；`ChFi3d_SolidIndex`（`_0.cxx:2300-2321`）→ `chfi3d/builder_0_helpers/solid_index.rs`；文件静态 `TgtKP`（`_2.cxx:373-398`）→ `chfi3d/builder_2_helpers/tgt_kp.rs`；`ChFi3d_BoxDiag`（`_2.cxx:3282-3297`）→ `chfi3d/builder_2_helpers/box_diag.rs`；`ChFi3dSurfOps::SimulKPart`（`hxx:201`，基类默认体 `ChFi3d_Builder_NotImp.cxx` 的 `throw`）→ `chfi3d/builder/surf_ops.rs` 默认方法。三个惰性挂点：`ChFiKPart_ComputeData::Compute`（`ChFiKPart` 包）→ `chfi3d/chfi_k_part.rs`、`ChFi3d_Builder::SplitKPart`（`ChFi3d_Builder_SpKP.cxx:749-1160`，前置 `Geom2dHatch` + `Tri`/`FillSD`/`CpSD`）→ `chfi3d/builder/split_k_part.rs`、`ChFi3d_PerformElSpine`（`_0.cxx:4797-5352`，前置 `ChFi3d_ApproxByC2` + `CurveCleaner`）→ `chfi3d/builder_0_helpers/perform_el_spine.rs`，三者均答 `Ok(false)` / `Err` 并写清 `.cxx` 行号。`ChFi3d_Builder_2.cxx` 的三条行走至此全部落地（T-300 的 `PerformSetOfSurfOnElSpine`、T-301 的 `PerformSetOfKPart`）；仍 UNPORTED：`PerformSetOfKGen`（`:3298-3881`）、`PerformSetOfSurf`（`:3882-3900`）、上面三个惰性挂点的主体、`ChFi3d_Builder::Compute` / `ExtentAnalyse` / `PerformTwoCorner*` / `PerformThreeCorner` / `PerformFourCorner`、`ChFi3d_ChBuilder` / `ChFi3d_FilBuilder`
 - [x] `ChFi3d_Builder` 收口层（T-302）：`ChFi3d_Builder::PerformSetOfKGen`（`ChFi3d_Builder_2.cxx:3298-3881`）→ `chfi3d/builder/perform_set_of_k_gen/`：`mod.rs`（`ElSpine` 逐个走 `PerformSetOfSurfOnElSpine` + 写回 `el_spines_mut()[i]`，`:3302-3310`）、`twist.rs`（`:3318-3648`：扭曲片段的邻居修复，`ChFi3d_IntTraces` / 六个 `ChFi3d_mkbound` 重载 / `GeomFill_ConstrainedFilling` / `CompleteData` / `ChFi3d_ReparamPcurv`）、`tolerances.rs`（`:3650-3754` 端点容差更新 + `:3755-3878` `myEVIMap` 边/新面连接）；`ChFi3d_Builder::PerformSetOfSurf`（`:3882-3900`）→ `mod.rs` 的 `perform_set_of_surf`（`ChFi3d_SolidIndex` → `PerformSetOfKPart`（未 `SplitDone` 时）→ `PerformSetOfKGen` → 非 `Simul` 时 `ChFi3d_MakeExtremities`）；`ChFi3d_MakeExtremities`（`:1766-2046`）+ `ChFi3d_SingularExtremity`（`:1635-1743`）+ `IsFree`（`:1744-1765`）→ `chfi3d/builder/make_extremities.rs`，三个前置 `ChFi3d_ComputeArete`（`_0.cxx:1901-1969`）/ `ChFi3d_ComputePCurv`（`:1971-2123`）/ `ChFi3d_EnlargeBox`（`:335-382`）已在 `builder_0_helpers/{compute_arete,compute_pcurv,enlarge_box}.rs`。`ChFi3d_Builder_2.cxx` 的三条行走与两个收口入口至此全部落地；仍 UNPORTED：三个惰性挂点主体（`ChFiKPart_ComputeData::Compute` / `SplitKPart` / `ChFi3d_PerformElSpine` 的前置 `ChFi3d_ApproxByC2` + `CurveCleaner`）、`ChFi3d_Builder::Compute` / `ExtentAnalyse` / `PerformTwoCorner*` / `PerformThreeCorner` / `PerformFourCorner`、`SimulKPart` 的实装、`ChFi3d_ChBuilder` / `ChFi3d_FilBuilder`
 - [x] `ChFi3d_Builder` 脊线曲线收尾层（T-303）：`ChFi3d_PerformElSpine`（`ChFi3d_Builder_0.cxx:4797-5327`）→ `chfi3d/builder_0_helpers/perform_el_spine.rs`（两端边裁剪 `:4868-4946`、退化边直线兜底 `:4952-4976`、逐片 `Geom_TrimmedCurve` + `CurveToBSplineCurve` + `CurveCleaner` `:4977-4993` / `:5064-5080`、`GeomConvert_CompCurveToBSplineCurve` 拼接与三级容差重试 `:4995-5093`、`BSplCLib::Reparametrize(Wrefdeb, Wreffin)` `:5100-5105`、C3 延长 + `GoodExt` 判定 `:5107-5184`、`Segment` 裁剪与 `caredeb/carefin` 提阶 `:5186-5222`、节点重数修正 `:5216-5269`、周期化与 `GeomLib::AdjustExtremity` `:5270-5318`）；前置：`ChFi3d_ApproxByC2`（`:5835-5851`）→ `chfi3d/builder_helpers/approx_by_c2.rs`、文件静态 `CurveCleaner`（`:3659-3682`）→ `chfi3d/builder_0_helpers/curve_cleaner.rs`、`GeomAPI_PointsToBSpline` 六参 `Init(Points, ParType, DegMin, DegMax, Continuity, Tol3D)` + 显式参数重载（`GeomAPI_PointsToBSpline.cxx:117-238`）→ `occt-geom/src/geom_api_points_to_bspline.rs`、`GeomLib::AdjustExtremity`（`GeomLib.cxx:1169-1266`）+ `GeomLib::ExtendCurveToPoint`（`:1269-1412`）+ 文件静态 `ComputeLambda`（`:126-254`）→ `occt-geom/src/geom_lib_extend_curve.rs`、`GeomLib_PolyFunc`（`GeomLib_PolyFunc.cxx`）→ `occt-geom/src/geom_lib_poly_func.rs`、`GeomLib_LogSample`（`GeomLib_LogSample.cxx`）→ `occt-geom/src/geom_lib_log_sample.rs`、`math_FunctionSample` 的虚接口 `SampleSource`（`math_FunctionSample.hxx:29-52`）→ `occt-core/src/math_function_sample.rs`、`TopExp::CommonVertex`（`TopExp.cxx:323-340`）→ `topo_tools.rs` 的 `common_vertex`（`chfi3d/builder/perform_element.rs` 的同名私有副本已删）。`PerformSetOfKPart` 的两个循环（`_2.cxx:3267-3278`）已在 T-301 接线，本批把其 `Err` 占位换成真实现。仍 UNPORTED：`GeomConvert::C0BSplineToC1BSplineCurve`（`GeomConvert.cxx:1313-1338`，需 3D `ConcatC1` 链）在 `if (BSpline->IsRational())` 臂（`:5199-5214`）内，OCCT 自己的 `else` 分支保留未转换曲线；`GeomAPI_PointsToBSpline::Init(Points, W1, W2, W3, ...)`（`:243-329`，`AppDef_Variational` 未移植）；`ChFiKPart_ComputeData::Compute` / `SplitKPart` / `ChFi3d_Builder::Compute` 家族 / `SimulKPart` 实装 / `ChFi3d_ChBuilder` / `ChFi3d_FilBuilder`
+- [x] `ChFi3d_Builder` 编排层（T-304）：`ChFi3d_Builder::Compute()`（`ChFi3d_Builder.cxx:178-680`）→ `chfi3d/builder/compute.rs`（六段管线：`myVDataMap` 填充 `:237-257` → `ExtentAnalyse` `:259` → 逐条带 `PerformSetOfSurf` + `badstripes` `:267-293` → 逐顶点 `PerformFilletOnVertex` + `badvertices` `:302-332` → `MapIndSo` `:339-353` → `ChFi3d_StripeEdgeInter` 两两 + 逐带 `ChFi3d_FilDS` `:355-396` → `CompleteDS` + 曲线/顶点容差 `:406-470` → `myCoup->Perform` + `MergeSolid` + 新边顶点容差 `:471-509` → `myShapeResult` / `badShape` 复合 `:510-567` → `SetRegul` `:574` → 新面 `SameParameter` `:654-675`）；文件静态 `CompleteDS(DStr, S)`（`:80-136`）→ `builder/complete_ds.rs`；`ExtentAnalyse()`（`:144-174`）→ `builder/extent_analyse.rs`；`PerformSingularCorner(Index)`（`:682-757`）→ `builder/perform_singular_corner.rs`；`PerformFilletOnVertex(Index)`（`:759-920`）→ `builder/perform_fillet_on_vertex.rs`；`ChFi3d_StripeEdgeInter`（`ChFi3d_Builder_0.cxx:3346-3443`）→ `builder_0_helpers/stripe_edge_inter.rs`；`Reset` / `Generated` / `UpdateTolesp` 与 `myEVIMap` / `myEdgeFirstFace` 维护 → `builder/state.rs`，访问器族 → `builder/accessors.rs`（`builder/mod.rs` 由 786 行回落到 361 行）；角点入口 `ChFi3dCornerOps`（`ChFi3d_Builder.hxx:388`、`:560-576`、`:564`、`:780-801` 的五个纯虚 + 五个 `ChFi3d_Builder_C1.cxx` 成员）→ `builder/corner_ops.rs`。T-303 收口时列在缺口里的 `Compute` / `ExtentAnalyse` / `PerformFilletOnVertex` / `PerformSingularCorner` 在本批全部落地。`ChFi3d_FilDS` 进 `builder/fil_ds.rs` 的显式 UNPORTED 挂点（列 8 个前置），是 `Compute` 在基线上唯一的硬阻断。仍 UNPORTED：三个惰性挂点主体（`ChFi3d_FilDS` / `ChFiKPart_ComputeData::Compute` / `SplitKPart`）、`ChFi3dCornerOps` 的十一个实现（`PerformOneCorner` / `MoreSurfdata` / `PerformMoreSurfdata` / `PerformIntersectionAtEnd` / `PerformMoreThreeCorner` 与 `SetRegul` / `PerformTwoCorner` / `PerformThreeCorner` / `Extent{One,Two,Three}Corner`）、`SimulKPart` 实装、`ChFi3d_ChBuilder` / `ChFi3d_FilBuilder`
 - [ ] `ChFi3d` 构造器家族（38,891 行）：`ChFi3d_Builder`（`Builder.cxx` 916 / `Builder_0.cxx` 5,655 / `Builder_1.cxx` 1,257 / `Builder_2.cxx` 3,722 / `Builder_6.cxx` 2,575 / `Builder_C1.cxx` 5,071 / `Builder_C2.cxx` 778 / `Builder_CnCrn.cxx` 3,773 / `Builder_SpKP.cxx` 1,451）→ `ChFi3d_ChBuilder`（3,190）→ `ChFi3d_FilBuilder`（5,173）→ `BRepBlend` 曲面族（19,287 行）→ `BlendFunc` 段形（14,652 行）→ 变半径律 → `ChFi2d` / `ChFiKPart` / `ChFiDS` / `Blend` / `FilletSurf` / `BRepFilletAPI`
 - [ ] 门禁：编译 + `occt-topo --lib` + `step_obj_gates` + `export_data_obj`
 
