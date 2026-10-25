@@ -21,7 +21,15 @@
 //!   ([`update_line::update_line`], `_6.cxx:344-387`),
 //! - [`ChFi3dBuilder::search_face`] (`ChFi3d_Builder_2.cxx:1523-1627`), the
 //!   `SearchFace` member the face / face `ComputeData` walks its extremities
-//!   with.
+//!   with,
+//! - [`ChFi3dBuilder::perform_extremity`]
+//!   ([`perform_extremity`], `ChFi3d_Builder_1.cxx:730-885`) and
+//!   [`ChFi3dBuilder::cone_x_faces`] (`ChFi3d_Builder_2.cxx:859-880`), with the
+//!   `ReorderFaces` / `MakeOffsetEdge` / `TangentExtremity` / `TangentOnVertex`
+//!   file statics of `_1.cxx` in [`perform_helpers`],
+//! - [`ChFi3dBuilder::perform_element`] ([`perform_element`],
+//!   `ChFi3d_Builder_1.cxx:887-1179`), the downstream / upstream tangency walk
+//!   that fills a spine.
 //!
 //! UNPORTED — the orchestration above the data layer, whose `BRepBlend` /
 //! `BlendFunc` dependencies (the four walking drivers, the four `*Rad` surface
@@ -30,8 +38,6 @@
 //! - `Compute` (`ChFi3d_Builder.cxx:178-680`), `PerformSingularCorner`
 //!   (`:682-757`), `PerformFilletOnVertex` (`:759-922`), `ExtentAnalyse`
 //!   (`:144-176`),
-//! - `PerformExtremity` (`ChFi3d_Builder_1.cxx:714-885`), `PerformElement`
-//!   (`:887-1179`),
 //! - the `SimulSurf` overloads, `PerformTwoCornerbyInter`, `SplitKPart`,
 //!   `SimulKPart` (`ChFi3d_Builder.hxx:203-520`) — pure virtual in OCCT, they
 //!   are implemented by `ChFi3d_FilBuilder` / `ChFi3d_ChBuilder`,
@@ -63,6 +69,9 @@ use occt_geom::Surface as GeomSurface;
 mod complete_data;
 mod compute_data;
 mod compute_data_face_face;
+mod perform_element;
+mod perform_extremity;
+mod perform_helpers;
 mod search_face;
 mod simul_data;
 mod simul_data_face_face;

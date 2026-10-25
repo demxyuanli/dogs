@@ -85,60 +85,9 @@ impl Spine {
         self.errorstate
     }
 
-    /// `FirstStatus()` (`lxx:48-51`).
-    pub fn first_status(&self) -> State {
-        self.first_state
-    }
-
-    /// `LastStatus()` (`lxx:55-58`).
-    pub fn last_status(&self) -> State {
-        self.last_state
-    }
-
-    /// `Status(IsFirst)` (`lxx:75-81`).
-    pub fn status(&self, is_first: bool) -> State {
-        if is_first {
-            self.first_state
-        } else {
-            self.last_state
-        }
-    }
-
-    /// `SetStatus(S, IsFirst)` (`lxx:63-70`).
-    pub fn set_status(&mut self, s: State, is_first: bool) {
-        if is_first {
-            self.first_state = s;
-        } else {
-            self.last_state = s;
-        }
-    }
-
     /// `GetTypeOfConcavity()` (`lxx:44-47`).
     pub fn get_type_of_concavity(&self) -> TypeOfConcavity {
         self.my_type_of_concavity
-    }
-
-    /// `SetTypeOfConcavity(theType)` (`lxx:22-25`).
-    pub fn set_type_of_concavity(&mut self, the_type: TypeOfConcavity) {
-        self.my_type_of_concavity = the_type;
-    }
-
-    /// `IsTangencyExtremity(IsFirst)` (`lxx:93-99`).
-    pub fn is_tangency_extremity(&self, is_first: bool) -> bool {
-        if is_first {
-            self.firstistgt
-        } else {
-            self.lastistgt
-        }
-    }
-
-    /// `SetTangencyExtremity(IsTangency, IsFirst)` (`lxx:85-90`).
-    pub fn set_tangency_extremity(&mut self, is_tangency: bool, is_first: bool) {
-        if is_first {
-            self.firstistgt = is_tangency;
-        } else {
-            self.lastistgt = is_tangency;
-        }
     }
 
     /// `Mode()` (`lxx:158-162`).

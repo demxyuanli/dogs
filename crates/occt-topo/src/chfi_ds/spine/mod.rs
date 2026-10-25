@@ -323,6 +323,62 @@ impl Spine {
         self.last_state = s;
     }
 
+    /// `FirstStatus()` (`lxx:49-52`).
+    pub fn first_status(&self) -> State {
+        self.first_state
+    }
+
+    /// `LastStatus()` (`lxx:56-59`).
+    pub fn last_status(&self) -> State {
+        self.last_state
+    }
+
+    /// `SetStatus(S, IsFirst)` (`lxx:63-71`).
+    pub fn set_status(&mut self, s: State, is_first: bool) {
+        if is_first {
+            self.first_state = s;
+        } else {
+            self.last_state = s;
+        }
+    }
+
+    /// `Status(IsFirst)` (`lxx:76-82`).
+    pub fn status(&self, is_first: bool) -> State {
+        if is_first {
+            self.first_state
+        } else {
+            self.last_state
+        }
+    }
+
+    /// `GetTypeOfConcavity()` (`lxx:35-38`).
+    pub fn type_of_concavity(&self) -> TypeOfConcavity {
+        self.my_type_of_concavity
+    }
+
+    /// `SetTypeOfConcavity(theType)` (`lxx:21-24`).
+    pub fn set_type_of_concavity(&mut self, the_type: TypeOfConcavity) {
+        self.my_type_of_concavity = the_type;
+    }
+
+    /// `IsTangencyExtremity(IsFirst)` (`lxx:88-96`).
+    pub fn is_tangency_extremity(&self, is_first: bool) -> bool {
+        if is_first {
+            self.firstistgt
+        } else {
+            self.lastistgt
+        }
+    }
+
+    /// `SetTangencyExtremity(IsTangency, IsFirst)` (`lxx:83-89`).
+    pub fn set_tangency_extremity(&mut self, is_tangency: bool, is_first: bool) {
+        if is_first {
+            self.firstistgt = is_tangency;
+        } else {
+            self.lastistgt = is_tangency;
+        }
+    }
+
     /// `AppendElSpine(Els)` (`cxx:89-92`); virtual in OCCT.
     pub fn append_el_spine(&mut self, els: Arc<ElSpine>) {
         self.elspines.push(els);
