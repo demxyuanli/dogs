@@ -51,7 +51,15 @@
 //!   [`crate::brep_tool::BRepTool::parameters_of_vertex_on_face`],
 //! - the four `SurfData`-sequence surgery statics of `_2.cxx:2047-2204`
 //!   (`ChFi3d_Purge`, `InsertAfter`, `RemoveSD`, `InsertBefore`) in
-//!   [`stripe_surgery`].
+//!   [`stripe_surgery`],
+//! - [`ChFi3dBuilder::perform_set_of_surf_on_el_spine`]
+//!   ([`perform_set_of_surf`], `_2.cxx:2207-3003`), the section-by-section walk
+//!   of one guideline: the driver and its `Walk` state in
+//!   `perform_set_of_surf/mod.rs`, the starting solution in `start.rs`
+//!   (`:2283-2412`), one turn of the `while (!fini)` loop in `step.rs`
+//!   (`:2416-2988`), the three obstacle arms in
+//!   `perform_set_of_surf/obstacles.rs` and the splice in
+//!   `perform_set_of_surf/splice.rs`.
 //!
 //! UNPORTED — the orchestration above the data layer, whose `BRepBlend` /
 //! `BlendFunc` dependencies (the four walking drivers, the four `*Rad` surface
@@ -64,8 +72,10 @@
 //!   [`ChFi3dSurfOps`] but has no implementor (pure virtual in OCCT, implemented
 //!   by `ChFi3d_FilBuilder` / `ChFi3d_ChBuilder`), together with `SimulKPart`
 //!   (`hxx:201`), `PerformTwoCornerbyInter`, `SplitKPart`,
-//! - `PerformSetOfSurfOnElSpine` (`ChFi3d_Builder_2.cxx:2207-3003`),
-//!   `PerformOneCorner`,
+//! - `PerformSetOfSurfOnElSpine` (`ChFi3d_Builder_2.cxx:2207-3003`) — ported,
+//!   but still without a caller; its obstacle arms need the edge-contact
+//!   `PerformSurf` / `SimulSurf` of the subclasses, so they stay on the
+//!   `ChFi3d_Builder_NotImp.cxx` `throw` defaults for now —, `PerformOneCorner`,
 //!   `IntersectMoreCorner`, `PerformMoreSurfdata`, `PerformIntersectionAtEnd`,
 //!   `FindFace` (`ChFi3d_Builder_C1.cxx:4533-4600`), `MoreSurfdata`
 //!   (`ChFi3d_Builder_C1.cxx:4601-...`).
@@ -96,6 +106,7 @@ mod compute_data_face_face;
 mod perform_element;
 mod perform_extremity;
 mod perform_helpers;
+mod perform_set_of_surf;
 mod search_face;
 mod simul_data;
 mod simul_data_face_face;

@@ -38,15 +38,24 @@ use crate::chfi_ds::{CommonPoint, StripeHandle, SurfData};
 /// Drops the part of the band that fell in the extension zone: either the whole
 /// `SurfData` (`cxx:2065-2079`) or its contact on `ons`, which is collapsed onto
 /// `v_ref` (`cxx:2080-2100`).
+///
+/// `sd` is the handle OCCT passes by reference; the port looks the same entry
+/// up in the stripe's sequence (by [`Arc::ptr_eq`]) so that the `Change*` calls
+/// land on the object the stripe holds instead of a detached clone.
+///
+/// Answers the handle as it now lives in the sequence, or `None` when the
+/// section was removed from it. OCCT keeps the caller's handle alive in both
+/// cases; the lookup answers `Err` when the entry is gone without being removed,
+/// which OCCT cannot hit (it owns the handle).
 pub fn ch_fi3d_purge(
     stripe: &StripeHandle,
-    sd: &mut Arc<SurfData>,
+    sd: &Arc<SurfData>,
     v_ref: &CommonPoint,
     is_first: bool,
     ons: i32,
     intf: &mut i32,
     intl: &mut i32,
-) {
+) -> Result<Option<Arc<SurfData>>, String> {
     // `if (isfirst) intf = 1; else intl = 1;` (`cxx:2055-2063`).
     if is_first {
         *intf = 1;
@@ -57,11 +66,12 @@ pub fn ch_fi3d_purge(
     let opp = 3 - ons;
     // `if (!SD->Vertex(isfirst, opp).IsOnArc() || SD->TwistOnS1() ||
     // SD->TwistOnS2())` (`cxx:2065-2066`).
-    if !sd.vertex(is_first, opp).is_on_arc() || sd.twist_on_s1() || sd.twist_on_s2() {
-        let Ok(mut guard) = stripe.write() else {
-            return;
-        };
-        let seq = guard.change_set_of_surf_data();
+    let drop_section = !sd.vertex(is_first, opp).is_on_arc() || sd.twist_on_s1() || sd.twist_on_s2();
+    let mut guard = stripe
+        .write()
+        .map_err(|_| "ChFi3d_Purge: stripe lock poisoned".to_string())?;
+    let seq = guard.change_set_of_surf_data();
+    if drop_section {
         // `if (isfirst) Seq.Remove(1); else Seq.Remove(Seq.Length());`
         // (`cxx:2067-2077`).
         if is_first {
@@ -71,12 +81,16 @@ pub fn ch_fi3d_purge(
         } else {
             seq.pop();
         }
-        return;
+        return Ok(None);
     }
+
+    let Some(pos) = seq.iter().position(|value| Arc::ptr_eq(value, sd)) else {
+        return Err("ChFi3d_Purge: the SurfData is not in the stripe".into());
+    };
+    let data = Arc::make_mut(&mut seq[pos]);
 
     // `if (ons == 1) SD->ChangeIndexOfS1(0); else SD->ChangeIndexOfS2(0);`
     // (`cxx:2080-2087`).
-    let data = Arc::make_mut(sd);
     if ons == 1 {
         data.set_index_of_s1(0);
     } else {
@@ -102,6 +116,10 @@ pub fn ch_fi3d_purge(
     }
     // `fi.SetLineIndex(0);` (`cxx:2100`).
     fi.set_line_index(0);
+    // The `Arc::make_mut` above may have replaced the sequence entry with a
+    // fresh handle (the caller still holds the old one); hand the live one back.
+    let current = seq[pos].clone();
+    Ok(Some(current))
 }
 
 /// `InsertAfter(Stripe, Ref, Item)` (`_2.cxx:2108-2132`).

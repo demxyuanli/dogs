@@ -51,7 +51,30 @@ pub struct SurfaceAdaptor {
     face: Option<Face>,
 }
 
+impl Default for SurfaceAdaptor {
+    /// `BRepAdaptor_Surface()` (`BRepAdaptor_Surface.cxx:28`).
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SurfaceAdaptor {
+    /// `BRepAdaptor_Surface()` (`BRepAdaptor_Surface.cxx:28`, declared at
+    /// `hxx:52-53` as "an undefined surface with no face loaded"): the
+    /// `= default` constructor leaves `myFace` null and the inner
+    /// `GeomAdaptor_Surface` unloaded.
+    pub fn new() -> Self {
+        Self {
+            surface: None,
+            first_u: 0.0,
+            first_v: 0.0,
+            last_u: 0.0,
+            last_v: 0.0,
+            kind: GeomAbsSurfaceType::OtherSurface,
+            face: None,
+        }
+    }
+
     /// `BRepAdaptor_Surface(F, Restriction)`.
     ///
     /// `of_face` is the `Restriction == false` arm

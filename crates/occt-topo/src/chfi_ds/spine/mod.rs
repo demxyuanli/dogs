@@ -439,6 +439,13 @@ impl Spine {
         &mut self.offset_elspines
     }
 
+    /// The read side of `ChangeOffsetElSpines()`: `PerformSetOfSurfOnElSpine`
+    /// walks the two lists in step to find the offset guideline of `HGuide`
+    /// (`_2.cxx:2222-2230`).
+    pub fn offset_el_spines(&self) -> &[Arc<ElSpine>] {
+        &self.offset_elspines
+    }
+
     /// `Reset(AllData = false)` (`cxx:173-183`); virtual in OCCT.
     pub fn reset(&mut self, all_data: bool) -> Option<()> {
         self.splitdone = false;
