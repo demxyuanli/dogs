@@ -24,6 +24,14 @@
 //!                    (`ChFiKPart_ComputeData_FilPlnCyl.cxx:283-599`)
 //! fillet_plane_cone  ChFiKPart_MakeFillet(Plane, Cone)
 //!                    (`ChFiKPart_ComputeData_FilPlnCon.cxx:48-341`)
+//! chamfer_plane_plane  ChFiKPart_MakeChamfer(Plane, Plane), Sym / TwoDist
+//!                    (`ChFiKPart_ComputeData_ChPlnPln.cxx:53-272`)
+//! chamfer_asym_plane_plane
+//!                    ChFiKPart_MakeChAsym(Plane, Plane), DistAngle
+//!                    (`ChFiKPart_ComputeData_ChAsymPlnPln.cxx:53-266`)
+//! chamfer_plane_plane_tail
+//!                    the `ChangeSurf`..`return true` range shared by the two
+//!                    (`ChPlnPln.cxx:163-271` = `ChAsymPlnPln.cxx:157-265`)
 //! dispatcher         ChFiKPart_ComputeData::Compute
 //!                    (`ChFiKPart_ComputeData.cxx`)
 //! ```
@@ -35,6 +43,9 @@
 //! [`crate::chfi3d::builder::split_k_part`]. Answering `false` there keeps the
 //! empty arm OCCT takes when no corner data was produced.
 
+pub mod chamfer_asym_plane_plane;
+pub mod chamfer_plane_plane;
+pub mod chamfer_plane_plane_tail;
 pub mod corner_spine;
 pub mod dispatcher;
 pub mod fcts;
@@ -43,6 +54,8 @@ pub mod fillet_plane_cylinder;
 pub mod fillet_plane_cylinder_circle;
 pub mod fillet_plane_plane;
 
+pub use chamfer_asym_plane_plane::ch_fi_kpart_make_ch_asym_plane_plane;
+pub use chamfer_plane_plane::ch_fi_kpart_make_chamfer_plane_plane;
 pub use corner_spine::ch_fi_kpart_corner_spine;
 pub use dispatcher::ch_fi_kpart_compute_data;
 pub use fcts::{

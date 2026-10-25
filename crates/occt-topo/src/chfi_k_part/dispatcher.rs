@@ -26,12 +26,14 @@
 //! the port answers `Err` there rather than `false`.
 
 use crate::abs::Orientation;
-use crate::chfi_ds::{Spine, SpineClass, SpineHandle, SurfData};
+use crate::chfi_ds::{ChamfMethod, ChamfMode, Spine, SpineClass, SpineHandle, SurfData};
 use crate::geom_abs_curve_type::GeomAbsCurveType;
 use crate::geom_bnd_lib_surface3d::GeomAbsSurfaceType;
 use crate::topopebrep::ds::DataStructure;
 use crate::topopebrep::tool::adaptor::SurfaceAdaptor;
 
+use super::chamfer_asym_plane_plane::ch_fi_kpart_make_ch_asym_plane_plane;
+use super::chamfer_plane_plane::ch_fi_kpart_make_chamfer_plane_plane;
 use super::fillet_plane_cone::ch_fi_kpart_make_fillet_plane_cone;
 use super::fillet_plane_cylinder::ch_fi_kpart_make_fillet_plane_cylinder_line;
 use super::fillet_plane_cylinder_circle::ch_fi_kpart_make_fillet_plane_cylinder_circle;
@@ -229,21 +231,153 @@ pub fn ch_fi_kpart_compute_data(
             _ => Err("ChFiKPart_ComputeData::Compute: particular case not written".into()),
         }
     } else if is_chamf {
-        // UNPORTED `ChFiKPart_ComputeData_Ch*.cxx` — all three
-        // `Spine->IsChamfer()` kinds are unported (`cxx:216-636`), so the
-        // section kind does not steer the answer yet. The three throw arms
-        // (`cxx:354-356`, `:492-494`, `:631-633`) still answer `Err`.
-        match (typ1, typ2) {
-            (GeomAbsSurfaceType::Plane, GeomAbsSurfaceType::Plane)
-            | (GeomAbsSurfaceType::Plane, GeomAbsSurfaceType::Cylinder)
-            | (GeomAbsSurfaceType::Cylinder, GeomAbsSurfaceType::Plane)
-            | (GeomAbsSurfaceType::Plane, GeomAbsSurfaceType::Cone)
-            | (GeomAbsSurfaceType::Cone, GeomAbsSurfaceType::Plane) => Ok(false),
-            _ => Err("ChFiKPart_ComputeData::Compute: particular case not written".into()),
+        // `ChFiDS_ChamfMode aMode = CSpine->Mode();` (`cxx:216`), then the
+        // three `CSpine->IsChamfer()` kinds (`cxx:219`, `:358`, `:495`).
+        let a_mode = sp.mode();
+        // `CSpine->Line()` / `CSpine->Circle()` are read by the arm the pair of
+        // types selects, so the guiders are fetched inside the arms.
+        match sp.is_chamfer() {
+            // `if (CSpine->IsChamfer() == ChFiDS_Sym)` (`cxx:219-356`).
+            ChamfMethod::Sym => {
+                // `double dis; CSpine->GetDist(dis);` (`cxx:221-222`). The
+                // accessor raises `Standard_DomainError` for another kind
+                // (`ChFiDS_ChamfSpine.cxx:47-52`).
+                let dis = sp.get_dist().ok_or_else(|| {
+                    "ChFiKPart_ComputeData::Compute: CSpine->GetDist".to_string()
+                })?;
+                // `ChFiKPart_MakeChamfer(..., dis, dis, CSpine->Line(), ...)`
+                // (`cxx:223-355`).
+                chamfer_symmetric_arm(
+                    ds, data, a_mode, s1, s2, or1, or2, dis, dis, &mut sp, wref, or_face1,
+                )
+            }
+            // `else if (CSpine->IsChamfer() == ChFiDS_TwoDist)`
+            // (`cxx:358-493`).
+            ChamfMethod::TwoDist => {
+                // `double dis1, dis2; CSpine->Dists(dis1, dis2);`
+                // (`cxx:360-361`).
+                let (dis1, dis2) = sp.dists().ok_or_else(|| {
+                    "ChFiKPart_ComputeData::Compute: CSpine->Dists".to_string()
+                })?;
+                // Note the `Cylinder/Plane` arms of this kind pass
+                // `dis2, dis1` in that order (`cxx:429-430`), unlike the `Sym`
+                // kind, which passes `dis, dis`; the swap has to survive.
+                chamfer_symmetric_arm(
+                    ds, data, a_mode, s1, s2, or1, or2, dis1, dis2, &mut sp, wref, or_face1,
+                )
+            }
+            // `else { double dis, Angle; bool DisOnP = true;
+            // CSpine->GetDistAngle(dis, Angle); ... }` (`cxx:496-512`).
+            ChamfMethod::DistAngle => {
+                let (dis, angle) = sp.get_dist_angle().ok_or_else(|| {
+                    "ChFiKPart_ComputeData::Compute: CSpine->GetDistAngle".to_string()
+                })?;
+                match (typ1, typ2) {
+                    // `ChFiKPart_MakeChAsym(DStr, Data, S1->Plane(),
+                    // S2->Plane(), Or1, Or2, dis, Angle, CSpine->Line(),
+                    // Wref, OrFace1, DisOnP)` (`cxx:502-513`).
+                    (GeomAbsSurfaceType::Plane, GeomAbsSurfaceType::Plane) => {
+                        let pl1 = s1
+                            .plane()
+                            .ok_or_else(|| "ChFiKPart_ComputeData: S1->Plane()".to_string())?;
+                        let pl2 = s2
+                            .plane()
+                            .ok_or_else(|| "ChFiKPart_ComputeData: S2->Plane()".to_string())?;
+                        let line = sp
+                            .line()
+                            .ok_or_else(|| "ChFiKPart_ComputeData: CSpine->Line()".to_string())?;
+                        ch_fi_kpart_make_ch_asym_plane_plane(
+                            ds, data, &pl1, &pl2, or1, or2, dis, angle, &line, wref, or_face1,
+                            true,
+                        )
+                    }
+                    // UNPORTED `ChFiKPart_ComputeData_ChAsymPlnCyl.cxx:65-373`
+                    // (`Plane/Cylinder`, `cxx:514-553`), `:376-653`
+                    // (`Cylinder/Plane` with `dis` and `Angle` and the
+                    // `Or2/Or1` swap, `cxx:554-591`), and
+                    // `ChFiKPart_ComputeData_ChAsymPlnCon.cxx:57-705`
+                    // (`Plane/Cone`, `cxx:592-611`; `Cone/Plane`,
+                    // `cxx:612-628`). `surfok` stays `false` (`cxx:64`).
+                    (GeomAbsSurfaceType::Plane, GeomAbsSurfaceType::Cylinder)
+                    | (GeomAbsSurfaceType::Cylinder, GeomAbsSurfaceType::Plane)
+                    | (GeomAbsSurfaceType::Plane, GeomAbsSurfaceType::Cone)
+                    | (GeomAbsSurfaceType::Cone, GeomAbsSurfaceType::Plane) => Ok(false),
+                    // `else { throw Standard_NotImplemented("particular case
+                    // not written"); }` (`cxx:630-633`).
+                    _ => Err(
+                        "ChFiKPart_ComputeData::Compute: particular case not written".into(),
+                    ),
+                }
+            }
         }
     } else {
         // `return surfok;` with `surfok = false` (`cxx:64`, `:636`).
         Ok(false)
+    }
+}
+
+/// The `ChFiDS_Sym` arm (`cxx:223-355`) and the `ChFiDS_TwoDist` arm
+/// (`cxx:362-492`). The two differ only in the distances they pass — `dis, dis`
+/// against `dis1, dis2` — and in that the `Cylinder/Plane` arm of `TwoDist`
+/// passes `dis2, dis1` in that order (`cxx:429-430`, against `cxx:308-309`
+/// where both are `dis`). Folding them here keeps the `dis1, dis2` swap where
+/// the `.cxx` writes it.
+#[allow(clippy::too_many_arguments)]
+fn chamfer_symmetric_arm(
+    ds: &mut DataStructure,
+    data: &mut SurfData,
+    the_mode: ChamfMode,
+    s1: &SurfaceAdaptor,
+    s2: &SurfaceAdaptor,
+    or1: Orientation,
+    or2: Orientation,
+    dis1: f64,
+    dis2: f64,
+    sp: &mut Spine,
+    wref: f64,
+    or_face1: Orientation,
+) -> Result<bool, String> {
+    let typ1 = s1.get_type();
+    let typ2 = s2.get_type();
+    match (typ1, typ2) {
+        // `ChFiKPart_MakeChamfer(DStr, Data, aMode, S1->Plane(), S2->Plane(),
+        // Or1, Or2, dis1, dis2, CSpine->Line(), Wref, OrFace1)`
+        // (`cxx:225-237`, `:363-375`).
+        (GeomAbsSurfaceType::Plane, GeomAbsSurfaceType::Plane) => {
+            let pl1 = s1
+                .plane()
+                .ok_or_else(|| "ChFiKPart_ComputeData: S1->Plane()".to_string())?;
+            let pl2 = s2
+                .plane()
+                .ok_or_else(|| "ChFiKPart_ComputeData: S2->Plane()".to_string())?;
+            let line = sp
+                .line()
+                .ok_or_else(|| "ChFiKPart_ComputeData: CSpine->Line()".to_string())?;
+            ch_fi_kpart_make_chamfer_plane_plane(
+                ds, data, the_mode, &pl1, &pl2, or1, or2, dis1, dis2, &line, wref, or_face1,
+            )
+        }
+        // UNPORTED `ChFiKPart_ComputeData_ChPlnCyl.cxx:64-368` — the
+        // `Plane/Cylinder` arm, guideline a line (`cxx:238-277` for `Sym`), and
+        // `:372-592` for guideline a circle (`cxx:241-258`, `:380-395`). The
+        // `ctyp` test picks between them (`cxx:241`, `:380`).
+        //
+        // UNPORTED `ChFiKPart_ComputeData_ChPlnCyl.cxx:372-592` — the
+        // `Cylinder/Plane` arm, `S2->Plane()` / `S1->Cylinder()` with
+        // `Or2, Or1`, `S1`'s U bounds, `OrFace2` as `Of1` and `plamdab = false`
+        // (`cxx:278-315`, `:416-454`).
+        //
+        // UNPORTED `ChFiKPart_ComputeData_ChPlnCon.cxx:49-406` — the
+        // `Plane/Cone` (`cxx:319-335`, `:455-471`) and `Cone/Plane`
+        // (`cxx:336-352`, `:472-490`) arms, both guideline a circle.
+        // `surfok` stays `false` (`cxx:64`).
+        (GeomAbsSurfaceType::Plane, GeomAbsSurfaceType::Cylinder)
+        | (GeomAbsSurfaceType::Cylinder, GeomAbsSurfaceType::Plane)
+        | (GeomAbsSurfaceType::Plane, GeomAbsSurfaceType::Cone)
+        | (GeomAbsSurfaceType::Cone, GeomAbsSurfaceType::Plane) => Ok(false),
+        // `else { throw Standard_NotImplemented("particular case not
+        // written"); }` (`cxx:353-356`, `:490-493`).
+        _ => Err("ChFiKPart_ComputeData::Compute: particular case not written".into()),
     }
 }
 
