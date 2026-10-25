@@ -518,6 +518,39 @@ impl BRepTool {
         }
         (GpPnt2d::new(0.0, 0.0), GpPnt2d::new(0.0, 0.0))
     }
+
+    /// `BRep_Tool::Parameters(V, F)` (`BRep_Tool.cxx:1661-1703`): the UV
+    /// coordinates of the vertex `V` in the parametric space of the face `F`.
+    ///
+    /// `cxx:1663-1677` first looks for a `BRep_PointRepresentation` of `V` that
+    /// lies on the face's surface; the port keeps no vertex point
+    /// representations, so that loop is UNPORTED and the search starts at the
+    /// face's edges (`cxx:1679-1701`) — the branch OCCT itself documents as the
+    /// usual one. The walk returns the first edge starting or ending at `V` and
+    /// answers its [`Self::uv_points`] first / last point, `Last` for a
+    /// degenerated edge ("Ambiguity (natural)", `cxx:1698`).
+    ///
+    /// `Standard_NoSuchObject` (`cxx:1702`) is the `Err` of the port.
+    pub fn parameters_of_vertex_on_face(
+        vertex: &TopoShape,
+        face: &Face,
+    ) -> Result<GpPnt2d, String> {
+        for value in crate::topo_tools::edges_of(&face.0) {
+            let (vf, vl) = crate::topo_tools::edge_vertices(&value);
+            let at_first = vf
+                .as_ref()
+                .is_some_and(|v| crate::topo_tools::is_same(&v.0, vertex));
+            let at_last = !at_first
+                && vl
+                    .as_ref()
+                    .is_some_and(|v| crate::topo_tools::is_same(&v.0, vertex));
+            if at_first || at_last {
+                let (pf, pl) = Self::uv_points(&value, face);
+                return Ok(if at_first { pf } else { pl });
+            }
+        }
+        Err("BRep_Tool:: no parameters on surface".into())
+    }
 }
 
 /// The four lines every `BRep_Tool::Tolerance` overload runs on the value it

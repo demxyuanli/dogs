@@ -41,7 +41,17 @@
 //!   guideline, with its file statics `BonVoisin` (`_2.cxx:213-318`) and
 //!   `Projection` (`_2.cxx:320-370`) in [`builder_2_helpers::start_sol`] and
 //!   `ChFi3d_InterPlaneEdge` (`ChFi3d_Builder_0.cxx:718-767`) in
-//!   [`crate::chfi3d::builder_0_helpers`].
+//!   [`crate::chfi3d::builder_0_helpers`],
+//! - [`ChFi3dBuilder::start_sol_with_ref`] ([`start_sol_obstacle`],
+//!   `_2.cxx:1162-1520`), the overload that walks the last section of an
+//!   already computed band onto the next face, with `ChFi3d_BuildPlane`
+//!   (`_2.cxx:1113-1144`) and `isTangentToArc` (`_2.cxx:192-209`) in
+//!   [`builder_2_helpers::build_plane`] / [`builder_2_helpers::is_tangent_to_arc`]
+//!   and `BRep_Tool::Parameters` (`BRep_Tool.cxx:1661-1703`) in
+//!   [`crate::brep_tool::BRepTool::parameters_of_vertex_on_face`],
+//! - the four `SurfData`-sequence surgery statics of `_2.cxx:2047-2204`
+//!   (`ChFi3d_Purge`, `InsertAfter`, `RemoveSD`, `InsertBefore`) in
+//!   [`stripe_surgery`].
 //!
 //! UNPORTED — the orchestration above the data layer, whose `BRepBlend` /
 //! `BlendFunc` dependencies (the four walking drivers, the four `*Rad` surface
@@ -53,15 +63,12 @@
 //! - `PerformFirstSection` (`ChFi3d_Builder.hxx:577-588`) is declared in
 //!   [`ChFi3dSurfOps`] but has no implementor (pure virtual in OCCT, implemented
 //!   by `ChFi3d_FilBuilder` / `ChFi3d_ChBuilder`), together with `SimulKPart`
-//!   (`hxx:201`) and the three edge-contact overloads of `PerformSurf` /
-//!   `SimulSurf` (`hxx:223-302`, `:399-540`), `PerformTwoCornerbyInter`,
-//!   `SplitKPart`,
-//! - `PerformSetOfSurfOnElSpine` (`ChFi3d_Builder_2.cxx:2207-...`),
+//!   (`hxx:201`), `PerformTwoCornerbyInter`, `SplitKPart`,
+//! - `PerformSetOfSurfOnElSpine` (`ChFi3d_Builder_2.cxx:2207-3003`),
 //!   `PerformOneCorner`,
 //!   `IntersectMoreCorner`, `PerformMoreSurfdata`, `PerformIntersectionAtEnd`,
 //!   `FindFace` (`ChFi3d_Builder_C1.cxx:4533-4600`), `MoreSurfdata`
-//!   (`ChFi3d_Builder_C1.cxx:4601-...`), the second `StartSol` overload
-//!   (`_2.cxx:1162-`).
+//!   (`ChFi3d_Builder_C1.cxx:4601-...`).
 //!
 //! Divergences that are not heuristics (each is also stated at the call site):
 //! - `occ::handle<T>` becomes an owned value (`HDataStructure`, `HBuilder`) or
@@ -93,7 +100,9 @@ mod search_face;
 mod simul_data;
 mod simul_data_face_face;
 mod start_sol;
+mod start_sol_obstacle;
 mod store_data;
+mod stripe_surgery;
 mod surf_ops;
 mod update_line;
 
