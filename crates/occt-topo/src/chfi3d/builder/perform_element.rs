@@ -33,28 +33,12 @@ use crate::chfi3d::builder_helpers::conex_faces;
 use crate::chfi3d::connect_type::define_connect_type;
 use crate::chfi3d::tangent_faces::is_tangent_faces;
 use crate::chfi_ds::{SpineHandle, State};
-use crate::shape::{Edge, Face, TopoShape, Vertex};
-use crate::topo_tools::{edge_vertices, is_same};
+use crate::shape::{Edge, Face, Vertex};
+use crate::topo_tools::{common_vertex, edge_vertices, is_same};
 use crate::topopebrep::tool::adaptor::{CurveAdaptor, SurfaceAdaptor};
 
 use super::perform_helpers::{make_offset_edge, reorder_faces, tangent_on_vertex};
 use super::ChFi3dBuilder;
-
-/// `TopExp::CommonVertex(E1, E2, V)` (`TopExp.cxx:323-340`): the first endpoint
-/// of `E1` that is an endpoint of `E2`, `None` for OCCT's `return false`.
-fn common_vertex(e1: &Edge, e2: &Edge) -> Option<TopoShape> {
-    let (f1, l1) = edge_vertices(e1);
-    let (f2, l2) = edge_vertices(e2);
-    let (f1, l1) = (f1?, l1?);
-    let (f2, l2) = (f2?, l2?);
-    if is_same(&f1.0, &f2.0) || is_same(&f1.0, &l2.0) {
-        return Some(f1.0);
-    }
-    if is_same(&l1.0, &f2.0) || is_same(&l1.0, &l2.0) {
-        return Some(l1.0);
-    }
-    None
-}
 
 impl ChFi3dBuilder {
     /// `PerformElement(Spine, Offset, theFirstFace)` (`cxx:887-1179`).

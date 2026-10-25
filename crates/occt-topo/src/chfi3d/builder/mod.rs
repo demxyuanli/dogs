@@ -84,6 +84,12 @@
 //!   index, `PerformSetOfKPart` when the spine is not split, then the two above
 //!   and `ChFi3d_MakeExtremities` (`:1766-2046`, with `ChFi3d_SingularExtremity`
 //!   `:1635-1743` and `IsFree` `:1744-1765`) in [`make_extremities`],
+//! - `ChFi3d_PerformElSpine` (`ChFi3d_Builder_0.cxx:4797-5327`) as
+//!   [`crate::chfi3d::builder_0_helpers::ch_fi3d_perform_el_spine`], the tail
+//!   `PerformSetOfKPart` runs on every `ElSpine` once the KPart scan is done,
+//!   with `ChFi3d_ApproxByC2` ([`crate::chfi3d::builder_helpers::approx_by_c2`])
+//!   and `CurveCleaner`
+//!   ([`crate::chfi3d::builder_0_helpers::curve_cleaner`]) under it,
 //!
 //! UNPORTED — the orchestration above the data layer, whose `BRepBlend` /
 //! `BlendFunc` dependencies (the four walking drivers, the four `*Rad` surface
@@ -102,9 +108,6 @@
 //!   `FillSD` / `CpSD` statics of the same file,
 //! - `ChFiKPart_ComputeData::Compute` in [`crate::chfi3d::chfi_k_part`] — the
 //!   `ChFiKPart` package, which is the cell that feeds the whole KPart branch,
-//! - `ChFi3d_PerformElSpine` (`ChFi3d_Builder_0.cxx:4797-5352`) in
-//!   [`crate::chfi3d::builder_0_helpers::ch_fi3d_perform_el_spine`]: it needs
-//!   `ChFi3d_ApproxByC2` and `CurveCleaner`,
 //! - `PerformSetOfSurfOnElSpine` (`ChFi3d_Builder_2.cxx:2207-3003`) — ported and
 //!   now called from `PerformSetOfKGen`, but its obstacle arms need the
 //!   edge-contact `PerformSurf` / `SimulSurf` of the subclasses, so they stay on

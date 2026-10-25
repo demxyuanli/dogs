@@ -4,11 +4,9 @@
 //!
 //! Source: `ModelingAlgorithms/TKFillet/ChFi3d/ChFi3d_Builder_0.cxx:5855-5945`.
 //!
-//! UNPORTED: `ChFi3d_ApproxByC2` (`cxx:5835-5851`). It needs
-//! `GeomAPI_PointsToBSpline(points, Approx_ChordLength, 3, 8, GeomAbs_C2,
-//! 1.000001e-3)`; the port has global cubic interpolation
-//! (`occt_core::geom::curve_interp3d`) but no chord-length approximation with a
-//! degree range, so the branch is left out rather than faked.
+//! UNPORTED: none. `ChFi3d_ApproxByC2` (`cxx:5835-5851`), the other half of
+//! the smoothing pair, lives in
+//! [`crate::chfi3d::builder_helpers::approx_by_c2`]; it is not called here.
 
 use occt_core::gp::GpVec;
 use occt_core::precision;

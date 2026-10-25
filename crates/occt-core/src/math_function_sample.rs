@@ -1,6 +1,31 @@
 //! `math_FunctionSample`.
 //! Source: `math_FunctionSample.hxx:29-52`, `math_FunctionSample.cxx:25-46`.
 
+/// `math_FunctionSample` virtual interface (`hxx:29-52`): the two accessors
+/// `math_FunctionAllRoots` and its friends call through a base reference.
+/// `math_FunctionSample` is the default implementation; derived samples such as
+/// `GeomLib_LogSample` (`GeomLib_LogSample.hxx:26-44`) override
+/// `GetParameter` and are reachable here through this trait.
+pub trait SampleSource {
+    fn nb_points(&self) -> i32;
+    fn parameter(&self, index: i32) -> f64;
+    fn bounds(&self) -> (f64, f64);
+}
+
+impl SampleSource for FunctionSample {
+    fn nb_points(&self) -> i32 {
+        FunctionSample::nb_points(self)
+    }
+
+    fn parameter(&self, index: i32) -> f64 {
+        FunctionSample::parameter(self, index)
+    }
+
+    fn bounds(&self) -> (f64, f64) {
+        FunctionSample::bounds(self)
+    }
+}
+
 /// `math_FunctionSample` (`math_FunctionSample.hxx:29-52`): a default sample
 /// with a constant parameter step between `A` and `B` over `N` points.
 #[derive(Debug, Clone, Copy, PartialEq)]

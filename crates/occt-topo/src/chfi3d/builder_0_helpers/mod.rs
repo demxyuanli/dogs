@@ -10,6 +10,7 @@ pub mod compute_arete;
 pub mod compute_curves;
 pub mod compute_curves_walking;
 pub mod compute_pcurv;
+pub mod curve_cleaner;
 pub mod enlarge_box;
 pub mod eval_tol_reached;
 pub mod int_traces;
@@ -27,6 +28,7 @@ pub use bound_surf::ch_fi3d_bound_surf;
 pub use compute_arete::{ch_fi3d_compute_arete, ComputeArete};
 pub use compute_curves::{ch_fi3d_compute_curves, ComputeCurves};
 pub use compute_pcurv::{ch_fi3d_compute_pcurv, ch_fi3d_compute_pcurv_uv};
+pub use curve_cleaner::curve_cleaner;
 pub use enlarge_box::{
     ch_fi3d_enlarge_box_curve, ch_fi3d_enlarge_box_edge, ch_fi3d_enlarge_box_pcurve,
     ch_fi3d_enlarge_box_surf_data,

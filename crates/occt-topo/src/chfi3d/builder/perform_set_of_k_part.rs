@@ -82,10 +82,9 @@ impl ChFi3dBuilder {
     /// `PerformSetOfKPart(Stripe, Simul)` (`cxx:3004-3281`).
     ///
     /// `ops` is the [`ChFi3dSurfOps`] the `SimulKPart` dispatch goes to; `Err`
-    /// covers the OCCT throws, an unbound spine / face pair, and the three
+    /// covers the OCCT throws, an unbound spine / face pair, and the two
     /// UNPORTED call-outs ([`ch_fi_kpart_compute_data`] answers "no data"
-    /// instead of failing, [`split_k_part`] and [`ch_fi3d_perform_el_spine`]
-    /// answer `Err`).
+    /// instead of failing, [`split_k_part`] answers `Err`).
     pub fn perform_set_of_k_part(
         &mut self,
         ops: &mut dyn ChFi3dSurfOps,

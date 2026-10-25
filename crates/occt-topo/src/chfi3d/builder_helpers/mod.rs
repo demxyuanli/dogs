@@ -31,6 +31,7 @@
 //! | `ChFi3d_Spine` (`cxx:888-903`) | [`spine_geom::spine`] |
 //! | `ChFi3d_Parameters` (`cxx:4671-4703`) | [`surface_params::parameters`] |
 //! | `ChFi3d_IsSmooth` (`cxx:5855-5942`) | [`smooth::is_smooth`] |
+//! | `ChFi3d_ApproxByC2` (`cxx:5835-5851`) | [`approx_by_c2::approx_by_c2`] |
 //! | `ChFi3d_CheckSameParameter` (`cxx:1565-1595`) | [`same_parameter::check_same_parameter`] |
 //! | `ChFi3d_SameParameter` (`cxx:1602-1640`) | [`same_parameter::same_parameter`], [`same_parameter::same_parameter_range`] |
 //! | `ChFi3d_TrsfTrans` (`cxx:2174-2186`) | [`fil_common_point::trsf_trans`] |
@@ -49,10 +50,8 @@
 //! - `ChFi3d_InterPlaneEdge` (`cxx:718-767`) — there is no ported
 //!   `IntCurveSurface_HInter::Perform(curve, surface)` driver; only the
 //!   per-arm pieces in [`crate::intcurvesurface`].
-//! - `ChFi3d_ApproxByC2` (`cxx:5835-5851`) — needs
-//!   `GeomAPI_PointsToBSpline(points, ChordLength, 3, 8, C2, 1.000001e-3)`,
-//!   which the port has only as global cubic interpolation.
 
+pub mod approx_by_c2;
 pub mod box2d;
 pub mod comp_param;
 pub mod faces;
@@ -67,6 +66,7 @@ pub mod topology_stats;
 pub mod vertex_edges;
 
 pub use box2d::{boite, boite_of_four};
+pub use approx_by_c2::approx_by_c2;
 pub use comp_param::comp_param;
 pub use faces::{conex_faces, edge_state, eval_conti};
 pub use fil_common_point::{fil_common_point, trsf_trans};

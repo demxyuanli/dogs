@@ -311,6 +311,22 @@ pub fn edge_vertices(edge: &Edge) -> (Option<Vertex>, Option<Vertex>) {
     (first, last)
 }
 
+/// `TopExp::CommonVertex(E1, E2, V)` (`TopExp.cxx:323-340`): the first endpoint
+/// of `E1` that is also an endpoint of `E2`, `None` for OCCT's `return false`.
+pub fn common_vertex(e1: &Edge, e2: &Edge) -> Option<TopoShape> {
+    let (f1, l1) = edge_vertices(e1);
+    let (f2, l2) = edge_vertices(e2);
+    let (f1, l1) = (f1?, l1?);
+    let (f2, l2) = (f2?, l2?);
+    if is_same(&f1.0, &f2.0) || is_same(&f1.0, &l2.0) {
+        return Some(f1.0);
+    }
+    if is_same(&l1.0, &f2.0) || is_same(&l1.0, &l2.0) {
+        return Some(l1.0);
+    }
+    None
+}
+
 /// `TopoDS_Shape::IsSame` (`TopoDS_Shape.hxx:262-267`): same `TShape` and same
 /// `TopLoc_Location`; the orientation is not compared.
 ///

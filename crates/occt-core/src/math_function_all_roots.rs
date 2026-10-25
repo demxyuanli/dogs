@@ -9,7 +9,7 @@
 
 use crate::math_fn::MathFunctionWithDerivative;
 use crate::math_function_roots::FunctionRoots;
-use crate::math_function_sample::FunctionSample;
+use crate::math_function_sample::SampleSource;
 
 /// `math_FunctionAllRoots` (`math_FunctionAllRoots.hxx:34-99`).
 #[derive(Debug, Clone)]
@@ -26,9 +26,13 @@ pub struct FunctionAllRoots {
 impl FunctionAllRoots {
     /// `math_FunctionAllRoots(F, S, EpsX, EpsF, EpsNul)`
     /// (`math_FunctionAllRoots.cxx:26-238`).
-    pub fn new<F: MathFunctionWithDerivative>(
+    ///
+    /// `S` is `math_FunctionSample&` in OCCT, so any derived sample
+    /// (`GeomLib_LogSample` for one) is accepted through
+    /// [`SampleSource`](crate::math_function_sample::SampleSource).
+    pub fn new<F: MathFunctionWithDerivative, S: SampleSource + ?Sized>(
         f: &mut F,
-        s: &FunctionSample,
+        s: &S,
         eps_x: f64,
         eps_f: f64,
         eps_nul: f64,
