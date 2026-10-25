@@ -29,7 +29,13 @@
 //!   file statics of `_1.cxx` in [`perform_helpers`],
 //! - [`ChFi3dBuilder::perform_element`] ([`perform_element`],
 //!   `ChFi3d_Builder_1.cxx:887-1179`), the downstream / upstream tangency walk
-//!   that fills a spine.
+//!   that fills a spine,
+//! - [`ChFi3dBuilder::call_perform_surf`] ([`call_perform_surf`],
+//!   `ChFi3d_Builder_2.cxx:635-818`) and
+//!   [`ChFi3dBuilder::stripe_orientations`] (`_2.cxx:826-857`), the two drivers
+//!   that choose the face pair / `Choix` handed to the subclass, with the two
+//!   protected pure virtuals they dispatch to stated as
+//!   [`ChFi3dSurfOps`] (`ChFi3d_Builder.hxx:203-221`, `:445-466`).
 //!
 //! UNPORTED — the orchestration above the data layer, whose `BRepBlend` /
 //! `BlendFunc` dependencies (the four walking drivers, the four `*Rad` surface
@@ -38,14 +44,19 @@
 //! - `Compute` (`ChFi3d_Builder.cxx:178-680`), `PerformSingularCorner`
 //!   (`:682-757`), `PerformFilletOnVertex` (`:759-922`), `ExtentAnalyse`
 //!   (`:144-176`),
-//! - the `SimulSurf` overloads, `PerformTwoCornerbyInter`, `SplitKPart`,
-//!   `SimulKPart` (`ChFi3d_Builder.hxx:203-520`) — pure virtual in OCCT, they
-//!   are implemented by `ChFi3d_FilBuilder` / `ChFi3d_ChBuilder`,
+//! - `PerformFirstSection` (`ChFi3d_Builder.hxx:577-588`), `SimulKPart`
+//!   (`hxx:201`) and the three edge-contact overloads of `PerformSurf` /
+//!   `SimulSurf` (`hxx:223-302`, `:399-540`), `PerformTwoCornerbyInter`,
+//!   `SplitKPart` — pure virtual in OCCT, they are implemented by
+//!   `ChFi3d_FilBuilder` / `ChFi3d_ChBuilder`,
 //! - `PerformSetOfSurfOnElSpine` (`ChFi3d_Builder_2.cxx:2207-...`),
-//!   `ConexFaces` (`ChFi3d_Builder_2.cxx:859-...`), `PerformOneCorner`,
+//!   `PerformOneCorner`,
 //!   `IntersectMoreCorner`, `PerformMoreSurfdata`, `PerformIntersectionAtEnd`,
 //!   `FindFace` (`ChFi3d_Builder_C1.cxx:4533-4600`), `MoreSurfdata`
-//!   (`ChFi3d_Builder_C1.cxx:4601-...`), `StartSol` (`ChFi3d_Builder_CnCrn.cxx`).
+//!   (`ChFi3d_Builder_C1.cxx:4601-...`), `StartSol` (`_2.cxx:900-1110`,
+//!   `:1161-`) with its file statics `BonVoisin` (`_2.cxx:213-318`),
+//!   `Projection` (`:320-370`) and `ChFi3d_InterPlaneEdge`
+//!   (`ChFi3d_Builder_0.cxx:718-767`).
 //!
 //! Divergences that are not heuristics (each is also stated at the call site):
 //! - `occ::handle<T>` becomes an owned value (`HDataStructure`, `HBuilder`) or
@@ -66,6 +77,7 @@ use std::sync::Arc;
 use occt_core::kernel::geomabs::Shape;
 use occt_geom::Surface as GeomSurface;
 
+mod call_perform_surf;
 mod complete_data;
 mod compute_data;
 mod compute_data_face_face;
@@ -76,9 +88,11 @@ mod search_face;
 mod simul_data;
 mod simul_data_face_face;
 mod store_data;
+mod surf_ops;
 mod update_line;
 
 pub use store_data::store_data;
+pub use surf_ops::ChFi3dSurfOps;
 pub use update_line::update_line;
 
 use crate::abs::{Orientation, ShapeType};
