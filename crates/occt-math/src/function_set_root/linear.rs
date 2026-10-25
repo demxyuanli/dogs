@@ -124,7 +124,7 @@ pub(super) fn lu_solve(a: &MathMatrix, indx: &[usize], b: &mut MathVector) {
 
 /// `math_SVD` constructor (`math_SVD.cxx:29-39`): pads A with zero rows to
 /// `max(RowNumber, ColNumber)` before calling `SVD_Decompose`.
-pub(super) fn svd_padded(a: &MathMatrix) -> SVD {
+pub fn svd_padded(a: &MathMatrix) -> SVD {
     let m = a.row_count();
     let n = a.col_count();
     let size = m.max(n);
@@ -138,16 +138,17 @@ pub(super) fn svd_padded(a: &MathMatrix) -> SVD {
 }
 
 /// `math_SVD::Solve` (`math_SVD.cxx:41-68`) and `SVD_Solve`
-/// (`math_Recipes.cxx:712-748`), with the default `Eps = 1.0e-6`
-/// (`math_SVD.hxx:53`).
-pub(super) fn svd_solve_occt(svd: &SVD, b: &MathVector, x: &mut MathVector) {
+/// (`math_Recipes.cxx:712-748`). `eps` is OCCT's `Eps` argument: a singular
+/// value `<= eps * wmax` is treated as zero, so the corresponding direction is
+/// dropped from the solution. `math_SVD.hxx:53` defaults it to `1.0e-6`.
+pub fn svd_solve_occt(svd: &SVD, b: &MathVector, x: &mut MathVector, eps: f64) {
     let m = svd.u.row_count();
     let n = svd.v.row_count();
     let mut wmax = 0.0f64;
     for i in 1..=svd.w.len() {
         wmax = wmax.max(svd.w.value(i));
     }
-    let wmin = 1.0e-6 * wmax;
+    let wmin = eps * wmax;
     let mut w = svd.w.clone();
     for i in 1..=w.len() {
         if w.value(i) < wmin {

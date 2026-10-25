@@ -34,6 +34,7 @@ mod minimize;
 mod perform;
 
 pub use self::function_root::MathFunctionRoot;
+pub use self::linear::{svd_padded, svd_solve_occt};
 
 /// `Precision::Infinite()` (`Precision.hxx:371`).
 const PRECISION_INFINITE: f64 = 2.0e100;

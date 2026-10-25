@@ -127,7 +127,7 @@ pub(super) fn search_direction(
                 let svd = svd_padded(df);
                 if svd.is_done {
                     let neg = ff.opposite();
-                    svd_solve_occt(&svd, &neg, direction);
+                    svd_solve_occt(&svd, &neg, direction, 1.0e-6);
                 } else {
                     change = true;
                 }
@@ -136,7 +136,7 @@ pub(super) fn search_direction(
             let svd = svd_padded(df);
             if svd.is_done {
                 let neg = ff.opposite();
-                svd_solve_occt(&svd, &neg, direction);
+                svd_solve_occt(&svd, &neg, direction, 1.0e-6);
             } else {
                 change = true;
             }

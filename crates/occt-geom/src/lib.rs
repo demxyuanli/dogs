@@ -7,6 +7,7 @@ pub mod curve;
 pub mod bspline_curve;
 pub mod interp_curve;
 pub mod surface;
+pub mod curve_on_surface;
 pub mod line;
 pub mod circle;
 pub mod ellipse;

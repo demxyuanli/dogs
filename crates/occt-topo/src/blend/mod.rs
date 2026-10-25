@@ -19,7 +19,11 @@
 //!   two pcurves plus a guide line,
 //! - [`func_inv`]: `Blend_FuncInv` (`hxx:37-94`, `.cxx:18-21`),
 //! - [`inv_functions`]: `Blend_SurfPointFuncInv` / `Blend_SurfCurvFuncInv` /
-//!   `Blend_CurvPointFuncInv` (`hxx:31-88`, `.cxx:21-25`).
+//!   `Blend_CurvPointFuncInv` (`hxx:31-88`, `.cxx:21-25`),
+//! - [`blend_func`]: the `BlendFunc` package helpers `GetShape` /
+//!   `GetMinimalWeights` / `NextShape` and `BlendFunc_SectionShape`
+//!   (`ModelingAlgorithms/TKFillet/BlendFunc/BlendFunc.cxx:40-152`,
+//!   `BlendFunc_SectionShape.hxx:20-26`).
 //!
 //! Convention shared by every trait here: OCCT writes the body of a redefined
 //! base method inside an intermediate class, and Rust sub-traits cannot supply
@@ -33,10 +37,14 @@
 //!   between `BlendFunc_*` and `BRepBlend_*` solutions,
 //! - `Blend_AppSurface` (`Blend_AppSurface.cxx`) — the approximation surface
 //!   driver (its `AppBlend_Approx` base is ported separately),
-//! - the `BlendFunc` package (`ModelingAlgorithms/TKFillet/BlendFunc/`), all of
-//!   which implements the traits above.
+//! - the `BlendFunc_*` solvers of the `BlendFunc` package
+//!   (`ModelingAlgorithms/TKFillet/BlendFunc/`), which implement the traits
+//!   above; the package helpers `GetShape` / `GetMinimalWeights` /
+//!   `NextShape` are ported in [`blend_func`], `ComputeNormal` /
+//!   `ComputeDNormal` still wait for `CSLib`.
 
 pub mod app_function;
+pub mod blend_func;
 pub mod cs_function;
 pub mod func_inv;
 pub mod function;
@@ -47,6 +55,7 @@ pub mod status;
 pub mod surf_rst_function;
 
 pub use app_function::BlendAppFunction;
+pub use blend_func::{get_minimal_weights, get_shape, next_shape, BlendFuncSectionShape};
 pub use cs_function::BlendCsFunction;
 pub use func_inv::BlendFuncInv;
 pub use function::BlendFunction;

@@ -116,7 +116,7 @@ pub mod math_crout;
 pub mod uzawa;
 pub use function_set_root::{
     MathFunctionRoot, MathFunctionSetRoot, MathFunctionSetWithDerivatives,
-    FunctionWithDerivative,
+    FunctionWithDerivative, svd_padded, svd_solve_occt,
 };
 pub use newton_function_set_root::MathNewtonFunctionSetRoot;
 pub use plib_hermite::hermite_coefficients;
