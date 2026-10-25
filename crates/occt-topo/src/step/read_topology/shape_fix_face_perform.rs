@@ -48,7 +48,7 @@ pub(super) fn wires_stored_on_face(face: &Face) -> Vec<Wire> {
 /// `Context()->Apply` (`ShapeFix_Shape.cxx:257`), which is why the caller has to
 /// take the face back off the tool.
 pub(super) fn fix_face_orientation(sff: &mut crate::shhealing::ShapeFixFace, face: &Face) -> Face {
-    if !sff.fix_orientation_mode {
+    if !sff.modes.need_fix_orientation() {
         return face.clone(); // cxx:691-697: `NeedFix(myFixOrientationMode)`.
     }
     sff.face = Some(face.clone()); // cxx:505: `myFace = TopoDS::Face(exp.Current())`.
@@ -67,7 +67,7 @@ pub(super) fn fix_face_orientation(sff: &mut crate::shhealing::ShapeFixFace, fac
 pub(super) fn fix_face_wire_pairs(sff: &mut crate::shhealing::ShapeFixFace, face: &Face) -> Face {
     sff.face = Some(face.clone()); // cxx:505
     sff.fix_wires_two_coinc_edges(); // cxx:676-679, `ShapeExtend_DONE7`
-    if sff.fix_intersecting_wires_mode {
+    if sff.modes.need_fix_intersecting_wires() {
         sff.fix_intersecting_wires(); // cxx:680-685, `ShapeExtend_DONE6`
     }
     sff.face.clone().unwrap_or_else(|| face.clone())
@@ -101,7 +101,7 @@ pub(super) fn fix_face_second_part(
     }
     let face = sff.face.clone().unwrap_or(face);
     // cxx:710-716.
-    if sff.fix_split_face_mode && need_split && sff.map_wires.len() > 1 {
+    if sff.modes.need_fix_split_face() && need_split && sff.map_wires.len() > 1 {
         sff.face = Some(face.clone());
         if sff.fix_split_face() {
             if let Some(res) = sff.result.clone() {

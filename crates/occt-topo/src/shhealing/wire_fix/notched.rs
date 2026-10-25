@@ -1,33 +1,21 @@
 use super::*;
 
-/// `ShapeFix_Wire::FixEdgeCurves` arm at `ShapeFix_Wire.cxx:953-1005`,
-/// including the `CheckPCurveRange` re-projection it owns (`cxx:958-993`).
-///
-/// Its mode is the *separate* key `FixEdgeSameParameterMode`
-/// (`ShapeProcess_OperLibrary.cxx:857` `sfw->FixSameParameterMode() =
-/// ctx->IntegerVal("FixEdgeSameParameterMode", -1)`), which is `0` on both
-/// read paths: `DE_ShapeFixParameters.hxx:75` `FixEdgeSameParameterMode =
-/// FixMode::NotFix` (`:27` `NotFix = 0`), `DEIGES_Parameters.cxx:64-72` and
-/// `DESTEP_Parameters.cxx:92-95` return that struct unchanged for this field,
-/// `XSAlgo_ShapeProcessor.cxx:681` writes it as `FixShape.FixEdgeSameParameterMode`,
-/// and `ShapeProcess_Context::IntegerVal` resolves the scope `FixShape`
-/// (`ShapeProcess.cxx:214`, `ShapeProcess_Context.cxx:192-208`) to that key.
-/// The legacy map agrees: `IGESData.cxx:152` and `STEPControl_Controller.cxx:247`
-/// both leave it at `0`. `NeedFix(0)` is `0 < 0 ? need : 0 > 0`, i.e. false
-/// (`ShapeFix_Root.lxx:101-104`).
-///
-/// So OCCT-IGES/DESTEP does not run this arm, and the pass that covers the same
-/// `ShapeFix_Edge::FixSameParameter` work is the whole-shape
-/// `ShapeFix_Shape.cxx:259` -> `ShapeFix::SameParameter(Result, false, 0.0)`
-/// (`ShapeFix.cxx:70-258`), which is gated by the distinct key
-/// `FixSameParameterMode` (`ShapeProcess_OperLibrary.cxx:813`, DE default
-/// `FixOrNot = -1`) and therefore does run.
-///
-/// ENABLED = the port keeps running the arm (its pre-existing behaviour);
-/// DISABLED = the arm follows the `cxx` gate and is skipped. The A/B over the
-/// 14 oracle models is recorded in `docs/goals/iges-read-full/state.yaml`
-/// (T015).
-pub(in crate::shhealing) const FIXEDGE_SAMEPARAM_ARM: bool = false;
+// `ShapeFix_Wire::FixEdgeCurves`' `FixSameParameter` arm
+// (`ShapeFix_Wire.cxx:953-1005`, including the `CheckPCurveRange` re-projection
+// it owns at `cxx:958-993`) is gated by `NeedFix(myFixSameParameterMode)`. That
+// field is fed from the *separate* key `FixEdgeSameParameterMode`
+// (`ShapeProcess_OperLibrary.cxx:857`), which is `0` on both read paths
+// (`DE_ShapeFixParameters.hxx:75` `FixMode::NotFix`, `DEIGES_Parameters.cxx:64-72`,
+// `DESTEP_Parameters.cxx:90-93`, `XSAlgo_ShapeProcessor.cxx:681`; the legacy
+// maps `IGESData.cxx:152` and `STEPControl_Controller.cxx:247` agree), so
+// `NeedFix(0)` is false. The gate now lives in `WireFixModes`
+// (`fix_same_parameter_mode`) and the presets carry that value.
+//
+// The pass that covers the same `ShapeFix_Edge::FixSameParameter` work is the
+// whole-shape `ShapeFix_Shape.cxx:259` -> `ShapeFix::SameParameter(Result,
+// false, 0.0)` (`ShapeFix.cxx:70-258`), gated by the distinct key
+// `FixSameParameterMode` (`ShapeProcess_OperLibrary.cxx:813`, DE default
+// `FixOrNot = -1`), which does run.
 
 // ---------------------------------------------------------------------------
 // ShapeFix_Wire::FixNotchedEdges / ShapeAnalysis_Wire::CheckNotchedEdges
@@ -445,16 +433,30 @@ pub(in crate::shhealing) fn fix_notched_edges(wire: &mut Wire, face: &Face, min_
 /// ported in `check_pcurve_rep_range` below (`cxx:110-114`), together with the
 /// non-planar `XSAlgo_ShapeProcessor::CheckPCurve` call at `cxx:175`. The
 /// `ShapeFix_Wire` passes that follow are independent of the face type.
-pub fn check_pcurves_and_shift(wire: &mut Wire, face: &Face, preci: f64, fix_lacking: bool) {
+pub fn check_pcurves_and_shift(wire: &mut Wire, face: &Face, preci: f64, modes: &WireFixModes) {
     check_pcurve_rep_range(wire, face, preci);
     // `ShapeFix_Wire::Perform` (`cxx:317-325`): FixReorder before FixEdgeCurves.
+    // `ReorderOK` starts as `myAnalyzer->CheckOrder(sawo, myClosedMode) == 0`
+    // (`cxx:319`) and `FixReorder` only runs under
+    // `NeedFix(myFixReorderMode, !ReorderOK)` (`cxx:320`); for an already
+    // ordered wire the order status is `Same` and `FixReorder` applies nothing
+    // (`ShapeFix_Wire.cxx:1360-1363`), so the combined helper is equivalent and
+    // its return value is the post-`FixReorder` `ReorderOK` (`cxx:326`).
     let mut reorder_ok = fix_reorder_wire(wire, face);
     // `ShapeFix_Wire::Perform` (`cxx:333-347`): FixSmall under
     // `NeedFix(myFixSmallMode, myTopoMode)`. `FromSTEP.FixShape.FixSmallMode` is
     // "-1" (`STEPControl_Controller.cxx:233`) and `myTopoMode` is forced true by
     // `ShapeFix_Shape.cxx:200` for the face path, so the pass runs, with
     // `lockvtx = !myTopoMode || !ReorderOK` and `precsmall = MinTolerance()`.
-    if fix_small_all(wire, face, preci, SHAPE_FIX_MIN_TOLERANCE, !reorder_ok) {
+    if need_fix(modes.fix_small_mode, modes.topo_mode)
+        && fix_small_all(
+            wire,
+            face,
+            preci,
+            SHAPE_FIX_MIN_TOLERANCE,
+            !modes.topo_mode || !reorder_ok,
+        )
+    {
         // `cxx:339-343`: after a removal the wire may reorder better; the retry
         // is gated by `NeedFix(myFixReorderMode = -1, !ReorderOK)` evaluated with
         // the ReorderOK from before FixSmall.
@@ -462,8 +464,9 @@ pub fn check_pcurves_and_shift(wire: &mut Wire, face: &Face, preci: f64, fix_lac
             reorder_ok = fix_reorder_wire(wire, face);
         }
     }
-    // `ShapeFix_Wire::Perform` (`cxx:353-357`): FixConnected after FixSmall.
-    if reorder_ok {
+    // `ShapeFix_Wire::Perform` (`cxx:353-357`): FixConnected under
+    // `NeedFix(myFixConnectedMode, ReorderOK)`.
+    if need_fix(modes.fix_connected_mode, reorder_ok) {
         let _ = fix_connected_all(wire, preci, SHAPE_FIX_MAX_TOLERANCE);
     }
     let edges = edges_of_wire(wire);
@@ -482,19 +485,32 @@ pub fn check_pcurves_and_shift(wire: &mut Wire, face: &Face, preci: f64, fix_lac
     // `ShapeFix_Wire` keeps for the whole wire (`ShapeFix_Wire.cxx:280-300`), so
     // one `myCache` covers every edge of this face's wire.
     let mut cache = crate::pcurve_full::ProjectorCache::new();
-    for (i, e) in edges.iter().enumerate() {
-        let is_seam = is_seam_use(&edges, i);
-        let _ = fix_add_pcurve(e, face, is_seam, preci, &mut cache);
+    // `ShapeFix_Wire::Perform` (`cxx:368-380`) -> `FixEdgeCurves`
+    // (`ShapeFix_Wire.cxx:881-1029`) under `NeedFix(myFixEdgeCurvesMode)`;
+    // inside it `FixShifted` is forced off while `ReorderOK` is false
+    // (`cxx:369-380` `myFixShiftedMode == -1 && !ReorderOK -> 0`).
+    let edge_curves = need_fix(modes.fix_edge_curves_mode, true);
+    let shifted_mode = if modes.fix_shifted_mode == FIX_OR_NOT && !reorder_ok {
+        NOT_FIX
+    } else {
+        modes.fix_shifted_mode
+    };
+    if edge_curves && need_fix(modes.fix_add_pcurve_mode, true) {
+        for (i, e) in edges.iter().enumerate() {
+            let is_seam = is_seam_use(&edges, i);
+            let _ = fix_add_pcurve(e, face, is_seam, preci, &mut cache);
+        }
     }
-    // `cxx:368-374` turns FixShifted off when the reorder reported FAIL.
-    if reorder_ok {
+    // `ShapeFix_Wire.cxx:938-951`: `isReady && NeedFix(myFixShiftedMode)`.
+    if edge_curves && need_fix(shifted_mode, true) {
         let _ = fix_shifted_wire(wire, face);
     }
-    // `ShapeFix_Wire::FixEdgeCurves` (`ShapeFix_Wire.cxx:953-1005`), the same
-    // arm and the same off gate as `perform_wire_first_round` (see
-    // `FIXEDGE_SAMEPARAM_ARM` there): `FixEdgeSameParameterMode` is `0` for
-    // STEP too (`DE_ShapeFixParameters.hxx:75` `FixMode::NotFix`,
-    // `DESTEP_Parameters.cxx:92-95`, `XSAlgo_ShapeProcessor.cxx:681`, legacy
+    // `ShapeFix_Wire::FixEdgeCurves` (`ShapeFix_Wire.cxx:953-1005`) under
+    // `isReady && NeedFix(myFixSameParameterMode)`; the field is set from the
+    // *separate* key `FixEdgeSameParameterMode`
+    // (`ShapeProcess_OperLibrary.cxx:857`), which is `0` for STEP
+    // (`DE_ShapeFixParameters.hxx:75` `FixMode::NotFix`,
+    // `DESTEP_Parameters.cxx:90-93`, `XSAlgo_ShapeProcessor.cxx:681`, legacy
     // `STEPControl_Controller.cxx:247`), so `NeedFix(0)` is false and OCCT runs
     // neither the `CheckPCurveRange` re-projection below nor
     // `FixSameParameter(Edge, Face())`. OCCT's shape-level equivalent
@@ -502,8 +518,9 @@ pub fn check_pcurves_and_shift(wire: &mut Wire, face: &Face, preci: f64, fix_lac
     // (`ShapeFix.cxx:70-258`) is what the port covers with
     // `same_parameter_shape` (`BRepLib::SameParameter`).
     let reg = GeometryRegistry::global();
+    let same_parameter_arm = edge_curves && need_fix(modes.fix_same_parameter_mode, true);
     for (i, e) in edges.iter().enumerate() {
-        if FIXEDGE_SAMEPARAM_ARM {
+        if same_parameter_arm {
             if let Some((c2d, fp2d, lp2d)) = curve_on_surface_oriented(e, face, false) {
                 let (first, last) = BRepTool::edge_parameters(e);
                 if first.is_finite() && last.is_finite() {
@@ -511,36 +528,40 @@ pub fn check_pcurves_and_shift(wire: &mut Wire, face: &Face, preci: f64, fix_lac
                     if (first - fp2d).abs() > PCONFUSION || (last - lp2d).abs() > PCONFUSION {
                         reg.set_same_range(&e.0, false);
                     } else if !check_pcurve_range(first, last, c2d.as_ref()) {
-                    // `ShapeFix_Wire.cxx:970-985`: when the pcurve cannot cover the
-                    // edge's 3D range OCCT does exactly two things —
-                    // `ShapeBuild_Edge().RemovePCurve(E, S, L)` followed by
-                    // `myFixEdge->FixAddPCurve(E, face, isSeam, myAnalyzer->Surface(),
-                    // Precision())`, i.e. it *re-projects* the pcurve from the 3D
-                    // curve. There is no range-remapping branch here, so neither is
-                    // there one in the port: a stored pcurve whose 2D points fall
-                    // outside the surface domain (e.g. the spherical pcurve of
-                    // `data/Offset.step` `#1290`, whose line sits at v = -3*pi/4,
-                    // outside v in [-pi/2, pi/2]) must be replaced by the projection,
-                    // not re-parameterised.
-                    let is_seam = is_seam_use(&edges, i);
-                    reg.remove_pcurves_on_surface(&e.0, &face.0);
-                    let _ = fix_add_pcurve(e, face, is_seam, preci, &mut cache);
+                        // `ShapeFix_Wire.cxx:970-985`: when the pcurve cannot
+                        // cover the edge's 3D range OCCT does exactly two
+                        // things — `ShapeBuild_Edge().RemovePCurve(E, S, L)`
+                        // followed by `myFixEdge->FixAddPCurve(E, face, isSeam,
+                        // myAnalyzer->Surface(), Precision())`, i.e. it
+                        // *re-projects* the pcurve from the 3D curve. There is
+                        // no range-remapping branch here, so neither is there
+                        // one in the port: a stored pcurve whose 2D points fall
+                        // outside the surface domain (e.g. the spherical pcurve
+                        // of `data/Offset.step` `#1290`, whose line sits at
+                        // v = -3*pi/4, outside v in [-pi/2, pi/2]) must be
+                        // replaced by the projection, not re-parameterised.
+                        let is_seam = is_seam_use(&edges, i);
+                        reg.remove_pcurves_on_surface(&e.0, &face.0);
+                        let _ = fix_add_pcurve(e, face, is_seam, preci, &mut cache);
                     }
                 }
             }
             fix_same_parameter(e, face);
         }
     }
-    // `ShapeFix_Wire::Perform` (`cxx:386-392`): FixDegenerated runs right after
-    // FixEdgeCurves (the loop above) and before FixNotchedEdges / FixTails /
-    // FixSelfIntersection / FixLacking / FixVertexTolerance.
-    fix_degenerated_all(wire, face, preci);
+    // `ShapeFix_Wire::Perform` (`cxx:386-392`): FixDegenerated under
+    // `NeedFix(myFixDegeneratedMode)`.
+    if need_fix(modes.fix_degenerated_mode, true) {
+        fix_degenerated_all(wire, face, preci);
+    }
     // `ShapeFix_Wire::Perform` (`cxx:400`): FixNotchedEdges under
     // `myFixTailMode <= 0 && NeedFix(myFixNotchedEdgesMode, ReorderOK)`.
     // `FromSTEP.FixShape.FixTailMode` is "0" (`STEPControl_Controller.cxx:249`)
     // and `FixNotchedEdgesMode` is "-1" (`STEPControl_Controller.cxx:248`), so
     // the gate is ReorderOK. `cxx:402-406`: a fix is followed by FixShifted.
-    if reorder_ok && fix_notched_edges(wire, face, SHAPE_FIX_MIN_TOLERANCE, SHAPE_FIX_MAX_TOLERANCE)
+    if modes.fix_tail_mode <= 0
+        && need_fix(modes.fix_notched_edges_mode, reorder_ok)
+        && fix_notched_edges(wire, face, SHAPE_FIX_MIN_TOLERANCE, SHAPE_FIX_MAX_TOLERANCE)
     {
         let _ = fix_shifted_wire(wire, face);
     }
@@ -552,33 +573,45 @@ pub fn check_pcurves_and_shift(wire: &mut Wire, face: &Face, preci: f64, fix_lac
     // IGES DE default is `-1`, so IGES does call `FixTails`, but its body
     // returns false at `ShapeFix_Wire.cxx:4317` because `MaxTailWidth` is `-1`;
     // see `perform_wire_first_round` below.)
-    // `ShapeFix_Wire::Perform` (`cxx:428`): FixSelfIntersection under
-    // `NeedFix(myFixSelfIntersectionMode, myClosedMode)`. `FixSelfIntersectionMode`
-    // is "-1" (`STEPControl_Controller.cxx:238`), so `NeedFix(-1, myClosedMode)`
-    // (`ShapeFix_Root.lxx:101-104`) is `myClosedMode` (`ShapeFix_Wire.cxx:171`)
-    // and the pass is requested, including its non-adjacent tail
-    // (`ShapeFix_Wire.cxx:1200-1223`) with
+    // `ShapeFix_Wire::Perform` (`cxx:428-443`): FixSelfIntersection under
+    // `NeedFix(myFixSelfIntersectionMode, myClosedMode)`; `FixSelfIntersectionMode`
+    // is "-1" (`STEPControl_Controller.cxx:238`), so with `myClosedMode = true`
+    // (`ShapeFix_Wire.cxx:171`) the pass is requested, including its
+    // non-adjacent tail (`ShapeFix_Wire.cxx:1200-1223`) with
     // `FromSTEP.FixShape.FixNonAdjacentIntersectingEdgesMode` = "-1"
     // (`STEPControl_Controller.cxx:254-257`) and the `maxtol = 1.0` default
     // (`ShapeFix_IntersectionTool.hxx:46`).
-    let _ = fix_self_intersection(wire, face, preci, true);
-    // `ShapeFix_Wire::Perform` (`cxx:448`): FixLacking under
+    //
+    // `cxx:430-441`: `Perform` keeps the adjacent-edge pass (`FixIntersectingEdges`)
+    // *off* while `ReorderOK` is false - `myFixIntersectingEdgesMode == -1 &&
+    // !ReorderOK` is forced to `0`, so `NeedFix(0)` is false. Only the
+    // single-edge pass (`FixSelfIntersectingEdge`) still runs.
+    //
+    // `ShapeFix_Face::Perform` (`cxx:369-374`) forces this mode off for its
+    // first wire round, so on that path the whole block is skipped.
+    if need_fix(modes.fix_self_intersection_mode, modes.closed_mode) {
+        let intersecting_edges = if modes.fix_intersecting_edges_mode == FIX_OR_NOT && !reorder_ok {
+            NOT_FIX
+        } else {
+            modes.fix_intersecting_edges_mode
+        };
+        let _ = fix_self_intersection(wire, face, preci, need_fix(intersecting_edges, true));
+    }
+    // `ShapeFix_Wire::Perform` (`cxx:448-456`): FixLacking under
     // `NeedFix(myFixLackingMode, ReorderOK)`; `NeedFix(flag, need)` is
     // `flag < 0 ? need : flag > 0` (`ShapeFix_Root.lxx:101-104`), and
     // `FromSTEP.FixShape.FixLackingMode` is "-1"
     // (`STEPControl_Controller.cxx:237`), so OCCT runs the pass exactly when
     // ReorderOK is true.
     // `ShapeFix_Face::Perform` (`ShapeFix_Face.cxx:369-374`) *disables*
-    // `FixLacking` for its first wire round and restores it (`cxx:457`) only
-    // for the post-`FixMissingSeam` second round (`cxx:509+`). This reader-time
-    // pass is that first round (`TranslateEdgeLoop::CheckPCurves` +
-    // `ShapeFix_Face::Perform.cxx:365-480`), so `FixLacking` must not run
-    // here: on a periodic face whose bounds are single closed seam edges it
-    // inserted a spurious back-going edge, which made `FixMissingSeam`'s
-    // `check_wire` sum to 0 and never merge the two wires (see
-    // specs/_a3n00_gap_analysis.md 9.95). The second-round call belongs after
-    // `FixMissingSeam`, which is not wired into the reader yet.
-    if reorder_ok && fix_lacking {
+    // `FixLacking` for its first wire round and restores it (`cxx:457`) for the
+    // post-`FixMissingSeam` second round (`cxx:509+`), which is what
+    // `WireFixModes::first_wire_round` / `second_wire_round` encode. On a
+    // periodic face whose bounds are single closed seam edges the pass inserted
+    // a spurious back-going edge, which made `FixMissingSeam`'s `check_wire`
+    // sum to 0 and never merge the two wires (see
+    // specs/_a3n00_gap_analysis.md 9.95).
+    if need_fix(modes.fix_lacking_mode, reorder_ok) {
         let _ = fix_lacking_all(wire, face, false, preci, SHAPE_FIX_MAX_TOLERANCE);
     }
 }
@@ -609,15 +642,24 @@ pub fn perform_wire_first_round(
     face: &Face,
     preci: f64,
     ctx: &mut crate::shape_fix_compose_shell::SharedReShape,
+    modes: &WireFixModes,
 ) {
     let mut reorder_ok = fix_reorder_wire(wire, face);
     let reorder_before_small = reorder_ok;
-    if fix_small_all(wire, face, preci, SHAPE_FIX_MIN_TOLERANCE, !reorder_ok) {
-        if !reorder_before_small {
+    if need_fix(modes.fix_small_mode, modes.topo_mode)
+        && fix_small_all(
+            wire,
+            face,
+            preci,
+            SHAPE_FIX_MIN_TOLERANCE,
+            !modes.topo_mode || !reorder_ok,
+        )
+    {
+        if need_fix(modes.fix_reorder_mode, !reorder_before_small) {
             reorder_ok = fix_reorder_wire(wire, face);
         }
     }
-    if reorder_ok {
+    if need_fix(modes.fix_connected_mode, reorder_ok) {
         let _ = fix_connected_all(wire, preci, SHAPE_FIX_MAX_TOLERANCE);
     }
     let mut cache = crate::pcurve_full::ProjectorCache::new();
@@ -644,7 +686,11 @@ pub fn perform_wire_first_round(
     // `NeedFix(myFixAddCurve3dMode)` is true at the tool default `-1`
     // (`cxx:181`), so every edge without a 3D curve gets one built from its
     // pcurve before FixSeam / FixShifted / FixSameParameter run.
-    fix_add_curve3d_or_drop(wire, face, preci);
+    if need_fix(modes.fix_edge_curves_mode, true)
+        && need_fix(modes.fix_add_curve3d_mode, true)
+    {
+        fix_add_curve3d_or_drop(wire, face, preci);
+    }
     // `ShapeFix_Wire::FixEdgeCurves` (`ShapeFix_Wire.cxx:920-933`): `FixSeam` is
     // NOT PORTED and is NOT REACHED. The gate is
     // `isReady && NeedFix(myFixSeamMode, false)` and `NeedFix(Flag, need)` is
@@ -664,13 +710,19 @@ pub fn perform_wire_first_round(
     // modes `-1` at `IGESData.cxx:146` / `DE_ShapeFixParameters.hxx:69`) and
     // `FixRemoveCurve3d` (`cxx:866`, `IGESData.cxx:147` / `hxx:70`), which are
     // likewise not ported and not reached.
-    if reorder_ok {
-        let _ = fix_shifted_wire(wire, face);
+    if need_fix(modes.fix_edge_curves_mode, true) {
+        let shifted_mode = if modes.fix_shifted_mode == FIX_OR_NOT && !reorder_ok {
+            NOT_FIX
+        } else {
+            modes.fix_shifted_mode
+        };
+        if need_fix(shifted_mode, true) {
+            let _ = fix_shifted_wire(wire, face);
+        }
     }
-    // `ShapeFix_Wire::FixEdgeCurves` (`ShapeFix_Wire.cxx:953-1005`).
-    // KNOWN DEVIATION, not yet migrated: the OCCT gate is
-    // `NeedFix(myFixSameParameterMode)` and this wire tool's mode is the
-    // *separate* key `FixEdgeSameParameterMode`
+    // `ShapeFix_Wire::FixEdgeCurves` (`ShapeFix_Wire.cxx:953-1005`): the gate is
+    // `isReady && NeedFix(myFixSameParameterMode)`, and this wire tool's mode is
+    // the *separate* key `FixEdgeSameParameterMode`
     // (`ShapeProcess_OperLibrary.cxx:857`), whose IGES value is `0`
     // (`DE_ShapeFixParameters.hxx:75` `FixMode::NotFix`, `DEIGES_Parameters.cxx:64-72`,
     // `XSAlgo_ShapeProcessor.cxx:681`, and the legacy
@@ -685,8 +737,10 @@ pub fn perform_wire_first_round(
     // next worker package; the oracle meshes are the check on it.
     let edges = edges_of_wire(wire);
     let reg = GeometryRegistry::global();
+    let same_parameter_arm =
+        need_fix(modes.fix_edge_curves_mode, true) && need_fix(modes.fix_same_parameter_mode, true);
     for (i, edge) in edges.iter().enumerate() {
-        if FIXEDGE_SAMEPARAM_ARM {
+        if same_parameter_arm {
             if let Some((c2d, fp2d, lp2d)) = curve_on_surface_oriented(edge, face, false) {
                 let (first, last) = BRepTool::edge_parameters(edge);
                 if first.is_finite() && last.is_finite() {
@@ -702,20 +756,30 @@ pub fn perform_wire_first_round(
             fix_same_parameter(edge, face);
         }
     }
-    // `ShapeFix_Wire::FixEdgeCurves` (`ShapeFix_Wire.cxx:1009-1022`).
-    // `FixVertexToleranceMode` is -1, so `NeedFix` is true.
-    for edge in edges_of_wire(wire) {
-        fix_vertex_tolerance_edge_on_face(&edge, face);
+    // `ShapeFix_Wire::FixEdgeCurves` (`ShapeFix_Wire.cxx:1009-1022`):
+    // `NeedFix(myFixVertexToleranceMode)`.
+    if need_fix(modes.fix_vertex_tolerance_mode, true) {
+        for edge in edges_of_wire(wire) {
+            fix_vertex_tolerance_edge_on_face(&edge, face);
+        }
     }
-    fix_degenerated_all(wire, face, preci);
-    if reorder_ok && fix_notched_edges(wire, face, SHAPE_FIX_MIN_TOLERANCE, SHAPE_FIX_MAX_TOLERANCE)
+    // `ShapeFix_Wire::Perform` (`cxx:386-392`): FixDegenerated.
+    if need_fix(modes.fix_degenerated_mode, true) {
+        fix_degenerated_all(wire, face, preci);
+    }
+    // `ShapeFix_Wire::Perform` (`cxx:400-406`): FixNotchedEdges, then FixShifted.
+    if modes.fix_tail_mode <= 0
+        && need_fix(modes.fix_notched_edges_mode, reorder_ok)
+        && fix_notched_edges(wire, face, SHAPE_FIX_MIN_TOLERANCE, SHAPE_FIX_MAX_TOLERANCE)
     {
         let _ = fix_shifted_wire(wire, face);
     }
     // `ShapeFix_Wire::Perform` (`ShapeFix_Wire.cxx:462-470`): face overload,
     // not `CheckVertexTolerance(edge)` with `checkAll=true`.
-    for edge in edges_of_wire(wire) {
-        fix_vertex_tolerance_edge_on_face(&edge, face);
+    if need_fix(modes.fix_vertex_tolerance_mode, true) {
+        for edge in edges_of_wire(wire) {
+            fix_vertex_tolerance_edge_on_face(&edge, face);
+        }
     }
 }
 
@@ -730,21 +794,43 @@ pub fn perform_wire_first_round(
 /// `FixVertexTolerance(edge, face)` (`cxx:462-470`).
 /// `FixTails` stays off. The returned flag is `StatusRemovedSegment`
 /// (`ShapeFix_Face.cxx:576-578`).
-pub fn perform_wire_second_round(wire: &mut Wire, face: &Face, preci: f64) -> bool {
+pub fn perform_wire_second_round(
+    wire: &mut Wire,
+    face: &Face,
+    preci: f64,
+    modes: &WireFixModes,
+) -> bool {
     let reorder_ok = fix_reorder_wire(wire, face);
-    if reorder_ok && fix_notched_edges(wire, face, SHAPE_FIX_MIN_TOLERANCE, SHAPE_FIX_MAX_TOLERANCE)
+    if modes.fix_tail_mode <= 0
+        && need_fix(modes.fix_notched_edges_mode, reorder_ok)
+        && fix_notched_edges(wire, face, SHAPE_FIX_MIN_TOLERANCE, SHAPE_FIX_MAX_TOLERANCE)
     {
         let _ = fix_shifted_wire(wire, face);
     }
-    // `cxx:430-434`: intersecting-edge fixes stay off when `ReorderOK` is false.
+    // `cxx:428-443`: FixSelfIntersection under
+    // `NeedFix(myFixSelfIntersectionMode, myClosedMode)`, with the
+    // adjacent-edge arm forced off while `ReorderOK` is false.
+    let mut inter = FixSelfIntersectionResult {
+        done: false,
+        removed_segment: false,
+    };
+    if need_fix(modes.fix_self_intersection_mode, modes.closed_mode) {
+        let intersecting_edges = if modes.fix_intersecting_edges_mode == FIX_OR_NOT && !reorder_ok {
+            NOT_FIX
+        } else {
+            modes.fix_intersecting_edges_mode
+        };
+        inter = fix_self_intersection(wire, face, preci, need_fix(intersecting_edges, true));
+    }
     // `cxx:441`: `FixReorder()` runs again before `FixLacking`.
-    let inter = fix_self_intersection(wire, face, preci, reorder_ok);
     let _ = fix_reorder_wire(wire, face);
-    if reorder_ok {
+    if need_fix(modes.fix_lacking_mode, reorder_ok) {
         let _ = fix_lacking_all(wire, face, false, preci, SHAPE_FIX_MAX_TOLERANCE);
     }
-    for edge in edges_of_wire(wire) {
-        fix_vertex_tolerance_edge_on_face(&edge, face);
+    if need_fix(modes.fix_vertex_tolerance_mode, true) {
+        for edge in edges_of_wire(wire) {
+            fix_vertex_tolerance_edge_on_face(&edge, face);
+        }
     }
     inter.removed_segment
 }
@@ -759,16 +845,21 @@ pub fn perform_wire_second_round(wire: &mut Wire, face: &Face, preci: f64) -> bo
 /// inside `FixEdgeCurves` (`cxx:676`) does not run. `precision` is both
 /// `SetPrecision` and `SetMaxTolerance` (`cxx:137-139`).
 pub fn perform_wire_constructor_defaults(wire: &mut Wire, face: &Face, precision: f64) {
+    // `ShapeFix_Wire::ShapeFix_Wire()` -> `ClearModes()`
+    // (`ShapeFix_Wire.cxx:167-201`): every mode at `-1` / `0`.
+    let modes = WireFixModes::default();
     let mut fixed = false;
     let reorder_ok = fix_reorder_wire(wire, face);
-    if reorder_ok {
+    if need_fix(modes.fix_connected_mode, reorder_ok) {
         fixed |= fix_connected_all(wire, precision, precision);
     }
     let mut cache = crate::pcurve_full::ProjectorCache::new();
     let edges = edges_of_wire(wire);
-    for (i, edge) in edges.iter().enumerate() {
-        let is_seam = is_seam_use(&edges, i);
-        let _ = fix_add_pcurve(edge, face, is_seam, precision, &mut cache);
+    if need_fix(modes.fix_edge_curves_mode, true) && need_fix(modes.fix_add_pcurve_mode, true) {
+        for (i, edge) in edges.iter().enumerate() {
+            let is_seam = is_seam_use(&edges, i);
+            let _ = fix_add_pcurve(edge, face, is_seam, precision, &mut cache);
+        }
     }
     if reorder_ok {
         // `ShapeFix_Wire.cxx:939-951`: `FixEdgeCurves` runs `FixShifted()` and
@@ -794,32 +885,51 @@ pub fn perform_wire_constructor_defaults(wire: &mut Wire, face: &Face, precision
             }
         }
         // `ShapeFix_Wire::FixEdgeCurves` (`ShapeFix_Wire.cxx:953-1005`). This
-        // arm IS enabled here, unlike the two face-wire drivers that set
-        // `FIXEDGE_SAMEPARAM_ARM` to false: this is the naked `ShapeFix_Wire`
-        // of `IGESControl_IGESBoundary::Transfer`, built through the
-        // `ClearModes` constructor (`ShapeFix_Wire.cxx:167-202`), which leaves
-        // `myFixSameParameterMode = -1` (`cxx:185`), so `NeedFix(-1)` is true
-        // (`ShapeFix_Root.lxx:100-104`). The face path instead inherits the
-        // operator's `FixShape.FixEdgeSameParameterMode = 0`
-        // (`ShapeProcess_OperLibrary.cxx:857`).
-        fix_same_parameter(edge, face);
+        // arm IS enabled here, unlike the two face-wire drivers whose preset
+        // carries `fix_same_parameter_mode = 0`: this is the naked
+        // `ShapeFix_Wire` of `IGESControl_IGESBoundary::Transfer`, built
+        // through the `ClearModes` constructor (`ShapeFix_Wire.cxx:167-202`),
+        // which leaves `myFixSameParameterMode = -1` (`cxx:185`), so
+        // `NeedFix(-1)` is true (`ShapeFix_Root.lxx:100-104`). The face path
+        // instead inherits the operator's `FixShape.FixEdgeSameParameterMode =
+        // 0` (`ShapeProcess_OperLibrary.cxx:857`), see
+        // `WireFixModes::step_face`.
+        if need_fix(modes.fix_same_parameter_mode, true) {
+            fix_same_parameter(edge, face);
+        }
     }
-    for edge in edges_of_wire(wire) {
-        fix_vertex_tolerance_edge_on_face(&edge, face);
+    if need_fix(modes.fix_vertex_tolerance_mode, true) {
+        for edge in edges_of_wire(wire) {
+            fix_vertex_tolerance_edge_on_face(&edge, face);
+        }
     }
-    fixed |= fix_degenerated_all(wire, face, precision);
-    if reorder_ok && fix_notched_edges(wire, face, SHAPE_FIX_MIN_TOLERANCE, precision) {
+    if need_fix(modes.fix_degenerated_mode, true) {
+        fixed |= fix_degenerated_all(wire, face, precision);
+    }
+    if modes.fix_tail_mode <= 0
+        && need_fix(modes.fix_notched_edges_mode, reorder_ok)
+        && fix_notched_edges(wire, face, SHAPE_FIX_MIN_TOLERANCE, precision)
+    {
         fixed = true;
     }
     if reorder_ok && fixed {
         let _ = fix_shifted_wire(wire, face);
     }
-    let _ = fix_self_intersection(wire, face, precision, reorder_ok);
+    if need_fix(modes.fix_self_intersection_mode, modes.closed_mode) {
+        let intersecting_edges = if modes.fix_intersecting_edges_mode == FIX_OR_NOT && !reorder_ok {
+            NOT_FIX
+        } else {
+            modes.fix_intersecting_edges_mode
+        };
+        let _ = fix_self_intersection(wire, face, precision, need_fix(intersecting_edges, true));
+    }
     let _ = fix_reorder_wire(wire, face);
-    if reorder_ok {
+    if need_fix(modes.fix_lacking_mode, reorder_ok) {
         let _ = fix_lacking_all(wire, face, false, precision, precision);
     }
-    for edge in edges_of_wire(wire) {
-        fix_vertex_tolerance_edge_on_face(&edge, face);
+    if need_fix(modes.fix_vertex_tolerance_mode, true) {
+        for edge in edges_of_wire(wire) {
+            fix_vertex_tolerance_edge_on_face(&edge, face);
+        }
     }
 }

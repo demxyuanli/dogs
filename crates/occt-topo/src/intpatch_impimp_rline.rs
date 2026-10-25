@@ -42,12 +42,12 @@ pub(crate) fn process_segments(
                     if dofirst {
                         if let Some(pf) = seg.first {
                             if ptvtx.p.distance(&pf.p) <= tol_arc {
-                                let mut newpt = *ptvtx;
+                                let mut newpt = ptvtx.clone();
                                 newpt.param_on_line = paramf;
                                 rline.add_vertex(newpt);
                                 if !procf {
                                     procf = true;
-                                    rline.has_first_point = true;
+                                    rline.set_first_point(rline.nb_vertex());
                                 }
                             }
                         }
@@ -55,12 +55,12 @@ pub(crate) fn process_segments(
                     if dolast {
                         if let Some(pl) = seg.last {
                             if ptvtx.p.distance(&pl.p) <= tol_arc {
-                                let mut newpt = *ptvtx;
+                                let mut newpt = ptvtx.clone();
                                 newpt.param_on_line = paraml;
                                 rline.add_vertex(newpt);
                                 if !procl {
                                     procl = true;
-                                    rline.has_last_point = true;
+                                    rline.set_last_point(rline.nb_vertex());
                                 }
                             }
                         }
@@ -78,13 +78,13 @@ pub(crate) fn process_segments(
         if dofirst {
             if let Some(pf) = seg.first {
                 rline.add_vertex(segment_point(pf, s1, s2, on_first, paramf));
-                rline.has_first_point = true;
+                rline.set_first_point(rline.nb_vertex());
             }
         }
         if dolast {
             if let Some(pl) = seg.last {
                 rline.add_vertex(segment_point(pl, s1, s2, on_first, paraml));
-                rline.has_last_point = true;
+                rline.set_last_point(rline.nb_vertex());
             }
         }
         slin.push(GeomIntLine::Restriction(rline));
@@ -157,7 +157,7 @@ pub(crate) fn process_rline(
                         && paramproj <= paraml
                     {
                         seen.push(pt.p);
-                        let mut newpt = *pt;
+                        let mut newpt = pt.clone();
                         newpt.param_on_line = paramproj;
                         rline.add_vertex(newpt);
                     }

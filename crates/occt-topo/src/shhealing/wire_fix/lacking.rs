@@ -491,7 +491,7 @@ pub(in crate::shhealing) fn fix_lacking_one(
             (last_vertex(&e2), bendtol2),
         ] {
             if let Some(v) = v {
-                v.set_tolerance(t);
+                v.set_tolerance(BRepTool::vertex_tolerance(&v).max(t));
             }
         }
         // `cxx:3948-3951`: re-check the bent edges for self-intersections.

@@ -25,6 +25,7 @@ use super::shape_analysis_curve::{project_adaptor, Projection};
 use super::transfer_params::TransferParametersProj;
 
 mod shifted_wire;
+mod modes;
 mod pcurve_range;
 mod same_parameter;
 mod reorder_connected;
@@ -36,6 +37,7 @@ mod singularity;
 mod add_curve3d;
 
 pub use shifted_wire::*;
+pub use modes::*;
 pub use pcurve_range::*;
 pub use same_parameter::*;
 pub use reorder_connected::*;

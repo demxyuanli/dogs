@@ -150,6 +150,9 @@ specs\occt_probe\probe.bat data\occ\a3n00.stp --facestats 1.076007 0.349066   # 
 - `docs/goals/drift-and-gap-autofix/state.yaml` —— 长跑自主板的板真相（`active_task` / 包收据 / 门禁读数）
 - `specs/_a3n00_gap_analysis.md` —— a3n00 缺口分析：§9.x 逐轮记录**实测数字与其口径**、
   已排除项、以及每条结论对应的 `.cxx` 行号
+- `specs/occt_migration_guide.md` —— **移植指导说明**：忠实度判定口径、A0–A33 条目现状、
+  lite 替代件缺口、下一轮 7 波次 / 390,414 行 OCCT 路线图（逐包清单 + 依赖 DAG）、
+  门禁基线与移植禁令、风险处置、逐波开工清单
 - `docs/` —— 阶段性审查文档
 
 ---

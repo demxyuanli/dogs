@@ -12,9 +12,22 @@ impl<'a> Resolver<'a> {
             Ok(shell) => {
                 // `ShapeFix_Shell::Perform` runs `FixFaceOrientation` after the
                 // per-face `ShapeFix_Face` pass (`ShapeFix_Shell.cxx:139-142`),
-                // on `Context()->Apply(myShell)`.
-                let applied = self.close_heal_context(&owned, shell);
-                Ok(crate::shhealing::fix_shell_face_orientation(applied))
+                // on `Context()->Apply(myShell)`, under
+                // `NeedFix(myFixOrientationMode)` (`cxx:140`) with
+                // `myNonManifold` from the pass context (`cxx:142`).
+                let mut applied = self.close_heal_context(&owned, shell);
+                if crate::shhealing::ShapeFixShellModes::reader().need_fix_orientation() {
+                    // `FixFaceOrientation` first corrects the shell's `Closed`
+                    // flag from its `MapShapesAndAncestors` free-boundary count
+                    // (`cxx:1455-1479`), then orients the faces.
+                    crate::shhealing::align_shell_closed_to_free_bounds(&applied);
+                    applied = crate::shhealing::fix_shell_face_orientation(applied);
+                }
+                // `cxx:144-163`: every shell the pass materialises that is still
+                // flagged closed is re-checked by `ShapeAnalysis_Shell` and has
+                // the flag cleared when it reports free edges.
+                crate::shhealing::clear_shell_closed_if_analysis_free(&applied);
+                Ok(applied)
             }
             Err(e) => {
                 self.pop_heal_context(&owned);
@@ -72,11 +85,47 @@ impl<'a> Resolver<'a> {
         if !s.is_shell() {
             return Err("MANIFOLD_SOLID_BREP: outer is not a shell".into());
         }
-        // `ShapeFix_Solid::Perform` single-shell arm (`ShapeFix_Solid.cxx:520-565`)
-        // calls `SolidFromShell` (`:655-702`) after `ShapeFix_Shell`.
+        // `ShapeFix_Solid::Perform` single-shell arm (`ShapeFix_Solid.cxx:520-570`),
+        // under `NeedFix(myFixShellOrientationMode)` (`cxx:514`). The arm works on
+        // `tmpShape = Context()->Apply(myShape)` (`cxx:522`), so the shell handed
+        // to it is the applied one; its `isClosed` verdict, the `SolidFromShell`
+        // reversal and the open-shell replacement are recorded in the pass' own
+        // context (`cxx:556`, `:687`) and materialise when `close_heal_context`
+        // runs `myResult = Context()->Apply(S)` (`ShapeFix_Shape.cxx:257`).
+        //
+        // `CreateOpenSolidMode` is 0 here (`STEPControl_Controller.cxx:214`), so an
+        // open shell turns the root into the bare shell (`cxx:559-567`) and never
+        // enters `SolidFromShell`.
         let mut s = s;
-        crate::shhealing::orient_single_shell_solid(&mut s);
-        Ok(self.b.make_solid(&[Shell(s)]).0)
+        let modes = crate::shhealing::ShapeFixSolidModes::step_reader();
+        if !modes.need_fix_shell_orientation() {
+            return Ok(self.b.make_solid(&[Shell(s)]).0);
+        }
+        let mut pass = self.current_heal_context();
+        let in_pass = pass.is_some();
+        // A call outside a `FixShape` pass has no context to record into; the arm
+        // still decides the root, so apply the throwaway context to it.
+        let mut scratch = crate::shape_fix_compose_shell::SharedReShape::new();
+        let ctx = match pass.as_mut() {
+            Some(c) => c,
+            None => &mut scratch,
+        };
+        let applied = ctx.apply(&s);
+        if applied.is_shell() {
+            s = applied;
+        }
+        let solid = self.b.make_solid(&[Shell(s.clone())]).0;
+        crate::shhealing::fix_solid_from_one_shell(
+            &solid,
+            &s,
+            ctx,
+            modes.create_open_solid_mode,
+        );
+        if in_pass {
+            return Ok(solid);
+        }
+        // `BRepTools_ReShape::Value`: the substitution the arm recorded, if any.
+        Ok(crate::shape_fix_compose_shell::ReShape::value(ctx, &solid).unwrap_or(solid))
     }
 
     /// `StepToTopoDS_Builder::Init(BrepWithVoids)` (`StepToTopoDS_Builder.cxx:

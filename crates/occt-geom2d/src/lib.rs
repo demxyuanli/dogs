@@ -33,6 +33,7 @@ pub mod hermit;
 pub mod comp_curve_to_bspline;
 pub mod convert_approx_curve;
 pub mod geom2d_api;
+pub mod geom2d_api_interpolate;
 pub mod geom2d_int;
 pub mod offset2d;
 

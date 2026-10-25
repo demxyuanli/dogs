@@ -13,6 +13,9 @@ mod fit;
 mod iso;
 mod knots;
 mod local;
+mod degree_ops;
+mod exchange_uv;
+mod poles;
 mod periodic;
 mod surface;
 #[cfg(test)]
@@ -369,6 +372,47 @@ impl GeomBSplineSurface {
     pub fn nb_poles_u(&self) -> usize { self.poles.len() }
     pub fn nb_poles_v(&self) -> usize { self.poles.first().map_or(0, |r| r.len()) }
     pub fn is_rational(&self) -> bool { self.weights.is_some() }
+
+    /// `Geom_BSplineSurface::IsURational()` (`Geom_BSplineSurface.hxx:141`).
+    ///
+    /// The flags OCCT stores are the ones the `Rational(Weights, U, V)` helper
+    /// computes at construction (`Geom_BSplineSurface.cxx:110-138`):
+    /// `Urational` is set when a weight differs from its neighbour along the
+    /// *second* pole index inside one *first* index. The port keeps only the
+    /// weight grid, so the predicate is recomputed from it, mirroring that
+    /// helper exactly.
+    pub fn is_u_rational(&self) -> bool {
+        let Some(weights) = self.weights.as_ref() else {
+            return false;
+        };
+        for row in weights {
+            for j in 0..row.len().saturating_sub(1) {
+                if (row[j] - row[j + 1]).abs() > occt_core::precision::epsilon(row[j].abs()) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// `Geom_BSplineSurface::IsVRational()` (`Geom_BSplineSurface.hxx:146`):
+    /// `Vrational` in `Geom_BSplineSurface.cxx:113-125`, i.e. a weight differs
+    /// from its neighbour along the *first* pole index at one second index.
+    pub fn is_v_rational(&self) -> bool {
+        let Some(weights) = self.weights.as_ref() else {
+            return false;
+        };
+        let n_v = self.nb_poles_v();
+        for j in 0..n_v {
+            for i in 0..weights.len().saturating_sub(1) {
+                let a = weights[i][j];
+                if (a - weights[i + 1][j]).abs() > occt_core::precision::epsilon(a.abs()) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
 
     /// Distinct knots and multiplicities from a flat knot vector.
     pub fn unique_knots_mults(flat: &[f64]) -> (Vec<f64>, Vec<i32>) {

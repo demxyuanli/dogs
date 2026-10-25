@@ -289,6 +289,7 @@ impl Curve for GeomTrimmedCurveBasis {
     fn period(&self) -> f64 { self.basis.period() }
     fn continuity(&self) -> u8 { self.basis.continuity() }
     fn circle_radius(&self) -> Option<f64> { self.basis.circle_radius() }
+    fn gp_line(&self) -> Option<occt_core::gp::GpLin> { self.basis.gp_line() }
     fn gp_circ(&self) -> Option<occt_core::gp::GpCirc> { self.basis.gp_circ() }
     fn gp_ellipse(&self) -> Option<occt_core::gp::GpElips> { self.basis.gp_ellipse() }
     fn gp_hyperbola(&self) -> Option<occt_core::gp::GpHypr> { self.basis.gp_hyperbola() }

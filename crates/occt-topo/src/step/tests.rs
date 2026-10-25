@@ -538,8 +538,13 @@ ENDSEC;\nEND-ISO-10303-21;";
 
     #[test]
     fn step_spline_reader_plain_bspline() {
-        // A hand-written STEP file using the plain (knotless) B_SPLINE_CURVE
-        // and B_SPLINE_SURFACE entities must read back into a valid face.
+        // A knotless `B_SPLINE_SURFACE` has no `StepToGeom` branch: `MakeSurface`
+        // routes it to `MakeBoundedSurface` (`StepToGeom.cxx:1908-1924`), which
+        // only maps the with-knots / rational complex (`cxx:505-520`), the
+        // Bezier / uniform / quasi-uniform families (`cxx:522-742`) and
+        // `RectangularTrimmedSurface`, and otherwise returns a null handle
+        // (`cxx:744-745`). The face transfer therefore produces nothing; the
+        // reader must not synthesise a knot vector of its own.
         let s = "ISO-10303-21;\nHEADER;\nENDSEC;\nDATA;\n\
 #1=APPLICATION_CONTEXT('AUTOMOTIVE_DESIGN');\n\
 #2=CARTESIAN_POINT('',(0.,0.,0.));\n\
@@ -555,10 +560,14 @@ ENDSEC;\nEND-ISO-10303-21;";
 #12=ADVANCED_FACE('',#10,(),.T.);\n\
 #13=ADVANCED_BREP_SHAPE_REPRESENTATION('plain',(#12),#11);\n\
 ENDSEC;\nEND-ISO-10303-21;";
-        let m = read_step(s).expect("read plain bspline step");
-        assert_eq!(m.len(), 1);
-        let fs = faces_of(&m.shapes[0].shape);
-        assert!(!fs.is_empty(), "plain B_SPLINE_SURFACE yields a face");
+        let (m, warnings) = read_step_with_warnings(s).expect("parse knotless bspline step");
+        assert!(m.shapes.is_empty(), "knotless B_SPLINE_SURFACE yields no shape");
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.contains("B_SPLINE_SURFACE") && w.contains("no OCCT branch")),
+            "{warnings:?}"
+        );
     }
 
     #[test]

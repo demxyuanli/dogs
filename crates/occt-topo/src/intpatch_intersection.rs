@@ -98,7 +98,7 @@ impl PatchIntersection {
             .extend(convert_alines(imp.lines(), s1, d1, s2, d2));
         for i in 1..=imp.nb_pnts() {
             if let Some(p) = imp.point(i) {
-                self.spnt.push(*p);
+                self.spnt.push(p.clone());
             }
         }
     }

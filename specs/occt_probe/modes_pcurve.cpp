@@ -1,6 +1,11 @@
-﻿// `argv[2]` modes: `--pcdef`, `--pcf`, `--spcheck` (p-curve definitions and
-// re-projection).
+﻿// `argv[2]` modes: `--pcraw`, `--pcdef`, `--pcf`, `--spcheck` (p-curve
+// definitions from the STEP model / the imported shape, and re-projection).
 #include "occt_probe_common.h"
+#include <Geom2dInt_GInter.hxx>
+#include <IntRes2d_Domain.hxx>
+#include <IntRes2d_IntersectionPoint.hxx>
+#include <IntRes2d_IntersectionSegment.hxx>
+#include <IntRes2d_Transition.hxx>
 
 std::optional<int> runPcurveModes(const ProbeCtx& theCtx)
 {
@@ -183,10 +188,20 @@ std::optional<int> runPcurveModes(const ProbeCtx& theCtx)
               std::cout << "\n";
               std::cout << "PCDEF  flat=";
               {
-                const TColStd_Array1OfReal& aFlat = aBS->Knots();
-                for (int i = aFlat.Lower(); i <= aFlat.Upper(); ++i)
+                // Expanded knot sequence (each knot repeated by its
+                // multiplicity), i.e. the port's stored flat knot table.
+                int aMultSum = 0;
+                for (int i = 1; i <= aBS->NbKnots(); ++i)
                 {
-                  std::cout << aFlat.Value(i) << (i < aFlat.Upper() ? "," : "\n");
+                  aMultSum += aBS->Multiplicity(i);
+                }
+                int aPrinted = 0;
+                for (int i = 1; i <= aBS->NbKnots(); ++i)
+                {
+                  for (int m = 0; m < aBS->Multiplicity(i); ++m)
+                  {
+                    std::cout << aBS->Knot(i) << (++aPrinted < aMultSum ? "," : "\n");
+                  }
                 }
               }
             }
@@ -194,6 +209,236 @@ std::optional<int> runPcurveModes(const ProbeCtx& theCtx)
         }
       }
       std::cout << "PCDEF hits=" << nHit << "\n";
+      return 0;
+    }
+  }
+
+  // T-186 oracle: the 2-D curve `StepToGeom::MakeCurve2d` builds from a STEP
+  // `PCURVE` entity, dumped straight from the model so it is the constructor
+  // output and not whatever `XSAlgo_ShapeProcessor::CheckPCurve` later leaves on
+  // the edge. Selection is by the built curve's own first parameter
+  // (`--pcraw <first> [<tol>]`), the same key `--pcdef` uses. Port counterpart:
+  // `PCRAW=<first>`, printed by `step_to_geom_curve2d.rs::dump_pcraw`.
+  {
+    double aWantFirst = 0.;
+    double aWantTol   = 1.e-7;
+    bool   hasPcRaw   = false;
+    for (int i = 2; i < argc; ++i)
+    {
+      const std::string a = argv[i];
+      if (a == "--pcraw" && i + 1 < argc)
+      {
+        aWantFirst = std::atof(argv[i + 1]);
+        hasPcRaw   = true;
+        if (i + 2 < argc && argv[i + 2][0] != '-')
+        {
+          aWantTol = std::atof(argv[i + 2]);
+        }
+      }
+    }
+    if (hasPcRaw)
+    {
+      int nHit = 0;
+      if (theCtx.reader.StepModel().IsNull())
+      {
+        std::cout << "PCRAW no step model\n";
+        return 0;
+      }
+      const occ::handle<StepData_StepModel> aModel =
+        occ::down_cast<StepData_StepModel>(theCtx.reader.StepModel());
+      for (int i = 1; i <= aModel->NbEntities(); ++i)
+      {
+        const occ::handle<StepGeom_Pcurve> aPc =
+          occ::down_cast<StepGeom_Pcurve>(aModel->Value(i));
+        if (aPc.IsNull() || aPc->ReferenceToCurve().IsNull())
+        {
+          continue;
+        }
+        const occ::handle<StepRepr_DefinitionalRepresentation> aRep = aPc->ReferenceToCurve();
+        if (aRep->NbItems() < 1)
+        {
+          continue;
+        }
+        const occ::handle<StepGeom_Curve> aCurve =
+          occ::down_cast<StepGeom_Curve>(aRep->ItemsValue(1));
+        if (aCurve.IsNull())
+        {
+          continue;
+        }
+        occ::handle<Geom2d_Curve> aC2 = StepToGeom::MakeCurve2d(aCurve);
+        if (aC2.IsNull())
+        {
+          continue;
+        }
+        const double pf = aC2->FirstParameter();
+        const double pl = aC2->LastParameter();
+        if (std::abs(pf - aWantFirst) > aWantTol)
+        {
+          continue;
+        }
+        ++nHit;
+        std::cout << std::setprecision(17) << "PCRAW src=" << i
+                  << " curve=" << aModel->Number(aCurve)
+                  << " type=" << aC2->DynamicType()->Name()
+                  << " pf=" << pf << " pl=" << pl;
+        occ::handle<Geom2d_Curve> aBasis = aC2;
+        if (aC2->IsKind(STANDARD_TYPE(Geom2d_TrimmedCurve)))
+        {
+          aBasis = occ::down_cast<Geom2d_TrimmedCurve>(aC2)->BasisCurve();
+        }
+        if (!aBasis.IsNull() && aBasis->IsKind(STANDARD_TYPE(Geom2d_BSplineCurve)))
+        {
+          const occ::handle<Geom2d_BSplineCurve> aBS =
+            occ::down_cast<Geom2d_BSplineCurve>(aBasis);
+          const bool aRat = aBS->IsRational();
+          // Expanded knot count (sum of multiplicities) = the flat knot table
+          // length the port stores.
+          int aMultSum = 0;
+          for (int k = 1; k <= aBS->NbKnots(); ++k)
+          {
+            aMultSum += aBS->Multiplicity(k);
+          }
+          std::cout << " deg=" << aBS->Degree() << " npoles=" << aBS->NbPoles()
+                    << " nknots=" << aBS->NbKnots()
+                    << " periodic=" << (aBS->IsPeriodic() ? 1 : 0)
+                    << " rational=" << (aRat ? 1 : 0)
+                    << " nflat=" << aMultSum << "\n";
+          for (int k = 1; k <= aBS->NbPoles(); ++k)
+          {
+            const gp_Pnt2d aP = aBS->Pole(k);
+            std::cout << "PCRAW  pole[" << k << "]=" << aP.X() << "," << aP.Y();
+            if (aRat)
+            {
+              std::cout << " w=" << aBS->Weight(k);
+            }
+            std::cout << "\n";
+          }
+          for (int k = 1; k <= aBS->NbKnots(); ++k)
+          {
+            std::cout << "PCRAW  knot[" << k << "]=" << aBS->Knot(k)
+                      << " m=" << aBS->Multiplicity(k) << "\n";
+          }
+          std::cout << "PCRAW  flat=";
+          {
+            // Expanded knot sequence (each knot repeated by its multiplicity),
+            // i.e. what the port stores, so the two `flat` lists line up.
+            int aPrinted = 0;
+            for (int k = 1; k <= aBS->NbKnots(); ++k)
+            {
+              for (int m = 0; m < aBS->Multiplicity(k); ++m)
+              {
+                std::cout << aBS->Knot(k) << (++aPrinted < aMultSum ? "," : "\n");
+              }
+            }
+          }
+        }
+        else
+        {
+          std::cout << "\n";
+        }
+      }
+      std::cout << "PCRAW hits=" << nHit << "\n";
+      return 0;
+    }
+  }
+
+  // T-186 oracle: replay the 2-D intersection block of
+  // `ShapeAnalysis_Wire::CheckIntersectingEdges` for one adjacent pair of a
+  // face's wire (`--ginter <face> <e1> <e2> <num>`), so the port's
+  // `Geom2dIntGInter` result can be diffed parameter by parameter.
+  {
+    int  aFace = -1, aE1 = -1, aE2 = -1, aNum = 2;
+    bool hasGI = false;
+    for (int i = 2; i + 4 < argc; ++i)
+    {
+      if (std::string(argv[i]) == "--ginter")
+      {
+        aFace = std::atoi(argv[i + 1]);
+        aE1   = std::atoi(argv[i + 2]);
+        aE2   = std::atoi(argv[i + 3]);
+        aNum  = std::atoi(argv[i + 4]);
+        hasGI = true;
+      }
+    }
+    if (hasGI)
+    {
+      int fi = 0;
+      for (TopExp_Explorer fe(aShape, TopAbs_FACE); fe.More(); fe.Next(), ++fi)
+      {
+        if (fi != aFace)
+        {
+          continue;
+        }
+        const TopoDS_Face& aF = TopoDS::Face(fe.Current());
+        std::vector<TopoDS_Edge> anEdges;
+        for (TopExp_Explorer we(aF, TopAbs_WIRE); we.More(); we.Next())
+        {
+          for (TopExp_Explorer ee(we.Current(), TopAbs_EDGE); ee.More(); ee.Next())
+          {
+            anEdges.push_back(TopoDS::Edge(ee.Current()));
+          }
+        }
+        if (aE1 < 0 || aE2 < 0 || aE1 >= (int)anEdges.size() || aE2 >= (int)anEdges.size())
+        {
+          std::cout << "GINTER bad edge index\n";
+          return 4;
+        }
+        ShapeAnalysis_Edge sae;
+        double             a1 = 0., b1 = 0., a2 = 0., b2 = 0.;
+        occ::handle<Geom2d_Curve> c1, c2;
+        if (!sae.PCurve(anEdges[aE1], aF, c1, a1, b1, false)
+            || !sae.PCurve(anEdges[aE2], aF, c2, a2, b2, false))
+        {
+          std::cout << "GINTER no pcurve\n";
+          return 4;
+        }
+        const double        tolint = 1.0e-10;
+        Geom2dAdaptor_Curve C1(c1), C2(c2);
+        IntRes2d_Domain d1(C1.Value(a1), a1, tolint, C1.Value(b1), b1, tolint);
+        IntRes2d_Domain d2(C2.Value(a2), a2, tolint, C2.Value(b2), b2, tolint);
+        Geom2dInt_GInter Inter;
+        if (aNum == 1)
+        {
+          Inter.Perform(C2, d2, C1, d1, tolint, tolint);
+        }
+        else
+        {
+          Inter.Perform(C1, d1, C2, d2, tolint, tolint);
+        }
+        std::cout << std::setprecision(17) << "GINTER face=" << fi << " e1=" << aE1 << " e2=" << aE2
+                  << " num=" << aNum << " done=" << (Inter.IsDone() ? 1 : 0)
+                  << " nbpoints=" << Inter.NbPoints() << " nbsegments=" << Inter.NbSegments()
+                  << " a1=" << a1 << " b1=" << b1 << " a2=" << a2 << " b2=" << b2 << "\n";
+        for (int i = 1; i <= Inter.NbPoints() + Inter.NbSegments(); ++i)
+        {
+          IntRes2d_IntersectionPoint IP;
+          if (i <= Inter.NbPoints())
+          {
+            IP = Inter.Point(i);
+          }
+          else
+          {
+            const IntRes2d_IntersectionSegment& aSeg = Inter.Segment(i - Inter.NbPoints());
+            std::cout << "GINTER seg=" << (i - Inter.NbPoints())
+                      << " hasfirst=" << (aSeg.HasFirstPoint() ? 1 : 0)
+                      << " haslast=" << (aSeg.HasLastPoint() ? 1 : 0) << "\n";
+            if (!aSeg.HasFirstPoint() || !aSeg.HasLastPoint())
+            {
+              continue;
+            }
+            const IntRes2d_IntersectionPoint aFirst = aSeg.FirstPoint();
+            IP = (aFirst.TransitionOfFirst().PositionOnCurve() == IntRes2d_Middle
+                  || aFirst.TransitionOfSecond().PositionOnCurve() == IntRes2d_Middle)
+                   ? aSeg.LastPoint()
+                   : aFirst;
+          }
+          std::cout << std::setprecision(17) << "GINTER pt=" << i
+                    << " p1=" << IP.ParamOnFirst() << " p2=" << IP.ParamOnSecond()
+                    << " q1=(" << IP.Value().X() << "," << IP.Value().Y() << ")"
+                    << " pos1=" << (int)IP.TransitionOfFirst().PositionOnCurve()
+                    << " pos2=" << (int)IP.TransitionOfSecond().PositionOnCurve() << "\n";
+        }
+      }
       return 0;
     }
   }

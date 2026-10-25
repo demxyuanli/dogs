@@ -7,17 +7,29 @@
 //! `DecompositionOfWLine` splits a walking line at periodic-boundary crossings
 //! so each piece stays in one period of each surface.
 
+use std::sync::Arc;
+
 use occt_core::gp::{GpPnt, GpPnt2d, GpVec2d};
 use occt_core::precision::{ANGULAR, PCONFUSION, RESOLUTION};
 use occt_geom::Surface;
 
+use crate::brep_adaptor_curve2d::Curve2dAdaptor;
 use crate::brep_tool::BRepTool;
 use crate::intpatch::IntersectionCurve;
+use crate::intpatch_line::IntPatchLine;
 use crate::shape::Face;
 
 #[path = "int_tools_wline_decomp.rs"]
 mod decomp;
 pub use decomp::decomposition_of_wline;
+
+#[path = "int_tools_wline/patch_point.rs"]
+mod patch_point;
+pub use patch_point::{arc_id, ArcId, PatchPoint, TransType};
+
+#[path = "int_tools_wline/periodic.rs"]
+mod periodic;
+pub use periodic::{u_period, v_period};
 
 /// One point of a walking line (`IntSurf_PntOn2S`).
 #[derive(Debug, Clone, Copy)]
@@ -73,6 +85,21 @@ impl PntOn2S {
         self.v2 = v2;
     }
 
+    /// `IntSurf_PntOn2S::SetValue(P)` (`IntSurf_PntOn2S.lxx:26-29`): the 3D
+    /// point only, the four parameters are kept.
+    pub fn set_point(&mut self, p: GpPnt) {
+        self.p = p;
+    }
+
+    /// `IntSurf_PntOn2S::SetValue(U1, V1, U2, V2)` (`IntSurf_PntOn2S.lxx:33-39`):
+    /// the parameters only, the 3D point is kept.
+    pub fn set_parameters(&mut self, u1: f64, v1: f64, u2: f64, v2: f64) {
+        self.u1 = u1;
+        self.v1 = v1;
+        self.u2 = u2;
+        self.v2 = v2;
+    }
+
     /// `IntSurf_PntOn2S::IsSame`. `tol2d < 0` compares 3D only.
     pub fn is_same(&self, other: &Self, tol3d: f64, tol2d: f64) -> bool {
         if self.p.square_distance(&other.p) > tol3d * tol3d {
@@ -90,82 +117,23 @@ impl PntOn2S {
     }
 }
 
-/// `IntSurf_TypeTrans`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum TransType {
-    In,
-    Out,
-    Touch,
-    #[default]
-    Undecided,
-}
-
-/// How an [`WLine`] was created (`IntPatch_WLine::IntPatch_WL*`).
+/// How an [`WLine`] was created (`IntPatch_WLine::IntPatch_WL*`,
+/// `IntPatch_WLine.hxx:43-49`). The constructors start at `IntPatch_WLUnknown`
+/// (`IntPatch_WLine.cxx:40`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum WLineWay {
+    #[default]
+    Unknown,
     ImpImp,
     ImpPrm,
-    #[default]
     PrmPrm,
 }
 
-/// `IntPatch_Point` subset used by GeomInt LineConstructor / LineTool.
-#[derive(Debug, Clone, Copy)]
-pub struct PatchPoint {
-    /// 3D point.
-    pub p: GpPnt,
-    /// Parameter on the intersection line (`ParameterOnLine`).
-    pub param_on_line: f64,
-    pub u1: f64,
-    pub v1: f64,
-    pub u2: f64,
-    pub v2: f64,
-    pub on_dom_s1: bool,
-    pub on_dom_s2: bool,
-    pub trans1: TransType,
-    pub trans2: TransType,
-    pub is_multiple: bool,
-    pub tolerance: f64,
-}
-
-impl PatchPoint {
-    /// Point with UV on both surfaces and no domain flags.
-    pub fn new(p: GpPnt, param_on_line: f64, u1: f64, v1: f64, u2: f64, v2: f64) -> Self {
-        Self {
-            p,
-            param_on_line,
-            u1,
-            v1,
-            u2,
-            v2,
-            on_dom_s1: false,
-            on_dom_s2: false,
-            trans1: TransType::Undecided,
-            trans2: TransType::Undecided,
-            is_multiple: false,
-            tolerance: 0.0,
-        }
-    }
-
-    /// `ParameterOnLine`.
-    pub fn parameter_on_line(&self) -> f64 {
-        self.param_on_line
-    }
-
-    /// `ParametersOnS1`.
-    pub fn parameters_on_s1(&self) -> (f64, f64) {
-        (self.u1, self.v1)
-    }
-
-    /// `ParametersOnS2`.
-    pub fn parameters_on_s2(&self) -> (f64, f64) {
-        (self.u2, self.v2)
-    }
-}
-
 /// Walking line (`IntPatch_WLine` / `IntSurf_LineOn2S`).
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct WLine {
+    /// `IntPatch_Line` base state (`tg`, `tS1`/`tS2`, `sit1`/`sit2`, iso flags).
+    pub base: IntPatchLine,
     /// Sampled points, 0-based. OCCT `Point(i)` is 1-based.
     pub points: Vec<PntOn2S>,
     /// Vertices on the walking line (`NbVertex` / `Vertex`).
@@ -173,6 +141,19 @@ pub struct WLine {
     /// `HasFirstPoint` / `HasLastPoint`.
     pub has_first_point: bool,
     pub has_last_point: bool,
+    /// `myIndFirst` / `myIndLast`: 1-based vertex indices of the first / last
+    /// point (`IntPatch_WLine.cxx:SetFirstPoint` / `SetLastPoint`).
+    pub first_index: i32,
+    pub last_index: i32,
+    /// `myArcOnS1` / `myArcOnS2` (`IntPatch_WLine.hxx:207-208`).
+    pub arc_on_s1: Option<Arc<Curve2dAdaptor>>,
+    pub arc_on_s2: Option<Arc<Curve2dAdaptor>>,
+    /// `myU1Period` / `myV1Period` / `myU2Period` / `myV2Period`
+    /// (`IntPatch_WLine.cxx:SetPeriod`).
+    pub u1_period: f64,
+    pub v1_period: f64,
+    pub u2_period: f64,
+    pub v2_period: f64,
     /// Creating intersector (`GetCreatingWay`).
     pub creating_way: WLineWay,
 }
@@ -181,12 +162,71 @@ impl WLine {
     /// Empty walking line.
     pub fn new() -> Self {
         Self {
+            base: IntPatchLine::default(),
             points: Vec::new(),
             vertices: Vec::new(),
             has_first_point: false,
             has_last_point: false,
-            creating_way: WLineWay::PrmPrm,
+            first_index: 0,
+            last_index: 0,
+            arc_on_s1: None,
+            arc_on_s2: None,
+            u1_period: 0.0,
+            v1_period: 0.0,
+            u2_period: 0.0,
+            v2_period: 0.0,
+            creating_way: WLineWay::Unknown,
         }
+    }
+
+    /// `SetFirstPoint(IndFirst)` (`IntPatch_WLine.cxx`).
+    pub fn set_first_point(&mut self, ind_first: i32) {
+        self.has_first_point = true;
+        self.first_index = ind_first;
+    }
+
+    /// `SetLastPoint(IndLast)` (`IntPatch_WLine.cxx`).
+    pub fn set_last_point(&mut self, ind_last: i32) {
+        self.has_last_point = true;
+        self.last_index = ind_last;
+    }
+
+    /// `FirstPoint()` (`IntPatch_WLine.cxx`).
+    pub fn first_point(&self) -> &PatchPoint {
+        self.vertex(self.first_index)
+    }
+
+    /// `LastPoint()` (`IntPatch_WLine.cxx`).
+    pub fn last_point(&self) -> &PatchPoint {
+        self.vertex(self.last_index)
+    }
+
+    /// `SetArcOnS1(A)` (`IntPatch_WLine.cxx`).
+    pub fn set_arc_on_s1(&mut self, a: Arc<Curve2dAdaptor>) {
+        self.arc_on_s1 = Some(a);
+    }
+
+    /// `SetArcOnS2(A)` (`IntPatch_WLine.cxx`).
+    pub fn set_arc_on_s2(&mut self, a: Arc<Curve2dAdaptor>) {
+        self.arc_on_s2 = Some(a);
+    }
+
+    /// `HasArcOnS1()` (`IntPatch_WLine.cxx`).
+    pub fn has_arc_on_s1(&self) -> bool {
+        self.arc_on_s1.is_some()
+    }
+
+    /// `HasArcOnS2()` (`IntPatch_WLine.cxx`).
+    pub fn has_arc_on_s2(&self) -> bool {
+        self.arc_on_s2.is_some()
+    }
+
+    /// `SetPeriod(pu1, pv1, pu2, pv2)` (`IntPatch_WLine.cxx`).
+    pub fn set_period(&mut self, pu1: f64, pv1: f64, pu2: f64, pv2: f64) {
+        self.u1_period = pu1;
+        self.v1_period = pv1;
+        self.u2_period = pu2;
+        self.v2_period = pv2;
     }
 
     /// `NbVertex`.
@@ -197,6 +237,12 @@ impl WLine {
     /// 1-based `Vertex(i)`.
     pub fn vertex(&self, i1: i32) -> &PatchPoint {
         &self.vertices[(i1 as usize).saturating_sub(1)]
+    }
+
+    /// 1-based `ChangeValue(i)` of the vertex sequence.
+    pub fn vertex_mut(&mut self, i1: i32) -> &mut PatchPoint {
+        let i = (i1 as usize).saturating_sub(1);
+        &mut self.vertices[i]
     }
 
     /// `GetCreatingWay`.
@@ -297,10 +343,19 @@ impl WLine {
             }
         }
         Self {
+            base: IntPatchLine::default(),
             points,
             vertices,
             has_first_point: has_ends,
             has_last_point: has_ends && n > 1,
+            first_index: if has_ends { 1 } else { 0 },
+            last_index: if has_ends && n > 1 { 2 } else { 1 },
+            arc_on_s1: None,
+            arc_on_s2: None,
+            u1_period: 0.0,
+            v1_period: 0.0,
+            u2_period: 0.0,
+            v2_period: 0.0,
             creating_way: way,
         }
     }
@@ -504,32 +559,6 @@ pub fn wline_adjust_periodic(
         new_par += offset;
     }
     (new_par, offset)
-}
-
-/// Geometric U period, or `None` when the surface is not U-periodic.
-pub fn u_period(s: &dyn Surface) -> Option<f64> {
-    if !s.is_u_periodic() {
-        return None;
-    }
-    let (a, b) = s.u_range();
-    if a.is_finite() && b.is_finite() && (b - a).abs() > 1e-30 {
-        Some((b - a).abs())
-    } else {
-        Some(2.0 * std::f64::consts::PI)
-    }
-}
-
-/// Geometric V period, or `None` when the surface is not V-periodic.
-pub fn v_period(s: &dyn Surface) -> Option<f64> {
-    if !s.is_v_periodic() {
-        return None;
-    }
-    let (a, b) = s.v_range();
-    if a.is_finite() && b.is_finite() && (b - a).abs() > 1e-30 {
-        Some((b - a).abs())
-    } else {
-        Some(2.0 * std::f64::consts::PI)
-    }
 }
 
 /// `IsPointOnBoundary` — static subfunction of `DecompositionOfWLine`.

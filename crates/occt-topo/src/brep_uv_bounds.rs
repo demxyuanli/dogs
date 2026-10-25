@@ -39,15 +39,24 @@ use crate::bnd_lib_add2d::add_geom2d_range;
 use crate::boptools_2d::curve_on_surface_range;
 use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, Face, Wire};
-use crate::topo_tools::{edges_of, edges_of_wire};
+use crate::topo_tools::{edges_of_wire, wires_of_face};
 
 /// `BRepTools::AddUVBounds(const TopoDS_Face& FF, Bnd_Box2d& B)`.
 pub fn add_uv_bounds_face(ff: &Face, b: &mut BndBox2d) {
     let mut f = ff.clone();
     f.0.set_orientation(Orientation::Forward);
     let mut bnd_box = BndBox2d::new();
-    for e in edges_of(&f.0) {
-        add_uv_bounds_edge(&f, &e, &mut bnd_box);
+    // `BRepTools::AddUVBounds(FF, B)` (`BRepTools.cxx:126-140`) walks
+    // `TopExp_Explorer(FF, TopAbs_EDGE)`, i.e. edge *occurrences*: a seam edge of
+    // a periodic face is visited once per wire slot, and `BRep_Tool::CurveOnSurface`
+    // then returns the pcurve branch that occurrence's orientation selects
+    // (`BRep_Tool.cxx:310-314`, `:354-357`). A distinct-edge walk keeps a single
+    // branch and shrinks the box of a doubly-seamed face (torus: v range [PI, 3PI]
+    // collapses to [PI, 2PI]).
+    for w in wires_of_face(&f) {
+        for e in edges_of_wire(&w) {
+            add_uv_bounds_edge(&f, &e, &mut bnd_box);
+        }
     }
     if bnd_box.is_void() {
         let Some(surf) = BRepTool::face_surface(&f) else {

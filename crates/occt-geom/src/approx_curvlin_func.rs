@@ -1,13 +1,15 @@
-//! `Approx_CurvlinFunc` case 2 (`Approx_CurvlinFunc.cxx:139-793`).
+//! `Approx_CurvlinFunc` cases 1 and 2 (`Approx_CurvlinFunc.cxx:89-793`).
 //!
-//! Case 2 is the `Curve2d + Surface` constructor used by
-//! `Approx_CurvilinearParameter` (`Approx_CurvilinearParameter.cxx:285-320`).
-//! Cases 1 and 3 are not required by `BRepLib::SameParameter` and stay
-//! UNPORTED.
+//! Case 1 is the `Adaptor3d_Curve` constructor, the one the moving laws use
+//! (`GeomFill_GuideTrihedronAC.cxx:40`); case 2 is the
+//! `Curve2d + Surface` constructor used by `Approx_CurvilinearParameter`
+//! (`Approx_CurvilinearParameter.cxx:285-320`). Case 3 (two curve/surface
+//! pairs) is not required by the port and stays UNPORTED.
 
 use crate::curve::Curve;
 use crate::gcpnts::{abscissa_point_from_guess, curve_length_between};
 use crate::surface::Surface;
+use crate::trimmed::GeomTrimmedCurveBasis;
 use occt_core::kernel::geomabs::Shape;
 use occt_core::precision::CONFUSION;
 use occt_geom2d::curve::Curve2d;
@@ -60,12 +62,18 @@ fn find_four_points(
     Some((xi, yi))
 }
 
-/// `Approx_CurvlinFunc` for case 2 (`cxx:139-152`).
+/// `Approx_CurvlinFunc` (`Approx_CurvlinFunc.hxx`), case 1 and case 2.
 pub struct CurvlinFunc {
-    c2d1: Arc<dyn Curve2d>,
-    surf1: Arc<dyn Surface>,
-    /// `Adaptor3d_CurveOnSurface` standing in for length / parameter queries.
+    /// `myC2D1` (`hxx`); `None` for case 1.
+    c2d1: Option<Arc<dyn Curve2d>>,
+    /// `mySurf1` (`hxx`); `None` for case 1.
+    surf1: Option<Arc<dyn Surface>>,
+    /// `myC3D` for case 1, the `Adaptor3d_CurveOnSurface` built from
+    /// `(myC2D1, mySurf1)` for case 2: the curve every length / parameter
+    /// query evaluates.
     cos1: Arc<dyn Curve>,
+    /// `myCase` (`hxx`).
+    case: u8,
     first_s: f64,
     last_s: f64,
     first_u1: f64,
@@ -79,21 +87,16 @@ pub struct CurvlinFunc {
 }
 
 impl CurvlinFunc {
-    /// `Approx_CurvlinFunc(C2D, Surf, Tol)` (`cxx:139-152`).
-    ///
-    /// `cos` must be the matching `Adaptor3d_CurveOnSurface(C2D, Surf)`.
-    pub fn from_curve_on_surface(
-        c2d: Arc<dyn Curve2d>,
-        surf: Arc<dyn Surface>,
-        cos: Arc<dyn Curve>,
-        tol: f64,
-    ) -> Self {
-        let first_u1 = cos.first_parameter();
-        let last_u1 = cos.last_parameter();
+    /// `Approx_CurvlinFunc(C, Tol)` case 1 (`cxx:124-134`): `myC3D = C`,
+    /// `myCase = 1`, then `Init`.
+    pub fn from_curve(curve: Arc<dyn Curve>, tol: f64) -> Self {
+        let first_u1 = curve.first_parameter();
+        let last_u1 = curve.last_parameter();
         let mut s = Self {
-            c2d1: c2d,
-            surf1: surf,
-            cos1: cos,
+            c2d1: None,
+            surf1: None,
+            cos1: curve,
+            case: 1,
             first_s: 0.0,
             last_s: 1.0,
             first_u1,
@@ -108,6 +111,49 @@ impl CurvlinFunc {
         s.init_tables();
         s.length = curve_length_between(s.cos1.as_ref(), s.first_u1, s.last_u1, Some(s.tol_len));
         s
+    }
+
+    /// `Approx_CurvlinFunc(C2D, Surf, Tol)` (`cxx:139-152`).
+    ///
+    /// `cos` must be the matching `Adaptor3d_CurveOnSurface(C2D, Surf)`.
+    pub fn from_curve_on_surface(
+        c2d: Arc<dyn Curve2d>,
+        surf: Arc<dyn Surface>,
+        cos: Arc<dyn Curve>,
+        tol: f64,
+    ) -> Self {
+        let first_u1 = cos.first_parameter();
+        let last_u1 = cos.last_parameter();
+        let mut s = Self {
+            c2d1: Some(c2d),
+            surf1: Some(surf),
+            cos1: cos,
+            case: 2,
+            first_s: 0.0,
+            last_s: 1.0,
+            first_u1,
+            last_u1,
+            tol_len: tol,
+            length: 0.0,
+            si_1: Vec::new(),
+            ui_1: Vec::new(),
+            prev_s: 0.0,
+            prev_u: first_u1,
+        };
+        s.init_tables();
+        s.length = curve_length_between(s.cos1.as_ref(), s.first_u1, s.last_u1, Some(s.tol_len));
+        s
+    }
+
+    /// `myCase` (`hxx`): 1 or 2 in the port.
+    pub fn case(&self) -> u8 {
+        self.case
+    }
+
+    /// The curve every length / parameter query evaluates: `myC3D` for case 1,
+    /// the `CurveOnSurface` for case 2.
+    pub fn curve(&self) -> &Arc<dyn Curve> {
+        &self.cos1
     }
 
     /// `Init(Adaptor3d_Curve&, Si, Ui)` (`cxx:215-263`).
@@ -182,6 +228,17 @@ impl CurvlinFunc {
             .collect()
     }
 
+    /// `GetSParameter(U)` (`cxx:461-489`): `myFirstS + Length(myC3D, Origin,
+    /// U) / myLength`. Cases 1 and 2 both evaluate through [`Self::cos1`].
+    pub fn s_parameter(&self, u: f64) -> f64 {
+        if self.length <= CONFUSION {
+            return self.first_s;
+        }
+        let origin = self.cos1.first_parameter();
+        self.first_s
+            + curve_length_between(self.cos1.as_ref(), origin, u, Some(self.tol_len)) / self.length
+    }
+
     /// `Trim` case 2 (`cxx:396-412`). Rebuilds the Cos through the caller's
     /// factory after updating the 2d / surface holders.
     pub fn trim<F>(&mut self, first: f64, last: f64, tol: f64, rebuild_cos: F)
@@ -194,24 +251,53 @@ impl CurvlinFunc {
         if (last - first) < tol {
             return;
         }
+        let (Some(c2d1), Some(surf1)) = (self.c2d1.clone(), self.surf1.clone()) else {
+            return;
+        };
         // Restore full Cos window then re-trim to [FirstU, LastU] in U.
-        self.cos1 = rebuild_cos(self.c2d1.clone(), self.surf1.clone());
+        self.cos1 = rebuild_cos(c2d1.clone(), surf1.clone());
         let first_u = self.u_parameter(first);
         let last_u = self.u_parameter(last);
         // Trim pcurve to the U window and rebuild Cos.
         let trimmed: Arc<dyn Curve2d> = Arc::new(occt_geom2d::trimmed::Geom2dTrimmedCurve::new(
-            Arc::from(self.c2d1.clone_dyn()),
+            Arc::from(c2d1.clone_dyn()),
             first_u,
             last_u,
         ));
-        self.c2d1 = trimmed.clone();
-        self.cos1 = rebuild_cos(trimmed, self.surf1.clone());
+        self.c2d1 = Some(trimmed.clone());
+        self.cos1 = rebuild_cos(trimmed, surf1.clone());
         self.first_u1 = self.cos1.first_parameter();
         self.last_u1 = self.cos1.last_parameter();
         self.first_s = first;
         self.last_s = last;
         self.init_tables();
         self.length = curve_length_between(self.cos1.as_ref(), self.first_u1, self.last_u1, Some(self.tol_len));
+    }
+
+    /// `Trim` case 1 (`cxx:376-379`): re-trim `myC3D` twice, once to restore
+    /// the full `[myFirstU1, myLastU1]` window and once to the new U window.
+    /// As in OCCT, `mySi_1` / `myUi_1` / `myLength` are *not* rebuilt here.
+    pub fn trim_case1(&mut self, first: f64, last: f64, tol: f64) -> Result<(), String> {
+        if first < 0.0 || last > 1.0 {
+            return Err("Standard_OutOfRange: Approx_CurvlinFunc::Trim".into());
+        }
+        if (last - first) < tol {
+            return Ok(());
+        }
+        if self.case != 1 {
+            return Err("Standard_ConstructionError: Approx_CurvlinFunc::Trim".into());
+        }
+        self.cos1 = Arc::new(GeomTrimmedCurveBasis::new(
+            self.cos1.clone(),
+            self.first_u1,
+            self.last_u1,
+        ));
+        let first_u = self.u_parameter(first);
+        let last_u = self.u_parameter(last);
+        self.cos1 = Arc::new(GeomTrimmedCurveBasis::new(self.cos1.clone(), first_u, last_u));
+        self.first_s = first;
+        self.last_s = last;
+        Ok(())
     }
 
     /// `GetUParameter` case 2 (`cxx:491-572`).
@@ -265,17 +351,71 @@ impl CurvlinFunc {
         u
     }
 
-    /// `EvalCase2` / `EvalCurOnSur` (`cxx:639-792`).
-    pub fn eval_case2(&mut self, s: f64, order: i32, result: &mut [f64]) -> bool {
-        if result.len() < 5 {
+    /// `EvalCase1` (`cxx:582-637`).
+    pub fn eval_case1(&mut self, s: f64, order: i32, result: &mut [f64]) -> bool {
+        if self.case != 1 || result.len() < 3 {
             return false;
         }
         let u = self.u_parameter(s);
         let length = self.length;
         match order {
             0 => {
-                let c2d = self.c2d1.d0(u);
-                let c = self.surf1.d0(c2d.x(), c2d.y());
+                let c = self.cos1.d0(u);
+                result[0] = c.x();
+                result[1] = c.y();
+                result[2] = c.z();
+                true
+            }
+            1 => {
+                let (_c, dc_du) = self.cos1.d1(u);
+                let mag = dc_du.magnitude();
+                if mag <= CONFUSION {
+                    return false;
+                }
+                let du_ds = length / mag;
+                let dc_ds = dc_du.multiplied_scalar(du_ds);
+                result[0] = dc_ds.x();
+                result[1] = dc_ds.y();
+                result[2] = dc_ds.z();
+                true
+            }
+            2 => {
+                let (_c, dc_du, d2c_du2) = self.cos1.d2(u);
+                let mag = dc_du.magnitude();
+                if mag <= CONFUSION {
+                    return false;
+                }
+                let du_ds = length / mag;
+                let d2u_ds2 = -length * dc_du.dot(&d2c_du2) * du_ds / (mag * mag * mag);
+                let d2c_ds2 = d2c_du2
+                    .multiplied_scalar(du_ds * du_ds)
+                    .added(&dc_du.multiplied_scalar(d2u_ds2));
+                result[0] = d2c_ds2.x();
+                result[1] = d2c_ds2.y();
+                result[2] = d2c_ds2.z();
+                true
+            }
+            _ => {
+                result[..3].fill(0.0);
+                false
+            }
+        }
+    }
+
+    /// `EvalCase2` / `EvalCurOnSur` (`cxx:639-792`).
+    pub fn eval_case2(&mut self, s: f64, order: i32, result: &mut [f64]) -> bool {
+        if self.case != 2 || result.len() < 5 {
+            return false;
+        }
+        let (Some(c2d1), Some(surf1)) = (self.c2d1.clone(), self.surf1.clone()) else {
+            return false;
+        };
+        let u = self.u_parameter(s);
+        let length = self.length;
+        match order {
+            0 => {
+                let c2d = c2d1.d0(u);
+                let c = surf1.d0(c2d.x(), c2d.y());
                 result[0] = c2d.x();
                 result[1] = c2d.y();
                 result[2] = c.x();
@@ -284,10 +424,10 @@ impl CurvlinFunc {
                 true
             }
             1 => {
-                let (c2d, dc2d) = self.c2d1.d1(u);
+                let (c2d, dc2d) = c2d1.d1(u);
                 let dv_du = dc2d.x();
                 let dw_du = dc2d.y();
-                let (c, ds_dv, ds_dw) = self.surf1.d1(c2d.x(), c2d.y());
+                let (c, ds_dv, ds_dw) = surf1.d1(c2d.x(), c2d.y());
                 let _ = c;
                 let dc_du = ds_dv.multiplied_scalar(dv_du).added(&ds_dw.multiplied_scalar(dw_du));
                 let mag = dc_du.magnitude();
@@ -304,13 +444,13 @@ impl CurvlinFunc {
                 true
             }
             2 => {
-                let (c2d, dc2d, d2c2d) = self.c2d1.d2(u);
+                let (c2d, dc2d, d2c2d) = c2d1.d2(u);
                 let dv_du = dc2d.x();
                 let dw_du = dc2d.y();
                 let d2v_du2 = d2c2d.x();
                 let d2w_du2 = d2c2d.y();
                 let (c, ds_dv, ds_dw, d2s_dv2, d2s_dw2, d2s_dvdw) =
-                    self.surf1.d2(c2d.x(), c2d.y());
+                    surf1.d2(c2d.x(), c2d.y());
                 let _ = c;
                 let dc_du = ds_dv.multiplied_scalar(dv_du).added(&ds_dw.multiplied_scalar(dw_du));
                 let d2c_du2 = d2s_dv2

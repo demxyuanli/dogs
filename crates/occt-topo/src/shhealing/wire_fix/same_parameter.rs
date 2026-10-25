@@ -197,8 +197,11 @@ pub fn fix_vertex_tolerance_edge(edge: &Edge) {
         t2 = t2.max(p2.square_distance(&surf.d0(uv2.x(), uv2.y())));
     }
     let tole = BRepTool::edge_tolerance(edge);
-    v1.set_tolerance((1.0000001 * t1.sqrt()).max(tole));
-    v2.set_tolerance((1.0000001 * t2.sqrt()).max(tole));
+    // `ShapeFix_Edge::FixVertexTolerance` (`cxx:756-757`) writes through
+    // `BRep_Builder::UpdateVertex`, whose `BRep_TVertex::UpdateTolerance` only
+    // raises (`BRep_TVertex.hxx` `if (T > myTolerance) myTolerance = T;`).
+    v1.set_tolerance(BRepTool::vertex_tolerance(&v1).max((1.0000001 * t1.sqrt()).max(tole)));
+    v2.set_tolerance(BRepTool::vertex_tolerance(&v2).max((1.0000001 * t2.sqrt()).max(tole)));
 }
 
 /// Vertices and the tolerances `CheckVertexTolerance` would write when either
@@ -260,8 +263,8 @@ pub(in crate::shhealing) fn fix_vertex_tolerance_edge_on_face(edge: &Edge, face:
     let Some(grown) = grown_vertex_tolerances_on_face(edge, face) else {
         return;
     };
-    grown.v1.set_tolerance(grown.toler1);
-    grown.v2.set_tolerance(grown.toler2);
+    grown.v1.set_tolerance(BRepTool::vertex_tolerance(&grown.v1).max(grown.toler1));
+    grown.v2.set_tolerance(BRepTool::vertex_tolerance(&grown.v2).max(grown.toler2));
 }
 
 /// `ShapeBuild_Edge::CopyReplaceVertices` (`ShapeBuild_Edge.cxx:59-140`): a new

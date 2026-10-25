@@ -63,8 +63,8 @@ fn shift_displaced_line(
 /// (cxx:451-472) are applied by [`edge_from_curve3d`].
 pub(in crate::step) fn edge_params_for_curve(curve: &dyn Curve, p1: &GpPnt, p2: &GpPnt) -> (f64, f64) {
     const PRECI: f64 = 1e-3;
-    let (u1, _) = shape_analysis_project(curve, p1, PRECI);
-    let (u2, _) = shape_analysis_project(curve, p2, PRECI);
+    let (u1, _d1) = shape_analysis_project(curve, p1, PRECI);
+    let (u2, _d2) = shape_analysis_project(curve, p2, PRECI);
     (u1, u2)
 }
 

@@ -67,6 +67,11 @@ pub fn project_wire_pcurve_ranges(wire: &Wire, face: &Face, preci: f64) {
     // `TranslateEdgeLoop.cxx:844`: EdgeProjAux runs only when
     // `!aTool.ComputePCurve()`. That flag becomes true if any loop edge
     // lacked a STEP pcurve (`cxx:570/590/670/681`).
+    //
+    // The order relative to `CheckPCurves` matters: `cxx:844-868` writes the
+    // projected window into the pcurve range *before* `cxx:875`'s
+    // `XSAlgo_ShapeProcessor::CheckPCurve` runs. See
+    // `step/read_topology/translate_face.rs::resolve_face`.
     if edges_of_wire(wire)
         .iter()
         .any(|e| curve_on_surface_oriented(e, face, false).is_none())

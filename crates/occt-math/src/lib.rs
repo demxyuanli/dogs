@@ -19,6 +19,7 @@ pub mod svd;
 pub mod crout;
 pub mod jacobi;
 pub mod householder;
+pub mod math_recipes;
 pub mod newton;
 pub mod gauss;
 pub mod bfgs;
@@ -58,6 +59,7 @@ pub use pso::{Pso, PsoParticle, PsoParticlesPool};
 pub mod newton_minimum;
 pub use newton_minimum::{Gauss, NewtonMinimum};
 pub use householder::Householder;
+pub use math_recipes::{dactcl_decompose, dactcl_solve};
 // The faithful `math_NewtonMinimum` port owns the root name (above). The
 // pre-existing `newton::NewtonMinimum` is a BFGS-update descent that its own
 // module header documents as *not* `math_NewtonMinimum`; it stays reachable as
@@ -107,7 +109,17 @@ pub mod constraint_opt;
 pub mod globoptmin;
 pub mod frpr;
 pub mod function_set_root;
+pub mod newton_function_set_root;
+pub mod plib_hermite;
+pub mod plib_hermit_jacobi;
+pub mod math_crout;
+pub mod uzawa;
 pub use function_set_root::{
     MathFunctionRoot, MathFunctionSetRoot, MathFunctionSetWithDerivatives,
     FunctionWithDerivative,
 };
+pub use newton_function_set_root::MathNewtonFunctionSetRoot;
+pub use plib_hermite::hermite_coefficients;
+pub use plib_hermit_jacobi::HermitJacobi;
+pub use math_crout::MathCrout;
+pub use uzawa::Uzawa;

@@ -35,11 +35,13 @@ mod general_extrema;
 mod glob_opt_func;
 mod ext_cc2d;
 mod ext_el_c2d;
+mod epc_of_ext_pc2d;
 pub use analytic_solvers::*;
 pub use curve_curve::*;
 pub use ext_cc2d::*;
 pub use ext_el_c2d::*;
 pub use ext_pc2d::*;
+pub use epc_of_ext_pc2d::EPcOfExtPc2d;
 pub use gen_locate_ext_cc2d::ExtremaLocateExtCC2d;
 
 #[cfg(test)]

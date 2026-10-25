@@ -94,7 +94,10 @@ pub(super) fn solve3(m: [[f64; 3]; 3], d: [f64; 3]) -> Option<[f64; 3]> {
 /// early exit that leaves `done = false` (`cxx:463-509`); `Some` is the
 /// `typeres = IntAna_Line` / `nbint = 1` result of `cxx:444-445` (`pt1` the
 /// midpoint of the two normal-projected origins, `dir1 = gp_Dir(vd)`).
-pub(super) fn plane_plane_line(p1: &GpPln, p2: &GpPln, tol_ang: f64, tol: f64) -> Option<GpLin> {
+///
+/// Public because `ChFi3d_CircularSpine` (`ChFi3d_Builder_0.cxx:846-880`) calls
+/// `IntAna_QuadQuadGeo(Pl1, Pl2, ...).Line(1)` directly.
+pub fn plane_plane_line(p1: &GpPln, p2: &GpPln, tol_ang: f64, tol: f64) -> Option<GpLin> {
     let (a1, b1, c1, d1) = plane_coeffs(p1);
     let (a2, b2, c2, d2) = plane_coeffs(p2);
     let n1 = GpVec::new(a1, b1, c1);

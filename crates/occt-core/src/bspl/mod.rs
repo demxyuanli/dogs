@@ -40,8 +40,13 @@ pub mod increase_degree;
 pub mod remove_knot;
 pub mod function_ops;
 pub mod knot_analysis;
+pub mod curve_1d;
+pub mod eval_extrap;
+pub mod move_point;
+pub mod coefs;
 
 pub use surface_resolution::{bspline_surface_max_derivative, bspline_surface_resolution};
 pub use curve_resolution::bspline_curve_resolution;
+pub use curve_resolution::bspline_curve_resolution_1d;
 pub use intervals::{adaptor_intervals, knot_intervals as bspline_intervals, local_continuity};
 pub use unperiodize::{flat_knots_from_mults, unperiodize_direction, unperiodize_knots};

@@ -1,7 +1,7 @@
 //! `ShapeFix_Shell::FixFaceOrientation` / `GetShells` and the single-shell arm
-//! of `ShapeFix_Solid::SolidFromShell`.
+//! of `ShapeFix_Solid::Perform` / `SolidFromShell`.
 //!
-//! `ShapeFix_Shell.cxx:1425-1653` and `ShapeFix_Solid.cxx:520-565`, `:655-702`.
+//! `ShapeFix_Shell.cxx:1425-1653` and `ShapeFix_Solid.cxx:520-570`, `:655-702`.
 
 use std::collections::{HashMap, HashSet};
 
@@ -12,6 +12,7 @@ use crate::builder::TopoBuilder;
 use crate::fclass2d::FaceState;
 use crate::iterator::cumulated_children;
 use crate::shape::{Edge, Shell, TopoShape};
+use crate::shape_fix_compose_shell::{ReShape, SharedReShape};
 
 /// One oriented edge occurrence on a face (`TopExp_Explorer(face, EDGE)`).
 struct EdgeUse {
@@ -269,17 +270,27 @@ pub fn clear_shell_closed_if_analysis_free(shell: &TopoShape) {
 
 /// True when `ShapeAnalysis_FreeBounds` would report an open shell for the
 /// single-shell arm (`ShapeFix_Solid.cxx:528-541`).
+///
+/// `ShapeAnalysis_FreeBounds sfb(aShtmp)` selects the "actual free bounds"
+/// constructor (`ShapeAnalysis_FreeBounds.cxx:100-135`): the shell's faces go into
+/// a temporary shell, `ShapeAnalysis_Shell::CheckOrientedShells(shell, true,
+/// false)` collects the free edges, and `isClosed` is `numedge == 0` over the
+/// wires they chain into (`ShapeFix_Solid.cxx:531-541`). That is the oriented
+/// check below, not the `MapShapesAndAncestors` ancestor count used by
+/// `FixFaceOrientation`.
 pub fn shell_open_by_free_edge(shell: &TopoShape) -> bool {
-    shell_has_free_edge(shell)
+    shell_analysis_has_free_edges(shell)
 }
 
-/// A non-degenerate edge that meets exactly one face is a free boundary
-/// (`ShapeFix_Shell.cxx:1460-1466`). `ShapeAnalysis_FreeBounds` reports the
-/// same condition as "open" for the single-shell arm (`ShapeFix_Solid.cxx:528-541`).
+/// A non-degenerate edge whose ancestor list holds exactly one face is a free
+/// boundary (`ShapeFix_Shell.cxx:1455-1466`). The list comes from
+/// `TopExp::MapShapesAndAncestors`, which appends the ancestor once per edge
+/// occurrence, so a seam edge that occurs twice on its own face has two
+/// ancestors and is closed. This feeds `FixFaceOrientation`'s
+/// `isFreeBoundaries` / `Closed` write-back (`cxx:1472-1480`).
 fn shell_has_free_edge(shell: &TopoShape) -> bool {
-    let mut face_count: HashMap<usize, usize> = HashMap::new();
+    let mut ancestors: HashMap<usize, usize> = HashMap::new();
     for f in composed_faces(shell) {
-        let mut seen: HashMap<usize, bool> = HashMap::new();
         for w in cumulated_children(&f) {
             if w.shape_type() != ShapeType::Wire {
                 continue;
@@ -291,14 +302,11 @@ fn shell_has_free_edge(shell: &TopoShape) -> bool {
                 if BRepTool::is_degenerated(&Edge(e.clone())) {
                     continue;
                 }
-                seen.insert(edge_key(&e), true);
+                *ancestors.entry(edge_key(&e)).or_insert(0) += 1;
             }
         }
-        for k in seen.keys() {
-            *face_count.entry(*k).or_insert(0) += 1;
-        }
     }
-    face_count.values().any(|&n| n == 1)
+    ancestors.values().any(|&n| n == 1)
 }
 
 /// `ShapeAnalysis_Shell::CheckOrientedShells` free-edge set
@@ -334,23 +342,52 @@ fn shell_analysis_has_free_edges(shell: &TopoShape) -> bool {
         || revs.iter().any(|k| !dirs.contains(k) && !bads.contains(k))
 }
 
-/// Single-shell arm of `ShapeFix_Solid::Perform` (`ShapeFix_Solid.cxx:520-565`)
-/// then `SolidFromShell` (`:655-702`): a closed shell whose infinite point
-/// classifies `TopAbs_IN` is reversed. `CreateOpenSolidMode` is 0 on the STEP
-/// reader (`STEPControl_Controller.cxx:214`), so an open shell is left alone.
+/// Single-shell arm of `ShapeFix_Solid::Perform` (`ShapeFix_Solid.cxx:520-570`)
+/// followed by `SolidFromShell` (`:655-702`).
+///
+/// `ShapeAnalysis_FreeBounds` (`cxx:528-541`) sets `isClosed` and the shell's
+/// `Closed` flag (`cxx:542`), and `cxx:545` only enters `SolidFromShell` when
+/// `isClosed || myCreateOpenSolidMode`. Otherwise `cxx:559-567` records the bare
+/// shell as the solid's replacement, i.e. the root of the pass stops being a
+/// solid. `SolidFromShell` sets the shell `Free` (`cxx:657-661`), classifies the
+/// infinite point of a trial solid, and on `TopAbs_IN` records a solid built from
+/// the reversed shell (`cxx:685-690`). Only those two branches call
+/// `Context()->Replace` (`cxx:556`, `:687`), so a shell the classifier puts
+/// outside leaves the pass' shape untouched.
+///
 /// Several shells go through `CreateSolids` (`:577-640`), which is not this arm.
-pub fn orient_single_shell_solid(shell: &mut TopoShape) {
-    if shell.shape_type() != ShapeType::Shell {
+pub fn fix_solid_from_one_shell(
+    solid: &TopoShape,
+    shell: &TopoShape,
+    ctx: &mut SharedReShape,
+    create_open_solid_mode: bool,
+) {
+    let is_closed = !shell_open_by_free_edge(shell);
+    // `aShtmp.Closed(isClosed)` (`cxx:542`) writes the flag through the shared
+    // `TShape`, so it applies to the shell the pass materialises.
+    shell.set_closed(is_closed);
+    if !is_closed && !create_open_solid_mode {
+        // `cxx:559-567`: "Solid can not be created from open shell".
+        ctx.replace(solid, shell);
         return;
     }
-    if shell_has_free_edge(shell) {
-        return;
+    let sh = shell.clone();
+    if !sh.free() {
+        sh.set_free(true); // `cxx:657-661`.
     }
-    let solid = TopoBuilder::new().make_solid(&[Shell(shell.clone())]);
+    let builder = TopoBuilder::new();
+    let trial = builder.make_solid(&[Shell(sh)]);
     let mut sc = SolidClassifier::new();
-    sc.load(solid.0);
+    sc.load(trial.0);
     sc.perform_infinite_point(occt_core::precision::CONFUSION);
-    if sc.state() == FaceState::In {
-        shell.reverse();
+    if sc.state() != FaceState::In {
+        return; // `cxx:674-689`: only `TopAbs_IN` reverses.
     }
+    let mut rev = shell.clone();
+    if !rev.free() {
+        rev.set_free(true);
+    }
+    rev.reverse();
+    let soli2 = builder.make_solid(&[Shell(rev)]);
+    ctx.replace(solid, &soli2.0);
 }

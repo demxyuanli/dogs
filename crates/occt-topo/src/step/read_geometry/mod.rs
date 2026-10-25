@@ -120,26 +120,20 @@ impl<'a> Resolver<'a> {
                 Arc::new(GeomSurfaceOfLinearExtrusion::new(basis, direction))
             }
             "B_SPLINE_SURFACE" => {
-                // Plain B-spline surface (no explicit knots): clamped uniform
-                // knot vectors derived from the pole grid and degrees.
-                let deg_u = parse_f64(&rec.args[1])? as usize;
-                let deg_v = parse_f64(&rec.args[2])? as usize;
-                let poles: Vec<Vec<GpPnt>> = parse_nested_ref_list(&rec.args[3])
-                    .into_iter()
-                    .map(|row| {
-                        row.into_iter()
-                            .map(|r| self.resolve_point(r))
-                            .collect::<Result<Vec<_>, _>>()
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                let nu = poles.len();
-                let nv = poles.first().map_or(0, |r| r.len());
-                let u_knots = uniform_knots_for(nu, deg_u);
-                let v_knots = uniform_knots_for(nv, deg_v);
-                Arc::new(
-                    GeomBSplineSurface::new(poles, u_knots, v_knots, deg_u, deg_v)
-                        .map_err(|e| format!("B_SPLINE_SURFACE: {e}"))?,
-                )
+                // No OCCT branch: `MakeSurface` sends every
+                // `StepGeom_BoundedSurface` to `MakeBoundedSurface`
+                // (`StepToGeom.cxx:1908-1924`), and that only maps the
+                // with-knots / rational complex (`cxx:505-520`), the
+                // Bezier / uniform / quasi-uniform families (`cxx:522-742`) and
+                // `RectangularTrimmedSurface` (`cxx:517-521`); the knotless base
+                // class falls through to a null handle (`cxx:744-745`).
+                // `MakeBSplineSurface` likewise downcasts to
+                // `StepGeom_BSplineSurfaceWithKnots` before reading knots
+                // (`cxx:975-987`). Synthesising knots here would be a rule OCCT
+                // does not have.
+                return Err(format!(
+                    "B_SPLINE_SURFACE without knots has no OCCT branch (#{id})"
+                ));
             }
             "B_SPLINE_SURFACE_WITH_KNOTS" => {
                 // Standard ISO 10303-42 layout (13 args): name, u_degree,

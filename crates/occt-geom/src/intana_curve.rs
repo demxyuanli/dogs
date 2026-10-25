@@ -467,6 +467,14 @@ impl Curve for IntAnaCurve {
         self.last
     }
 
+    fn is_first_open(&self) -> bool {
+        self.first_bounded
+    }
+
+    fn is_last_open(&self) -> bool {
+        self.last_bounded
+    }
+
     fn continuity(&self) -> u8 {
         1
     }

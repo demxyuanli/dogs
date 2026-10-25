@@ -31,11 +31,11 @@ pub fn nb_vertex(l: &GeomIntLine) -> i32 {
 /// reports parameters 1 and `NbPnts` as ends).
 pub fn vertex(l: &GeomIntLine, i: i32) -> PatchPoint {
     match l {
-        GeomIntLine::Analytic(a) => *a.vertex(i),
-        GeomIntLine::Restriction(r) => *r.vertex(i),
+        GeomIntLine::Analytic(a) => a.vertex(i).clone(),
+        GeomIntLine::Restriction(r) => r.vertex(i).clone(),
         GeomIntLine::Walking(w) => {
             if w.nb_vertex() > 0 {
-                *w.vertex(i)
+                w.vertex(i).clone()
             } else {
                 let n = w.nb_pnts();
                 let idx = if i <= 1 { 1 } else { n };
@@ -43,7 +43,7 @@ pub fn vertex(l: &GeomIntLine, i: i32) -> PatchPoint {
                 PatchPoint::new(p.value(), idx as f64, p.u1, p.v1, p.u2, p.v2)
             }
         }
-        GeomIntLine::Geometric(g) => *g.vertex(i),
+        GeomIntLine::Geometric(g) => g.vertex(i).clone(),
     }
 }
 

@@ -126,6 +126,22 @@ impl TopoShape {
     /// Deep-ish copy (shares TShape data, copies view).
     pub fn copied(&self) -> Self { self.clone() }
 
+    /// `TopoDS_Shape::EmptyCopied()` (`TopoDS_Shape.hxx:290-302`): same
+    /// orientation and location over a new TShape of the same type with no
+    /// sub-shapes.
+    ///
+    /// The per-class `EmptyCopy` overrides copy the geometry of the *BRep*
+    /// TShapes (`BRep_TEdge.cxx:105-133`, `BRep_TFace.cxx:36-43`,
+    /// `BRep_TVertex.cxx:33-39`); that part lives in the geometry side-table,
+    /// so callers that need it (`TopOpeBRepDS_BuildTool::CopyEdge` /
+    /// `CopyFace`) re-register it after calling this.
+    pub fn empty_copied(&self) -> Self {
+        let mut s = Self::new(self.kind);
+        s.location = self.location.clone();
+        s.orientation = self.orientation;
+        s
+    }
+
     /// True if shapes share the same TShape data.
     pub fn same_tshape(&self, other: &Self) -> bool { Arc::ptr_eq(&self.tshape, &other.tshape) }
 }

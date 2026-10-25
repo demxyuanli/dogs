@@ -444,6 +444,85 @@ pub fn eval_polynomials(coeffs: &[Vec<f64>], x: f64) -> Vec<f64> {
     coeffs.iter().map(|c| eval_polynomial_horner(c, x)).collect()
 }
 
+/// `PLib::EvalLagrange(Parameter, DerivativeRequest, Degree, Dimension,
+/// Values, Parameters, Results)` (`PLib.cxx:1122-1250`).
+///
+/// The point array is the raw `gp_Pnt` storage the OCCT callers pass as
+/// `(double*)&PointsArray.Value(...)`, i.e. `degree + 1` points of `dimension`
+/// consecutive doubles in x, y, z order. `parameters` holds the `degree + 1`
+/// abscissae in the same order. `results` receives `derivative_request + 1`
+/// blocks of `dimension` values (derivative 0 first) and must already have
+/// that length, as in OCCT where the caller declares `double eval_result[2][3]`.
+///
+/// Returns `0` on success and `1` when two abscissae coincide
+/// (`RealSmall()`, `cxx:1189-1193`) — the same non-zero code OCCT returns.
+pub fn eval_lagrange(
+    parameter: f64,
+    derivative_request: usize,
+    degree: usize,
+    dimension: usize,
+    values: &[f64],
+    parameters: &[f64],
+    results: &mut [f64],
+) -> i32 {
+    let local_request = derivative_request.min(degree);
+    let mut dd = vec![0.0f64; (degree + 1) * dimension];
+    let len = dd.len().min(values.len());
+    dd[..len].copy_from_slice(&values[..len]);
+
+    // `cxx:1176-1201`: divided differences, highest order first.
+    for ii in (0..=degree).rev() {
+        let mut jj = degree;
+        while jj > degree - ii {
+            let index = jj * dimension;
+            let index1 = index - dimension;
+            for kk in 0..dimension {
+                dd[index + kk] -= dd[index1 + kk];
+            }
+            let difference = parameters[jj] - parameters[jj - degree - 1 + ii];
+            if difference.abs() < crate::precision::REAL_SMALL {
+                return 1;
+            }
+            let difference = 1.0 / difference;
+            for kk in 0..dimension {
+                dd[index + kk] *= difference;
+            }
+            if jj == 0 {
+                break;
+            }
+            jj -= 1;
+        }
+    }
+
+    // `cxx:1212-1248`: Horner evaluation of the divided-difference form.
+    let index = degree * dimension;
+    for kk in 0..dimension {
+        results[kk] = dd[index + kk];
+    }
+    for ii in dimension..(local_request + 1) * dimension {
+        if ii < results.len() {
+            results[ii] = 0.0;
+        }
+    }
+    for ii in (1..=degree).rev() {
+        let difference = parameter - parameters[ii - 1];
+        for jj in (1..=local_request).rev() {
+            let index = jj * dimension;
+            let index1 = index - dimension;
+            for kk in 0..dimension {
+                results[index + kk] *= difference;
+                results[index + kk] += results[index1 + kk] * (jj as f64);
+            }
+        }
+        let index = (ii - 1) * dimension;
+        for kk in 0..dimension {
+            results[kk] *= difference;
+            results[kk] += dd[index + kk];
+        }
+    }
+    0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

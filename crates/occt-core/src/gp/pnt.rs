@@ -51,6 +51,12 @@ impl GpPnt {
 
     pub fn is_equal(&self, other: &Self) -> bool { self.distance(other) <= RESOLUTION }
 
+    /// `gp_Pnt::IsEqual(const gp_Pnt&, const double theLinearTolerance)`
+    /// (`gp_Pnt.hxx`): `Distance(theOther) <= theLinearTolerance`.
+    pub fn is_equal_with_tolerance(&self, other: &Self, tol: f64) -> bool {
+        self.distance(other) <= tol
+    }
+
     pub fn transform(&mut self, t: &GpTrsf) { t.transforms_xyz(&mut self.coord); }
     pub fn transformed(&self, t: &GpTrsf) -> Self { let mut c = self.coord; t.transforms_xyz(&mut c); Self { coord: c } }
 

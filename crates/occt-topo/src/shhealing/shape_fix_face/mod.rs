@@ -1,13 +1,19 @@
 //! `ShapeFix_Face` subset: `CheckWire` (`ShapeFix_Face.cxx:1652-1718`), the
 //! setup / wire-pair selection plus seam construction of `FixMissingSeam`
 //! (`ShapeFix_Face.cxx:1722-2330`), `IsPeriodicConicalLoop`
-//! (`cxx:3018-3098`) and `FixPeriodicDegenerated` (`cxx:3101-3259`).
+//! (`cxx:3018-3098`), `FixPeriodicDegenerated` (`cxx:3101-3259`) and
+//! `FixSmallAreaWire` (`cxx:2331-2394`, `small_area_wire.rs`).
 //!
-//! UNPORTED: `ShapeFix_Face::Perform` (`cxx:345-...`) beyond its
-//! `FixPeriodicDegenerated` / `FixMissingSeam` tail (`cxx:482-498`) — the
-//! wire-fixing first part (`cxx:365-480`, needs `ShapeFix_Wire::Perform`) and
-//! the post-`FixMissingSeam` face loop (`cxx:500-...`). See
-//! `specs/_a3n00_gap_analysis.md` §9.35.
+//! The `ShapeFix_Face` mode fields live in [`ShapeFixFaceModes`]
+//! (`ShapeFix_Face.hxx:285-295`, `ClearModes` at `cxx:130-145`); every step of
+//! `Perform` reads them through the `NeedFix(...)` helpers on that struct.
+//!
+//! `ShapeFix_Face::Perform` (`cxx:345-780`) is driven from the two reader
+//! pipelines rather than from a `Perform` method here:
+//! `step/read_topology/translate_face.rs` and
+//! `iges_read/iges_process_shape.rs` run the wire rounds, and
+//! `step/read_topology/shape_fix_face_perform.rs` holds the second-part loop.
+//! See `specs/_a3n00_gap_analysis.md` §9.35 for what is still missing there.
 
 mod prelude {
     pub(crate) use std::sync::Arc;
@@ -219,31 +225,11 @@ pub struct ShapeFixFace {
     pub max_tol: f64,
     /// `ShapeFix_Face::myResult`.
     pub result: Option<TopoShape>,
-    /// `myFixMissingSeamMode` (`ShapeFix_Face.cxx:137`, default `-1` = auto).
-    pub fix_missing_seam_mode: bool,
-    /// `myFixPeriodicDegenerated` (`ShapeFix_Face.cxx:144`, default `-1`).
-    /// `NeedFix(-1)` is true (`ShapeFix_Root.lxx:101`) and the STEP
-    /// `ShapeProcess` operator never sets this flag — it only sets
-    /// `FixMissingSeamMode` (`ShapeProcess_OperLibrary.cxx:830`) — so the
-    /// conic degenerate-apex fix always runs on the reader path.
-    pub fix_periodic_degenerated_mode: bool,
-    /// `myFixOrientationMode` (`ShapeFix_Face.cxx:141`, default `-1` = auto).
-    /// `FromSTEP.FixShape` sets it from `FixOrientationMode`
-    /// (`ShapeProcess_OperLibrary.cxx:828`), whose default is also `-1`, so
-    /// `NeedFix` is true on the reader path.
-    pub fix_orientation_mode: bool,
-    /// `myFixIntersectingWiresMode` (`ShapeFix_Face.cxx:140`, default `-1` =
-    /// auto). `ShapeProcess_OperLibrary.cxx:833` sets it from
-    /// `FixIntersectingWiresMode`, whose default is also `-1`, so `NeedFix` is
-    /// true on the reader path.
-    pub fix_intersecting_wires_mode: bool,
-    /// `myFixAddNaturalBoundMode` (`ShapeFix_Face.cxx:143`, default `-1`);
-    /// `NeedFix` is true, so `isNeedAddNaturalBound` runs.
-    pub fix_add_natural_bound_mode: bool,
-    /// `myFixSplitFaceMode` (`ShapeFix_Face.cxx:142`, default `-1` = auto).
-    /// `Perform` gates `FixSplitFace` on `NeedFix(myFixSplitFaceMode)`
-    /// (`cxx:711`), so the face-splitting tail of the second-part loop runs.
-    pub fix_split_face_mode: bool,
+    /// `ShapeFix_Face`'s mode fields (`ShapeFix_Face.hxx:285-295`), i.e. the
+    /// `NeedFix(...)` inputs `Perform` reads. `Default` is `ClearModes`
+    /// (`ShapeFix_Face.cxx:130-145`), which is also what both read paths'
+    /// `ShapeProcess` operator leaves them at — see [`ShapeFixFaceModes`].
+    pub modes: ShapeFixFaceModes,
     /// `Perform`'s local `MapWires` (`ShapeFix_Face.cxx:689-691`): the outer
     /// wire -> inner wires nesting that `FixOrientation` computes and
     /// `FixSplitFace` consumes (`cxx:711-716`).
@@ -266,12 +252,7 @@ impl Default for ShapeFixFace {
             context: crate::shape_fix_compose_shell::SharedReShape::new(),
             max_tol: 1.0,
             result: None,
-            fix_missing_seam_mode: true,
-            fix_periodic_degenerated_mode: true,
-            fix_orientation_mode: true,
-            fix_intersecting_wires_mode: true,
-            fix_add_natural_bound_mode: true,
-            fix_split_face_mode: true,
+            modes: ShapeFixFaceModes::default(),
             map_wires: Vec::new(),
             fwd: true,
         }
@@ -301,12 +282,7 @@ impl ShapeFixFace {
             context: crate::shape_fix_compose_shell::SharedReShape::new(),
             max_tol: 1.0,
             result: None,
-            fix_missing_seam_mode: true,
-            fix_periodic_degenerated_mode: true,
-            fix_orientation_mode: true,
-            fix_intersecting_wires_mode: true,
-            fix_add_natural_bound_mode: true,
-            fix_split_face_mode: true,
+            modes: ShapeFixFaceModes::default(),
             map_wires: Vec::new(),
             // `myFwd = (theFace.Orientation() != TopAbs_REVERSED)`
             // (`ShapeFix_Face.cxx:218`): INTERNAL/EXTERNAL count as forward.
@@ -316,19 +292,22 @@ impl ShapeFixFace {
 
     /// `ShapeFix_Face::Perform` (`ShapeFix_Face.cxx:345-...`) reduced to the
     /// `FixPeriodicDegenerated` / `FixMissingSeam` tail (`cxx:482-498`):
-    /// `myResult = myFace;` then, when `myFixPeriodicDegeneratedMode` is on,
-    /// `FixPeriodicDegenerated()` (`cxx:486-489`), then `FixMissingSeam()`
+    /// `myResult = myFace;` then, when `NeedFix(myFixPeriodicDegenerated)` is
+    /// on, `FixPeriodicDegenerated()` (`cxx:486-489`), then
+    /// `NeedFix(myFixMissingSeamMode)` and its `FixMissingSeam()`
     /// (`cxx:492-498`).
     ///
-    /// UNPORTED: the wire-fixing first part (`cxx:365-480`, needs
-    /// `ShapeFix_Wire::Perform`) and the post-`FixMissingSeam` face loop
-    /// (`cxx:500-...`).
+    /// UNPORTED here: the wire-fixing first part (`cxx:365-480`) and the
+    /// post-`FixMissingSeam` face loop (`cxx:500-736`) live in the reader
+    /// pipelines (`step/read_topology/translate_face.rs`,
+    /// `iges_read/iges_process_shape.rs`,
+    /// `step/read_topology/shape_fix_face_perform.rs`), not in this method.
     pub fn perform_fix_missing_seam(&mut self) -> Option<TopoShape> {
         self.result = self.face.as_ref().map(|f| f.0.clone()); // cxx:482
-        if self.fix_periodic_degenerated_mode {
+        if self.modes.need_fix_periodic_degenerated() {
             self.fix_periodic_degenerated(); // cxx:486-489
         }
-        if self.fix_missing_seam_mode {
+        if self.modes.need_fix_missing_seam() {
             // cxx:492-498.
             if self.fix_missing_seam() {
                 self.status |= 0x0004; // ShapeExtend_DONE3
@@ -344,8 +323,7 @@ impl ShapeFixFace {
     /// The tool rebuilds the face and records `Context()->Replace(myFace, newface)`
     /// (`intersection_tool::fix_intersecting_wires`, `cxx:2526`), so `myFace` here
     /// follows the out-parameter update. `ShapeFix_Face::Perform` (`cxx:680`)
-    /// consumes this; wiring that driver still needs the unported wire-fixing
-    /// first part (`cxx:365-480`).
+    /// consumes this.
     pub fn fix_intersecting_wires(&mut self) -> bool {
         let mut face = match self.face.clone() {
             Some(f) => f,
@@ -360,8 +338,8 @@ impl ShapeFixFace {
 
     /// `ShapeFix_Face::isNeedAddNaturalBound` (`ShapeFix_Face.cxx:1120-1160`).
     pub(in crate::shhealing) fn is_need_add_natural_bound(&self, oriented_wires: &[Wire]) -> bool {
-        // cxx:1124-1127.
-        if !self.fix_add_natural_bound_mode {
+        // cxx:1124-1127: `if (!NeedFix(myFixAddNaturalBoundMode)) return false;`
+        if !self.modes.need_fix_add_natural_bound() {
             return false;
         }
         // cxx:1130-1133: only a surface closed in both U and V (or a sphere)
@@ -397,5 +375,9 @@ impl ShapeFixFace {
 }
 
 mod missing_seam;
+mod modes;
 mod orientation;
 mod periodic_degenerated;
+mod small_area_wire;
+
+pub use modes::{least_edge_size, ShapeFixFaceModes};

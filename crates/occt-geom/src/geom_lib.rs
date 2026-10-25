@@ -33,10 +33,52 @@ use crate::parabola::GeomParabola;
 use crate::surface::Surface;
 use crate::trimmed::GeomTrimmedCurveBasis;
 
+/// `GeomLib::FuseIntervals` (`GeomLib.cxx:392-457`): merge two sorted
+/// parameter lists, one entry per distinct value.
+///
+/// `Seq` (an `NCollection_Sequence<double>`) becomes the returned `Vec`. The
+/// optional `IsAdjustToFirstInterval` arm (`cxx:416-421`) picks `v1` instead of
+/// the midpoint of a matching pair.
+pub fn fuse_intervals(
+    i1: &[f64],
+    i2: &[f64],
+    epspar: f64,
+    is_adjust_to_first_interval: bool,
+) -> Vec<f64> {
+    let mut seq = Vec::with_capacity(i1.len() + i2.len());
+    let mut ind1 = 0usize;
+    let mut ind2 = 0usize;
+    while ind1 < i1.len() && ind2 < i2.len() {
+        let v1 = i1[ind1];
+        let v2 = i2[ind2];
+        if (v1 - v2).abs() <= epspar {
+            // `cxx:413-426`: matching values collapse to one entry.
+            if is_adjust_to_first_interval {
+                seq.push(v1);
+            } else {
+                seq.push((v1 + v2) / 2.0);
+            }
+            ind1 += 1;
+            ind2 += 1;
+        } else if v1 < v2 {
+            seq.push(v1);
+            ind1 += 1;
+        } else {
+            seq.push(v2);
+            ind2 += 1;
+        }
+    }
+    // `cxx:438-456`: append the tail of whichever list still has entries.
+    seq.extend_from_slice(&i1[ind1..]);
+    seq.extend_from_slice(&i2[ind2..]);
+    seq
+}
+
 /// `gp::DX2d()`, the reference direction `ElCLib`/`GeomLib` compare against.
 fn dx2d() -> GpDir2d {
     GpDir2d::new(1.0, 0.0).expect("DX2d")
 }
+
 
 /// `gp::DY2d()`.
 fn dy2d() -> GpDir2d {
@@ -549,4 +591,136 @@ pub fn geom_lib_build_curve3d(
             average_deviation,
         },
     }
+}
+
+/// Result of [`geom_lib_inertia`]: the OCCT out-parameters `Bary`, `XDir`,
+/// `YDir`, `Xgap`, `Ygap`, `Zgap`.
+pub struct Inertia {
+    pub bary: occt_core::gp::GpPnt,
+    pub x_dir: occt_core::gp::GpDir,
+    pub y_dir: occt_core::gp::GpDir,
+    pub x_gap: f64,
+    pub y_gap: f64,
+    pub z_gap: f64,
+}
+
+/// `GeomLib::Inertia` (`GeomLib.cxx:1976-2092`): the barycentre and the two
+/// minor axes of the point cloud's covariance matrix.
+///
+/// `math_Jacobi` is [`occt_math::Jacobi`], whose `values` are sorted
+/// descending and whose `vectors` hold one eigenvector per column, exactly
+/// like `math_Jacobi::Value` / `math_Jacobi::Vector` (`math_Jacobi.lxx:38-53`).
+pub fn geom_lib_inertia(points: &[occt_core::gp::GpPnt]) -> Inertia {
+    use occt_core::gp::{GpDir, GpPnt};
+
+    let nb = points.len();
+    let mut gb = occt_core::gp::GpXyz::zero();
+    for p in points {
+        gb = gb.added(p.xyz());
+    }
+    if nb > 0 {
+        gb = gb.divided(nb as f64);
+    }
+
+    let mut m = occt_math::MathMatrix::new(1, 3, 1, 3);
+    for p in points {
+        let diff = gb.subtracted(p.xyz());
+        m.set_value(1, 1, m.value(1, 1) + diff.x * diff.x);
+        m.set_value(2, 2, m.value(2, 2) + diff.y * diff.y);
+        m.set_value(3, 3, m.value(3, 3) + diff.z * diff.z);
+        m.set_value(1, 2, m.value(1, 2) + diff.x * diff.y);
+        m.set_value(1, 3, m.value(1, 3) + diff.x * diff.z);
+        m.set_value(2, 3, m.value(2, 3) + diff.y * diff.z);
+    }
+    m.set_value(2, 1, m.value(1, 2));
+    m.set_value(3, 1, m.value(1, 3));
+    m.set_value(3, 2, m.value(2, 3));
+    if nb > 0 {
+        let scale = 1.0 / nb as f64;
+        for i in 1..=3 {
+            for j in 1..=3 {
+                m.set_value(i, j, m.value(i, j) * scale);
+            }
+        }
+    }
+
+    let j = occt_math::Jacobi::new(&m);
+    let n1 = j.values.value(1);
+    let n2 = j.values.value(2);
+    let n3 = j.values.value(3);
+
+    // `m1` / `m2` / `m3`: the ascending eigenvalue order (`cxx:2030-2079`).
+    let r1 = n1.min(n2).min(n3);
+    let (m1, m2, m3);
+    if r1 == n1 {
+        m1 = 1;
+        if n2 <= n3 {
+            m2 = 2;
+            m3 = 3;
+        } else {
+            m2 = 3;
+            m3 = 2;
+        }
+    } else if r1 == n2 {
+        m1 = 2;
+        if n1 <= n3 {
+            m2 = 1;
+            m3 = 3;
+        } else {
+            m2 = 3;
+            m3 = 1;
+        }
+    } else {
+        m1 = 3;
+        if n1 <= n2 {
+            m2 = 1;
+            m3 = 2;
+        } else {
+            m2 = 2;
+            m3 = 1;
+        }
+    }
+
+    let col = |k: usize| -> GpDir {
+        let v = occt_core::gp::GpXyz::new(
+            j.vectors.value(1, k),
+            j.vectors.value(2, k),
+            j.vectors.value(3, k),
+        );
+        GpDir::from_vec(&occt_core::gp::GpVec::from_xyz(&v)).unwrap_or_default()
+    };
+
+    Inertia {
+        bary: GpPnt::from_xyz(&gb),
+        x_dir: col(m3),
+        y_dir: col(m2),
+        z_gap: j.values.value(m1).abs().sqrt(),
+        y_gap: j.values.value(m2).abs().sqrt(),
+        x_gap: j.values.value(m3).abs().sqrt(),
+    }
+}
+
+/// `GeomLib::AxeOfInertia` (`GeomLib.cxx:2096-2121`): the mean plane axis of
+/// a point cloud, plus the `IsSingular` flag.
+pub fn geom_lib_axe_of_inertia(
+    points: &[occt_core::gp::GpPnt],
+    tol: f64,
+) -> (occt_core::gp::GpAx2, bool) {
+    use occt_core::gp::GpDir;
+
+    let inertia = geom_lib_inertia(points);
+    let ox = inertia.x_dir;
+    let mut oy = inertia.y_dir;
+    let mut is_singular = false;
+    if inertia.y_gap * points.len() as f64 <= tol {
+        let axe = occt_core::gp::GpAx2::from_axis(inertia.bary, ox);
+        oy = *axe.x_direction();
+        is_singular = true;
+    }
+    let oz = match ox.crossed(&oy) {
+        Ok(d) => d,
+        Err(_) => GpDir::default_dir(),
+    };
+    let axe = occt_core::gp::GpAx2::new(inertia.bary, oz, ox).unwrap_or_default();
+    (axe, is_singular)
 }

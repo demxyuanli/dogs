@@ -16,9 +16,11 @@
 
 pub mod conic_curves;
 pub mod conic_to_bspline;
+pub mod comp_bezier_curves;
 
 pub use conic_curves::*;
 pub use conic_to_bspline::*;
+pub use comp_bezier_curves::*;
 
 /// Polar to Cartesian 2D. Returns (x, y).
 pub fn polar_to_cartesian2d(rho: f64, theta: f64) -> (f64, f64) {

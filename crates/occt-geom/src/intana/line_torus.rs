@@ -335,7 +335,7 @@ pub fn quadric_quadric_sphere_cone(
 /// `gce_MakePln(P1, P2, P3)` (`gce_MakePln.cxx:76-92`): the plane through three
 /// points, X direction along `P1P2`. `None` for collinear points
 /// (`gce_ColinearPoints`).
-fn plane_through_three(p1: &GpPnt, p2: &GpPnt, p3: &GpPnt) -> Option<GpPln> {
+pub fn plane_through_three(p1: &GpPnt, p2: &GpPnt, p3: &GpPnt) -> Option<GpPln> {
     let v1 = GpVec::from_pnts(p1, p2);
     let v2 = GpVec::from_pnts(p1, p3);
     let normal = v1.crossed(&v2);
@@ -891,10 +891,22 @@ pub fn line_torus_intersect(l: &GpLin, t: &GpTorus) -> LineTorusIntersection {
     // (`cxx:126-131`) still sets `done = false` where a completed solver with
     // zero roots (`cxx:121-125`) sets `done = true`.
     let mdpr = DirectPolynomialRoots::new5(a4, a3, a2, a1, a0);
+    if std::env::var("SFS_PROBE").is_ok() {
+        eprintln!(
+            "LTPROBE a4={a4:.6} a3={a3:.6} a2={a2:.6} a1={a1:.6} a0={a0:.6} newpl={param_of_new_pl:.9}"
+        );
+    }
     if !mdpr.is_done() {
         return LineTorusIntersection { done: false, points: Vec::new() };
     }
     let n = mdpr.nb_solutions();
+    if std::env::var("SFS_PROBE").is_ok() {
+        eprint!("LTPROBE n={n}");
+        for i in 1..=n {
+            eprint!(" root{i}={:.9}", mdpr.value(i));
+        }
+        eprintln!();
+    }
     let mut nb_bad_sol = 0;
     for i in 1..=n {
         let tt = mdpr.value(i) + param_of_new_pl;

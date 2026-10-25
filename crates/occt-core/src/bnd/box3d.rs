@@ -198,9 +198,118 @@ impl BndBox {
             || (!self.is_open_zmax() && p.z() > self.zmax + g)
     }
 
+    /// `Bnd_Box::IsOut(const gp_Lin&)` (`Bnd_Box.cxx:761-887`): whether the
+    /// infinite line misses the box. The parameter interval shared by the
+    /// non-degenerate axes is intersected first and the remaining axes are
+    /// compared through that interval, so the answer is exact for an open box
+    /// too (the probe point of a zero-direction axis is the line location).
+    pub fn is_out_line(&self, l: &crate::gp::GpLin) -> bool {
+        if self.is_whole() {
+            return false;
+        }
+        if self.is_void() {
+            return true;
+        }
+        let Some((my_xmin, my_xmax, my_ymin, my_ymax, my_zmin, my_zmax)) = self.get() else {
+            return true;
+        };
+        let loc = l.location();
+        let dir = l.direction();
+        let (dx, dy, dz) = (dir.x(), dir.y(), dir.z());
+
+        let mut parmin;
+        let mut parmax;
+        let mut x_to_set;
+        let mut y_to_set;
+        let mut xmin = 0.0;
+        let mut xmax = 0.0;
+        let mut ymin = 0.0;
+        let mut ymax = 0.0;
+
+        if dx.abs() > 0.0 {
+            let par1 = (my_xmin - loc.x()) / dx;
+            let par2 = (my_xmax - loc.x()) / dx;
+            parmin = par1.min(par2);
+            parmax = par1.max(par2);
+            x_to_set = true;
+        } else {
+            if loc.x() < my_xmin || my_xmax < loc.x() {
+                return true;
+            }
+            xmin = loc.x();
+            xmax = loc.x();
+            parmin = f64::NEG_INFINITY;
+            parmax = f64::INFINITY;
+            x_to_set = false;
+        }
+
+        if dy.abs() > 0.0 {
+            let par1 = (my_ymin - loc.y()) / dy;
+            let par2 = (my_ymax - loc.y()) / dy;
+            if parmax < par1.min(par2) || parmin > par1.max(par2) {
+                return true;
+            }
+            parmin = parmin.max(par1.min(par2));
+            parmax = parmax.min(par1.max(par2));
+            y_to_set = true;
+        } else {
+            if loc.y() < my_ymin || my_ymax < loc.y() {
+                return true;
+            }
+            ymin = loc.y();
+            ymax = loc.y();
+            y_to_set = false;
+        }
+
+        let (zmin, zmax);
+        if dz.abs() > 0.0 {
+            let par1 = (my_zmin - loc.z()) / dz;
+            let par2 = (my_zmax - loc.z()) / dz;
+            if parmax < par1.min(par2) || parmin > par1.max(par2) {
+                return true;
+            }
+            parmin = parmin.max(par1.min(par2));
+            parmax = parmax.min(par1.max(par2));
+            let za = loc.z() + parmin * dz;
+            let zb = loc.z() + parmax * dz;
+            zmin = za.min(zb);
+            zmax = za.max(zb);
+        } else {
+            if loc.z() < my_zmin || my_zmax < loc.z() {
+                return true;
+            }
+            zmin = loc.z();
+            zmax = loc.z();
+        }
+        if zmax < my_zmin || my_zmax < zmin {
+            return true;
+        }
+
+        if x_to_set {
+            let xa = loc.x() + parmin * dx;
+            let xb = loc.x() + parmax * dx;
+            xmin = xa.min(xb);
+            xmax = xa.max(xb);
+        }
+        if xmax < my_xmin || my_xmax < xmin {
+            return true;
+        }
+
+        if y_to_set {
+            let ya = loc.y() + parmin * dy;
+            let yb = loc.y() + parmax * dy;
+            ymin = ya.min(yb);
+            ymax = ya.max(yb);
+        }
+        if ymax < my_ymin || my_ymax < ymin {
+            return true;
+        }
+
+        false
+    }
+
     /// Does this box overlap another? Source: `Bnd_Box.cxx` (IsOut)
-    pub fn is_out_box(&self, other: &Self) -> bool {
-        if self.is_void() || other.is_void() { return true; }
+    pub fn is_out_box(&self, other: &Self) -> bool {        if self.is_void() || other.is_void() { return true; }
         if self.is_whole() || other.is_whole() { return false; }
         self.is_out_x(other) || other.is_out_x(self)
             || self.is_out_y(other) || other.is_out_y(self)

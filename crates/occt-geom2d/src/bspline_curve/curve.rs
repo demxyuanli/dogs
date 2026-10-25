@@ -163,6 +163,14 @@ impl Geom2dBSplineCurve {
     pub fn first_parameter(&self) -> f64 { self.knots[self.degree] }
     pub fn last_parameter(&self) -> f64 { self.knots[self.knots.len() - 1 - self.degree] }
 
+    /// `Geom2d_BSplineCurve::Knot(Index)` (`Geom2d_BSplineCurve_1.cxx:356-360`),
+    /// 1-based index into the *distinct* knot array (`myKnots`, as opposed to
+    /// the flat `myFlatKnots` of `KnotSequence`).
+    pub fn knot(&self, index: usize) -> f64 {
+        let (uknots, _) = self.distinct_knots_and_mults();
+        uknots[index - 1]
+    }
+
     /// `Geom2d_BSplineCurve::FirstUKnotIndex()` (`Geom2d_BSplineCurve_1.cxx:335-347`).
     pub fn first_u_knot_index(&self) -> i32 {
         let (_, umults) = self.distinct_knots_and_mults();

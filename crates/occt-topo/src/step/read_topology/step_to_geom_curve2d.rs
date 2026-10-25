@@ -1,5 +1,6 @@
 //! `StepToGeom::MakeCurve2d` and `TranslateEdge::MakePCurve` with `GeomConvert_Units::DegreeToRadian` / `SetScale`: 2D primitives, pcurves and their unit conversion.
 use super::*;
+use occt_geom2d::geom2d_convert::{curve_to_bspline_curve_bspl, DEFAULT_PARAMETERISATION};
 
 impl<'a> Resolver<'a> {
     /// 2D `CARTESIAN_POINT` → `GpPnt2d` (STEP pcurves use two-component points).
@@ -107,9 +108,10 @@ impl<'a> Resolver<'a> {
                 // `StepToGeom::MakeBSplineCurve2d` (`StepToGeom.cxx:952-963`) runs
                 // the same `MakeBSplineCurveCommon`: duplicate knots merged,
                 // multiplicities clamped, poles trimmed, periodic descriptors and
-                // closed curves made periodic. UNPORTED here: the weights of a 2D
-                // rational complex (`:902-906`) are ignored — this port's 2D
-                // B-spline is non-rational (`xs`/`ys` only).
+                // closed curves made periodic. The rational complex arm
+                // (`cxx:896-913`) keeps the weights in slot 3 of the merged record
+                // (`transfer/entity_parse.rs::merge_complex_body`).
+                let weights = bspline_weights(rec, pts.len())?;
                 let knot_mults =
                     parse_usize_list(rec.args.get(6).map(|s| s.as_str()).unwrap_or("()"));
                 let knot_values =
@@ -120,6 +122,7 @@ impl<'a> Resolver<'a> {
                     degree,
                     xs,
                     ys,
+                    weights,
                     &knot_mults,
                     &knot_values,
                     curve_record_closed(rec),
@@ -146,47 +149,48 @@ impl<'a> Resolver<'a> {
                 (c, range)
             }
             "B_SPLINE_CURVE" => {
-                let degree = parse_f64(&rec.args[1])? as usize;
-                let pts: Vec<GpPnt2d> = parse_ref_list(&rec.args[2])
-                    .into_iter()
-                    .map(|r| self.resolve_point_2d(r))
-                    .collect::<Result<Vec<_>, _>>()?;
-                let knots = uniform_knots_for(pts.len(), degree);
-                let (xs, ys): (Vec<f64>, Vec<f64>) =
-                    pts.iter().map(|p| (p.x(), p.y())).unzip();
-                let c: Arc<dyn Curve2d> = Arc::new(
-                    Geom2dBSplineCurve::new(xs, ys, knots, degree)
-                        .map_err(|e| format!("B_SPLINE_CURVE_2D: {e}"))?,
-                );
-                let range = (c.first_parameter(), c.last_parameter());
-                (c, range)
+                // No OCCT branch: `MakeCurve2d` sends every `StepGeom_BoundedCurve`
+                // to `MakeBoundedCurve2d` (`StepToGeom.cxx:1414-1417`), and that
+                // only maps the with-knots / rational complex (`cxx:477-486`),
+                // `TRIMMED_CURVE` (`cxx:487-490`) and `POLYLINE` (`cxx:491-494`);
+                // the knotless base class falls through to an empty handle
+                // (`cxx:495-496`). `MakeBSplineCurveCommon` likewise requires a
+                // `StepGeom_BSplineCurveWithKnots` downcast (`cxx:759-775`).
+                // Synthesising knots here would be a rule OCCT does not have.
+                return Err(format!(
+                    "B_SPLINE_CURVE(2d) without knots has no OCCT branch (#{id})"
+                ));
             }
             "TRIMMED_CURVE" => {
-                // `StepToGeom::MakeTrimmedCurve2d` (`StepToGeom.cxx:2505-2563`).
+                // `StepToGeom::MakeTrimmedCurve2d` (`StepToGeom.cxx:2503-2563`).
                 let basis_ref = parse_ref(&rec.args[1]).ok_or("TRIMMED_CURVE: bad basis ref")?;
                 let basis_rec = self.record(basis_ref)?;
                 let basis_kind = basis_rec.type_name.clone();
                 let (basis, basis_range) = self.resolve_curve_2d(basis_ref)?;
-                // `cxx:2514-2517`: a basis that already is a 2-D B-spline curve is
-                // returned **untrimmed**.
-                if matches!(
-                    basis_kind.as_str(),
-                    "B_SPLINE_CURVE" | "B_SPLINE_CURVE_WITH_KNOTS"
-                ) {
+                // `cxx:2514-2517`: OCCT tests the **constructed** basis
+                // (`theGeomBasis->IsKind(Geom2d_BSplineCurve)`), not the STEP entity
+                // name, so a `POLYLINE` basis (whose `MakePolyline2d` also yields a
+                // `Geom2d_BSplineCurve`) is returned **untrimmed** as well.
+                if basis.is_bspline2d() {
                     return Ok((basis, basis_range));
                 }
-                let (params1, _) = parse_trimming_select(&rec.args[2]);
-                let (params2, _) = parse_trimming_select(&rec.args[3]);
-                // `cxx:2523-2525`: both trims must be single parameter selects,
-                // otherwise OCCT returns a null handle.
-                if params1.len() != 1 || params2.len() != 1 {
+                let (params1, points1) = parse_trimming_select(&rec.args[2]);
+                let (params2, points2) = parse_trimming_select(&rec.args[3]);
+                // `cxx:2523-2525`: both trims must be a single parameter select.
+                // Trimming by Cartesian points is left unimplemented in OCCT itself
+                // (`cxx:2501-2502`).
+                if params1.len() != 1
+                    || params2.len() != 1
+                    || !points1.is_empty()
+                    || !points2.is_empty()
+                {
                     return Err(format!("TRIMMED_CURVE(2d): trims are not single parameters (#{id})"));
                 }
                 let (u1, u2) = (params1[0], params2[0]);
-                // `cxx:2528-2551`: Line → `Dir()->Magnitude()` (**no** LengthFactor in
+                // `cxx:2529-2550`: Line → `Dir()->Magnitude()` (**no** LengthFactor in
                 // the 2-D path); Circle/Ellipse → `PlaneAngleFactor`, plus a π/2 shift
                 // for an ellipse with `SemiAxis1 - SemiAxis2 < 0`; parabola/hyperbola
-                // are left as a TODO in OCCT itself (`cxx:2547-2551`).
+                // are left as a TODO in OCCT itself (`cxx:2547-2550`).
                 let (fact, shift) = match basis_kind.as_str() {
                     "LINE" => {
                         let vec_ref = parse_ref(&basis_rec.args[2]).ok_or("LINE: bad vector ref")?;
@@ -208,23 +212,88 @@ impl<'a> Resolver<'a> {
                 };
                 let new_u1 = shift + u1 * fact;
                 let new_u2 = shift + u2 * fact;
-                // UNPORTED: `Geom2dConvert::CurveToBSplineCurve(theTrimmed)`
-                // (`cxx:2560`) is not ported (cf. A8/T-44 for the 3-D counterpart), so
-                // the trimmed 2-D curve is kept as the trimmed curve itself; the
-                // `SenseAgreement` argument of `Geom2d_TrimmedCurve` is likewise not
-                // modelled by the port's `Geom2dTrimmedCurve` (span only).
-                (
-                    Arc::new(Geom2dTrimmedCurve::new(basis, new_u1, new_u2)),
-                    (new_u1, new_u2),
-                )
+                // `cxx:2555-2560`: `Geom2d_TrimmedCurve(theGeomBasis, newU1, newU2,
+                // SenseAgreement(theTrimmed))` and then
+                // `Geom2dConvert::CurveToBSplineCurve(theTrimmed)` with the default
+                // `Convert_TgtThetaOver2` parameterisation. The conversion is where
+                // OCCT produces a `Geom2d_BSplineCurve` for the pcurve.
+                let sense = parse_logical(rec.args.get(4).map(|s| s.as_str()), true);
+                let trimmed =
+                    Arc::new(Geom2dTrimmedCurve::new_sense(basis, new_u1, new_u2, sense, true));
+                let converted =
+                    curve_to_bspline_curve_bspl(trimmed.as_ref(), DEFAULT_PARAMETERISATION)
+                        .ok_or_else(|| {
+                            format!("TRIMMED_CURVE(2d): CurveToBSplineCurve failed (#{id})")
+                        })?;
+                let range = (converted.first_parameter(), converted.last_parameter());
+                (Arc::new(converted), range)
             }
             other => {
                 self.warn(format!("unsupported 2D curve entity {other} (#{id})"));
                 return Err(format!("unsupported 2D curve entity {other} (#{id})"));
             }
         };
+        if let Some(spec) = crate::debug_flags::value("PCRAW") {
+            self.dump_pcraw(id, curve.as_ref(), range, &spec);
+        }
         self.curve2d_cache.borrow_mut().insert(id, (curve.clone(), range));
         Ok((curve, range))
+    }
+
+    /// T-186 `PCRAW`: the definition of the 2-D curve this reader builds
+    /// from one STEP entity, dumped **before** `XSAlgo_ShapeProcessor::CheckPCurve`
+    /// can replace it with a reprojection. The OCCT counterpart is
+    /// `occt_probe --pcraw <first> <tol>`, which runs `StepToGeom::MakeCurve2d`
+    /// (`StepToGeom.cxx` → `MakeBSplineCurve2d` / `MakeTrimmedCurve2d`) on the
+    /// same `PCURVE` entity. `spec` is the wanted first parameter (empty dumps
+    /// every curve). See `specs/occt_probe/README.md` for the live probe list.
+    fn dump_pcraw(&self, id: usize, curve: &dyn Curve2d, range: (f64, f64), spec: &str) {
+        let spec = spec.trim();
+        if !spec.is_empty() {
+            let Ok(want) = spec.parse::<f64>() else {
+                eprintln!("PCRAW: <first> is not a number: {spec}");
+                return;
+            };
+            if (range.0 - want).abs() > 1e-7 {
+                return;
+            }
+        }
+        let kind = if curve.is_bspline2d() {
+            "bspline2d"
+        } else if curve.is_geom2d_line() {
+            "line"
+        } else if curve.is_geom2d_circle() {
+            "circle"
+        } else {
+            "other"
+        };
+        let Some(b) = curve.bspline_copy2d() else {
+            eprintln!("PCRAW src={id} type={kind} pf={:.17e} pl={:.17e}", range.0, range.1);
+            return;
+        };
+        let (knots, mults) = b.distinct_knots_and_mults();
+        eprintln!(
+            "PCRAW src={id} type={kind} pf={:.17e} pl={:.17e} deg={} npoles={} nknots={} periodic={} rational={} nflat={}",
+            range.0,
+            range.1,
+            b.degree,
+            b.xs.len(),
+            knots.len(),
+            b.periodic as u8,
+            b.weights.is_some() as u8,
+            b.knots.len()
+        );
+        for i in 0..b.xs.len() {
+            match b.weights.as_ref() {
+                Some(w) => eprintln!("PCRAW  pole[{}]={:.17e},{:.17e} w={:.17e}", i + 1, b.xs[i], b.ys[i], w[i]),
+                None => eprintln!("PCRAW  pole[{}]={:.17e},{:.17e}", i + 1, b.xs[i], b.ys[i]),
+            }
+        }
+        for (j, (k, m)) in knots.iter().zip(mults.iter()).enumerate() {
+            eprintln!("PCRAW  knot[{}]={k:.17e} m={m}", j + 1);
+        }
+        let flat: Vec<String> = b.knots.iter().map(|k| format!("{k:.17e}")).collect();
+        eprintln!("PCRAW  flat={}", flat.join(","));
     }
 
     /// `PCURVE(name, basis_surface, reference_to_curve)` → the pcurve's basis
@@ -314,63 +383,37 @@ impl<'a> Resolver<'a> {
                 };
                 Arc::new(Geom2dLine::from_pnt_dir(new_loc, new_dir))
             }
-            "B_SPLINE_CURVE_WITH_KNOTS" | "B_SPLINE_CURVE" | "POLYLINE" => self
-                .scale_pcurve_bspline_poles(curve_ref, u_fact, v_fact)
-                .unwrap_or(c2d),
+            "B_SPLINE_CURVE_WITH_KNOTS" | "B_SPLINE_CURVE" | "POLYLINE" => {
+                match scale_pcurve_bspline_poles(c2d.as_ref(), u_fact, v_fact) {
+                    Some(scaled) => scaled,
+                    None => {
+                        // `GeomConvert_Units.cxx:278-293` only ever runs
+                        // `SetPole` on an existing `Geom2d_BSplineCurve`, so a
+                        // failure here is a port defect, not an OCCT branch.
+                        eprintln!("DegreeToRadian: BSpline pole affinity failed, curve kept unscaled");
+                        c2d
+                    }
+                }
+            }
             _ => c2d,
         }
     }
+}
 
-    /// `GeomConvert_Units.cxx:278-294` — affinity on BSpline poles.
-    pub(super) fn scale_pcurve_bspline_poles(
-        &self,
-        curve_ref: usize,
-        u_fact: f64,
-        v_fact: f64,
-    ) -> Option<Arc<dyn Curve2d>> {
-        let rec = self.record(curve_ref).ok()?;
-        let (pts, knots, degree): (Vec<GpPnt2d>, Vec<f64>, usize) = match rec.type_name.as_str() {
-            "B_SPLINE_CURVE_WITH_KNOTS" => {
-                let degree = parse_f64(&rec.args[1]).ok()? as usize;
-                let pts: Vec<GpPnt2d> = parse_ref_list(&rec.args[2])
-                    .into_iter()
-                    .map(|r| self.resolve_point_2d(r))
-                    .collect::<Result<Vec<_>, _>>()
-                    .ok()?;
-                let knots = expand_knots(
-                    &parse_usize_list(rec.args.get(6).map(|s| s.as_str()).unwrap_or("()")),
-                    &parse_real_list(rec.args.get(7).map(|s| s.as_str()).unwrap_or("()")),
-                );
-                (pts, knots, degree)
-            }
-            "B_SPLINE_CURVE" => {
-                let degree = parse_f64(&rec.args[1]).ok()? as usize;
-                let pts: Vec<GpPnt2d> = parse_ref_list(&rec.args[2])
-                    .into_iter()
-                    .map(|r| self.resolve_point_2d(r))
-                    .collect::<Result<Vec<_>, _>>()
-                    .ok()?;
-                let knots = uniform_knots_for(pts.len(), degree);
-                (pts, knots, degree)
-            }
-            "POLYLINE" => {
-                let pts: Vec<GpPnt2d> = parse_ref_list(&rec.args[1])
-                    .into_iter()
-                    .map(|r| self.resolve_point_2d(r))
-                    .collect::<Result<Vec<_>, _>>()
-                    .ok()?;
-                if pts.len() < 2 {
-                    return None;
-                }
-                let knots = uniform_knots_for(pts.len(), 1);
-                (pts, knots, 1)
-            }
-            _ => return None,
-        };
-        let xs: Vec<f64> = pts.iter().map(|p| p.x() * u_fact).collect();
-        let ys: Vec<f64> = pts.iter().map(|p| p.y() * v_fact).collect();
-        Geom2dBSplineCurve::new(xs, ys, knots, degree)
-            .ok()
-            .map(|c| Arc::new(c) as Arc<dyn Curve2d>)
-    }
+/// `GeomConvert_Units.cxx:278-294` — affinity on the poles of the already
+/// constructed `Geom2d_BSplineCurve` (`aBSpline2d->SetPole(i, ...)`): knots,
+/// multiplicities, weights and periodicity are kept. The construction cannot
+/// fail for a curve that already is a B-spline, so `None` reports the port
+/// defect described at the call site.
+fn scale_pcurve_bspline_poles(
+    c2d: &dyn Curve2d,
+    u_fact: f64,
+    v_fact: f64,
+) -> Option<Arc<dyn Curve2d>> {
+    let b = c2d.bspline_copy2d()?;
+    let xs: Vec<f64> = b.xs.iter().map(|x| x * u_fact).collect();
+    let ys: Vec<f64> = b.ys.iter().map(|y| y * v_fact).collect();
+    Geom2dBSplineCurve::from_flat(xs, ys, b.weights, b.knots, b.degree, b.periodic)
+        .ok()
+        .map(|c| Arc::new(c) as Arc<dyn Curve2d>)
 }

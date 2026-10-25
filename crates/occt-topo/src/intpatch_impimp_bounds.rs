@@ -36,32 +36,32 @@ pub(crate) fn process_bounds(
         };
         let mut k = 1;
         while k <= aligold.nb_vertex() {
-            let mut ptsol = *aligold.vertex(k);
+            let mut ptsol = aligold.vertex(k).clone();
             if !*procf && ptf.distance(&ptsol.p) <= tol {
                 ptsol.tolerance = tol;
                 if !ptsol.is_multiple {
                     *multpoint = true;
                     ptsol.is_multiple = true;
-                    aligold.replace(k, ptsol);
+                    aligold.replace(k, ptsol.clone());
                 }
                 ptsol.param_on_line = first;
-                alig.add_vertex(ptsol);
+                alig.add_vertex(ptsol.clone());
                 alig.set_first_point(alig.nb_vertex());
                 *procf = true;
-                ptsol = *aligold.vertex(k);
+                ptsol = aligold.vertex(k).clone();
             }
             if !*procl && ptl.distance(&ptsol.p) <= tol {
                 ptsol.tolerance = tol;
                 if !ptsol.is_multiple {
                     *multpoint = true;
                     ptsol.is_multiple = true;
-                    aligold.replace(k, ptsol);
+                    aligold.replace(k, ptsol.clone());
                 }
                 ptsol.param_on_line = last;
-                alig.add_vertex(ptsol);
+                alig.add_vertex(ptsol.clone());
                 alig.set_last_point(alig.nb_vertex());
                 *procl = true;
-                ptsol = *aligold.vertex(k);
+                ptsol = aligold.vertex(k).clone();
             }
             if *procf && *procl {
                 k = aligold.nb_vertex() + 1;
@@ -84,19 +84,19 @@ pub(crate) fn process_bounds(
         if ptf.distance(&ptl) <= tol {
             ptsol.is_multiple = true;
             *multpoint = true;
-            alig.add_vertex(ptsol);
+            alig.add_vertex(ptsol.clone());
             alig.set_first_point(alig.nb_vertex());
             ptsol.param_on_line = last;
-            alig.add_vertex(ptsol);
+            alig.add_vertex(ptsol.clone());
             alig.set_last_point(alig.nb_vertex());
         } else {
-            alig.add_vertex(ptsol);
+            alig.add_vertex(ptsol.clone());
             alig.set_first_point(alig.nb_vertex());
             let (u1, v1) = q1.parameters(&ptl);
             let (u2, v2) = q2.parameters(&ptl);
             let mut ptsol = PatchPoint::new(ptl, last, u1, v1, u2, v2);
             ptsol.tolerance = tol;
-            alig.add_vertex(ptsol);
+            alig.add_vertex(ptsol.clone());
             alig.set_last_point(alig.nb_vertex());
         }
     } else if !*procf {
@@ -104,14 +104,14 @@ pub(crate) fn process_bounds(
         let (u2, v2) = q2.parameters(&ptf);
         let mut ptsol = PatchPoint::new(ptf, first, u1, v1, u2, v2);
         ptsol.tolerance = tol;
-        alig.add_vertex(ptsol);
+        alig.add_vertex(ptsol.clone());
         alig.set_first_point(alig.nb_vertex());
     } else if !*procl {
         let (u1, v1) = q1.parameters(&ptl);
         let (u2, v2) = q2.parameters(&ptl);
         let mut ptsol = PatchPoint::new(ptl, last, u1, v1, u2, v2);
         ptsol.tolerance = tol;
-        alig.add_vertex(ptsol);
+        alig.add_vertex(ptsol.clone());
         alig.set_last_point(alig.nb_vertex());
     }
 }

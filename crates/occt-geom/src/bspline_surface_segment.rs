@@ -98,7 +98,7 @@ impl GeomBSplineSurface {
         if segment_in_u {
             let knots = [new_u1.min(new_u2), new_u1.max(new_u2)];
             let mults = [self.deg_u as i32, self.deg_u as i32];
-            self.insert_u_knots(&knots, &mults, eps_u)?;
+            self.insert_u_knots(&knots, &mults, eps_u, true)?;
         }
 
         let (vk, _) = self.distinct_knots_and_mults_v();
@@ -107,7 +107,7 @@ impl GeomBSplineSurface {
         if segment_in_v {
             let knots = [new_v1.min(new_v2), new_v1.max(new_v2)];
             let mults = [self.deg_v as i32, self.deg_v as i32];
-            self.insert_v_knots(&knots, &mults, eps_v)?;
+            self.insert_v_knots(&knots, &mults, eps_v, true)?;
         }
 
         if self.u_periodic && segment_in_u {
@@ -200,9 +200,16 @@ impl GeomBSplineSurface {
         Ok(())
     }
 
-    /// `Geom_BSplineSurface::InsertUKnots` (`Geom_BSplineSurface_1.cxx:1865`),
-    /// `Add = true`.
-    fn insert_u_knots(&mut self, add_knots: &[f64], add_mults: &[i32], tol: f64) -> Result<(), String> {
+    /// `Geom_BSplineSurface::InsertUKnots(Knots, Mults, ParametricTolerance,
+    /// Add)` (`Geom_BSplineSurface_1.cxx:1865-1943`); `BSplCLib::InsertKnots`
+    /// runs once per pole line of the U direction.
+    pub fn insert_u_knots(
+        &mut self,
+        add_knots: &[f64],
+        add_mults: &[i32],
+        tol: f64,
+        add: bool,
+    ) -> Result<(), String> {
         let (knots, mults) = self.distinct_knots_and_mults_u();
         let (nb_poles, _nb_knots) = prepare_insert_knots(
             self.deg_u as i32,
@@ -212,7 +219,7 @@ impl GeomBSplineSurface {
             add_knots,
             Some(add_mults),
             tol,
-            true,
+            add,
         )
         .ok_or("Geom_BSplineSurface::InsertUKnots")?;
         if nb_poles as usize == self.poles.len() {
@@ -248,7 +255,7 @@ impl GeomBSplineSurface {
                 add_knots,
                 Some(add_mults),
                 tol,
-                true,
+                add,
             )
             .ok_or("Geom_BSplineSurface::InsertUKnots")?;
             new_knots = out.knots;
@@ -276,8 +283,16 @@ impl GeomBSplineSurface {
         Ok(())
     }
 
-    /// `Geom_BSplineSurface::InsertVKnots`, `Add = true`.
-    fn insert_v_knots(&mut self, add_knots: &[f64], add_mults: &[i32], tol: f64) -> Result<(), String> {
+    /// `Geom_BSplineSurface::InsertVKnots(Knots, Mults, ParametricTolerance,
+    /// Add)` (`Geom_BSplineSurface_1.cxx:1946-2022`); `BSplCLib::InsertKnots`
+    /// runs once per pole line of the V direction.
+    pub fn insert_v_knots(
+        &mut self,
+        add_knots: &[f64],
+        add_mults: &[i32],
+        tol: f64,
+        add: bool,
+    ) -> Result<(), String> {
         let (knots, mults) = self.distinct_knots_and_mults_v();
         let (nb_poles, _nb_knots) = prepare_insert_knots(
             self.deg_v as i32,
@@ -287,7 +302,7 @@ impl GeomBSplineSurface {
             add_knots,
             Some(add_mults),
             tol,
-            true,
+            add,
         )
         .ok_or("Geom_BSplineSurface::InsertVKnots")?;
         if nb_poles as usize == self.nb_poles_v() {
@@ -314,7 +329,7 @@ impl GeomBSplineSurface {
                 add_knots,
                 Some(add_mults),
                 tol,
-                true,
+                add,
             )
             .ok_or("Geom_BSplineSurface::InsertVKnots")?;
             new_knots = out.knots;
@@ -360,7 +375,7 @@ impl GeomBSplineSurface {
     }
 
     /// `Geom_BSplineSurface::SetVNotPeriodic` (`Geom_BSplineSurface_1.cxx:1292`).
-    fn set_v_not_periodic(&mut self) {
+    pub(crate) fn set_v_not_periodic(&mut self) {
         if !self.v_periodic {
             return;
         }
@@ -482,3 +497,5 @@ fn flat_of(knots: &[f64], mults: &[i32], degree: i32, periodic: bool) -> Vec<f64
         occt_core::bspl::banded_interp::knot_sequence(knots, mults, degree)
     }
 }
+
+

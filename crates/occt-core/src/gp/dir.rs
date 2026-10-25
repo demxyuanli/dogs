@@ -276,6 +276,12 @@ impl GpDir {
         }
     }
 
+    /// `gp_Dir::IsEqual(other, theAngularTolerance)` (`gp_Dir.hxx:164-167`):
+    /// `Angle(other) <= theAngularTolerance` (same direction, not opposite).
+    pub fn is_equal_tol(&self, other: &GpDir, ang_tol: f64) -> bool {
+        self.angle_tol(other) <= ang_tol
+    }
+
     /// `gp_Dir::IsParallel(other, theAngularTolerance)` (`gp_Dir.hxx`).
     pub fn is_parallel_tol(&self, other: &GpDir, ang_tol: f64) -> bool {
         let an_ang = self.angle_tol(other);
@@ -306,8 +312,20 @@ impl GpDir {
         self.dot(other).abs() <= RESOLUTION
     }
 
+    /// `gp_Dir::IsNormal(other, theAngularTolerance)` (`gp_Dir.hxx:171-174`):
+    /// `Abs(Dot(other)) <= theAngularTolerance`.
+    pub fn is_normal_tol(&self, other: &GpDir, ang_tol: f64) -> bool {
+        self.dot(other).abs() <= ang_tol
+    }
+
     pub fn is_opposite(&self, other: &GpDir) -> bool {
         self.dot(other) + 1.0 <= RESOLUTION
+    }
+
+    /// `gp_Dir::IsOpposite(const gp_Dir&, const double)`
+    /// (`gp_Dir.hxx:183-186`): `PI - Angle <= theAngularTolerance`.
+    pub fn is_opposite_ang(&self, other: &GpDir, ang_tol: f64) -> bool {
+        std::f64::consts::PI - self.angle_tol(other) <= ang_tol
     }
 
     pub fn is_parallel(&self, other: &GpDir) -> bool {

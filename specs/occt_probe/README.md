@@ -53,7 +53,7 @@ it still runs and still prints the OCCT half of the comparison, but the
 `delaun_f*.txt` / `delaun_in_f*.txt` / per-step files it reads (or the port output
 it is diffed against) now have to come from a run archive, not from the current
 port. Live port diagnostics are the flags exported by
-`crates/occt-topo/src/debug_flags.rs` (`PCW`, `PCDEF`, `PC2D`, `NURBSGRID`,
+`crates/occt-topo/src/debug_flags.rs` (`PCW`, `PCDEF`, `PCRAW`, `PC2D`, `NURBSGRID`,
 `BPUV`, `DELREGSKEL`, `IGES_TRACE*`, ...); everything else in the tables above
 describes OCCT behavior only.
 
@@ -68,6 +68,10 @@ describes OCCT behavior only.
 | `--dir2` | faithful re-implementation of the file-local `FindPointInFace` (`BOPTools_AlgoTools.cxx:2160-2231`) and `GetFaceDir` (`:2110-2152`, including the `GetApproxNormalToFaceOnEdge` fallback at `:2139-2149`) and `MinStep3D` (`:2235-2346`), so the *final* `aDB`/angle of every candidate can be read |
 | `--ssx` | `Extrema_ExtSS` / `Extrema_GenExtSS` / `GeomAPI_ExtremaSurfaceSurface` on `sphere(r=1)@origin` x `sphere(r=1)@(4,0,0)`, `sphere` x `plane z=5`, and `plane z=5` x `sphere` (no input file is read; pass any placeholder as argv[1]). Prints the adaptor windows, then `IsDone`/`IsParallel`/`NbExt` and every `SquareDistance`/`PointOnS1`/`PointOnS2` parameter and point, the 12-argument windowed `Extrema_ExtSS`, the `GeomAPI` `LowerDistance`/`NearestPoints`, and the raw `Extrema_GenExtSS(..., 20, 20, ...)` list. This is the ground truth for B6d (`occt_geom::extrema_ss`) |
 | `--uv <faceIdx> [--uvdef <defl> <angle>]` | build the discrete model (`BRepMesh_ModelBuilder`) and discretize edges (`BRepMesh_EdgeDiscret`) at the given deflection/angle (default `0.1` / `0.349066`), then print the face's surface range/periodicity and, per wire edge, the `IPCurve` orientation / `IsForward` / point count / first-last UV / parameter range plus every sample as `UV   p<k> uv=(u,v) t=<param>`. This is the GT a port pcurve dump (`PCW=1`) is diffed against. `--uvsum` alone prints the per-face pcurve summary |
+| `--pcraw <first> [<tol>]` | `StepToGeom::MakeCurve2d` on every `StepGeom_Pcurve` entity of the STEP model whose built curve starts at `<first>`, i.e. the **constructor** output before `XSAlgo_ShapeProcessor::CheckPCurve` can replace it: entity numbers, `pf`/`pl`, degree, poles (with weights when rational), distinct knots + multiplicities, and the multiplicity-expanded `flat` knot list. Port counterpart: `PCRAW=<first>` (`step_to_geom_curve2d.rs::dump_pcraw`) |
+| `--pcdef <first> [<tol>]` | the same definition read off the **imported shape** (`BRep_Tool::CurveOnSurface` over every face/wire/edge), i.e. after the `CheckPCurve` reprojection, plus the `[0]..[4]` and fixed-`t` sample UVs. Port counterpart: `PCDEF=1` |
+| `--pcf <faceIdx>` | per-edge pcurve summary of one face in `TopExp_Explorer` order (`c3f`/`c3l`/`pf`/`pl`/type/poles/knots/degree + 5 sample UVs). Port counterpart: `PCDEF` face blocks |
+| `--spcheck <first> [<tol>] [<preci>]` | replay of `XSAlgo_ShapeProcessor::CheckPCurve` (`cxx:344-505`): temporary-edge tolerance after `ShapeFix_Edge::FixSameParameter`, whether OCCT re-projects, the reprojected type/knots/degree, `uv_dev` against the source pcurve, and the `take` verdict. Port counterpart: `shhealing::pcurve_ranges::check_pcurve` |
 | `--fbox <x1> <y1> <z1> <x2> <y2> <z2>` | find the face whose bbox matches (0.5 tol) and print its surface type / `ShapeAnalysis_Surface` singularities / U,V closure, then every wire edge's vertices, orientation, degeneracy and tolerances |
 | `--edges [defl] [angle]` | `BRepMesh_IncrementalMesh` then, per face occurrence, every edge's `PolygonOnTriangulation` node count and degeneracy flag |
 

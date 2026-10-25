@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use occt_core::gp::GpPnt;
+use occt_core::gp::{GpPnt, GpPnt2d};
 use occt_core::poly::Triangulation;
 use occt_geom::{Curve, Surface};
 
@@ -298,6 +298,225 @@ impl BRepTool {
     /// Human-readable type name.
     pub fn shape_type_str(t: ShapeType) -> &'static str {
         t.to_str()
+    }
+
+    /// `BRep_Tool::Parameter(V, E)` (`BRep_Tool.cxx:1340-1397`).
+    ///
+    /// The returned parameter is the edge's `First` or `Last` **chosen by the
+    /// orientation the vertex carries inside the edge** (`cxx:1360-1383` walks
+    /// the edge's vertex children and matches with `IsSame`), flipped when the
+    /// edge handle itself is `REVERSED` (`cxx:1368`, `:1390`, `:1396`). The
+    /// caller's own vertex orientation only matters for a degenerated edge that
+    /// stores no vertex children (`cxx:1354-1357`).
+    pub fn parameter_of_vertex(edge: &TopoShape, vertex: &TopoShape) -> f64 {
+        let key = GeometryRegistry::shape_key(vertex);
+        let (first, last) = Self::edge_parameters(&Edge(edge.clone()));
+        let mut found: Option<Orientation> = None;
+        let mut rev = false;
+        let mut has_vertex_children = false;
+        if let Ok(ts) = edge.tshape.read() {
+            if let Some(core) = ts.edge_core() {
+                if let Some((_, p)) = core.vertex_params.iter().find(|(k, _)| *k == key) {
+                    return *p;
+                }
+            }
+            for child in &ts.children {
+                if child.shape_type() != ShapeType::Vertex {
+                    continue;
+                }
+                has_vertex_children = true;
+                if !is_same(child, vertex) {
+                    continue;
+                }
+                match found {
+                    None => found = Some(child.orientation()),
+                    Some(cur) => {
+                        rev = edge.orientation() == Orientation::Reversed;
+                        if child.orientation() == vertex.orientation() {
+                            found = Some(cur);
+                        }
+                    }
+                }
+            }
+        }
+        let orient = if let Some(o) = found {
+            o
+        } else if !has_vertex_children && Self::is_degenerated(&Edge(edge.clone())) {
+            vertex.orientation()
+        } else {
+            // UNPORTED: `cxx:1401-1492` walks the vertex's point representations
+            // (`BRep_TVertex::Points()`) against the 3D curve and then against
+            // the p-curve, and returns `false` (`cxx:1494`) when none matches.
+            // The port's `TopoDS_Vertex` stores no point list, so the branch
+            // answers the edge's first parameter instead of failing.
+            return first;
+        };
+        match orient {
+            Orientation::Forward => {
+                if rev {
+                    last
+                } else {
+                    first
+                }
+            }
+            Orientation::Reversed => {
+                if rev {
+                    first
+                } else {
+                    last
+                }
+            }
+            _ => first,
+        }
+    }
+
+    /// `BRep_Tool::Parameter(V, E, F)` (`BRep_Tool.cxx:1519-1524`) ->
+    /// `Parameter(V, E, S, L)` (`cxx:1532-1620`): the parameter of `v` on the
+    /// p-curve of `e` on `f`.
+    ///
+    /// The vertex-in-edge search and the `rev` latch are the `BRep_Tool::
+    /// Parameter(V, E)` ones (`cxx:1537-1566`); the difference is the range the
+    /// FORWARD / REVERSED arms read — `BRep_Tool::Range(E, S, L, f, l)`
+    /// (`cxx:1572-1582`), i.e. the **p-curve** range, not the 3D one. The
+    /// INTERNAL arm's `BRep_PointRepresentation` walk (`cxx:1585-1597`) is
+    /// UNPORTED for the same reason as in [`Self::parameter_of_vertex`] and
+    /// falls back to the 3D parameter.
+    pub fn parameter_of_vertex_on_face(vertex: &TopoShape, edge: &Edge, face: &Face) -> f64 {
+        let (first, last) = Self::pcurve_range(edge, face);
+
+        let key = GeometryRegistry::shape_key(vertex);
+        let mut found: Option<Orientation> = None;
+        let mut rev = false;
+        if let Ok(ts) = edge.0.tshape.read() {
+            if let Some(core) = ts.edge_core() {
+                if let Some((_, p)) = core.vertex_params.iter().find(|(k, _)| *k == key) {
+                    return *p;
+                }
+            }
+            for child in &ts.children {
+                if child.shape_type() != ShapeType::Vertex || !is_same(child, vertex) {
+                    continue;
+                }
+                match found {
+                    None => found = Some(child.orientation()),
+                    Some(cur) => {
+                        rev = edge.0.orientation() == Orientation::Reversed;
+                        if child.orientation() == vertex.orientation() {
+                            found = Some(cur);
+                        }
+                    }
+                }
+            }
+        }
+
+        match found {
+            Some(Orientation::Forward) => {
+                if rev {
+                    last
+                } else {
+                    first
+                }
+            }
+            Some(Orientation::Reversed) => {
+                if rev {
+                    first
+                } else {
+                    last
+                }
+            }
+            // `cxx:1585-1597`: the vertex's point representations; not stored by
+            // the port (see `parameter_of_vertex`).
+            _ => Self::parameter_of_vertex(&edge.0, vertex),
+        }
+    }
+
+    /// `BRep_Tool::Range(E, S, L, f, l)` (`BRep_Tool.cxx:1004-1013`): the
+    /// stored p-curve's range, or the 3D edge range when no p-curve exists.
+    fn pcurve_range(e: &Edge, f: &Face) -> (f64, f64) {
+        let face_key = GeometryRegistry::shape_key(&f.0);
+        if let Some((t1, t2)) = GeometryRegistry::global().pcurve_range(&e.0, face_key) {
+            if t1.is_finite() && t2.is_finite() {
+                return (t1, t2);
+            }
+        }
+        Self::edge_parameters(e)
+    }
+
+    /// `BRep_Tool::UVPoints(E, F, PFirst, PLast)` (`BRep_Tool.cxx:1090-1106`):    /// the UV coordinates of the edge's first and last vertices on the face's
+    /// surface.
+    ///
+    /// `cxx:1096-1101` reverses a local copy of the edge when the face is
+    /// `REVERSED`; the representation walk (`cxx:1017-1036`) then answers
+    /// `UVPoints2` (the seam p-curve) when that local edge is `REVERSED` and
+    /// the representation is a closed-surface one. Both p-curves are evaluated
+    /// at the same `First`/`Last` (`BRep_CurveOnClosedSurface.cxx:123-134`).
+    ///
+    /// The `Geom_RectangularTrimmedSurface` unwrapping of `cxx:1042-1053` is
+    /// folded into `gp_pln`, which already answers the basis plane of a
+    /// trimmed plane.
+    pub fn uv_points(edge: &Edge, face: &Face) -> (GpPnt2d, GpPnt2d) {
+        use occt_core::precision::Precision;
+
+        let face_reversed = face.0.orientation() == Orientation::Reversed;
+        let edge_reversed = edge.0.orientation().is_reversed();
+        // `BRep_Tool.cxx:1098-1101`: `aLocalEdge.Reverse()`.
+        let local_reversed = edge_reversed != face_reversed;
+
+        let face_key = GeometryRegistry::shape_key(&face.0);
+        let pcs = GeometryRegistry::global().edge_pcurves(&edge.0, face_key);
+        if !pcs.is_empty() {
+            let pc = if pcs.len() >= 2 && local_reversed {
+                &pcs[1]
+            } else {
+                &pcs[0]
+            };
+            let (first, last) = GeometryRegistry::global()
+                .pcurve_range(&edge.0, face_key)
+                .unwrap_or_else(|| Self::edge_parameters(edge));
+            let mut pfirst = GpPnt2d::new(0.0, 0.0);
+            let mut plast = GpPnt2d::new(0.0, 0.0);
+            if !Precision::is_negative_infinite(first) {
+                pfirst = pc.d0(first);
+            }
+            if !Precision::is_positive_infinite(last) {
+                plast = pc.d0(last);
+            }
+            return (pfirst, plast);
+        }
+
+        // `cxx:1039-1083`: no representation -- for a plane, project the two
+        // vertices through `ElSLib::Parameters`.
+        if let Some(surf) = GeometryRegistry::global().face_surface(&face.0) {
+            if let Some(pln) = surf.gp_pln() {
+                let pos = pln.position();
+                let loc = face.0.location();
+                let invert = if loc.is_identity() {
+                    None
+                } else {
+                    loc.transformation().inverted().ok()
+                };
+                // `cxx:1059-1061`: `Vf.Move(L.Inverted())`.
+                let project = |v: &Vertex| -> GpPnt2d {
+                    let p = match &invert {
+                        Some(t) => Self::vertex_point_world(v).transformed(t),
+                        None => Self::vertex_point(v),
+                    };
+                    let (u, vv) = occt_core::elib::slib::plane_parameters(&pos, &p);
+                    GpPnt2d::new(u, vv)
+                };
+                let (vf, vl) = crate::topo_tools::edge_vertices(edge);
+                let pfirst = match vf {
+                    Some(v) => project(&v),
+                    None => GpPnt2d::new(0.0, 0.0),
+                };
+                let plast = match vl {
+                    Some(v) => project(&v),
+                    None => GpPnt2d::new(0.0, 0.0),
+                };
+                return (pfirst, plast);
+            }
+        }
+        (GpPnt2d::new(0.0, 0.0), GpPnt2d::new(0.0, 0.0))
     }
 }
 

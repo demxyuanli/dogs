@@ -472,37 +472,37 @@ pub fn fix_self_intersection(
     // `Perform` forces this mode off when `ReorderOK` is false (`cxx:430-434`).
     let closed_mode = true; // `ShapeFix_Wire.cxx:171`
     if intersecting_edges {
-    let mut num = if closed_mode { 1usize } else { 2 };
-    while nb > 1 && num <= nb {
-        let st = fix_intersecting_edges(wire, face, num, preci);
-        if !st.is_done() {
-            num += 1;
-            continue;
-        }
-        done_any = true;
-        // `cxx:1154-1164`.
-        if nb < 3 {
-            if st.done7 {
-                let _ = fix_intersecting_edges(wire, face, num, preci);
+        let mut num = if closed_mode { 1usize } else { 2 };
+        while nb > 1 && num <= nb {
+            let st = fix_intersecting_edges(wire, face, num, preci);
+            if !st.is_done() {
+                num += 1;
+                continue;
             }
-            num += 1;
-            continue;
+            done_any = true;
+            // `cxx:1154-1164`.
+            if nb < 3 {
+                if st.done7 {
+                    let _ = fix_intersecting_edges(wire, face, num, preci);
+                }
+                num += 1;
+                continue;
+            }
+            // `cxx:1166-1191`: drop the removed edge(s) and restart the scan.
+            if st.done4 {
+                wire_remove_edge(wire, num);
+            }
+            if st.done3 {
+                wire_remove_edge(wire, if num > 1 { num - 1 } else { nb + num - 1 });
+            }
+            if st.done4 || st.done3 {
+                num = if closed_mode { 1 } else { 2 };
+                nb = edges_of_wire(wire).len();
+            } else {
+                let _ = fix_intersecting_edges(wire, face, num, preci);
+                num += 1;
+            }
         }
-        // `cxx:1166-1191`: drop the removed edge(s) and restart the scan.
-        if st.done4 {
-            wire_remove_edge(wire, num);
-        }
-        if st.done3 {
-            wire_remove_edge(wire, if num > 1 { num - 1 } else { nb + num - 1 });
-        }
-        if st.done4 || st.done3 {
-            num = if closed_mode { 1 } else { 2 };
-            nb = edges_of_wire(wire).len();
-        } else {
-            let _ = fix_intersecting_edges(wire, face, num, preci);
-            num += 1;
-        }
-    }
     }
 
     // `cxx:1199-1223`: the non-adjacent tail. The gate

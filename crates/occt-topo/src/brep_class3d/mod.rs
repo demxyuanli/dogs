@@ -316,6 +316,27 @@ impl Default for SClassifier {
     }
 }
 
+/// `BRepClass3d_SolidExplorer::FindAPointInTheFace(F, P)`
+/// (`BRepClass3d_SolidExplorer.cxx:838-843`): the `(F, P, u, v)` overload
+/// (`cxx:826-834`) starts the scan at `param = 0.1`.
+pub fn find_a_point_in_the_face(f: &Face, p: &mut GpPnt) -> bool {
+    let mut u = 0.0_f64;
+    let mut v = 0.0_f64;
+    let mut d1u = GpVec::new(0.0, 0.0, 0.0);
+    let mut d1v = GpVec::new(0.0, 0.0, 0.0);
+    other_segment::find_a_point_in_the_face(f, 0.1, p, &mut u, &mut v, &mut d1u, &mut d1v)
+}
+
+/// `BRepClass3d_SolidExplorer::FindAPointInTheFace(F, u, v)`
+/// (`BRepClass3d_SolidExplorer.cxx:847-854`): the point is only a carrier for
+/// the `(u, v)` pair the caller wants.
+pub fn find_a_point_in_the_face_uv(f: &Face, u: &mut f64, v: &mut f64) -> bool {
+    let mut p = GpPnt::new(0.0, 0.0, 0.0);
+    let mut d1u = GpVec::new(0.0, 0.0, 0.0);
+    let mut d1v = GpVec::new(0.0, 0.0, 0.0);
+    other_segment::find_a_point_in_the_face(f, 0.1, &mut p, u, v, &mut d1u, &mut d1v)
+}
+
 fn apply_trans(parmin: f64, tran: &mut Transition, state: &mut FaceState) {
     if parmin < 0.0 {
         *tran = match *tran {
@@ -372,6 +393,12 @@ impl SolidClassifier {
         self.inner.state()
     }
 
+    /// `Face()`: the face whose transition decided the state, null when the
+    /// classifier did not reach a face (`BRepClass3d_SClassifier.cxx:203-516`).
+    pub fn face(&self) -> Option<&Face> {
+        self.inner.face()
+    }
+
     /// Classify `p` in `shape` without reusing a loaded explorer.
     pub fn classify(shape: &TopoShape, p: &GpPnt, tol: f64) -> FaceState {
         let mut sc = Self::new();
@@ -384,6 +411,55 @@ impl SolidClassifier {
 impl Default for SolidClassifier {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// `BRepClass3d::OuterShell(S)` (`BRepClass3d.cxx:31-123`): the outer shell of
+/// a solid.
+///
+/// One shell answers itself without an orientation test (`cxx:49-71`); with
+/// several, the first non-`INTERNAL` shell whose classifies-infinite-point is
+/// `OUT` wins (`cxx:73-96`), otherwise the result is null.
+pub fn outer_shell(solid: &TopoShape) -> Option<TopoShape> {
+    use crate::abs::ShapeType;
+
+    if solid.is_null() {
+        return None;
+    }
+    let shells: Vec<TopoShape> = cumulated_children(solid)
+        .into_iter()
+        .filter(|s| s.shape_type() == ShapeType::Shell)
+        .collect();
+    if shells.is_empty() {
+        return None;
+    }
+    if shells.len() == 1 {
+        return Some(shells[0].clone());
+    }
+
+    let mut sc = SolidClassifier::new();
+    for shell in shells {
+        if shell_is_internal(&shell) {
+            continue;
+        }
+        let mut a_s_dx = solid.empty_copied();
+        let builder = crate::builder::TopoBuilder::new();
+        builder.add(&mut a_s_dx, &shell);
+        sc.load(a_s_dx);
+        sc.perform_infinite_point(1.0e-7);
+        if sc.state() == FaceState::Out {
+            return Some(shell);
+        }
+    }
+    None
+}
+
+/// `IsInternal(aSx)` (`BRepClass3d.cxx:106-123`): true when the shell's first
+/// child is carried `INTERNAL`.
+fn shell_is_internal(shell: &TopoShape) -> bool {
+    match cumulated_children(shell).first() {
+        Some(first) => first.orientation() == Orientation::Internal,
+        None => false,
     }
 }
 

@@ -1,6 +1,12 @@
 ﻿// `argv[2]` modes: `--fcls2d`, `--cylall`, `--cylface`, `--cyl` / `--sph`,
-// `--facek`.
+// `--facek`, `--infsolid`.
 #include "occt_probe_common.h"
+// `--infsolid`: the `ShapeFix_Solid` single-shell gate (`ShapeFix_Solid.cxx:528-541`)
+// and `SolidFromShell`'s infinite-point verdict (`:655-702`).
+#include <ShapeAnalysis_FreeBounds.hxx>
+#include <ShapeAnalysis_Shell.hxx>
+#include <BRepBuilderAPI_MakeSolid.hxx>
+#include <BRepClass3d_SolidClassifier.hxx>
 
 std::optional<int> runClassifyModes(const ProbeCtx& theCtx)
 {
@@ -197,6 +203,63 @@ std::optional<int> runClassifyModes(const ProbeCtx& theCtx)
         std::cout << "  E" << j << " eo=" << (int)aE.Orientation() << " range=[" << lp1 << ","
                   << lp2 << "] midU=" << Puv.X() << " midV=" << Puv.Y() << " du=" << Vuv.X()
                   << " dv=" << Vuv.Y() << "\n";
+      }
+    }
+    return 0;
+  }
+  if (argc > 2 && std::string(argv[2]) == "--infsolid")
+  {
+    // Gate inputs of `ShapeFix_Solid::Perform`'s single-shell arm
+    // (`ShapeFix_Solid.cxx:520-565`): the `ShapeAnalysis_FreeBounds` wire counts
+    // that set `isClosed`, and `SolidFromShell`'s (`:655-702`)
+    // `BRepClass3d_SolidClassifier::PerformInfinitePoint` verdict on the shell.
+    int si = 0;
+    for (TopExp_Explorer exS(aShape, TopAbs_SHELL); exS.More(); exS.Next(), ++si)
+    {
+      const TopoDS_Shell aS = TopoDS::Shell(exS.Current());
+      ShapeAnalysis_FreeBounds aSfb(aS);
+      int nClosed = 0, nOpen = 0;
+      for (TopExp_Explorer exW(aSfb.GetClosedWires(), TopAbs_EDGE); exW.More(); exW.Next()) nClosed++;
+      for (TopExp_Explorer exW(aSfb.GetOpenWires(), TopAbs_EDGE); exW.More(); exW.Next()) nOpen++;
+      int nFaces = 0, nEdges = 0;
+      for (TopExp_Explorer exF(aS, TopAbs_FACE); exF.More(); exF.Next()) nFaces++;
+      for (TopExp_Explorer exE(aS, TopAbs_EDGE); exE.More(); exE.Next()) nEdges++;
+      ShapeAnalysis_Shell aSaShell;
+      aSaShell.LoadShells(aS);
+      aSaShell.CheckOrientedShells(aS, Standard_True, Standard_False);
+      int nFree = 0;
+      for (TopExp_Explorer exE(aSaShell.FreeEdges(), TopAbs_EDGE); exE.More(); exE.Next()) nFree++;
+      const TopoDS_Solid aSol = BRepBuilderAPI_MakeSolid(aS).Solid();
+      BRepClass3d_SolidClassifier aSc(aSol);
+      aSc.PerformInfinitePoint(Precision::Confusion());
+      std::cout << "INFSOLID shell=" << si << " orient=" << (int)aS.Orientation()
+                << " closed=" << (aS.Closed() ? 1 : 0) << " faces=" << nFaces << " edges=" << nEdges
+                << " free=" << nFree << " closedw=" << nClosed << " openw=" << nOpen
+                << " state=" << (int)aSc.State() << "\n";
+      {
+        // `ShapeFix_Shell.cxx:1455-1466`: `TopExp::MapShapesAndAncestors` appends one
+        // ancestor per edge occurrence, so a seam edge seen twice on its own face has
+        // `Extent() == 2` and does not count as a free boundary.
+        NCollection_IndexedDataMap<TopoDS_Shape, NCollection_List<TopoDS_Shape>,
+                                   TopTools_ShapeMapHasher> aMapEdgeFaces;
+        TopExp::MapShapesAndAncestors(aS, TopAbs_EDGE, TopAbs_FACE, aMapEdgeFaces);
+        for (int k = 1; k <= aMapEdgeFaces.Extent(); k++)
+        {
+          const TopoDS_Edge aE = TopoDS::Edge(aMapEdgeFaces.FindKey(k));
+          std::cout << "  EDGE k=" << k << " anc=" << aMapEdgeFaces.FindFromIndex(k).Extent()
+                    << " deg=" << (BRep_Tool::Degenerated(aE) ? 1 : 0) << "\n";
+        }
+      }
+      for (TopExp_Explorer exE(aSaShell.FreeEdges(), TopAbs_EDGE); exE.More(); exE.Next())
+      {
+        const TopoDS_Edge aE = TopoDS::Edge(exE.Current());
+        Bnd_Box            aBox;
+        BRepBndLib::Add(aE, aBox);
+        std::cout << "  FREEE eo=" << (int)aE.Orientation() << " deg="
+                  << (BRep_Tool::Degenerated(aE) ? 1 : 0)
+                  << " box=[" << aBox.CornerMin().X() << "," << aBox.CornerMin().Y() << ","
+                  << aBox.CornerMin().Z() << "]-[" << aBox.CornerMax().X() << ","
+                  << aBox.CornerMax().Y() << "," << aBox.CornerMax().Z() << "]\n";
       }
     }
     return 0;

@@ -367,7 +367,18 @@ fn main() {
 
     // glTF document export (`RWGltf_CafWriter::Perform`): structure and
     // numbers against the OCCT baselines `data/occ-*.gltf` + `.bin`.
-    for stem in ["Cube", "Cone", "linkrods"] {
+    // `PROBE_GLTF_MODELS` overrides the model list (comma-separated stems), so
+    // a run against a fresh `data/_occ_ref_gltf.tcl` reference does not need a
+    // source edit.
+    let model_spec = std::env::var("PROBE_GLTF_MODELS")
+        .unwrap_or_else(|_| "Cube,Cone,linkrods".to_string());
+    let gltf_stems: Vec<String> = model_spec
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    for stem in &gltf_stems {
+        let stem = stem.as_str();
         let lower = stem.to_lowercase();
         let model = match occt_topo::step::read_step_file(&format!("data/{stem}.step")) {
             Ok(m) => m,

@@ -81,11 +81,11 @@ fn treat_circle(ctor: &mut LineConstructor, line: &GeomIntLine, tol: f64) {
         ctor.seqp_mut().push(line_tool::line_tool_last_parameter(line));
         return;
     }
-    let mut vtx: Vec<PatchPoint> = (1..=nb_vtx).map(|i| *gline.vertex(i)).collect();
+    let mut vtx: Vec<PatchPoint> = (1..=nb_vtx).map(|i| gline.vertex(i).clone()).collect();
     vtx.sort_by(|a, b| a.param_on_line.total_cmp(&b.param_on_line));
     let min_prm = vtx.first().map(|v| v.param_on_line + TWO_PI).unwrap_or(TWO_PI);
     vtx.push({
-        let mut last = vtx[0];
+        let mut last = vtx[0].clone();
         last.param_on_line = min_prm;
         last
     });

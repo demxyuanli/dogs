@@ -220,6 +220,36 @@ impl GpVec {
         cos.acos()
     }
 
+    /// `gp_Vec::AngleWithRef(theOther, theVRef)` (`gp_Vec.hxx:498-505`), which
+    /// normalises both vectors and delegates to `gp_Dir::AngleWithRef`
+    /// (`gp_Dir.cxx:55-84`). The port's zero-magnitude path returns `0.0`
+    /// instead of the OCCT `gp_VectorWithNullMagnitude` throw.
+    pub fn angle_with_ref(&self, other: &GpVec, v_ref: &GpVec) -> f64 {
+        let m1 = self.magnitude();
+        let m2 = other.magnitude();
+        let m3 = v_ref.magnitude();
+        if m1 <= REAL_SMALL || m2 <= REAL_SMALL || m3 <= REAL_SMALL {
+            return 0.0;
+        }
+        let a = self.coord.multiply(1.0 / m1);
+        let b = other.coord.multiply(1.0 / m2);
+        let xyz = a.crossed(&b);
+        let cosinus = a.dot(&b);
+        let sinus = xyz.modulus();
+        let ang = if cosinus > -0.70710678118655 && cosinus < 0.70710678118655 {
+            cosinus.clamp(-1.0, 1.0).acos()
+        } else if cosinus < 0.0 {
+            std::f64::consts::PI - sinus.asin()
+        } else {
+            sinus.asin()
+        };
+        if xyz.dot(&v_ref.coord) >= 0.0 {
+            ang
+        } else {
+            -ang
+        }
+    }
+
     pub fn is_normal(&self, other: &GpVec) -> bool {
         self.dot(other).abs() <= RESOLUTION
     }

@@ -239,6 +239,17 @@ impl GeometryRegistry {
         self.edge_geom(s).map(|g| g.degenerated).unwrap_or(false)
     }
 
+    /// `BRep_TVertex::UpdateTolerance(T)` (`BRep_TVertex.cxx:29-35`): raise
+    /// only. Reached from `BRep_Builder::UpdateVertex(V, Par, E, Tol)`
+    /// (`BRep_Builder.cxx:1220-1311`).
+    pub fn raise_vertex_tolerance(&self, s: &TopoShape, tol: f64) {
+        let mut ts = s.tshape.write().unwrap();
+        let v = ts.vertex_core_mut();
+        if tol > v.tolerance {
+            v.tolerance = tol;
+        }
+    }
+
     /// `BRep_Builder::Degenerated(E, D)` (`BRep_Builder.cxx:1073-1085`): set the
     /// degenerated flag. OCCT also drops the 3D curve when `D` is true
     /// (`UpdateCurves(TE->ChangeCurves(), occ::handle<Geom_Curve>(), ...)`,

@@ -7,10 +7,41 @@
 
 use occt_core::bnd::BndBox2d;
 
+use crate::abs::{Orientation, ShapeType};
 use crate::brep_tool::BRepTool;
 use crate::brep_uv_bounds::{add_uv_bounds_edge, add_uv_bounds_face, add_uv_bounds_wire};
 use crate::shape::{Edge, Face, TopoShape, Wire};
-use crate::topo_tools::wires_of_face;
+use crate::topo_tools::{explorer_shapes, is_same, wires_of_face};
+
+/// `BRepTools::OriEdgeInFace(E, F)` (`BRepTools.cxx:1346-1362`): the
+/// orientation of the occurrence of `E` under `F` seen FORWARD. OCCT raises
+/// `Standard_ConstructionError` when the edge is not in the face; that becomes
+/// `Err`.
+pub fn ori_edge_in_face(edge: &Edge, face: &Face) -> Result<Orientation, String> {
+    let forward = face.0.oriented(Orientation::Forward);
+    for e in explorer_shapes(&forward, ShapeType::Edge) {
+        if is_same(&e, &edge.0) {
+            return Ok(e.orientation());
+        }
+    }
+    Err("Standard_ConstructionError: BRepTools::OriEdgeInFace".to_string())
+}
+
+/// `BRepTools::IsReallyClosed(E, F)` (`BRepTools.cxx:1204-1220`): `E` is
+/// closed on `F` and occurs exactly twice in the face's edge exploration.
+///
+/// The occurrence count is `TopExp_Explorer(F, TopAbs_EDGE)` with
+/// `IsSame`, so the two seam occurrences of one `TShape` count as two.
+pub fn is_really_closed(edge: &Edge, face: &Face) -> bool {
+    if !BRepTool::is_closed_edge_face(edge, face) {
+        return false;
+    }
+    let nb_occ = explorer_shapes(&face.0, ShapeType::Edge)
+        .iter()
+        .filter(|e| is_same(e, &edge.0))
+        .count();
+    nb_occ == 2
+}
 
 /// `BRepTools::AddUVBounds(Face, Box2d)`.
 pub fn add_uv_bounds(face: &Face, box2d: &mut BndBox2d) {

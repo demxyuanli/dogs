@@ -76,6 +76,19 @@ impl GpAx3 {
         Self::new(p, v, &x_dir)
     }
 
+    /// `gp_Ax3(P, N, Vx)` (`gp_Ax3.hxx:84-91`): `X = N x (Vx x N)` and
+    /// `Y = N x X`. `Err` when `N` and `Vx` are parallel, the
+    /// `ConstructionError` of that constructor.
+    pub fn from_point_dir_x(p: GpPnt, n: GpDir, vx: &GpDir) -> Result<Self, &'static str> {
+        let vxdir = n.cross_cross(vx)?;
+        let vydir = n.crossed(&vxdir)?;
+        Ok(Self {
+            axis: GpAx1::new(p, n),
+            vxdir,
+            vydir,
+        })
+    }
+
     /// Create from an axis, auto-computing X as perpendicular to Z.
     pub fn from_ax1(ax1: &GpAx1) -> Self {
         let z_dir = *ax1.direction();
@@ -182,6 +195,48 @@ impl GpAx3 {
 
     pub fn set_x_direction(&mut self, xdir: &GpDir) {
         self.vxdir = *xdir;
+    }
+
+    /// `gp_Ax3::SetXDirection` (`gp_Ax3.hxx:540-569`): redefines the X
+    /// direction. A direction close to the main one (within
+    /// `Precision::Angular`) replaces the main direction instead; otherwise X
+    /// is projected on the plane normal to Z (`X = Z x (Vx x Z)`) and Y is
+    /// recomputed so the placement keeps its handedness.
+    pub fn set_x_direction_projected(&mut self, xdir: &GpDir) {
+        let a_dot = xdir.dot(&self.direction());
+        if 1.0 - a_dot.abs() <= ANGULAR {
+            if a_dot > 0.0 {
+                self.axis.set_direction(self.vxdir);
+                self.vydir.reverse();
+            } else {
+                self.axis.set_direction(self.vxdir);
+            }
+            self.vxdir = *xdir;
+            return;
+        }
+        let direct = self.handedness();
+        let projected = match self.direction().cross_cross(xdir) {
+            Ok(d) => d,
+            Err(_) => return,
+        };
+        self.vxdir = projected;
+        let y = if direct {
+            self.direction().crossed(&self.vxdir)
+        } else {
+            self.vxdir.crossed(&self.direction())
+        };
+        if let Ok(y) = y {
+            self.vydir = y;
+        }
+    }
+
+    /// `gp_Ax3::Direct()` (`gp_Ax3.hxx:206-211`):
+    /// `XDirection().Crossed(YDirection()).Dot(Direction()) > 0`.
+    fn handedness(&self) -> bool {
+        match self.vxdir.crossed(&self.vydir) {
+            Ok(normal) => normal.dot(&self.direction()) > 0.0,
+            Err(_) => true,
+        }
     }
 
     pub fn set_y_direction(&mut self, ydir: &GpDir) {

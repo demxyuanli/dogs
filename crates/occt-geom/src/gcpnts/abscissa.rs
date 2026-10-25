@@ -312,6 +312,30 @@ pub fn abscissa_point(c: &dyn Curve, abscissa: f64, from: f64) -> Result<f64, St
         .ok_or_else(|| "abscissa_point: math_FunctionRoot did not converge".to_string())
 }
 
+/// `GCPnts_AbscissaPoint(theC, theAbscissa, theU0, theUi)`
+/// (`GCPnts_AbscissaPoint.cxx:511-517`): `Compute` with the caller's initial
+/// guess `theUi` and `theC.Resolution(Precision::Confusion())` as the epsilon.
+///
+/// Unlike [`abscissa_point`], the initial parameter is not re-derived from the
+/// curve length, which is what `ChFiDS_Spine::Value` / `D1` / `D2` /
+/// `Parameter` pass (`ChFiDS_Spine.cxx:609`, `:737`, `:786`, `:836`).
+///
+/// `None` is OCCT's `!IsDone()`, whose `Parameter()` raises
+/// `StdFail_NotDone` (`CPnts_AbscissaPoint.lxx:26-30`).
+pub fn abscissa_point_with_guess(
+    c: &dyn Curve,
+    abscissa: f64,
+    u0: f64,
+    ui: f64,
+) -> Option<f64> {
+    let (a, b) = (c.first_parameter(), c.last_parameter());
+    if !(a.is_finite() && b.is_finite()) {
+        // Port guard: OCCT would integrate over an infinite range.
+        return None;
+    }
+    compute_with_guess(c, abscissa, u0, ui, c.resolution(CONFUSION))
+}
+
 /// `GCPnts_AbscissaPoint(C, Abscissa, U0, Ui, Tol)`
 /// (`GCPnts_AbscissaPoint.cxx:533-541` → `AdvCompute`). Used by
 /// `Approx_CurvlinFunc::GetUParameter` (`Approx_CurvlinFunc.cxx:560`).

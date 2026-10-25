@@ -36,7 +36,7 @@ pub use point_curve::*;
 pub use general_extrema_pc::{
     extrema_ext_pc_min_in_range, extrema_ext_pc_range, extrema_ext_pc_range_done, ExtPcSolution,
 };
-pub use curve_tool::GeomAbsCurveType;
+pub use curve_tool::{extrema_curve_type, GeomAbsCurveType};
 pub use gen_locate_ext_pc::GenLocateExtPC;
 pub use locate_ext_pc::LocateExtPC;
 

@@ -391,9 +391,12 @@ pub(super) fn parse_trimming_select(s: &str) -> (Vec<f64>, Vec<usize>) {
     (params, parse_ref_list(s))
 }
 
-/// A clamped uniform knot vector for `n` poles of `degree` — the default used
-/// by STEP `B_SPLINE_CURVE` / `B_SPLINE_SURFACE` records that omit explicit
-/// knots (multiplicity `degree + 1` at each end, interior knots evenly spaced).
+/// A clamped uniform knot vector for `n` poles of `degree`. Both remaining
+/// callers are the `POLYLINE` arms (`step_to_geom_curve.rs`, degree 1), which
+/// `MakePolyline` / `MakePolyline2d` turn into the same interpolating B-spline
+/// (`StepToGeom.cxx:1740-1830`); OCCT gives a knotless `b_spline_curve` /
+/// `b_spline_surface` no constructed curve or surface at all, so no other reader
+/// arm may use this helper.
 pub(super) fn uniform_knots_for(n: usize, degree: usize) -> Vec<f64> {
     let len = n + degree + 1;
     let interior = if n >= degree + 1 { n - degree - 1 } else { 0 };

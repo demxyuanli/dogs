@@ -160,6 +160,37 @@ pub fn point_curve_extrema(c: &dyn Curve, p: &GpPnt) -> Option<ExtremaPair> {
     point_curve_extrema_all(c, p).into_iter().next()
 }
 
+/// Minimum distance from `p` to `c` restricted to `[uinf, usup]`.
+///
+/// `GeomAPI_ProjectPointOnCurve(P, C, Uinf, Usup)` builds
+/// `Extrema_ExtPC(C, P, Uinf, Usup)` (`GeomAPI_ProjectPointOnCurve.cxx:60-70`)
+/// and then reads `NbPoints()` / `LowerDistanceParameter()`
+/// (`cxx:135-155`), i.e. the **minimum** of the extrema of that interval.
+/// `None` is `NbPoints() == 0`.
+pub fn point_curve_extrema_range(
+    c: &dyn Curve,
+    p: &GpPnt,
+    uinf: f64,
+    usup: f64,
+) -> Option<ExtremaPair> {
+    let pairs: Vec<ExtremaPair> = match ext_pelc_all(c, p, uinf, usup) {
+        Some(v) => v.into_iter().map(|(e, _)| e).collect(),
+        None => extrema_ext_pc_range(c, p, uinf, usup)
+            .into_iter()
+            .map(|s| ExtremaPair {
+                p1: *p,
+                p2: s.point,
+                distance: s.sq_dist.sqrt(),
+                u1: s.u,
+                v1: None,
+                u2: s.u,
+                v2: None,
+            })
+            .collect(),
+    };
+    dedupe_sort(pairs).into_iter().next()
+}
+
 /// Maximum distance from `p` to `c` (farthest local extremum); `None` as above.
 pub fn point_curve_max_extrema(c: &dyn Curve, p: &GpPnt) -> Option<ExtremaPair> {
     point_curve_extrema_all(c, p).into_iter().last()

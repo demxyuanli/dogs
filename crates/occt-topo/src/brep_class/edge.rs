@@ -56,6 +56,17 @@ impl BRepClassEdge {
         self.face.as_ref()
     }
 
+    /// `TopoDS_Face& Face()` (the lvalue accessor): the face the edge is
+    /// classified on. `None` stands for a null face.
+    pub fn set_face(&mut self, face: Face) {
+        self.face = Some(face);
+    }
+
+    /// `TopoDS_Edge& Edge()` (the lvalue accessor).
+    pub fn set_edge(&mut self, edge: Edge) {
+        self.edge = Some(edge);
+    }
+
     /// `NextEdge()`; `None` stands for a null edge.
     pub fn next_edge(&self) -> Option<&Edge> {
         self.next_edge.as_ref()

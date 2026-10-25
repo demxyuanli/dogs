@@ -6,6 +6,8 @@ use occt_geom::Surface;
 use crate::geom_int::surface_parameters;
 use crate::geom_int::ALine;
 use crate::int_tools_wline::{PntOn2S, WLine, WLineWay};
+use crate::intpatch_line::IntPatchLine;
+use crate::intsurf_transition::{IntSurfSituation, IntSurfTypeTrans};
 
 use super::special_points::{add_cross_uv_iso_point, add_singular_pole};
 
@@ -96,12 +98,28 @@ impl<'a> ALineToWLine<'a> {
             return Vec::new();
         }
         let mut wl = WLine::new();
+        // `IntPatch_ALineToWLine.cxx`: the WLine is built from the ALine's
+        // tangency flag and its transitions, either as two `IntSurf_TypeTrans`
+        // (In/Out) or as two `IntSurf_Situation` (`Touch`), or undecided.
+        wl.base = match aline.base.transition_on_s1() {
+            IntSurfTypeTrans::In | IntSurfTypeTrans::Out => IntPatchLine::with_transitions(
+                aline.base.is_tangent(),
+                aline.base.transition_on_s1(),
+                aline.base.transition_on_s2(),
+            ),
+            IntSurfTypeTrans::Touch => IntPatchLine::with_situations(
+                aline.base.is_tangent(),
+                aline.base.situation_s1().unwrap_or(IntSurfSituation::Unknown),
+                aline.base.situation_s2().unwrap_or(IntSurfSituation::Unknown),
+            ),
+            IntSurfTypeTrans::Undecided => IntPatchLine::undecided(aline.base.is_tangent()),
+        };
         wl.set_creating_way(WLineWay::ImpImp);
         for p in points {
             wl.add(p);
         }
         for v in &aline.vertices {
-            wl.vertices.push(*v);
+            wl.vertices.push(v.clone());
         }
         wl.ensure_end_vertices();
         vec![wl]

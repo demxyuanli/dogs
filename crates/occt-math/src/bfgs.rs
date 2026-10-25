@@ -100,6 +100,29 @@ impl BFGS {
         F: Fn(&MathVector) -> f64,
         G: Fn(&MathVector) -> MathVector,
     {
+        self.minimize_with(f, grad, x0, None)
+    }
+
+    /// `Perform(F, StartingPoint)` (`math_BFGS.cxx:327-443`) with a
+    /// caller-supplied `IsSolutionReached` (`math_BFGS.cxx:371-376`).
+    ///
+    /// OCCT reaches the stop test through the virtual
+    /// `IsSolutionReached(F)`; subclasses such as
+    /// `AppDef_Gradient_BFGSOfTheGradient` (`AppDef_Gradient_BFGSOfTheGradient_0.cxx:41-54`)
+    /// replace it wholesale with an error-based test. `is_solution_reached`
+    /// receives `(TheMinimum, PreviousMinimum)` and returns true to stop; when
+    /// it is `None` the base test (`math_BFGS.cxx:447-451`) runs.
+    pub fn minimize_with<F, G>(
+        &mut self,
+        f: F,
+        grad: G,
+        x0: &MathVector,
+        is_solution_reached: Option<&dyn Fn(f64, f64) -> bool>,
+    ) -> Result<MathVector, MathStatus>
+    where
+        F: Fn(&MathVector) -> f64,
+        G: Fn(&MathVector) -> MathVector,
+    {
         let n = x0.len();
 
         let mut location = x0.clone();
@@ -132,9 +155,14 @@ impl BFGS {
             self.minimum = minimum;
 
             // if (IsSolutionReached(F)) { Done = true; return; } — cxx:371-376
-            if 2.0 * (minimum - previous_minimum).abs()
-                <= self.tolerance * (minimum.abs() + previous_minimum.abs() + self.zeps)
-            {
+            let reached = match is_solution_reached {
+                Some(pred) => pred(minimum, previous_minimum),
+                None => {
+                    2.0 * (minimum - previous_minimum).abs()
+                        <= self.tolerance * (minimum.abs() + previous_minimum.abs() + self.zeps)
+                }
+            };
+            if reached {
                 return Ok(location);
             }
             if !is_good {

@@ -11,10 +11,7 @@
 //! inside `ShapeFix_Wire::Perform` return immediately.
 
 use crate::abs::{Orientation, ShapeType};
-use crate::brep_class3d::SolidClassifier;
-use crate::builder::TopoBuilder;
-use crate::fclass2d::FaceState;
-use crate::shape::{Face, Shell, TopoShape, Wire};
+use crate::shape::{Face, TopoShape, Wire};
 use crate::shape_fix_compose_shell::{ReShape, SharedReShape};
 use crate::shhealing::{
     align_shell_closed_to_free_bounds, clear_shell_closed_if_analysis_free,
@@ -22,8 +19,9 @@ use crate::shhealing::{
     fix_small_all, fix_add_curve3d_or_drop,
     fix_vertex_tolerance_edge, fix_vertex_tolerances_after_same_parameter,
     grown_vertex_tolerances_on_face, perform_wire_first_round, perform_wire_second_round,
-    shape_fix_same_parameter, shell_open_by_free_edge, split_face_after_removed_segment,
-    split_loop_wires, ShapeFixEdge, ShapeFixFace,
+    shape_fix_same_parameter, split_face_after_removed_segment,
+    split_loop_wires, least_edge_size, ShapeFixEdge, ShapeFixFace, ShapeFixFaceModes,
+    ShapeFixShapeModes, ShapeFixShellModes, ShapeFixSolidModes, WireFixModes,
 };
 use crate::tgeometry::GeometryRegistry;
 use crate::topo_tools::{edges_of, edges_of_wire, faces_of, vertices_of};
@@ -45,17 +43,24 @@ pub(in crate::iges_read) fn process_iges_shape(shape: &TopoShape, model: &IgesMo
     let theeps = used_tolerance(model);
     let max_tol = (super::iges_to_brep_basic_curve::eps_geom(model.resolution) * model.unit_factor)
         .max(MAX_PRECISION_VAL);
+    // `ShapeFix_Shape::Perform`'s stage gates: `ShapeProcess_OperLibrary.cxx:
+    // 810-816` copies the `FromIGES.FixShape` keys (`IGESData.cxx:113-123`,
+    // `:163-164`).
+    let modes = ShapeFixShapeModes::iges_reader();
     let mut ctx = SharedReShape::new();
-    process_node(shape, &mut ctx, theeps, max_tol);
+    process_node(shape, &mut ctx, theeps, max_tol, &modes);
     // `ShapeFix_Shape.cxx:257`.
     let mut result = ctx.apply(shape);
-    // `ShapeFix_Shape.cxx:259-261`. `NeedFix(myFixSameParameterMode)` is true for
-    // the IGES default `-1` (`IGESData.cxx:116`). `ShapeFix_Shape::SameParameter`
-    // (`ShapeFix_Shape.cxx:307-311`) is `ShapeFix::SameParameter(sh, enforce,
-    // 0.0)` - `enforce` is false and `preci` is 0.
-    shape_fix_same_parameter(&result, false, 0.0);
-    // `cxx:267-291`. `NeedFix(myFixVertexTolMode)` is true (`IGESData.cxx:164`).
-    fix_vertex_tolerances_after_same_parameter(&result, &mut ctx);
+    // `cxx:259-261` under `NeedFix(myFixSameParameterMode)`.
+    // `ShapeFix_Shape::SameParameter` (`cxx:307-311`) is
+    // `ShapeFix::SameParameter(sh, enforce, 0.0)` - `enforce` false, `preci` 0.
+    if modes.need_fix_same_parameter() {
+        shape_fix_same_parameter(&result, false, 0.0);
+    }
+    // `cxx:267-291` under `NeedFix(myFixVertexTolMode)`.
+    if modes.need_fix_vertex_tol() {
+        fix_vertex_tolerances_after_same_parameter(&result, &mut ctx);
+    }
     // `cxx:294`.
     result = ctx.apply(&result);
     // `Actor.cxx:221-228`. A compound of one kind is not `TopAbs_SHAPE`.
@@ -76,33 +81,49 @@ fn used_tolerance(model: &IgesModel) -> f64 {
     }
 }
 
-fn process_node(shape: &TopoShape, ctx: &mut SharedReShape, preci: f64, max_tol: f64) {
+fn process_node(
+    shape: &TopoShape,
+    ctx: &mut SharedReShape,
+    preci: f64,
+    max_tol: f64,
+    modes: &ShapeFixShapeModes,
+) {
     // `ShapeFix_Shape.cxx:117`: `S = Context()->Apply(myShape)`.
     let applied = ctx.apply(shape);
     match applied.shape_type() {
         ShapeType::Compound | ShapeType::CompSolid => {
-            // `cxx:132-149`. `FixSameParameter` is cleared for the recursion
-            // and restored after it, so only the outermost call runs it.
+            // `cxx:132-149`. `FixSameParameter` and `FixVertexTol` are cleared
+            // for the recursion (`sub_shape_modes`) and restored after it, so
+            // only the outermost call runs either tail.
+            let sub = modes.sub_shape_modes();
             let children = applied.tshape.read().unwrap().children.clone();
             for child in &children {
-                process_node(child, ctx, preci, max_tol);
+                process_node(child, ctx, preci, max_tol, &sub);
             }
         }
         ShapeType::Face => {
             // `cxx:193-207`. `NeedFix(myFixFaceMode)` is true (`IGESData.cxx:122`).
-            perform_face(&Face(applied), ctx, preci, max_tol);
+            if modes.need_fix_face() {
+                perform_face(&Face(applied), ctx, preci, max_tol);
+            }
         }
         ShapeType::Shell => {
-            // `NeedFix(myFixShellMode)` is true (`IGESData.cxx:120`).
-            perform_iges_shell(&applied, ctx, preci, max_tol);
+            // `cxx:181-192`. `NeedFix(myFixShellMode)` is true (`IGESData.cxx:120`).
+            if modes.need_fix_shell() {
+                perform_iges_shell(&applied, ctx, preci, max_tol);
+            }
         }
         ShapeType::Solid => {
-            // `NeedFix(myFixSolidMode)` is true (`IGESData.cxx:117`).
-            perform_iges_solid(&applied, ctx, preci, max_tol);
+            // `cxx:159-179`. `NeedFix(myFixSolidMode)` is true (`IGESData.cxx:117`).
+            if modes.need_fix_solid() {
+                perform_iges_solid(&applied, ctx, preci, max_tol);
+            }
         }
         ShapeType::Wire => {
-            // `NeedFix(myFixWireMode)` is true (`IGESData.cxx:124`).
-            perform_free_wire(&applied, ctx, preci, max_tol);
+            // `cxx:209-237`. `NeedFix(myFixWireMode)` is true (`IGESData.cxx:124`).
+            if modes.need_fix_free_wire() {
+                perform_free_wire(&applied, ctx, preci, max_tol);
+            }
         }
         ShapeType::Edge => {
             // `cxx:238-246`. Context is set on this arm, and
@@ -116,21 +137,26 @@ fn process_node(shape: &TopoShape, ctx: &mut SharedReShape, preci: f64, max_tol:
 
 /// `ShapeFix_Shell::Perform` (`ShapeFix_Shell.cxx:101-173`).
 /// `NeedFix(myFixFaceMode)` and `NeedFix(myFixOrientationMode)` are both true
-/// (tool defaults `-1`). `CreateSolids` is not this function.
+/// (tool defaults `-1`, `IGESData.cxx:120-121`). `CreateSolids` is not this
+/// function.
 fn perform_iges_shell(shell: &TopoShape, ctx: &mut SharedReShape, preci: f64, max_tol: f64) {
+    let shell_modes = ShapeFixShellModes::reader();
     // `cxx:112`.
     let shell = ctx.apply(shell);
     if shell.shape_type() != ShapeType::Shell {
         return;
     }
-    // `cxx:120-130`: each iterator face goes through `ShapeFix_Face::Perform`.
-    for face in shell_faces_composed(&shell) {
-        perform_face(&face, ctx, preci, max_tol);
+    // `cxx:110-137` under `NeedFix(myFixFaceMode)`: each iterator face goes
+    // through `ShapeFix_Face::Perform`.
+    if shell_modes.need_fix_face() {
+        for face in shell_faces_composed(&shell) {
+            perform_face(&face, ctx, preci, max_tol);
+        }
     }
-    // `cxx:139-142`, then the closed-flag write inside `FixFaceOrientation`
-    // (`cxx:1474-1479`) before `GetShells`.
+    // `cxx:139-142` under `NeedFix(myFixOrientationMode)`, then the closed-flag
+    // write inside `FixFaceOrientation` (`cxx:1474-1479`) before `GetShells`.
     let newsh = ctx.apply(&shell);
-    if newsh.shape_type() == ShapeType::Shell {
+    if shell_modes.need_fix_orientation() && newsh.shape_type() == ShapeType::Shell {
         align_shell_closed_to_free_bounds(&newsh);
         let fixed = fix_shell_face_orientation(newsh.clone());
         if !fixed.same_tshape(&newsh) {
@@ -148,12 +174,19 @@ fn perform_iges_shell(shell: &TopoShape, ctx: &mut SharedReShape, preci: f64, ma
 /// `CreateOpenSolidMode` is 1 (`IGESData.cxx:119`). Several shells take
 /// `CreateSolids` (`cxx:577-640`) when the shell count is not 1.
 fn perform_iges_solid(solid: &TopoShape, ctx: &mut SharedReShape, preci: f64, max_tol: f64) {
+    let solid_modes = ShapeFixSolidModes::iges_reader();
     // `cxx:483-500`. `NeedFix(myFixShellMode)` is true (`IGESData.cxx:120`).
-    let shells = shells_in(solid);
-    for shell in &shells {
-        perform_iges_shell(shell, ctx, preci, max_tol);
+    if solid_modes.need_fix_shell() {
+        let shells = shells_in(solid);
+        for shell in &shells {
+            perform_iges_shell(shell, ctx, preci, max_tol);
+        }
     }
-    // `cxx:514`. `NeedFix(myFixShellOrientationMode)` is true (`IGESData.cxx:118`).
+    // `cxx:514`. `NeedFix(myFixShellOrientationMode)` is true
+    // (`IGESData.cxx:118`).
+    if !solid_modes.need_fix_shell_orientation() {
+        return;
+    }
     let tmp = ctx.apply(solid);
     let shells = shells_in(&tmp);
     // The shortened `FixFaceOrientation` does not split a shell, so one input
@@ -162,7 +195,7 @@ fn perform_iges_solid(solid: &TopoShape, ctx: &mut SharedReShape, preci: f64, ma
         super::create_solids::replace_multi_shell(&tmp, ctx);
         return;
     }
-    solid_from_one_shell(&tmp, &shells[0], ctx);
+    solid_from_one_shell(&tmp, &shells[0], ctx, solid_modes.create_open_solid_mode);
 }
 
 /// `ShapeFix_Wire::Perform` on a free wire (`ShapeFix_Shape.cxx:212-237`).
@@ -210,32 +243,20 @@ fn copy_vertex_tolerances(wire: &Wire, ctx: &mut SharedReShape) {
     }
 }
 
-/// `ShapeFix_Solid::Perform` when `NbShells == 1` (`cxx:520-565`) and
-/// `SolidFromShell` (`cxx:655-702`). `CreateOpenSolidMode` is 1, so an open
-/// shell still enters `SolidFromShell`. `Context()->Replace` runs only when
-/// the infinite point classifies `TopAbs_IN` (`ShapeExtend_DONE2`).
-fn solid_from_one_shell(solid: &TopoShape, shell: &TopoShape, ctx: &mut SharedReShape) {
-    let is_closed = !shell_open_by_free_edge(shell);
-    shell.set_closed(is_closed);
-    let mut sh = shell.clone();
-    if !sh.free() {
-        sh.set_free(true);
-    }
-    let builder = TopoBuilder::new();
-    let trial = builder.make_solid(&[Shell(sh)]);
-    let mut sc = SolidClassifier::new();
-    sc.load(trial.0);
-    sc.perform_infinite_point(occt_core::precision::CONFUSION);
-    if sc.state() != FaceState::In {
-        return;
-    }
-    let mut rev = shell.clone();
-    if !rev.free() {
-        rev.set_free(true);
-    }
-    rev.reverse();
-    let soli2 = builder.make_solid(&[Shell(rev)]);
-    ctx.replace(solid, &soli2.0);
+/// `ShapeFix_Solid::Perform` when `NbShells == 1` (`cxx:520-570`) and
+/// `SolidFromShell` (`cxx:655-702`); the arm itself is shared with the STEP
+/// reader in [`crate::shhealing::fix_solid_from_one_shell`].
+/// `cxx:545` `if (isClosed || myCreateOpenSolidMode)` lets an open shell enter
+/// `SolidFromShell` when the mode is on, which is the IGES value
+/// (`IGESData.cxx:119`), and `cxx:559-567` turns the solid into the bare shell
+/// when it is off. `Context()->Replace` runs only on those two branches.
+fn solid_from_one_shell(
+    solid: &TopoShape,
+    shell: &TopoShape,
+    ctx: &mut SharedReShape,
+    create_open_solid_mode: bool,
+) {
+    crate::shhealing::fix_solid_from_one_shell(solid, shell, ctx, create_open_solid_mode);
 }
 
 /// `TopoDS_Iterator` faces with orientation composed onto the shell
@@ -285,17 +306,37 @@ fn perform_face(face: &Face, ctx: &mut SharedReShape, preci: f64, max_tol: f64) 
     } else {
         face.clone()
     };
-    // `ShapeFix_Face.cxx:365-480`: wire `Perform` before the seam steps,
-    // with lacking and self-intersection forced off.
-    for mut wire in wires_stored_on_face(&face) {
-        perform_wire_first_round(&mut wire, &face, preci, ctx);
+    // `ShapeFix_Face.cxx:363-480`: wire `Perform` before the seam steps, under
+    // `NeedFix(myFixWireMode)` (`cxx:365`), with lacking and self-intersection
+    // forced off (`WireFixModes::first_wire_round`) and at the auto-corrected
+    // precision (`cxx:386-397`).
+    let wire_modes = WireFixModes::iges_face();
+    let first_round = wire_modes.first_wire_round();
+    let second_round = wire_modes.second_wire_round();
+    let face_modes = ShapeFixFaceModes::reader();
+    let wire_preci = if face_modes.need_fix_wire() && face_modes.auto_correct_precision() {
+        let size = least_edge_size(&face.0);
+        let newpreci = preci.min(size / 2.0) * 1.00001;
+        if preci > newpreci && newpreci > occt_core::precision::CONFUSION {
+            newpreci
+        } else {
+            preci
+        }
+    } else {
+        preci
+    };
+    if face_modes.need_fix_wire() {
+        for mut wire in wires_stored_on_face(&face) {
+            perform_wire_first_round(&mut wire, &face, wire_preci, ctx, &first_round);
+        }
     }
     let mut sff = ShapeFixFace::with_face_and_context(&face, ctx.clone());
     sff.max_tol = max_tol;
     sff.result = Some(face.0.clone());
-    // `cxx:486-498`.
-    sff.fix_periodic_degenerated();
-    let seam_ret = sff.fix_missing_seam();
+    // `cxx:482-498`: `NeedFix(myFixPeriodicDegenerated)` then
+    // `NeedFix(myFixMissingSeamMode)`.
+    sff.perform_fix_missing_seam();
+    let seam_ret = sff.status & 0x0004 != 0;
     if seam_ret {
         if let Some(res) = sff.result.clone() {
             let sub_faces = sub_faces_of(&res);
@@ -306,14 +347,16 @@ fn perform_face(face: &Face, ctx: &mut SharedReShape, preci: f64, max_tol: f64) 
                         if manifold_edge_count(&wire) == 0 {
                             continue;
                         }
-                        if perform_wire_second_round(&mut wire, rf, preci) {
+                        if perform_wire_second_round(&mut wire, rf, wire_preci, &second_round) {
                             removed_segment = true;
                         }
                     }
                     drop_empty_manifold_wires(rf);
                 }
-                for rf in &sub_faces {
-                    split_loop_wires(rf);
+                if face_modes.need_fix_loop_wires() {
+                    for rf in &sub_faces {
+                        split_loop_wires(rf);
+                    }
                 }
                 if removed_segment {
                     for rf in &sub_faces {
@@ -334,16 +377,28 @@ fn perform_face(face: &Face, ctx: &mut SharedReShape, preci: f64, max_tol: f64) 
         if manifold_edge_count(&wire) == 0 {
             continue;
         }
-        if perform_wire_second_round(&mut wire, &face, preci) {
+        if perform_wire_second_round(&mut wire, &face, wire_preci, &second_round) {
             removed_segment = true;
         }
     }
     drop_empty_manifold_wires(&face);
-    split_loop_wires(&face);
+    if face_modes.need_fix_loop_wires() {
+        split_loop_wires(&face);
+    }
     if removed_segment {
         split_face_after_removed_segment(&face, ctx);
     }
-    fix_face_second_part(&mut sff, &face);
+    let res = fix_face_second_part(&mut sff, &face);
+    // `ShapeFix_Face::Perform`'s tail (`ShapeFix_Face.cxx:722-736`): one
+    // `FixSmallAreaWire` per face of `myResult`.
+    if face_modes.need_fix_small_area_wire() {
+        for f in sub_faces_of(&res) {
+            sff.face = Some(f); // cxx:726
+            if sff.fix_small_area_wire(face_modes.is_remove_small_face()) {
+                sff.status |= 0x0008; // ShapeExtend_DONE4
+            }
+        }
+    }
 }
 
 fn sub_faces_of(shape: &TopoShape) -> Vec<Face> {
@@ -428,7 +483,7 @@ fn fix_face_second_part(sff: &mut ShapeFixFace, face: &Face) -> TopoShape {
         need_split = false;
     }
     let face = sff.face.clone().unwrap_or(face);
-    if sff.fix_split_face_mode && need_split && sff.map_wires.len() > 1 {
+    if sff.modes.need_fix_split_face() && need_split && sff.map_wires.len() > 1 {
         sff.face = Some(face.clone());
         if sff.fix_split_face() {
             if let Some(res) = sff.result.clone() {
@@ -442,14 +497,14 @@ fn fix_face_second_part(sff: &mut ShapeFixFace, face: &Face) -> TopoShape {
 fn fix_face_wire_pairs(sff: &mut ShapeFixFace, face: &Face) -> Face {
     sff.face = Some(face.clone());
     sff.fix_wires_two_coinc_edges();
-    if sff.fix_intersecting_wires_mode {
+    if sff.modes.need_fix_intersecting_wires() {
         sff.fix_intersecting_wires();
     }
     sff.face.clone().unwrap_or_else(|| face.clone())
 }
 
 fn fix_face_orientation(sff: &mut ShapeFixFace, face: &Face) -> Face {
-    if !sff.fix_orientation_mode {
+    if !sff.modes.need_fix_orientation() {
         return face.clone();
     }
     sff.face = Some(face.clone());

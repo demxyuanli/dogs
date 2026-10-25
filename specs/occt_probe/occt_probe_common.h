@@ -145,6 +145,12 @@
 #include <ShapeBuild_Edge.hxx>
 #include <ShapeFix_Edge.hxx>
 #include <BRep_Builder.hxx>
+// T-186: the `--pcraw` dump calls `StepToGeom::MakeCurve2d` on a STEP `PCURVE`
+// entity directly, so it needs the STEP-side geometry and representation types.
+#include <StepToGeom.hxx>
+#include <StepGeom_Pcurve.hxx>
+#include <StepGeom_Curve.hxx>
+#include <StepRepr_DefinitionalRepresentation.hxx>
 
 #include <Geom2d_Curve.hxx>
 #include <Geom2d_Line.hxx>

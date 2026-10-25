@@ -644,7 +644,7 @@ fn densify_isolated(
 ) {
     let mut i = 0;
     while i < points.len() {
-        let pt = points[i];
+        let pt = points[i].clone();
         let (u1, v1, u2, v2) = (pt.u1, pt.v1, pt.u2, pt.v2);
         let (uf0, ul0, cur_u2) = if reversed {
             (u2 - step_max, u2 + step_max, u1)

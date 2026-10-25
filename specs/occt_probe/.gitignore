@@ -20,6 +20,9 @@ zz_iges_obj.exe
 zz_iges_obj.obj
 zz_iges_obj.exp
 zz_iges_obj.lib
+zz_fixwire.exe
+zz_fixwire.exp
+zz_fixwire.lib
 zz_face_area_probe.exe
 zz_face_area_probe.obj
 zz_face_area_probe.exp

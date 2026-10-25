@@ -144,6 +144,49 @@ pub fn last_u_knot_index(degree: i32, mults: &[i32]) -> i32 {
     index
 }
 
+/// `BSplCLib::LocateParameter(Degree, Knots, Mults, U, Periodic, FromK1, ToK2,
+/// KnotIndex, NewU)` (`BSplCLib.cxx:164-185`): the `Degree` and `Mults`
+/// arguments are unused by OCCT, the overload only picks the period bounds
+/// (`Knots(Lower)`/`Knots(Upper)` when periodic, `(0., 1.)` otherwise) before
+/// forwarding to [`locate_parameter_range`].
+pub fn locate_parameter_knots_range(
+    knots: &[f64],
+    u: f64,
+    is_periodic: bool,
+    from_k1: i32,
+    to_k2: i32,
+) -> (i32, f64) {
+    let (u_first, u_last) = if is_periodic {
+        (knots[0], knots[knots.len() - 1])
+    } else {
+        (0.0, 1.0)
+    };
+    locate_parameter_range(knots, u, is_periodic, from_k1, to_k2, u_first, u_last)
+}
+
+/// `BSplCLib::LocateParameter(Degree, Knots, U, Periodic, FromK1, ToK2,
+/// KnotIndex, NewU)` (`BSplCLib.cxx:189-214`): the flat-knot overload, whose
+/// period bounds are `Knots(Lower + Degree)` / `Knots(Upper - Degree)` when
+/// periodic and `(0., 1.)` otherwise.
+pub fn locate_parameter_flat(
+    degree: i32,
+    knots: &[f64],
+    u: f64,
+    is_periodic: bool,
+    from_k1: i32,
+    to_k2: i32,
+) -> (i32, f64) {
+    let (u_first, u_last) = if is_periodic {
+        (
+            knot_1(knots, 1 + degree),
+            knot_1(knots, knots.len() as i32 - degree),
+        )
+    } else {
+        (0.0, 1.0)
+    };
+    locate_parameter_range(knots, u, is_periodic, from_k1, to_k2, u_first, u_last)
+}
+
 /// `BSplCLib::LocateParameter(Degree, Knots, Mults, U, Periodic, KnotIndex, NewU)`
 /// (`BSplCLib.cxx:321-364`). `knot_index` is the incoming guess (0 from EvalDN).
 pub fn locate_parameter(

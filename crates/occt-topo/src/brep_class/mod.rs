@@ -1,9 +1,18 @@
 //! `BRepClass_FaceClassifier` — 2D classification of a point on a face.
 //!
-//! Source: `BRepClass_FaceClassifier.cxx`. The OCCT classifier walks the face
-//! edges with `BRepClass_FClassifier`; this port uses the already-translated
-//! [`crate::fclass2d::FClass2d`] (`IntTools_FClass2d` / CSLib_Class2d) as the
-//! same UV IN/ON/OUT test.
+//! Two ports live here:
+//!
+//! * [`FClassifier`] is the faithful `BRepClass_FClassifier`
+//!   (`BRepClass_FClassifier.cxx:25-100`) over
+//!   `TopClass_FaceClassifier.pxx:28-176`, driving [`FaceExplorer`]
+//!   (`BRepClass_FaceExplorer.cxx`), [`BRepClassFacePassiveClassifier`] and
+//!   [`BRepClassIntersector`]. It exposes `Edge()` / `EdgeParameter()`, which
+//!   `TopOpeBRep_VPointInterClassifier` reads.
+//! * [`FaceClassifier`] is the older `BRepClass_FaceClassifier` entry point
+//!   still used by the shape-analysis and shape-fix callers. It answers the
+//!   same UV IN/ON/OUT question through [`crate::fclass2d::FClass2d`]
+//!   (`IntTools_FClass2d` / CSLib_Class2d) and therefore carries no edge
+//!   information. Switching it to [`FClassifier`] is a separate step.
 
 use occt_core::gp::GpPnt2d;
 
@@ -11,17 +20,22 @@ use crate::fclass2d::{FaceState, FClass2d};
 use crate::shape::Face;
 
 mod edge;
+mod f_classifier;
+mod face_explorer;
 mod face_passive_classifier;
 mod intersector;
 mod intersector_checks;
 mod top_class_classifier2d;
 
 pub use edge::BRepClassEdge;
+pub use f_classifier::FClassifier;
+pub use face_explorer::FaceExplorer;
 pub use face_passive_classifier::BRepClassFacePassiveClassifier;
 pub use intersector::BRepClassIntersector;
 pub use top_class_classifier2d::TopClassClassifier2d;
 
-/// `BRepClass_FaceClassifier`.
+/// `BRepClass_FaceClassifier` (see the module note: this is the
+/// `IntTools_FClass2d`-based port, without the `FClassifier` edge walk).
 pub struct FaceClassifier {
     inner: Option<FClass2d>,
     state: FaceState,

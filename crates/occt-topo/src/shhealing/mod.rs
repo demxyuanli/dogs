@@ -50,6 +50,7 @@ mod pcurve_ranges;
 mod shape_build_edge;
 mod shape_fix_edge;
 mod shape_fix_face;
+mod shape_fix_shape_modes;
 mod shape_fix_face_wires;
 mod shape_fix_shell;
 mod shape_fix_same_parameter;
@@ -70,6 +71,7 @@ pub use pcurve_ranges::*;
 pub use shape_build_edge::*;
 pub use shape_fix_edge::*;
 pub use shape_fix_face::*;
+pub use shape_fix_shape_modes::*;
 pub use shape_fix_shell::*;
 pub use shape_fix_same_parameter::*;
 /// The file-local `SplitWire` helper (`ShapeFix_Face.cxx:242-341`).

@@ -26,6 +26,15 @@ pub trait Curve: Send + Sync {
     fn value(&self, u: f64) -> GpPnt { self.d0(u) }
     fn first_parameter(&self) -> f64;
     fn last_parameter(&self) -> f64;
+    /// `IntAna_Curve::IsFirstOpen()` (`IntAna_Curve.lxx:29-32`): the first
+    /// bound is not included in the domain. Only `IntAna_Curve` overrides it;
+    /// every other curve answers "included", which is what
+    /// `IntPatch_ALine::FirstParameter` (`IntPatch_ALine.lxx:38-43`) reads
+    /// through `curv.IsFirstOpen()`.
+    fn is_first_open(&self) -> bool { false }
+    /// `IntAna_Curve::IsLastOpen()` (`IntAna_Curve.lxx:34-37`). See
+    /// [`Curve::is_first_open`].
+    fn is_last_open(&self) -> bool { false }
     fn is_periodic(&self) -> bool { false }
     fn period(&self) -> f64 { 0.0 }
     fn continuity(&self) -> u8;

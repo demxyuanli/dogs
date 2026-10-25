@@ -47,3 +47,4 @@ pub mod intana2d;
 pub mod intcurve;
 pub mod intimpargen;
 pub mod adv_approx;
+pub mod approx;

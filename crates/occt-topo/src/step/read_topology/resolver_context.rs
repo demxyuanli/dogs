@@ -88,25 +88,33 @@ impl<'a> Resolver<'a> {
     /// materialises the substitutions on the shape (`ShapeFix_Shape.cxx:257`),
     /// then runs the rest of `ShapeFix_Shape::Perform`'s tail on the root -
     /// `SameParameter` (`cxx:259-261`) and `FixVertexTolerance` (`cxx:267-291`)
-    /// - and the closing `Context()->Apply` (`cxx:294`). Both stage gates are
-    /// the tool defaults `-1`: STEP registers `FixSameParameterMode`
-    /// (`STEPControl_Controller.cxx:211`) and leaves `FixVertexTolMode` at
-    /// `ShapeFix_Shape`'s ctor value, so `NeedFix(-1)` is true for both
-    /// (`ShapeFix_Root.lxx:101-104`).
+    /// - and the closing `Context()->Apply` (`cxx:294`).
+    ///
+    /// Both tails sit behind `NeedFix`; `ShapeFixShapeModes::step_reader()`
+    /// carries the two STEP keys (`STEPControl_Controller.cxx:211`, `:259`),
+    /// both `-1`, so each stage still runs.
     pub(super) fn close_heal_context(
         &self,
         owned: &Option<crate::shape_fix_compose_shell::SharedReShape>,
         shape: TopoShape,
     ) -> TopoShape {
+        let modes = crate::shhealing::ShapeFixShapeModes::step_reader();
         match self.pop_heal_context(owned) {
             // cxx:257: myResult = Context()->Apply(S)
             Some(mut ctx) => {
                 let mut result = ctx.apply(&shape);
-                // `ShapeFix_Shape::SameParameter` (`cxx:307-311`) is
-                // `ShapeFix::SameParameter(sh, enforce, 0.0)`; `enforce` is
-                // false (`cxx:261`).
-                crate::shhealing::shape_fix_same_parameter(&result, false, 0.0);
-                crate::shhealing::fix_vertex_tolerances_after_same_parameter(&result, &mut ctx);
+                // cxx:259-261 `NeedFix(myFixSameParameterMode)`:
+                // `ShapeFix_Shape::SameParameter(shape, false, ...)`
+                // (`cxx:307-311`) is `ShapeFix::SameParameter(sh, enforce, 0.0)`.
+                if modes.need_fix_same_parameter() {
+                    crate::shhealing::shape_fix_same_parameter(&result, false, 0.0);
+                }
+                // cxx:267-291 `NeedFix(myFixVertexTolMode)`.
+                if modes.need_fix_vertex_tol() {
+                    crate::shhealing::fix_vertex_tolerances_after_same_parameter(
+                        &result, &mut ctx,
+                    );
+                }
                 // cxx:294.
                 result = ctx.apply(&result);
                 // `ShapeProcess_OperLibrary`'s `fixshape` arm ends with

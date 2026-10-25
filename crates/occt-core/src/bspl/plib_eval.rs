@@ -20,39 +20,66 @@ pub fn eval_lagrange(
     if degree == 0 || values.len() < degree + 1 || params.len() < degree + 1 {
         return Err(1);
     }
+    let flat: Vec<f64> = values[..=degree].iter().flat_map(|v| v.iter().copied()).collect();
+    let nd = eval_lagrange_nd(parameter, derivative_request, degree, DIM, &flat, params)?;
+    Ok(nd.chunks(DIM).map(|c| [c[0], c[1]]).collect())
+}
+
+/// `PLib::EvalLagrange` (`PLib.cxx:1122-1250`) for `dimension`-wide values.
+///
+/// `values` holds `(degree + 1) * dimension` numbers, point-major; the result
+/// `k` is the `k`-th derivative at `parameter`, also point-major (`dimension`
+/// numbers per derivative, `min(derivative_request, degree) + 1` derivatives).
+/// `Err(1)` is OCCT's `ReturnCode` for a repeated parameter (`cxx:1189`).
+pub fn eval_lagrange_nd(
+    parameter: f64,
+    derivative_request: usize,
+    degree: usize,
+    dimension: usize,
+    values: &[f64],
+    params: &[f64],
+) -> Result<Vec<f64>, i32> {
+    if degree == 0
+        || dimension == 0
+        || values.len() < (degree + 1) * dimension
+        || params.len() < degree + 1
+    {
+        return Err(1);
+    }
     let local_request = derivative_request.min(degree);
     // `cxx:1170-1200`: in-place divided differences, one row per difference
     // order (`divided_differences_array[jj * Dimension + kk]`).
-    let mut dd: Vec<[f64; 2]> = values[..=degree].to_vec();
+    let mut dd: Vec<f64> = values[..(degree + 1) * dimension].to_vec();
     for ii in (0..=degree).rev() {
         for jj in ((degree - ii + 1)..=degree).rev() {
-            for kk in 0..DIM {
-                dd[jj][kk] -= dd[jj - 1][kk];
+            for kk in 0..dimension {
+                dd[jj * dimension + kk] -= dd[(jj - 1) * dimension + kk];
             }
             let difference = params[jj] - params[jj + ii - degree - 1];
             if difference.abs() < f64::MIN_POSITIVE {
                 return Err(1);
             }
             let inv = 1.0 / difference;
-            for kk in 0..DIM {
-                dd[jj][kk] *= inv;
+            for kk in 0..dimension {
+                dd[jj * dimension + kk] *= inv;
             }
         }
     }
     // `cxx:1211-1247`: Horner with the divided differences, derivative orders
     // updated from the highest down so order `jj - 1` is still the previous one.
-    let mut result = vec![[0.0f64; 2]; local_request + 1];
-    result[0] = dd[degree];
+    let mut result = vec![0.0f64; (local_request + 1) * dimension];
+    result[..dimension]
+        .copy_from_slice(&dd[degree * dimension..(degree + 1) * dimension]);
     for ii in (1..=degree).rev() {
         let difference = parameter - params[ii - 1];
         for jj in (1..=local_request).rev() {
-            let prev = result[jj - 1];
-            for kk in 0..DIM {
-                result[jj][kk] = result[jj][kk] * difference + prev[kk] * jj as f64;
+            for kk in 0..dimension {
+                result[jj * dimension + kk] = result[jj * dimension + kk] * difference
+                    + result[(jj - 1) * dimension + kk] * jj as f64;
             }
         }
-        for kk in 0..DIM {
-            result[0][kk] = result[0][kk] * difference + dd[ii - 1][kk];
+        for kk in 0..dimension {
+            result[kk] = result[kk] * difference + dd[(ii - 1) * dimension + kk];
         }
     }
     Ok(result)

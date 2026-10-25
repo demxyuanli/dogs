@@ -159,6 +159,13 @@ pub fn perform_curve_surface(
 ) -> Result<HInterResult, String> {
     let (t0, t1) = effective_curve_range(curve, cu_range)?;
     let uv = effective_uv_range(surface, uv_range)?;
+    // `ComputeAppendPoint` (`IntCurveSurface_InterUtils.pxx:1117-1176`) validates
+    // the intersection `(u, v)` against `SurfaceTool::First/LastUParameter`, i.e.
+    // the face UV window, after folding by whole periods. That window is *not*
+    // clamped to the surface's own range: a doubly-seamed periodic face spans more
+    // than one period (`BRepTools::UVBounds` of a torus = v in [PI, 3PI]). `uv`
+    // above stays clamped for the sampling engines.
+    let win = sorted_uv_window(uv_range);
 
     let curve_kind = classify_curve(curve);
     let surface_kind = classify_surface_kind(surface);
@@ -180,7 +187,7 @@ pub fn perform_curve_surface(
     if curve_kind != CurveKind::Other {
         if let Some((mut pts, mut segs)) = geom
             .as_ref()
-            .and_then(|g| perform_conic_surf(curve, curve_kind, surface, g, t0, t1, uv))
+            .and_then(|g| perform_conic_surf(curve, curve_kind, surface, g, t0, t1, win))
         {
             points.append(&mut pts);
             segments.append(&mut segs);
@@ -191,7 +198,7 @@ pub fn perform_curve_surface(
             // `InternalPerformCurveQuadric` (`Inter.pxx:423-439` +
             // `IntCurveSurface_InterUtils.pxx:1243-1274`): non-conic curve
             // against a plane / cylinder / cone / sphere.
-            let mut pts = quadric_curve_exact(curve, surface, geom.as_ref(), uv);
+            let mut pts = quadric_curve_exact(curve, surface, geom.as_ref(), win);
             points.append(&mut pts);
         }
     } else if polyhedron_path && finite_window {
@@ -200,7 +207,7 @@ pub fn perform_curve_surface(
     } else if finite_window {
         // `InternalPerformCurveQuadric` (`Inter.pxx:423-439` +
         // `IntCurveSurface_InterUtils.pxx:1243-1274`).
-        let mut pts = quadric_curve_exact(curve, surface, geom.as_ref(), uv);
+        let mut pts = quadric_curve_exact(curve, surface, geom.as_ref(), win);
         points.append(&mut pts);
     } else {
         return Err("perform_curve_surface: unbounded curve parameter range".into());
@@ -335,7 +342,7 @@ fn process_int_ana(
     ia: &IntAnaIntConicQuad,
     t0: f64,
     t1: f64,
-    uv: (f64, f64, f64, f64),
+    win: (f64, f64, f64, f64),
 ) -> (Vec<IntersectionPoint>, Vec<IntersectionSegment>) {
     if !ia.is_done() {
         return (Vec::new(), Vec::new());
@@ -352,7 +359,7 @@ fn process_int_ana(
         if w < t0 - ANALYTIC_TOL || w > t1 + ANALYTIC_TOL {
             continue;
         }
-        if let Some(pt) = compute_append_point(curve, surface, Some(geom), w, uv, ANALYTIC_TOL) {
+        if let Some(pt) = compute_append_point(curve, surface, Some(geom), w, win, ANALYTIC_TOL) {
             pts.push(pt);
         }
     }
@@ -369,7 +376,7 @@ pub(super) fn perform_conic_surf(
     geom: &SurfaceGeom,
     t0: f64,
     t1: f64,
-    uv: (f64, f64, f64, f64),
+    win: (f64, f64, f64, f64),
 ) -> Option<(Vec<IntersectionPoint>, Vec<IntersectionSegment>)> {
     let empty = (Vec::new(), Vec::new());
 
@@ -397,7 +404,7 @@ pub(super) fn perform_conic_surf(
             },
             _ => return Some(empty),
         };
-        return Some(process_int_ana(curve, surface, geom, &ia, t0, t1, uv));
+        return Some(process_int_ana(curve, surface, geom, &ia, t0, t1, win));
     }
 
     let result = match (kind, geom) {
@@ -514,7 +521,7 @@ pub(super) fn perform_conic_surf(
                     if w < t0 - ANALYTIC_TOL || w > t1 + ANALYTIC_TOL {
                         return None;
                     }
-                    compute_append_point(curve, surface, Some(geom), w, uv, ANALYTIC_TOL)
+                    compute_append_point(curve, surface, Some(geom), w, win, ANALYTIC_TOL)
                 })
                 .collect();
             (pts, Vec::new())
@@ -546,21 +553,41 @@ pub(super) fn on_surface_segment(
 
 /// Validate a candidate parameter and build an [`IntersectionPoint`]: the
 /// curve point must lie on the surface (within `tol`) and its surface
-/// parameters must fall inside `uv`.
+/// parameters must fall inside `win`.
 pub(super) fn compute_append_point(
     curve: &dyn Curve,
     surface: &dyn Surface,
     geom: Option<&SurfaceGeom>,
     w: f64,
-    uv: (f64, f64, f64, f64),
+    win: (f64, f64, f64, f64),
     tol: f64,
 ) -> Option<IntersectionPoint> {
     let pnt = curve.d0(w);
     let Some((su, sv)) = surface_params(surface, &pnt) else {
         return None;
     };
-    let (u0, u1, v0, v1) = uv;
-    if su < u0 - tol || su > u1 + tol || sv < v0 - tol || sv > v1 + tol {
+    // `ComputeAppendPoint` (`IntCurveSurface_InterUtils.pxx:1117-1176`): fold
+    // `u`/`v` into one period of the surface before comparing with the window.
+    // OCCT reaches the same numbers because its `SurfaceTool` is the
+    // `BRepAdaptor_Surface` restricted to the face UV bounds.
+    let (u0, u1, v0, v1) = win;
+    let mut u = su;
+    let mut v = sv;
+    if surface.is_u_periodic()
+        || matches!(
+            classify_surface_kind(surface),
+            SurfaceKind::Cylinder | SurfaceKind::Cone | SurfaceKind::Sphere
+        )
+    {
+        u = in_period(u, u0, u0 + surface.u_period());
+    }
+    if surface.is_v_periodic() {
+        v = in_period(v, v0, v0 + surface.v_period());
+    }
+    if (u0 - u) >= tol || (u - u1) >= tol {
+        return None;
+    }
+    if (v0 - v) >= tol || (v - v1) >= tol {
         return None;
     }
     // Validate the point lies on the surface. Analytic points are checked
@@ -577,8 +604,21 @@ pub(super) fn compute_append_point(
     if !on_surface {
         return None;
     }
-    let state = compute_state(curve, surface, geom, w, su, sv);
-    Some(IntersectionPoint::new(w, su, sv, pnt, state))
+    let state = compute_state(curve, surface, geom, w, u, v);
+    Some(IntersectionPoint::new(w, u, v, pnt, state))
+}
+
+/// The caller's UV window as `(u0, u1, v0, v1)` with each pair sorted.
+///
+/// `ComputeAppendPoint` compares against `First/LastUParameter` of the adaptor
+/// the caller built, so the window reaches it unsorted and unclamped; only the
+/// sampling engines need [`effective_uv_range`]'s clamp to the surface's own
+/// range.
+fn sorted_uv_window(uv: (f64, f64, f64, f64)) -> (f64, f64, f64, f64) {
+    let (u0, u1, v0, v1) = uv;
+    let (u0, u1) = if u0 <= u1 { (u0, u1) } else { (u1, u0) };
+    let (v0, v1) = if v0 <= v1 { (v0, v1) } else { (v1, v0) };
+    (u0, u1, v0, v1)
 }
 
 /// Exact outward normal of a reconstructed quadric at a point on it. Used for
@@ -728,7 +768,7 @@ pub(super) fn quadric_curve_exact(
     curve: &dyn Curve,
     surface: &dyn Surface,
     geom: Option<&SurfaceGeom>,
-    uv: (f64, f64, f64, f64),
+    win: (f64, f64, f64, f64),
 ) -> Vec<IntersectionPoint> {
     let mut out: Vec<IntersectionPoint> = Vec::new();
     let exact = TheQuadCurvExactHInter::new(surface, curve);
@@ -738,7 +778,7 @@ pub(super) fn quadric_curve_exact(
     let nb_roots = exact.nb_roots();
     for i in 1..=nb_roots {
         let w = exact.root(i);
-        if let Some(pt) = compute_append_point(curve, surface, geom, w, uv, ANALYTIC_TOL) {
+        if let Some(pt) = compute_append_point(curve, surface, geom, w, win, ANALYTIC_TOL) {
             out.push(pt);
         }
     }

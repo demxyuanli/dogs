@@ -181,7 +181,10 @@ fn update_tolerances_on_planes(shape: &TopoShape) {
                 reg.set_edge_tolerance(&edge.0, tol);
                 for vertex in cumulated_children(&edge.0) {
                     if vertex.shape_type() == ShapeType::Vertex {
-                        Vertex(vertex).set_tolerance(tol);
+                        // `cxx:251-254` `B.UpdateVertex(TopoDS::Vertex(S), tol)`:
+                        // `BRep_TVertex::UpdateTolerance` only raises.
+                        let v = Vertex(vertex);
+                        v.set_tolerance(BRepTool::vertex_tolerance(&v).max(tol));
                     }
                 }
             }

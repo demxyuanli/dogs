@@ -67,6 +67,8 @@
 | §9.632 | `wire_fix.rs` 拆为 `wire_fix/` 子模块（3379 行 → 多个文件） | 逻辑不变 |
 | §9.633 | `FixIntersectingWires` 与 `FixWiresTwoCoincEdges` 接入 `ShapeFix_Face::Perform` | 结构对齐 |
 | §9.634 | 提交前门禁与提交内容整理 | `step_obj_gates` 4/4 |
+| §9.635 | `ShapeFix_Face` 模式字段化（`ShapeFixFaceModes`）+ `AutoCorrectPrecision` / `FixLoopWire` / `FixSmallAreaWire` 门禁（T-210） | 15/15 `data/*.step` 导出 SHA256 不变；IGES 两例不变 |
+| §9.636 | `ShapeFix_Shape` / `ShapeFix_Solid` / `ShapeFix_Shell` 模式字段化（`ShapeFixShapeModes` / `ShapeFixSolidModes` / `ShapeFixShellModes`），两读入路径的门禁改为 `NeedFix` 求值（T-211） | 15/15 `data/*.step` 与 23/23 `data/output/gates` SHA256 不变；IGES 两例不变；`ShapeFix_Solid` 单壳臂的 `isClosed` 分支（`cxx:545`）标注未移植 |
 | T-184 | 平面面 pcurve 走 `ProjLib_ComputeApprox::Perform` 的 `GeomAbs_Plane` + BSpline/Bezier 控制点短路（`pcurve.rs::projected_pole_curve`），使 `GeomBndLib_Curve2d` 选到控制点凸包；装配副本按源曲面去重（`shape_ops.rs`） | a3n00 95/95 平面面 UV 窗口对齐（max\|du\|=4.6e-5 / max\|dv\|=4.9e-4）；Honda GX390 拓扑 bbox 的 ±inf 消除 |
 
 ## 6. 当前基线（面积比，门禁口径）

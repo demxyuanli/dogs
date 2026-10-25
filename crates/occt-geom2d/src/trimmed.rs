@@ -146,11 +146,16 @@ impl Curve2d for Geom2dTrimmedCurve {
         b.transform(t);
         self.basis = Arc::from(b);
     }
+    /// `Geom2d_TrimmedCurve::Reverse` (`Geom2d_TrimmedCurve.cxx:81-87`): the trim
+    /// limits are mapped through the basis `ReversedParameter` before the basis is
+    /// reversed, then `SetTrim(U1, U2, true, false)` is re-run.
     fn reverse(&mut self) {
+        let u1 = self.basis.reversed_parameter(self.u_trim2);
+        let u2 = self.basis.reversed_parameter(self.u_trim1);
         let mut b = self.basis.clone_dyn();
         b.reverse();
         self.basis = Arc::from(b);
-        std::mem::swap(&mut self.u_trim1, &mut self.u_trim2);
+        self.set_trim(u1, u2, true, false);
     }
     fn clone_dyn(&self) -> Box<dyn Curve2d> {
         Box::new(self.clone())

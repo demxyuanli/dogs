@@ -45,6 +45,27 @@ impl GeomBSplineCurve {
         Self::new(poles, flat, degree)
     }
 
+    /// `Geom_BSplineCurve::Geom_BSplineCurve(Poles, Knots, Mults, Degree,
+    /// Periodic)` (`Geom_BSplineCurve.cxx:139-169`): the distinct knots and
+    /// multiplicities are expanded by `updateKnots()` with the periodic
+    /// extension when the flag is set
+    /// ([`occt_core::bspl::knots::knot_sequence_periodic`]).
+    pub fn from_poles_knots_mults_periodic(
+        poles: Vec<GpPnt>,
+        knots: Vec<f64>,
+        mults: Vec<i32>,
+        degree: usize,
+        periodic: bool,
+    ) -> Result<Self, &'static str> {
+        let flat = if periodic {
+            knots::knot_sequence_periodic(&knots, &mults, degree as i32)
+        } else {
+            occt_core::bspl::banded_interp::knot_sequence(&knots, &mults, degree as i32)
+        };
+        knots::check_degree(poles.len(), degree, flat.len())?;
+        Ok(Self::from_parts(poles, None, flat, degree, periodic))
+    }
+
     /// Build a rational B-spline (weights length must equal pole count).
     pub fn rational(poles: Vec<GpPnt>, weights: Vec<f64>, knots: Vec<f64>, degree: usize) -> Result<Self, &'static str> {
         knots::check_degree(poles.len(), degree, knots.len())?;
@@ -113,6 +134,56 @@ impl GeomBSplineCurve {
     pub fn nb_knots(&self) -> usize { self.knots.len() }
     pub fn degree(&self) -> usize { self.degree }
     pub fn is_rational(&self) -> bool { self.weights.is_some() }
+
+    /// `Geom_BSplineCurve::IsEqual(theOther, thePreci)`
+    /// (`Geom_BSplineCurve_1.cxx:802-852`): same degree, rationality, knot and
+    /// pole counts, poles within `thePreci`, distinct knots within
+    /// `Precision::Parametric(thePreci)` and identical multiplicities; a
+    /// rational curve also compares its weights.
+    pub fn is_equal(&self, other: &GeomBSplineCurve, preci: f64) -> bool {
+        if self.distinct.is_empty()
+            || self.poles.is_empty()
+            || self.mults.is_empty()
+            || self.degree != other.degree()
+            || self.is_rational() != other.is_rational()
+            || self.distinct.len() != other.nb_knots()
+            || self.poles.len() != other.nb_poles()
+        {
+            return false;
+        }
+        for i in 0..self.poles.len() {
+            let a = &self.poles[i];
+            let b = other.pole(i);
+            if (a.x() - b.x()).abs() > preci
+                || (a.y() - b.y()).abs() > preci
+                || (a.z() - b.z()).abs() > preci
+            {
+                return false;
+            }
+        }
+        for i in 0..self.distinct.len() {
+            if (self.distinct[i] - other.distinct_knots()[i]).abs()
+                > occt_core::precision::Precision::parametric(preci, 100.0)
+            {
+                return false;
+            }
+        }
+        for i in 0..self.mults.len() {
+            if self.mults[i] != other.multiplicities()[i] {
+                return false;
+            }
+        }
+        if !self.is_rational() {
+            return true;
+        }
+        for i in 0..self.poles.len() {
+            let w = self.weight((i + 1) as i32);
+            if (w - other.weight((i + 1) as i32)).abs() > occt_core::precision::epsilon(w) {
+                return false;
+            }
+        }
+        true
+    }
 
     /// `Geom_BSplineCurve::IsClosed()` (`Geom_BSplineCurve_1.cxx:146-149`):
     /// `StartPoint().SquareDistance(EndPoint()) <= Precision::Computational()`.

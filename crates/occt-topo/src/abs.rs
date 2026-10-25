@@ -59,11 +59,26 @@ pub enum Orientation {
 impl Orientation {
     pub fn is_forward(&self) -> bool { *self == Self::Forward }
     pub fn is_reversed(&self) -> bool { *self == Self::Reversed }
+    /// `TopAbs::Reverse(Or)` — the shape is reversed, the material side is
+    /// kept: `FORWARD` ↔ `REVERSED`, `INTERNAL`/`EXTERNAL` unchanged
+    /// (`TopAbs.hxx:98-108`).
     pub fn reversed(&self) -> Self {
         match self {
             Self::Forward => Self::Reversed,
             Self::Reversed => Self::Forward,
             Self::Internal | Self::External => *self,
+        }
+    }
+
+    /// `TopAbs::Complement(Or)` (`TopAbs.hxx:110-119`): the material side is
+    /// complemented, inside becomes outside — `FORWARD` ↔ `REVERSED`,
+    /// `INTERNAL` ↔ `EXTERNAL`. Not interchangeable with [`Self::reversed`].
+    pub fn complement(&self) -> Self {
+        match self {
+            Self::Forward => Self::Reversed,
+            Self::Reversed => Self::Forward,
+            Self::Internal => Self::External,
+            Self::External => Self::Internal,
         }
     }
 
@@ -91,6 +106,27 @@ impl Orientation {
 
     pub fn to_str(&self) -> &'static str {
         match self { Self::Forward=>"FORWARD", Self::Reversed=>"REVERSED", Self::Internal=>"INTERNAL", Self::External=>"EXTERNAL" }
+    }
+}
+
+/// State of a point relative to a shape. Source: `TopAbs_State`
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum State {
+    In,
+    Out,
+    On,
+    Unknown,
+}
+
+impl State {
+    /// `TopAbs::StateToString` (`TopAbs.cxx:213-236`).
+    pub fn to_str(&self) -> &'static str {
+        match self {
+            Self::In => "IN",
+            Self::Out => "OUT",
+            Self::On => "ON",
+            Self::Unknown => "UNKNOWN",
+        }
     }
 }
 

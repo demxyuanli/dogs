@@ -61,11 +61,13 @@ pub(super) fn bspline_descriptor(
         .filter(|n| *n > 0)
         .ok_or_else(|| "B_SPLINE_CURVE: no poles left after multiplicity trim".to_string())?;
 
-    // 4. periodic-looking descriptor (`cxx:873-894`).
+    // 4. periodic-looking descriptor (`cxx:873-894`). OCCT compares the summed
+    //    multiplicities with the **original** pole count (`NbPoles`), not with
+    //    the count left after the `cxx:847-871` trim.
     let summary: i32 = umults.iter().sum();
-    let should_be_periodic = summary != (n_unique_poles as i32 + degree as i32 + 1)
+    let should_be_periodic = summary != (n_poles as i32 + degree as i32 + 1)
         && umults[0] == umults[n_unique - 1]
-        && (summary - umults[0]) == n_unique_poles as i32;
+        && (summary - umults[0]) == n_poles as i32;
 
     Ok(BsplineDescriptor {
         uknots,
@@ -73,6 +75,28 @@ pub(super) fn bspline_descriptor(
         pole_range: first_diff..first_diff + n_unique_poles,
         should_be_periodic,
     })
+}
+
+/// The weights slot (index 3) of a `B_SPLINE_CURVE_WITH_KNOTS` record.
+///
+/// The merged rational complex (`transfer/entity_parse.rs::merge_complex_body`)
+/// puts the `RationalBSplineCurve::WeightsData` array there; a plain entity
+/// carries `SELF` or a `.FORM.` marker instead (`StepToGeom.cxx:896-913` reads
+/// the weights only when the entity is a
+/// `BSplineCurveWithKnotsAndRationalBSplineCurve`). The length check is the
+/// one `aUniqueWeights` performs over the untrimmed pole list (`cxx:902-907`).
+pub(super) fn bspline_weights(rec: &Record, n_poles: usize) -> Result<Option<Vec<f64>>, String> {
+    let Some(slot) = rec.args.get(3).map(|s| s.trim()) else {
+        return Ok(None);
+    };
+    if slot.is_empty() || slot == "SELF" || slot.starts_with('.') {
+        return Ok(None);
+    }
+    let weights = parse_real_list(slot);
+    if weights.len() != n_poles {
+        return Err(format!("{}: weight count mismatch", rec.type_name));
+    }
+    Ok(Some(weights))
 }
 
 /// `StepToGeom::MakeBSplineCurveCommon` (`StepToGeom.cxx:750-927`), the part
@@ -144,17 +168,23 @@ pub(super) fn make_bspline_curve_with_knots(
 
 /// The 2D arm of `StepToGeom::MakeBSplineCurveCommon`
 /// (`StepToGeom::MakeBSplineCurve2d`, `StepToGeom.cxx:952-963`): identical
-/// knot/multiplicity surgery, built into `Geom2d_BSplineCurve` (non-rational:
-/// this port's 2D B-spline stores `xs`/`ys` without weights).
+/// knot/multiplicity surgery, built into `Geom2d_BSplineCurve`. The rational
+/// complex arm (`cxx:896-913`) keeps its weights, like the 3D arm.
 pub(super) fn make_bspline_curve_2d_with_knots(
     degree: usize,
     xs: Vec<f64>,
     ys: Vec<f64>,
+    weights: Option<Vec<f64>>,
     mults: &[usize],
     knots: &[f64],
     closed: bool,
 ) -> Result<Geom2dBSplineCurve, String> {
     let d = bspline_descriptor(degree, xs.len(), mults, knots)?;
+    let weights = match weights {
+        Some(w) if w.len() >= d.pole_range.end => Some(w[d.pole_range.clone()].to_vec()),
+        Some(_) => return Err("B_SPLINE_CURVE_2D: weight count mismatch".into()),
+        None => None,
+    };
     let xs = xs[d.pole_range.clone()].to_vec();
     let ys = ys[d.pole_range.clone()].to_vec();
     let (uknots, umults) = (&d.uknots, &d.umults);
@@ -164,10 +194,16 @@ pub(super) fn make_bspline_curve_2d_with_knots(
             return Err("B_SPLINE_CURVE_2D: periodic pole/degree mismatch".into());
         }
         let flat = occt_core::bspl::knots::knot_sequence_periodic(uknots, umults, degree as i32);
-        Geom2dBSplineCurve { xs, ys, weights: None, knots: flat, degree, periodic: true }
+        Geom2dBSplineCurve::from_flat(xs, ys, weights, flat, degree, true)
+            .map_err(|e| e.to_string())?
     } else {
         let flat = occt_core::bspl::banded_interp::knot_sequence(uknots, umults, degree as i32);
-        Geom2dBSplineCurve::new(xs, ys, flat, degree).map_err(|e| e.to_string())?
+        match weights {
+            Some(w) => {
+                Geom2dBSplineCurve::rational(xs, ys, w, flat, degree).map_err(|e| e.to_string())?
+            }
+            None => Geom2dBSplineCurve::new(xs, ys, flat, degree).map_err(|e| e.to_string())?,
+        }
     };
 
     if closed && degree > 1 {

@@ -58,7 +58,8 @@ impl ComposeShell {
                 // (`ShapeFix_Face.lxx:95-98`, `myFace`). The local
                 // `SharedReShape::new()` below is that null context.
                 let mut sff = ShapeFixFace::with_face(&new_face);
-                sff.fix_add_natural_bound_mode = false; // cxx:3000
+                // `cxx:3000`: `myFixFace->FixAddNaturalBoundMode() = 0;`
+                sff.modes.fix_add_natural_bound_mode = crate::shhealing::NOT_FIX;
                 sff.fix_orientation(); // cxx:3003 (MapWires is a local, unused map)
                 if let Some(f) = sff.face {
                     new_face = f;

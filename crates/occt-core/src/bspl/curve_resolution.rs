@@ -115,3 +115,83 @@ pub fn bspline_curve_resolution(
         tolerance_3d / REAL_SMALL
     }
 }
+
+/// `BSplCLib::Resolution` for 1D evolutions (`BSplCLib.cxx:4718-4818`, the
+/// `default:` arm of the `ArrayDimension` switch, `ArrayDimension == 1`).
+///
+/// Same pole-grid derivative bound as [`bspline_curve_resolution`], with
+/// `|P_j - P_i| * w_i - |P_j - P_{i-1}| * w_{i-1}` as the per-pole factor.
+pub fn bspline_curve_resolution_1d(
+    poles: &[f64],
+    weights: Option<&[f64]>,
+    flat_knots: &[f64],
+    degree: i32,
+    tolerance_3d: f64,
+) -> f64 {
+    let num_poles = poles.len() as i32;
+    // Same degenerate-input guard as `bspline_curve_resolution`: OCCT leaves
+    // `max_derivative = 0` and falls into `BSplCLib.cxx:4812-4817`.
+    if num_poles < 1 || degree < 1 || flat_knots.is_empty() {
+        return tolerance_3d / REAL_SMALL;
+    }
+    let deg1 = degree + 1;
+    let deg2 = (degree << 1) + 1;
+    let num_poles_flat = flat_knots.len() as i32 - deg1;
+    if num_poles_flat < 2 {
+        return tolerance_3d / REAL_SMALL;
+    }
+
+    let mut max_derivative = 0.0;
+    if let Some(w) = weights {
+        let min_weights = w.iter().copied().fold(f64::INFINITY, f64::min);
+        for ii in 1..num_poles_flat {
+            let ii_index = (ii.rem_euclid(num_poles)) as usize;
+            let ii_minus = ((ii - 1).rem_euclid(num_poles)) as usize;
+            let inverse = 1.0 / (flat_knots[(ii + degree) as usize] - flat_knots[ii as usize]);
+            let mut lower = ii - deg1;
+            if lower < 0 {
+                lower = 0;
+            }
+            let mut upper = deg2 + ii;
+            if upper > num_poles_flat {
+                upper = num_poles_flat;
+            }
+            let pi = poles[ii_index];
+            let pm = poles[ii_minus];
+            let wi = w[ii_index];
+            let wm = w[ii_minus];
+            for jj in lower..upper {
+                let pj = poles[(jj.rem_euclid(num_poles)) as usize];
+                let mut factor = (pj - pi) * wi - (pj - pm) * wm;
+                if factor < 0.0 {
+                    factor = -factor;
+                }
+                let value = factor * inverse;
+                if max_derivative < value {
+                    max_derivative = value;
+                }
+            }
+        }
+        max_derivative /= min_weights;
+    } else {
+        for ii in 1..num_poles_flat {
+            let ii_index = (ii.rem_euclid(num_poles)) as usize;
+            let ii_minus = ((ii - 1).rem_euclid(num_poles)) as usize;
+            let inverse = 1.0 / (flat_knots[(ii + degree) as usize] - flat_knots[ii as usize]);
+            let mut factor = poles[ii_index] - poles[ii_minus];
+            if factor < 0.0 {
+                factor = -factor;
+            }
+            let value = factor * inverse;
+            if max_derivative < value {
+                max_derivative = value;
+            }
+        }
+    }
+    max_derivative *= degree as f64;
+    if max_derivative > REAL_SMALL {
+        tolerance_3d / max_derivative
+    } else {
+        tolerance_3d / REAL_SMALL
+    }
+}

@@ -67,6 +67,7 @@ mod numeric_extrema;
 mod point_surface_extrema;
 mod revolution_point_extrema;
 pub use analytic_solvers::*;
+pub(crate) use elementary_curve_extrema::vec_angle_with_ref;
 pub use extrusion_point_extrema::*;
 pub use gen_ext_ps::*;
 pub use numeric_extrema::*;

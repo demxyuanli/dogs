@@ -55,21 +55,26 @@
 //! included). So `uniform_abscissa(c, n)` == OCCT with `NbPoints = n + 1`; only
 //! the argument naming differs (intervals here, points there).
 //!
-//! `GCPnts_UniformDeflection` / `GCPnts_QuasiUniformDeflection` are **UNPORTED**
-//! (see `occt-core/src/gcpnts.rs` module docs) — this module no longer exposes a
+//! `GCPnts_QuasiUniformDeflection` is ported
+//! (`gcpnts/quasi_uniform_deflection.rs`, 3D adaptor only);
+//! `GCPnts_UniformDeflection` remains **UNPORTED** (see
+//! `occt-core/src/gcpnts.rs` module docs) — this module no longer exposes a
 //! fake "uniform deflection" accessor.
 
 mod abscissa;
 mod length;
+mod quasi_uniform_deflection;
 mod sampling;
 
 #[allow(unused_imports)]
 use self::length::{compute_abs_composite, compute_abs_composite_adv, compute_type};
 
 pub use self::abscissa::{
-    abscissa_point, abscissa_point_from_guess, abscissa_point_with_tolerance,
+    abscissa_point, abscissa_point_from_guess, abscissa_point_with_guess,
+    abscissa_point_with_tolerance,
 };
 pub use self::length::{curve_length, curve_length_between, curve_length_range};
+pub use self::quasi_uniform_deflection::QuasiUniformDeflection;
 pub use self::sampling::{quasi_uniform_abscissa, tangential_deflection, uniform_abscissa};
 
 #[cfg(test)]

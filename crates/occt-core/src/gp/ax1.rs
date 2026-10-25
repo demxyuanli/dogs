@@ -2,6 +2,7 @@ use crate::gp::dir::{DirAxis, GpDir};
 use crate::gp::pnt::GpPnt;
 use crate::gp::trsf::GpTrsf;
 use crate::gp::vec::GpVec;
+use crate::gp::xyz::GpXyz;
 
 /// Axis = point + direction. Default is Z axis at origin.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -48,6 +49,29 @@ impl GpAx1 {
 
     pub fn set_direction(&mut self, dir: GpDir) {
         self.vdir = dir;
+    }
+
+    /// `gp_Ax1::IsCoaxial(Other, AngularTolerance, LinearTolerance)`
+    /// (`gp_Ax1.cxx:44-57`): `vdir.IsEqual(Other.vdir, AngularTolerance)` and
+    /// both locations within `LinearTolerance` of the other axis.
+    pub fn is_coaxial_tol(&self, other: &GpAx1, ang_tol: f64, lin_tol: f64) -> bool {
+        let d1 = {
+            let v = GpXyz::new(
+                self.loc.x() - other.loc.x(),
+                self.loc.y() - other.loc.y(),
+                self.loc.z() - other.loc.z(),
+            );
+            v.crossed(other.vdir.xyz()).modulus()
+        };
+        let d2 = {
+            let v = GpXyz::new(
+                other.loc.x() - self.loc.x(),
+                other.loc.y() - self.loc.y(),
+                other.loc.z() - self.loc.z(),
+            );
+            v.crossed(self.vdir.xyz()).modulus()
+        };
+        self.vdir.is_equal_tol(&other.vdir, ang_tol) && d1 <= lin_tol && d2 <= lin_tol
     }
 
     pub fn is_coaxial(&self, other: &GpAx1) -> bool {

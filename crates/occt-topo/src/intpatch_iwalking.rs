@@ -246,10 +246,19 @@ pub(crate) fn lines_to_wlines(
         }
         let n = points.len();
         let wl = WLine {
+            base: crate::intpatch_line::IntPatchLine::default(),
             points,
             vertices: Vec::new(),
             has_first_point: false,
             has_last_point: false,
+            first_index: 0,
+            last_index: 0,
+            arc_on_s1: None,
+            arc_on_s2: None,
+            u1_period: 0.0,
+            v1_period: 0.0,
+            u2_period: 0.0,
+            v2_period: 0.0,
             creating_way: WLineWay::ImpPrm,
         };
         if n >= 2 {

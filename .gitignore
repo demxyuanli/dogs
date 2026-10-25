@@ -42,6 +42,8 @@ crates/occt-topo/_*.txt
 /err*.txt
 /t1.txt
 /t0m_steps.txt
+/check.log
+/split_corr_iso.ps1
 
 # gate-run evidence logs (docs/goals/drift-and-gap-autofix)
 /.target-gate/

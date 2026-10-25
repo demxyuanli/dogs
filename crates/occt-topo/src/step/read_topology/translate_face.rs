@@ -94,6 +94,20 @@ impl<'a> Resolver<'a> {
             Orientation::Reversed
         });
         let face_key = GeometryRegistry::shape_key(&face.0);
+        // `ShapeFix_Face::Perform` runs `ShapeFix_Wire::Perform` twice per face
+        // (`ShapeFix_Face.cxx:365-480` and `:508-613`). The mode sets are the
+        // `ShapeFix_Shape`/`ShapeProcess_OperLibrary::fixshape` values with the
+        // per-round overrides of `WireFixModes::first_wire_round` /
+        // `second_wire_round` applied.
+        let wire_modes = crate::shhealing::WireFixModes::step_face();
+        let first_round = wire_modes.first_wire_round();
+        let second_round = wire_modes.second_wire_round();
+        // `ShapeFix_Face::Perform`'s face mode set (`ShapeFix_Face.hxx:285-295`).
+        let face_modes = crate::shhealing::ShapeFixFaceModes::reader();
+        // `aSavPreci = Precision()` (`ShapeFix_Face.cxx:363`) survives until
+        // `cxx:700-701`; `wire_preci` is the value the first and second wire
+        // rounds actually run at (`cxx:386-397`).
+        let mut wire_preci = self.precision;
         // Associate each wire edge's SURFACE_CURVE pcurve with this face's
         // surface (`BRep_Builder::UpdateEdge(edge, pcurve, face, tol)`).
         let face_ori = face.0.orientation();
@@ -127,6 +141,18 @@ impl<'a> Resolver<'a> {
             // `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT` uncertainty or from
             // `read.precision.val` (default 1.e-03); see `step_precision`.
             let preci = self.precision;
+            // `StepToTopoDS_TranslateEdgeLoop.cxx:844-868`: `ShapeFix_EdgeProjAux`
+            // + `B.Range(edge, Face, First, Last)` run *before* `CheckPCurves`
+            // (`cxx:875`). The projected window is what makes the edge's pcurve
+            // range differ from its 3D range, which is the state OCCT's
+            // `ShapeFix_Edge::TempSameRange` then reparametrises
+            // (`ShapeFix_Edge.cxx:418-421`). Running the XSAlgo drop first made
+            // this loop bail out on faces whose pcurve it had removed, leaving
+            // the pcurve range equal to the 3D range; linkrods' flat B-spline
+            // faces then kept the file's raw pcurve parameterisation and
+            // `FixIntersectingEdges` cut their edges at the pcurve's own end
+            // parameter (0.785392659 instead of `pi/4`).
+            crate::shhealing::project_wire_pcurve_ranges(w, &face, preci);
             // `StepToTopoDS_TranslateEdgeLoop.cxx:875` -> `CheckPCurves`
             // (`:105-177`) -> `XSAlgo_ShapeProcessor::CheckPCurve`
             // (`XSAlgo_ShapeProcessor.cxx:344-401`): the reader's "advanced check"
@@ -137,34 +163,47 @@ impl<'a> Resolver<'a> {
             for e in &loop_edges {
                 crate::shhealing::xsalgo_check_pcurve(e, &face, self.precision);
             }
-            crate::shhealing::project_wire_pcurve_ranges(w, &face, preci);
-            match self.current_heal_context() {
-                // `ShapeFix_Face::Perform` runs its wire round on
-                // `S = Context()->Apply(myFace)` (`ShapeFix_Face.cxx:379-380`),
-                // i.e. after the shared `ReShape` has substituted every edge a
-                // neighboring face's `ShapeFix_ComposeShell` recorded. The
-                // `FixAddPCurve` therefore has to land on the *substituted* edge
-                // (`ShapeFix_ComposeShell.cxx:3451`), otherwise the pcurve is
-                // attached to the pre-substitution edge that `Replace` drops and
-                // the seam face later reads a pcurve-less wire.
+            // `ShapeFix_Face::Perform`'s first wire round
+            // (`ShapeFix_Face.cxx:363-480`). `aSavPreci = Precision()`
+            // (`cxx:363`) and the whole round is under `NeedFix(myFixWireMode)`
+            // (`cxx:365`); `cxx:700-701` restores `aSavPreci` for the
+            // second-part loop.
+            let round = &first_round;
+            // `S = myFace; if (!Context().IsNull()) S = Context()->Apply(myFace)`
+            // (`ShapeFix_Face.cxx:379-380`): the wire round runs on the
+            // substituted face, because the shared `ReShape` may have replaced
+            // every edge a neighboring face's `ShapeFix_ComposeShell` recorded.
+            // The `FixAddPCurve` therefore has to land on the *substituted* edge
+            // (`ShapeFix_ComposeShell.cxx:3451`), otherwise the pcurve is
+            // attached to the pre-substitution edge that `Replace` drops and
+            // the seam face later reads a pcurve-less wire.
+            let applied_face = match self.current_heal_context() {
                 Some(mut ctx) => {
                     let applied = ctx.apply(&face.0);
-                    let perf_face = if applied.is_face() {
+                    if applied.is_face() {
                         Face(applied)
                     } else {
                         face.clone()
-                    };
+                    }
+                }
+                None => face.clone(),
+            };
+            wire_preci = first_round_precision(&face_modes, &applied_face, preci);
+            if face_modes.need_fix_wire() {
+                if self.current_heal_context().is_some() {
                     // `TopoDS_Iterator iter(S, false)` (`ShapeFix_Face.cxx:400`):
                     // the wire is handed to `ShapeFix_Wire::Load` with its stored
                     // orientation, not the one composed through the face.
-                    for mut aw in wires_stored_on_face(&perf_face) {
+                    for mut aw in wires_stored_on_face(&applied_face) {
                         crate::shhealing::check_pcurves_and_shift(
-                            &mut aw, &perf_face, preci, false,
+                            &mut aw,
+                            &applied_face,
+                            wire_preci,
+                            round,
                         );
                     }
-                }
-                None => {
-                    crate::shhealing::check_pcurves_and_shift(w, &face, preci, false);
+                } else {
+                    crate::shhealing::check_pcurves_and_shift(w, &face, wire_preci, round);
                 }
             }
         }
@@ -231,17 +270,20 @@ impl<'a> Resolver<'a> {
                             crate::shhealing::perform_wire_second_round(
                                 &mut w,
                                 rf,
-                                self.precision,
+                                wire_preci,
+                                &second_round,
                             );
                         }
                     }
-                    // `ShapeFix_Face::Perform`'s second wire round
-                    // (`ShapeFix_Face.cxx:583-598`): `FixLoopWire` splits a
-                    // boundary wire that revisits a vertex into one wire per
-                    // loop. It runs on `myResult`'s wires, i.e. after the
-                    // seam step, for every face (not only the healed ones).
-                    for rf in &sub_faces {
-                        crate::shhealing::split_loop_wires(rf);
+                    // `ShapeFix_Face::Perform`'s `FixLoopWire`
+                    // (`ShapeFix_Face.cxx:583-598`): inside the second wire
+                    // round's per-wire loop and under `NeedFix(myFixLoopWiresMode)`,
+                    // it splits a boundary wire that revisits a vertex into one
+                    // wire per loop.
+                    if face_modes.need_fix_loop_wires() {
+                        for rf in &sub_faces {
+                            crate::shhealing::split_loop_wires(rf);
+                        }
                     }
                     // `ShapeFix_Face::Perform`'s second-part loop
                     // (`ShapeFix_Face.cxx:676-716`) runs on every face of
@@ -299,11 +341,46 @@ impl<'a> Resolver<'a> {
                 }
             }
         }
-        crate::shhealing::split_loop_wires(&face);
+        // `ShapeFix_Face::Perform`'s second wire round
+        // (`ShapeFix_Face.cxx:508-613`). It runs on `myResult`'s wires for
+        // **every** face, whether or not `FixMissingSeam` changed anything; the
+        // `FixLacking` / `FixSelfIntersection` modes are the restored ones and
+        // `FixSmall` / `FixConnected` / `FixEdgeCurves` / `FixDegenerated` are
+        // forced off (`cxx:513-520`), which is
+        // `WireFixModes::second_wire_round`.
+        let second_face = sff
+            .result
+            .clone()
+            .filter(|s| s.shape_type() == crate::abs::ShapeType::Face)
+            .map(crate::shape::Face)
+            .unwrap_or_else(|| face.clone());
+        for mut w in wires_stored_on_face(&second_face) {
+            crate::shhealing::perform_wire_second_round(
+                &mut w,
+                &second_face,
+                wire_preci,
+                &second_round,
+            );
+        }
+        if face_modes.need_fix_loop_wires() {
+            crate::shhealing::split_loop_wires(&second_face);
+        }
         // `ShapeFix_Face::Perform`'s second-part loop (`ShapeFix_Face.cxx:676-716`):
         // the wire steps (`cxx:676-685`), `FixOrientation` (`cxx:687-697`),
         // `FixAddNaturalBound` (`cxx:702-708`) and `FixSplitFace` (`cxx:710-716`).
         let res = fix_face_second_part(&mut sff, &face);
+        // `ShapeFix_Face::Perform`'s tail (`ShapeFix_Face.cxx:722-736`):
+        // `SetPrecision(aSavPreci)` (a no-op here — the port never mutated the
+        // tool's precision, only the value passed to the wire rounds), then one
+        // `FixSmallAreaWire` per face of `myResult`.
+        if face_modes.need_fix_small_area_wire() {
+            for f in crate::topo_tools::faces_of(&res) {
+                sff.face = Some(f); // cxx:726
+                if sff.fix_small_area_wire(face_modes.is_remove_small_face()) {
+                    sff.status |= 0x0008; // ShapeExtend_DONE4
+                }
+            }
+        }
         Ok(res)
     }
 
@@ -323,4 +400,29 @@ impl<'a> Resolver<'a> {
         }
     }
 
+}
+
+/// `ShapeFix_Face::Perform`'s precision for the first wire round.
+///
+/// `aSavPreci = Precision()` (`ShapeFix_Face.cxx:363`); the
+/// `myAutoCorrectPrecisionMode` block (`cxx:386-397`) then lowers it to
+/// `min(aSavPreci, LeastEdgeSize(S) / 2) * 1.00001`, but only when that is
+/// both below `aSavPreci` and above `Precision::Confusion()`. The reduced value
+/// is what `theAdvFixWire->SetPrecision(newpreci)` (`cxx:395`) hands to the
+/// wire tool for this round; `cxx:700-701` restores `aSavPreci` afterwards.
+fn first_round_precision(
+    round: &crate::shhealing::ShapeFixFaceModes,
+    face: &Face,
+    sav_preci: f64,
+) -> f64 {
+    if !round.auto_correct_precision() {
+        return sav_preci;
+    }
+    let size = crate::shhealing::least_edge_size(&face.0);
+    let newpreci = sav_preci.min(size / 2.0) * 1.00001;
+    if sav_preci > newpreci && newpreci > occt_core::precision::CONFUSION {
+        newpreci
+    } else {
+        sav_preci
+    }
 }

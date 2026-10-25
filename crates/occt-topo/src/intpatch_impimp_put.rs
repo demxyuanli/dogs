@@ -3,11 +3,14 @@
 
 use occt_core::elib::clib;
 use occt_core::gp::{GpPnt, GpVec};
-use occt_core::precision::PCONFUSION;
 use occt_geom::Surface;
 
 use crate::geom_int::{surface_parameters, GLineKind, GeomIntLine};
 use crate::int_tools_wline::PatchPoint;
+use crate::intpatch_vparams::{
+    compute_vertex_parameters_aline, compute_vertex_parameters_gline,
+    compute_vertex_parameters_rline,
+};
 
 use super::quad::ImplicitQuad;
 use super::sonb::PathPoint;
@@ -124,24 +127,16 @@ fn value_on_gline(kind: &GLineKind, t: f64) -> GpPnt {
     }
 }
 
-/// Sort / dedup GLine and RLine vertices (`ComputeVertexParameters` core).
-pub(crate) fn compute_vertex_parameters(slin: &mut [GeomIntLine], _tol: f64) {
-    let tol_pc = 1000.0 * PCONFUSION;
+/// `IntPatch_ImpImpIntersection.cxx:2977-2995`: dispatch `ComputeVertexParameters`
+/// on the line type (`GLine` for the five conic kinds, `ALine` for
+/// `IntPatch_Analytic`, `RLine` for `IntPatch_Restriction`).
+pub(crate) fn compute_vertex_parameters(slin: &mut [GeomIntLine], tol: f64) {
     for line in slin.iter_mut() {
-        let vertices = match line {
-            GeomIntLine::Geometric(g) => &mut g.vertices,
-            GeomIntLine::Restriction(r) => &mut r.vertices,
-            GeomIntLine::Analytic(a) => &mut a.vertices,
+        match line {
+            GeomIntLine::Geometric(g) => compute_vertex_parameters_gline(g),
+            GeomIntLine::Analytic(a) => compute_vertex_parameters_aline(a, tol),
+            GeomIntLine::Restriction(r) => compute_vertex_parameters_rline(r),
             GeomIntLine::Walking(_) => continue,
-        };
-        vertices.sort_by(|a, b| a.param_on_line.total_cmp(&b.param_on_line));
-        let mut i = 1;
-        while i < vertices.len() {
-            if (vertices[i].param_on_line - vertices[i - 1].param_on_line).abs() <= tol_pc {
-                vertices.remove(i);
-            } else {
-                i += 1;
-            }
         }
     }
 }

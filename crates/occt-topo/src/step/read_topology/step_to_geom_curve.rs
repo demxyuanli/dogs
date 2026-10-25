@@ -158,29 +158,14 @@ impl<'a> Resolver<'a> {
                     .into_iter()
                     .map(|r| self.resolve_point(r))
                     .collect::<Result<Vec<_>, _>>()?;
-                let weights_arg = rec.args.get(3).map(|s| s.trim().to_string());
-                // B_SPLINE_CURVE_WITH_KNOTS layout:
-                // (name, degree, control_points, curve_form|weights, curve_form,
-                //  closed, self_intersect, knot_multiplicities, knots, knot_spec).
+                // B_SPLINE_CURVE_WITH_KNOTS layout: slot 3 is the weights of a
+                // merged rational complex, else `SELF` / the `curve_form` marker.
                 // `MakeBSplineCurveCommon` (`StepToGeom.cxx:776-927`) merges
                 // duplicate knots, clamps the multiplicities, trims the poles and
                 // then decides the periodic / closed-curve representation.
                 let knot_mults = parse_usize_list(rec.args.get(6).map(|s| s.as_str()).unwrap_or("()"));
                 let knot_values = parse_real_list(rec.args.get(7).map(|s| s.as_str()).unwrap_or("()"));
-                let weights = match weights_arg.as_deref() {
-                    // No weights: non-rational curve (curve_form is UNSPECIFIED
-                    // or a non-rational flag like CIRCULAR/LINEAR).
-                    None | Some("SELF") | Some(".UNSPECIFIED.") | Some(".CIRCULAR.")
-                    | Some(".LINEAR.") => None,
-                    Some(w) if w.starts_with('.') => None,
-                    Some(w) => {
-                        let weights = parse_real_list(w);
-                        if weights.len() != poles.len() {
-                            return Err("B_SPLINE_CURVE: weight count mismatch".into());
-                        }
-                        Some(weights)
-                    }
-                };
+                let weights = bspline_weights(rec, poles.len())?;
                 let curve = make_bspline_curve_with_knots(
                     degree,
                     poles,
@@ -208,18 +193,17 @@ impl<'a> Resolver<'a> {
                 )
             }
             "B_SPLINE_CURVE" => {
-                // Plain B-spline (no explicit knots): the knot vector is the
-                // clamped uniform one implied by the pole count and degree.
-                let degree = parse_f64(&rec.args[1])? as usize;
-                let poles: Vec<GpPnt> = parse_ref_list(&rec.args[2])
-                    .into_iter()
-                    .map(|r| self.resolve_point(r))
-                    .collect::<Result<Vec<_>, _>>()?;
-                let knots = uniform_knots_for(poles.len(), degree);
-                Arc::new(
-                    GeomBSplineCurve::new(poles, knots, degree)
-                        .map_err(|e| format!("B_SPLINE_CURVE: {e}"))?,
-                )
+                // No OCCT branch: `MakeCurve` routes a `StepGeom_BoundedCurve`
+                // to `MakeBoundedCurve` (`StepToGeom.cxx:1347-1351`), which maps
+                // the with-knots / rational complex (`cxx:279-289`), trimmed,
+                // the Bezier / uniform / quasi-uniform families
+                // (`cxx:297-457`) and `POLYLINE` (`cxx:460-463`); the knotless
+                // base class falls through to a null handle (`cxx:465-466`).
+                // `MakeBSplineCurveCommon` also requires a
+                // `StepGeom_BSplineCurveWithKnots` downcast (`cxx:759-775`).
+                return Err(format!(
+                    "B_SPLINE_CURVE without knots has no OCCT branch (#{id})"
+                ));
             }
             "TRIMMED_CURVE" => {
                 // `StepToGeom::MakeTrimmedCurve` (`StepToGeom.cxx:2323-2496`) with

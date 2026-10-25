@@ -1,23 +1,32 @@
 //! `BRepLib_MakeEdge` (`BRepLib_MakeEdge.cxx`).
 //!
-//! Only the two `Init` overloads the IGES read reaches **with both vertices
-//! null** are ported - the form every `BRepBuilderAPI_MakeEdge` call in
-//! `IGESToBRep_TopoCurve` (`cxx:1046`, `cxx:1263`),
-//! `IGESToBRep_BasicCurve`, `IGESToBRep_IGESBoundary` and
-//! `ShapeBuild_Edge::MakeEdge` (`ShapeBuild_Edge.cxx:793`, `:858`) makes:
+//! Ported:
 //!
-//! * `Init(C, p1, p2)` (`cxx:512-517`) -> `Init(C, V1, V2, p1, p2)`
-//!   (`cxx:606-796`).
-//! * `Init(C2d, S, p1, p2)` (`cxx:807-816`) -> `Init(C2d, S, V1, V2, p1, p2)`
-//!   (`cxx:905-1094`).
+//! * `Init(C, p1, p2)` (`cxx:505-517`) -> `Init(C, V1, V2, p1, p2)`
+//!   (`cxx:603-796`) with **both vertices null** - the form every
+//!   `BRepBuilderAPI_MakeEdge` call in `IGESToBRep_TopoCurve` (`cxx:1046`,
+//!   `cxx:1263`), `IGESToBRep_BasicCurve`, `IGESToBRep_IGESBoundary` and
+//!   `ShapeBuild_Edge::MakeEdge` (`ShapeBuild_Edge.cxx:793`, `:858`) makes.
+//! * `Init(C2d, S, p1, p2)` (`cxx:808-819`) -> `Init(C2d, S, V1, V2, p1, p2)`
+//!   (`cxx:907-1094`).
+//! * `Init(C, V1, V2)` (`cxx:543-572`), reached through
+//!   [`init_3d_projecting`], and the vertex-taking arm of
+//!   `Init(C, V1, V2, p1, p2)` (`cxx:603-796`) it feeds; the
+//!   `Project(C, V, p)` (`cxx:55-109`) it needs is [`project`]. This is the
+//!   form `TopOpeBRepTool_FuseEdges::BuildListResultEdges`
+//!   (`TopOpeBRepTool_FuseEdges.cxx:334`) and
+//!   `TopOpeBRepBuild_FuseFace::MakeEdge` (`FuseFace.cxx:1163`) use.
 //!
-//! UNPORTED, and unreachable from the IGES read: the `gp_Pnt` / `TopoDS_Vertex`
-//! overloads (`cxx:412-440`, `cxx:519-539`, `cxx:819-841`) and the
-//! vertex-taking `Init`s (`cxx:542-572` `Init(C, V1, V2)`, whose `Project`
-//! (`cxx:1133-1206`) is also unported). `degenerated` stays false in the
-//! ported path: `cxx:719-727` only sets it in the closed arm with **both**
-//! vertices given (`V1.IsSame(V2)` plus a mid-parameter check), so with null
+//! `degenerated` is only set in the closed arm with **both** vertices given
+//! (`cxx:719-727`: `V1.IsSame(V2)` plus a mid-parameter check), so with null
 //! vertices `B.Degenerated(E, false)` (`cxx:791`) is what `Init` writes.
+//!
+//! UNPORTED: the `gp_Pnt`-taking `Init`s (`cxx:522-541` `Init(C, P1, P2)`,
+//! `cxx:575-595` `Init(C, P1, P2, p1, p2)`) and the 2D vertex-taking pair
+//! (`cxx:821-843` `Init(C2d, S, V1, V2)` with its
+//! `Project(C2d, S, V, p)` at `cxx:115-176`, `cxx:845-876`
+//! `Init(C2d, S, P1, P2)`), plus the `gp_Lin`/`gp_Circ`/... `BRepLib_MakeEdge`
+//! constructors (`cxx:217-386`).
 //!
 //! The one thing `Init` writes that this module does not: the edge tolerance
 //! `preci` of `B.MakeEdge(E, C, preci)` (`cxx:782`) /
@@ -64,6 +73,9 @@ pub struct EdgeBuild {
     /// non-periodic input with `p1 >= p2` is swapped and the resulting edge is
     /// stored `REVERSED`. Always false for the 3D `Init`.
     pub reverse: bool,
+    /// `degenerated` (`cxx:722`): only the closed arm with **two** given
+    /// vertices can set it, when the mid-parameter point sits on `P1`.
+    pub degenerated: bool,
 }
 
 /// `cxx:610-616`: `while (CT = down_cast<Geom_TrimmedCurve>(C)) C = CT->BasisCurve();`
@@ -83,26 +95,128 @@ fn basis_2d<'a>(mut c: &'a dyn Curve2d) -> &'a dyn Curve2d {
     c
 }
 
-/// `BRepLib_MakeEdge::Init(C, V1=null, V2=null, p1, p2)` (`cxx:606-796`).
-/// `None` is the `!IsDone()` of `ParameterOutOfRange` (`cxx:655-658`) and
-/// `LineThroughIdenticPoints` (`cxx:660-663`).
-pub fn init_3d(curve: &Arc<dyn Curve>, first: f64, last: f64) -> Option<EdgeBuild> {
+/// `GeomAdaptor_Curve` over `C` (`GeomAdaptor_Curve.cxx:252-254`): the untrimmed
+/// basis plus the interval the trim leaves, expressed in that basis's
+/// parameters. OCCT's `Project` builds the adaptor from the handle it is given,
+/// so both the end parameters and the `Extrema_ExtPC` search run on the basis
+/// restricted to the trim interval — the same space the full `Init`
+/// (`cxx:610-616`, which kills the trimmed curves first) expects `p1`/`p2` in.
+///
+/// The port's [`GeomTrimmedCurve`](occt_geom::trimmed::GeomTrimmedCurve)
+/// reparameterises its trim onto `[0, 1]`, so `first_parameter()` /
+/// `last_parameter()` of a trimmed handle are **not** the adaptor's range;
+/// `untrimmed_basis()` is the view that reports it in basis parameters.
+pub(crate) fn adaptor_curve(curve: &Arc<dyn Curve>) -> (Arc<dyn Curve>, f64, f64) {
+    curve
+        .untrimmed_basis()
+        .unwrap_or_else(|| (curve.clone(), curve.first_parameter(), curve.last_parameter()))
+}
+
+/// `Project(C, V, p)` (`cxx:55-108`): the parameter of `V` on `C`, accepted
+/// only when the squared distance stays within `V`'s squared tolerance.
+///
+/// The two interval ends are tested first (`cxx:70-79`), then `Extrema_ExtPC`
+/// picks the closest solution (`cxx:83-105`). `None` is the C++ `false`. The
+/// returned parameter is in the basis curve of `C`, as OCCT's adaptor is.
+pub fn project(curve: &Arc<dyn Curve>, v: &Vertex) -> Option<f64> {
+    let eps2 = {
+        let t = crate::brep_tool::BRepTool::vertex_tolerance(v);
+        t * t
+    };
+    let p = crate::brep_tool::BRepTool::vertex_point_world(v);
+    // `cxx:62`: `GeomAdaptor_Curve GAC(C)`.
+    let (c, first, last) = adaptor_curve(curve);
+    // `cxx:66-79`: the ends win when they are the closer one and inside `Eps2`.
+    let d1 = if Precision::is_infinite(first) {
+        f64::MAX
+    } else {
+        c.d0(first).square_distance(&p)
+    };
+    let d2 = if Precision::is_infinite(last) {
+        f64::MAX
+    } else {
+        c.d0(last).square_distance(&p)
+    };
+    if d1 < d2 && d1 <= eps2 {
+        return Some(first);
+    } else if d2 < d1 && d2 <= eps2 {
+        return Some(last);
+    }
+    // `cxx:83-105`
+    let (sols, done) = occt_geom::extrema_pc::extrema_ext_pc_range_done(c.as_ref(), &p, first, last);
+    if !done {
+        return None;
+    }
+    let mut best: Option<&occt_geom::extrema_pc::ExtPcSolution> = None;
+    for s in &sols {
+        if best.map_or(true, |b| s.sq_dist < b.sq_dist) {
+            best = Some(s);
+        }
+    }
+    let best = best?;
+    if best.sq_dist <= eps2 {
+        Some(best.u)
+    } else {
+        None
+    }
+}
+
+/// `BRepLib_MakeEdge::Init(C, V1, V2)` (`cxx:542-572`): `Project` each given
+/// vertex, then the full `Init`. `None` is `BRepLib_PointProjectionFailed`.
+pub fn init_3d_projecting(
+    curve: &Arc<dyn Curve>,
+    v1: Option<&Vertex>,
+    v2: Option<&Vertex>,
+) -> Option<EdgeBuild> {
+    // `cxx:552` / `:562`: `C->FirstParameter()` / `C->LastParameter()` of the
+    // handle as given, i.e. the trim ends in basis parameters.
+    let (_, first, last) = adaptor_curve(curve);
+    let p1 = match v1 {
+        Some(v) => project(curve, v)?,
+        None => first,
+    };
+    let p2 = match v2 {
+        Some(v) => project(curve, v)?,
+        None => last,
+    };
+    init_3d_vertices(curve, v1, v2, p1, p2)
+}
+
+/// `BRepLib_MakeEdge::Init(C, V1, V2, p1, p2)` (`cxx:606-796`): the whole
+/// decision table, including the vertex arms the null-vertex
+/// [`init_3d`] skips.
+///
+/// `None` is any `myError` arm (`cxx:653-657` `ParameterOutOfRange`,
+/// `:660-663` `LineThroughIdenticPoints`, `:709-718` `DifferentPointsOnClosedCurve`,
+/// `:735-739` / `:754-758` `PointWithInfiniteParameter`,
+/// `:747-751` / `:767-771` `DifferentsPointAndParameter`): OCCT leaves
+/// `IsDone()` false and the caller stops.
+pub fn init_3d_vertices(
+    curve: &Arc<dyn Curve>,
+    vv1: Option<&Vertex>,
+    vv2: Option<&Vertex>,
+    first: f64,
+    last: f64,
+) -> Option<EdgeBuild> {
+    // `cxx:610-616`
     let c = basis_3d(curve.clone());
     let cf = c.first_parameter();
     let cl = c.last_parameter();
+    let epsilon = PCONFUSION;
     let mut p1 = first;
     let mut p2 = last;
+    let (mut v1, mut v2) = (vv1.cloned(), vv2.cloned());
     if c.is_periodic() {
-        // `cxx:630`: adjust in period.
-        clib2d::adjust_periodic(cf, cl, PCONFUSION, &mut p1, &mut p2);
+        // `cxx:630`: adjust in period; the vertex handles keep their roles.
+        clib2d::adjust_periodic(cf, cl, epsilon, &mut p1, &mut p2);
     } else {
-        // `cxx:639-652`: reorder so `p1 < p2`. With `V1` and `V2` null the
-        // swap of the vertex handles has no effect.
-        if p1 >= p2 {
+        // `cxx:638-650`: reorder, swapping the vertex handles too.
+        if !(p1 < p2) {
+            std::mem::swap(&mut v2, &mut v1);
             std::mem::swap(&mut p1, &mut p2);
         }
-        // `cxx:655-658`: check range.
-        if cf - p1 > PCONFUSION || p2 - cl > PCONFUSION {
+        // `cxx:653-657`: check range.
+        if cf - p1 > epsilon || p2 - cl > epsilon {
             return None;
         }
         // `cxx:660-663`: check ponctuallity, `gp::Resolution()`.
@@ -110,32 +224,93 @@ pub fn init_3d(curve: &Arc<dyn Curve>, first: f64, last: f64) -> Option<EdgeBuil
             return None;
         }
     }
-    // `cxx:667-677`: the points come from `GeomAdaptor_Curve::Value`, i.e. the
-    // basis curve's `Value` for a `Geom_Curve` adaptor.
+
+    // `cxx:667-677`
     let p1_inf = Precision::is_negative_infinite(p1);
     let p2_inf = Precision::is_positive_infinite(p2);
     let q1 = if p1_inf { None } else { Some(c.d0(p1)) };
     let q2 = if p2_inf { None } else { Some(c.d0(p2)) };
-    // `cxx:680`: `preci = BRepLib::Precision()`.
+
+    // `cxx:680-733`
     let preci = CONFUSION;
-    // `cxx:687`: `closed = (P1.Distance(P2) <= preci)`.
-    let closed = match (q1, q2) {
-        (Some(a), Some(b)) => a.distance(&b) <= preci,
+    let mut degenerated = false;
+    let closed = match (&q1, &q2) {
+        (Some(a), Some(b)) => a.distance(b) <= preci,
         _ => false,
     };
-    let b = TopoBuilder::new();
-    let (v1, v2) = if closed {
-        // `cxx:692-697`: both vertices null -> one vertex, `V2 = V1`.
-        let v = b.make_vertex(q1.unwrap_or_else(|| c.d0(p1)), preci);
-        (Some(v.clone()), Some(v))
+    if closed {
+        let (qa, qb) = (q1.unwrap(), q2.unwrap());
+        if v1.is_none() && v2.is_none() {
+            let v = TopoBuilder::new().make_vertex(qa, preci);
+            v1 = Some(v.clone());
+            v2 = Some(v);
+        } else if v1.is_none() {
+            v1 = v2.clone();
+        } else if v2.is_none() {
+            v2 = v1.clone();
+        } else {
+            let (va, vb) = (v1.clone().unwrap(), v2.clone().unwrap());
+            if !crate::topo_tools::is_same(&va.0, &vb.0) {
+                return None;
+            }
+            let pv = crate::brep_tool::BRepTool::vertex_point_world(&va);
+            if qa.distance(&pv)
+                > preci.max(crate::brep_tool::BRepTool::vertex_tolerance(&va))
+            {
+                return None;
+            }
+            // `cxx:722-725`: a mid-parameter point on `P1` means the edge is
+            // degenerated, not a full turn.
+            if let Some(pm) = q1.map(|_| c.d0((p1 + p2) / 2.0)) {
+                if qa.distance(&pm) < preci {
+                    degenerated = true;
+                }
+            }
+        }
     } else {
-        // `cxx:734-775`: the not-closed arm, null-vertex branches only.
-        (
-            q1.map(|p| b.make_vertex(p, preci)),
-            q2.map(|p| b.make_vertex(p, preci)),
-        )
-    };
-    Some(EdgeBuild { first: p1, last: p2, v1, v2, closed, reverse: false })
+        // `cxx:732-775`: not closed.
+        if p1_inf {
+            if v1.is_some() {
+                return None;
+            }
+        } else if v1.is_none() {
+            v1 = q1.map(|p| TopoBuilder::new().make_vertex(p, preci));
+        } else {
+            let va = v1.clone().unwrap();
+            let pv = crate::brep_tool::BRepTool::vertex_point_world(&va);
+            if q1.map_or(false, |p| {
+                p.distance(&pv) > preci.max(crate::brep_tool::BRepTool::vertex_tolerance(&va))
+            }) {
+                return None;
+            }
+        }
+        if p2_inf {
+            if v2.is_some() {
+                return None;
+            }
+        } else if v2.is_none() {
+            v2 = q2.map(|p| TopoBuilder::new().make_vertex(p, preci));
+        } else {
+            let vb = v2.clone().unwrap();
+            let pv = crate::brep_tool::BRepTool::vertex_point_world(&vb);
+            if q2.map_or(false, |p| {
+                p.distance(&pv) > preci.max(crate::brep_tool::BRepTool::vertex_tolerance(&vb))
+            }) {
+                return None;
+            }
+        }
+    }
+
+    // `cxx:777-778`: `V1` FORWARD, `V2` REVERSED. The orientation is applied
+    // by `add_endpoint_vertices`, which is where OCCT's `B.Add` reads it.
+    Some(EdgeBuild { first: p1, last: p2, v1, v2, closed, reverse: false, degenerated })
+}
+
+/// `BRepLib_MakeEdge::Init(C, V1=null, V2=null, p1, p2)` (`cxx:606-796`).
+/// `None` is the `!IsDone()` of `ParameterOutOfRange` (`cxx:655-658`) and
+/// `LineThroughIdenticPoints` (`cxx:660-663`).
+pub fn init_3d(curve: &Arc<dyn Curve>, first: f64, last: f64) -> Option<EdgeBuild> {
+    init_3d_vertices(curve, None, None, first, last)
 }
 
 /// `BRepLib_MakeEdge::Init(C2d, S, V1=null, V2=null, p1, p2)` (`cxx:905-1094`).
@@ -196,7 +371,7 @@ pub fn init_2d(
             q2.map(|p| b.make_vertex(p, preci)),
         )
     };
-    Some(EdgeBuild { first: p1, last: p2, v1, v2, closed, reverse })
+    Some(EdgeBuild { first: p1, last: p2, v1, v2, closed, reverse, degenerated: false })
 }
 
 /// Attach the endpoint vertices to `edge` the way `cxx:783-791` / `cxx:1078-1087`
