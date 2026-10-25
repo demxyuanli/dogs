@@ -16,6 +16,14 @@
 //! corner_spine       ChFiKPart_CornerSpine (`ChFiKPart_ComputeData_CS.cxx`)
 //! fillet_plane_plane ChFiKPart_MakeFillet(Plane, Plane)
 //!                    (`ChFiKPart_ComputeData_FilPlnPln.cxx`)
+//! fillet_plane_cylinder
+//!                    ChFiKPart_MakeFillet(Plane, Cylinder), line spine
+//!                    (`ChFiKPart_ComputeData_FilPlnCyl.cxx:52-276`)
+//! fillet_plane_cylinder_circle
+//!                    ChFiKPart_MakeFillet(Plane, Cylinder), circle spine
+//!                    (`ChFiKPart_ComputeData_FilPlnCyl.cxx:283-599`)
+//! fillet_plane_cone  ChFiKPart_MakeFillet(Plane, Cone)
+//!                    (`ChFiKPart_ComputeData_FilPlnCon.cxx:48-341`)
 //! dispatcher         ChFiKPart_ComputeData::Compute
 //!                    (`ChFiKPart_ComputeData.cxx`)
 //! ```
@@ -30,6 +38,9 @@
 pub mod corner_spine;
 pub mod dispatcher;
 pub mod fcts;
+pub mod fillet_plane_cone;
+pub mod fillet_plane_cylinder;
+pub mod fillet_plane_cylinder_circle;
 pub mod fillet_plane_plane;
 
 pub use corner_spine::ch_fi_kpart_corner_spine;
@@ -38,4 +49,7 @@ pub use fcts::{
     ch_fi_kpart_in_period, ch_fi_kpart_index_curve_in_ds, ch_fi_kpart_index_surface_in_ds,
     ch_fi_kpart_p_curve,
 };
+pub use fillet_plane_cone::ch_fi_kpart_make_fillet_plane_cone;
+pub use fillet_plane_cylinder::ch_fi_kpart_make_fillet_plane_cylinder_line;
+pub use fillet_plane_cylinder_circle::ch_fi_kpart_make_fillet_plane_cylinder_circle;
 pub use fillet_plane_plane::ch_fi_kpart_make_fillet_plane_plane;

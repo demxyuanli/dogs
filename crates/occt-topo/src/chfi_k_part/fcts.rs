@@ -63,9 +63,14 @@ pub fn ch_fi_kpart_p_curve(
 }
 
 /// `ChFiKPart_IndexCurveInDS(C, DStr)` (`cxx:142-145`):
-/// `DStr.AddCurve(TopOpeBRepDS_Curve(C, 0.))`.
-pub fn ch_fi_kpart_index_curve_in_ds(c: Arc<dyn GeomCurve>, ds: &mut DataStructure) -> i32 {
-    let mut curve = Curve::with_curve(Some(c), 0.0, false);
+/// `DStr.AddCurve(TopOpeBRepDS_Curve(C, 0.))`. `C` is a handle, so OCCT also
+/// accepts a null one — `ChFiKPart_ComputeData_FilPlnCyl.cxx:492` /
+/// `_FilPlnCon.cxx:240` pass the still-null `GCircPln` of their sphere arm.
+pub fn ch_fi_kpart_index_curve_in_ds(
+    c: Option<Arc<dyn GeomCurve>>,
+    ds: &mut DataStructure,
+) -> i32 {
+    let mut curve = Curve::with_curve(c, 0.0, false);
     ds.add_curve(&mut curve)
 }
 

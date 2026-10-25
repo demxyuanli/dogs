@@ -13,10 +13,6 @@
 //! UNPORTED arms. Each of them answers `Ok(false)`, which is the value the
 //! caller's `if (!Compute(...)) { }` empty arm handles
 //! (`ChFi3d_Builder_2.cxx:3070-3072`), and names the `.cxx` it comes from:
-//! - `ChFiKPart_ComputeData_FilPlnCyl.cxx:52-276` (Line spine) and `:283-596`
-//!   (Circle spine) — Plane/Cylinder and Cylinder/Plane (`cxx:105-207`);
-//! - `ChFiKPart_ComputeData_FilPlnCon.cxx:48-338` — Plane/Cone and Cone/Plane
-//!   (`cxx:177-207`);
 //! - `ChFiKPart_ComputeData_ChPlnPln.cxx:53-269`,
 //!   `_ChPlnCyl.cxx:64-368` / `:372-592`, `_ChPlnCon.cxx:49-406`,
 //!   `_ChAsymPlnPln.cxx:53-263`, `_ChAsymPlnCyl.cxx:65-373` / `:376-653`,
@@ -30,11 +26,15 @@
 //! the port answers `Err` there rather than `false`.
 
 use crate::abs::Orientation;
-use crate::chfi_ds::{SpineClass, SpineHandle, SurfData};
+use crate::chfi_ds::{Spine, SpineClass, SpineHandle, SurfData};
+use crate::geom_abs_curve_type::GeomAbsCurveType;
 use crate::geom_bnd_lib_surface3d::GeomAbsSurfaceType;
 use crate::topopebrep::ds::DataStructure;
 use crate::topopebrep::tool::adaptor::SurfaceAdaptor;
 
+use super::fillet_plane_cone::ch_fi_kpart_make_fillet_plane_cone;
+use super::fillet_plane_cylinder::ch_fi_kpart_make_fillet_plane_cylinder_line;
+use super::fillet_plane_cylinder_circle::ch_fi_kpart_make_fillet_plane_cylinder_circle;
 use super::fillet_plane_plane::ch_fi_kpart_make_fillet_plane_plane;
 
 /// `ChFiKPart_ComputeData::Compute(DStr, Data, S1, S2, Or1, Or2, Sp, Iedge)`
@@ -60,11 +60,11 @@ pub fn ch_fi_kpart_compute_data(
     // .GetType(); }` (`cxx:69-76`). The down-casts to `ChFiDS_FilSpine` /
     // `ChFiDS_ChamfSpine` are the two `SpineClass` kinds. `CurrentElementarySpine`
     // also caches the edge it is asked about (`ChFiDS_Spine.cxx:866-874`), so
-    // the call happens whichever arm follows; only the UNPORTED
-    // cylinder / cone arms read the type back (`cxx:105-175`, `:177-206`).
+    // the call happens whichever arm follows; the cylinder arms read the type
+    // back (`cxx:109`, `:144`, `:160`).
     let is_fil = sp.class() == SpineClass::Fil;
     let is_chamf = sp.class() == SpineClass::Chamf;
-    let _ctyp = sp
+    let ctyp = sp
         .current_elementary_spine(iedge)
         .ok_or_else(|| "ChFiKPart_ComputeData::Compute: CurrentElementarySpine".to_string())?
         .get_type();
@@ -80,9 +80,9 @@ pub fn ch_fi_kpart_compute_data(
         Some(f) => f.0.orientation(),
         None => Orientation::Forward,
     };
-    // Read by the UNPORTED chamfer and corner makers (`cxx:295`, `:433`,
-    // `:571`, `:626`, `:721`).
-    let _or_face2 = match s2.face() {
+    // `OrFace2` (`cxx:79-89`): the Cylinder/Plane and Cone/Plane arms pass it
+    // as `Ofpl` (`cxx:157`, `:205`).
+    let or_face2 = match s2.face() {
         Some(f) => f.0.orientation(),
         None => Orientation::Forward,
     };
@@ -112,14 +112,118 @@ pub fn ch_fi_kpart_compute_data(
                     ds, data, &pl1, &pl2, or1, or2, radius, &line, wref, or_face1,
                 )
             }
-            // UNPORTED `ChFiKPart_ComputeData_FilPlnCyl.cxx:52-276` (Line
-            // spine) / `:283-596` (Circle spine) (`cxx:107-176`).
-            (GeomAbsSurfaceType::Plane, GeomAbsSurfaceType::Cylinder)
-            | (GeomAbsSurfaceType::Cylinder, GeomAbsSurfaceType::Plane) => Ok(false),
-            // UNPORTED `ChFiKPart_ComputeData_FilPlnCon.cxx:48-338`
-            // (`cxx:177-207`).
-            (GeomAbsSurfaceType::Plane, GeomAbsSurfaceType::Cone)
-            | (GeomAbsSurfaceType::Cone, GeomAbsSurfaceType::Plane) => Ok(false),
+            // `else if (typ1 == GeomAbs_Plane && typ2 == GeomAbs_Cylinder)`
+            // (`cxx:107-141`): `MakeFillet(Plane, Cylinder, S2's U bounds,
+            // Or1, Or2, Radius, Spine->Line() / Circle(), Wref, OrFace1,
+            // true)`.
+            (GeomAbsSurfaceType::Plane, GeomAbsSurfaceType::Cylinder) => {
+                let pl = s1
+                    .plane()
+                    .ok_or_else(|| "ChFiKPart_ComputeData: S1->Plane()".to_string())?;
+                let cy = s2
+                    .cylinder()
+                    .ok_or_else(|| "ChFiKPart_ComputeData: S2->Cylinder()".to_string())?;
+                make_fillet_plane_cylinder(
+                    ds,
+                    data,
+                    &pl,
+                    &cy,
+                    s2.first_u_parameter(),
+                    s2.last_u_parameter(),
+                    or1,
+                    or2,
+                    radius,
+                    ctyp,
+                    &mut sp,
+                    wref,
+                    or_face1,
+                    true,
+                )
+            }
+            // `else if (typ1 == GeomAbs_Cylinder && typ2 == GeomAbs_Plane)`
+            // (`cxx:142-175`): the plane is passed first, `Or2`/`Or1` swapped
+            // and `OrFace2` used as `Ofpl`, `plandab = false`.
+            (GeomAbsSurfaceType::Cylinder, GeomAbsSurfaceType::Plane) => {
+                let pl = s2
+                    .plane()
+                    .ok_or_else(|| "ChFiKPart_ComputeData: S2->Plane()".to_string())?;
+                let cy = s1
+                    .cylinder()
+                    .ok_or_else(|| "ChFiKPart_ComputeData: S1->Cylinder()".to_string())?;
+                make_fillet_plane_cylinder(
+                    ds,
+                    data,
+                    &pl,
+                    &cy,
+                    s1.first_u_parameter(),
+                    s1.last_u_parameter(),
+                    or2,
+                    or1,
+                    radius,
+                    ctyp,
+                    &mut sp,
+                    wref,
+                    or_face2,
+                    false,
+                )
+            }
+            // `else if (typ1 == GeomAbs_Plane && typ2 == GeomAbs_Cone)`
+            // (`cxx:177-192`), a single arm — the cone makers take the
+            // guideline as `Spine->Circle()` without consulting `ctyp`.
+            (GeomAbsSurfaceType::Plane, GeomAbsSurfaceType::Cone) => {
+                let pl = s1
+                    .plane()
+                    .ok_or_else(|| "ChFiKPart_ComputeData: S1->Plane()".to_string())?;
+                let co = s2
+                    .cone()
+                    .ok_or_else(|| "ChFiKPart_ComputeData: S2->Cone()".to_string())?;
+                let circle = sp
+                    .circle()
+                    .ok_or_else(|| "ChFiKPart_ComputeData: Spine->Circle()".to_string())?;
+                ch_fi_kpart_make_fillet_plane_cone(
+                    ds,
+                    data,
+                    &pl,
+                    &co,
+                    s2.first_u_parameter(),
+                    s2.last_u_parameter(),
+                    or1,
+                    or2,
+                    radius,
+                    &circle,
+                    wref,
+                    or_face1,
+                    true,
+                )
+            }
+            // `else if (typ1 == GeomAbs_Cone && typ2 == GeomAbs_Plane)`
+            // (`cxx:193-208`).
+            (GeomAbsSurfaceType::Cone, GeomAbsSurfaceType::Plane) => {
+                let pl = s2
+                    .plane()
+                    .ok_or_else(|| "ChFiKPart_ComputeData: S2->Plane()".to_string())?;
+                let co = s1
+                    .cone()
+                    .ok_or_else(|| "ChFiKPart_ComputeData: S1->Cone()".to_string())?;
+                let circle = sp
+                    .circle()
+                    .ok_or_else(|| "ChFiKPart_ComputeData: Spine->Circle()".to_string())?;
+                ch_fi_kpart_make_fillet_plane_cone(
+                    ds,
+                    data,
+                    &pl,
+                    &co,
+                    s1.first_u_parameter(),
+                    s1.last_u_parameter(),
+                    or2,
+                    or1,
+                    radius,
+                    &circle,
+                    wref,
+                    or_face2,
+                    false,
+                )
+            }
             // `else { throw Standard_NotImplemented("particular case not
             // written"); }` (`cxx:210-212`).
             _ => Err("ChFiKPart_ComputeData::Compute: particular case not written".into()),
@@ -140,5 +244,42 @@ pub fn ch_fi_kpart_compute_data(
     } else {
         // `return surfok;` with `surfok = false` (`cxx:64`, `:636`).
         Ok(false)
+    }
+}
+
+/// The `if (ctyp == GeomAbs_Line) { ... Spine->Line() ... } else { ...
+/// Spine->Circle() ... }` pair shared by the Plane/Cylinder (`cxx:109-140`)
+/// and Cylinder/Plane (`cxx:144-174`) arms.
+#[allow(clippy::too_many_arguments)]
+fn make_fillet_plane_cylinder(
+    ds: &mut DataStructure,
+    data: &mut SurfData,
+    pln: &occt_core::gp::GpPln,
+    cyl: &occt_core::gp::GpCylinder,
+    fu: f64,
+    lu: f64,
+    or1: Orientation,
+    or2: Orientation,
+    radius: f64,
+    ctyp: GeomAbsCurveType,
+    sp: &mut Spine,
+    wref: f64,
+    ofpl: Orientation,
+    plandab: bool,
+) -> Result<bool, String> {
+    if ctyp == GeomAbsCurveType::Line {
+        let line = sp
+            .line()
+            .ok_or_else(|| "ChFiKPart_ComputeData: Spine->Line()".to_string())?;
+        ch_fi_kpart_make_fillet_plane_cylinder_line(
+            ds, data, pln, cyl, fu, lu, or1, or2, radius, &line, wref, ofpl, plandab,
+        )
+    } else {
+        let circle = sp
+            .circle()
+            .ok_or_else(|| "ChFiKPart_ComputeData: Spine->Circle()".to_string())?;
+        ch_fi_kpart_make_fillet_plane_cylinder_circle(
+            ds, data, pln, cyl, fu, lu, or1, or2, radius, &circle, wref, ofpl, plandab,
+        )
     }
 }

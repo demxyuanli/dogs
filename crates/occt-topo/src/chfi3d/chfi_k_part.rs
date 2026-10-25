@@ -18,9 +18,10 @@
 //! `Compute`'s answer is only ever read by that `else if`: a `true` from here
 //! sends the `SurfData` into [`crate::chfi3d::builder::split_k_part`], which is
 //! UNPORTED (`ChFi3d_Builder_SpKP.cxx:749-1160`) and answers `Err`. Wiring the
-//! ported `Compute` now would therefore turn every plane/plane fillet edge from
-//! the empty arm into a failure, which is not what OCCT does. `Ok(false)` is
-//! the empty arm, and the corner is simply not built yet.
+//! ported `Compute` now would therefore turn every plane/plane, plane/cylinder
+//! and plane/cone fillet edge from the empty arm into a failure, which is not
+//! what OCCT does. `Ok(false)` is the empty arm, and the corner is simply not
+//! built yet.
 
 use crate::chfi_ds::{SpineHandle, SurfData};
 use crate::topopebrep::ds::DataStructure;

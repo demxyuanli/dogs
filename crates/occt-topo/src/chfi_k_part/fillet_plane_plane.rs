@@ -167,7 +167,7 @@ pub fn ch_fi_kpart_make_fillet_plane_plane(
     } else {
         Orientation::Forward
     };
-    let ic = ch_fi_kpart_index_curve_in_ds(glin_pln1, ds);
+    let ic = ch_fi_kpart_index_curve_in_ds(Some(glin_pln1), ds);
     data.interference_on_s1_mut()
         .set_interference(ic, trans, Some(glin2d_pln1), Some(glin2d_cyl1));
 
@@ -202,7 +202,7 @@ pub fn ch_fi_kpart_make_fillet_plane_plane(
     } else {
         Orientation::Reversed
     };
-    let ic = ch_fi_kpart_index_curve_in_ds(glin_pln2, ds);
+    let ic = ch_fi_kpart_index_curve_in_ds(Some(glin_pln2), ds);
     data.interference_on_s2_mut()
         .set_interference(ic, trans, Some(glin2d_pln2), Some(glin2d_cyl2));
 
