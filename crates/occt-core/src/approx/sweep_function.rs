@@ -11,6 +11,11 @@
 //! - `Standard_NotImplemented` from the base `D1` / `D2` / `Resolution` /
 //!   `BarycentreOfSurf` / `MaximalSection` / `GetMinimalWeight`
 //!   (`cxx:24-87`) becomes `Err`.
+//! - No `Send` / `Sync` bound: OCCT's `Approx_SweepFunction` is plain
+//!   inheritance, and `BRepBlend_AppFuncRoot` (`BRepBlend_AppFuncRoot.cxx:26-46`)
+//!   aliases the caller's `Blend_AppFunction&` through an untyped pointer,
+//!   which is a single-threaded `Rc<RefCell<..>>` in the port. Nothing in the
+//!   crate moves an `Approx_SweepFunction` across a thread boundary.
 
 use crate::gp::{GpPnt, GpPnt2d, GpVec, GpVec2d};
 
@@ -40,7 +45,7 @@ pub struct SweepD2 {
 }
 
 /// `Approx_SweepFunction` (`Approx_SweepFunction.hxx:34-156`).
-pub trait ApproxSweepFunction: Send + Sync {
+pub trait ApproxSweepFunction {
     /// `Approx_SweepFunction::D0` (`hxx:40-46`, pure virtual).
     fn d0(
         &self,

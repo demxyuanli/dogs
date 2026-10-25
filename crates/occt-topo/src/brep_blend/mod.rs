@@ -54,14 +54,28 @@
 //!   restriction pair.
 //! - [`rst_rst_evol_rad`]: `BRepBlend_RstRstEvolRad`
 //!   (`hxx:41-268`, `.cxx:117-1092`), its evolutive-radius form.
+//! - [`app_func`]: `BRepBlend_AppFuncRoot` (`hxx:41-185`, `.cxx:26-430`) and
+//!   the three `Point` / `Vec` subclasses `BRepBlend_AppFunc`
+//!   (`AppFunc.cxx:24-44`), `BRepBlend_AppFuncRst` (`AppFuncRst.cxx:24-44`)
+//!   and `BRepBlend_AppFuncRstRst` (`AppFuncRstRst.cxx:24-44`).
+//! - [`app_surface`]: `BRepBlend_AppSurface` (`hxx:33-122`, `.lxx:28-94`,
+//!   `.cxx:26-137`), the `AppBlend_Approx` over `Approx_SweepApproximation`
+//!   that `ChFi3d_Builder::CompleteData` stores a blending surface from
+//!   (`ChFi3d_Builder_6.cxx:528-551`).
+//! - [`app_surf`]: `BRepBlend_AppSurf` (`hxx:44-193`,
+//!   `BRepBlend_AppSurf_0.cxx:17-30`), `AppBlend_AppSurf` instantiated with
+//!   `(BRepBlend_Line, Blend_AppFunction)`; the shared driver is
+//!   `occt_geom::geom_fill::AppSurf` and the pairing is selected through
+//!   [`app_surf::perform`]. OCCT 8.0.0 has no caller of this instantiation.
 //!
 //! UNPORTED, with their OCCT location:
-//! - the approximation half, which needs the `AppBlend`/`AppSurf` driver that is
-//!   still open in `occt_geom::app_def`: `BRepBlend_AppFunc`,
-//!   `BRepBlend_AppFuncRoot`, `BRepBlend_AppFuncRst`, `BRepBlend_AppFuncRstRst`,
-//!   `BRepBlend_AppSurf`, `BRepBlend_AppSurface` (`BRepBlend_AppSurf.cxx`,
-//!   `BRepBlend_AppSurface.cxx`).
+//! - `BRepBlend_AppSurface` inherits nothing unported; the shared driver's
+//!   `PerformSmoothing` branch (`AppBlend_AppSurf.gxx:472-541`) still needs
+//!   `AppDef_Variational`.
 
+pub mod app_func;
+pub mod app_surf;
+pub mod app_surface;
 pub mod blend_tool;
 pub mod cs_walking;
 pub mod curve_tool;
@@ -77,6 +91,10 @@ pub mod surf_rst_evol_rad;
 pub mod surf_rst_line_builder;
 pub mod walking;
 
+pub use app_func::{
+    AppFuncContact, AppFuncRoot, RstRstContact, SurfRstContact, SurfSurfContact,
+};
+pub use app_surface::AppSurface;
 pub use blend_tool::BlendTool;
 pub use cs_walking::CsWalking;
 pub use curve_tool::{nb_samples, nb_samples2d};

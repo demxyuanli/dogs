@@ -5,8 +5,8 @@
 //! `cxx:283-408`, `Eval` `cxx:410-435`, `D0` `cxx:437-501`, `D1`
 //! `cxx:503-583`, `D2` `cxx:585-678`, `SurfShape`/`Surface` `cxx:680-717`,
 //! `MaxErrorOnSurf` `cxx:719-753`, `AverageErrorOnSurf` `cxx:755-783`,
-//! `Curves2dShape` `cxx:785-798`, `Curve2d` `cxx:800-820`) and
-//! `Approx_SweepApproximation.lxx`.
+//! `Curves2dShape` `cxx:785-798`, `Curve2d` `cxx:800-820`, `Dump` `cxx:846-872`)
+//! and `Approx_SweepApproximation.lxx`.
 //!
 //! Translation notes:
 //! - `NCollection_Array2` fields are `Vec<Vec<_>>` indexed `[u][v]`, keeping
@@ -783,5 +783,39 @@ impl ApproxSweepApproximation {
     /// `TolCurveOnSurf(Index)` (`hxx:153-155`).
     pub fn tol_curve_on_surf(&self, index: usize) -> f64 {
         self.con_surf_err[index]
+    }
+
+    /// `Dump(Standard_OStream&)` (`cxx:846-872`): the text OCCT writes.
+    ///
+    /// OCCT ends the 2d-error line with `std::cout << '\n'` (`cxx:864`) rather
+    /// than the stream it was handed; the port keeps that newline in the
+    /// returned text. `MaxErrorOnSurf` / `Max2dError` cannot throw here because
+    /// the `done` branch is the one that evaluates them.
+    pub fn dump(&self) -> String {
+        let mut o = String::from("Dump of SweepApproximation\n");
+        if self.done {
+            o.push_str(&format!(
+                "Error 3d = {}\n",
+                self.max_error_on_surf().unwrap_or(0.0)
+            ));
+            if self.num_2d_ss > 0 {
+                o.push_str("Error 2d = ");
+                for ii in 1..=self.num_2d_ss {
+                    o.push_str(&format!("{}", self.max_2d_error((ii - 1) as usize)));
+                    if ii < self.num_2d_ss {
+                        o.push_str(" , \n");
+                    }
+                }
+                o.push('\n');
+            }
+            o.push_str(&format!(
+                "{} Segment(s) of degree {}\n",
+                self.tab_v_knots.len() as i64 - 1,
+                self.vdeg
+            ));
+        } else {
+            o.push_str(" Not Done \n");
+        }
+        o
     }
 }
