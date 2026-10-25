@@ -22,6 +22,7 @@ pub mod primitives;
 pub mod tgeometry;
 pub mod chfi_ds;
 pub mod chfi3d;
+pub mod chfi_k_part;
 pub mod local_analysis;
 
 pub use abs::{ShapeType, Orientation};

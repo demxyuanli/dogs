@@ -17,7 +17,9 @@
 
 use std::sync::Arc;
 
-use occt_core::gp::{GpCirc, GpElips, GpHypr, GpLin, GpParab, GpPnt, GpTrsf, GpVec};
+use occt_core::gp::{
+    GpCirc, GpCone, GpCylinder, GpElips, GpHypr, GpLin, GpParab, GpPln, GpPnt, GpTrsf, GpVec,
+};
 use occt_geom::curve::Curve;
 use occt_geom::surface::Surface;
 
@@ -227,6 +229,28 @@ impl SurfaceAdaptor {
     /// `Adaptor3d_Surface::GetType()`.
     pub fn get_type(&self) -> GeomAbsSurfaceType {
         self.kind
+    }
+
+    /// `Adaptor3d_Surface::Plane()` (`GeomAdaptor_Surface::Plane`,
+    /// `GeomAdaptor_Surface.cxx:172-176`): the `gp_Pln` of a loaded
+    /// `Geom_Plane`. OCCT raises `Standard_NoSuchObject` when the type is not
+    /// `GeomAbs_Plane`; the port answers `None`.
+    pub fn plane(&self) -> Option<GpPln> {
+        self.surface.as_ref().and_then(|s| s.gp_pln())
+    }
+
+    /// `Adaptor3d_Surface::Cylinder()` (`GeomAdaptor_Surface.cxx`): the
+    /// `gp_Cylinder` of a loaded `Geom_CylindricalSurface`; `None` otherwise,
+    /// where OCCT raises `Standard_NoSuchObject`.
+    pub fn cylinder(&self) -> Option<GpCylinder> {
+        self.surface.as_ref().and_then(|s| s.gp_cylinder())
+    }
+
+    /// `Adaptor3d_Surface::Cone()` (`GeomAdaptor_Surface.cxx`): the `gp_Cone`
+    /// of a loaded `Geom_ConicalSurface`; `None` otherwise, where OCCT raises
+    /// `Standard_NoSuchObject`.
+    pub fn cone(&self) -> Option<GpCone> {
+        self.surface.as_ref().and_then(|s| s.gp_cone())
     }
 
     /// `Adaptor3d_Surface::D1(U, V, P, D1U, D1V)`.

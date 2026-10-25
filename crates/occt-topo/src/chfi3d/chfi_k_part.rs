@@ -1,28 +1,34 @@
-//! `ChFiKPart_ComputeData` — **UNPORTED**.
+//! The `PerformSetOfKPart` call-out to `ChFiKPart_ComputeData::Compute`.
 //!
-//! Source: `ModelingAlgorithms/TKFillet/ChFiKPart/ChFiKPart_ComputeData.cxx`
-//! (OCCT 8.0.0), the package of the analytic corner surfaces (`ChFiKPart` is
-//! 4,938 `.cxx` lines over 5 classes and belongs to the `ChFiKPart` cell of the
-//! S3 wave, not to `ChFi3d`).
+//! Source: `ModelingAlgorithms/TKFillet/ChFi3d/ChFi3d_Builder_2.cxx:3070-3080`
+//! (OCCT 8.0.0).
 //!
-//! `PerformSetOfKPart` calls
-//! `ChFiKPart_ComputeData::Compute(DStr, SD, HS1, HS2, Or1, Or2, Spine, iedge)`
-//! once per edge that [`crate::chfi3d::builder_0_helpers::ch_fi3d_k_particular`]
-//! accepted (`ChFi3d_Builder_2.cxx:3071-3073`).
+//! [`crate::chfi_k_part::ch_fi_kpart_compute_data`] is the port of `Compute`
+//! itself. This wrapper is the *wire* the builder uses, and deliberately keeps
+//! answering `Ok(false)` until `SplitKPart` is ported:
 //!
-//! Until that package is ported this function answers `Ok(false)`, which is
-//! exactly the value OCCT's own `if (!Compute(...)) { }` arm handles: no
-//! `SurfData` is filled, so `SplitKPart` is not called and no `ElSpine` is
-//! appended. The placeholder is therefore inert rather than wrong — the KPart
-//! branch of `PerformSetOfKPart` produces nothing, and the general path of
-//! `PerformSetOfKGen` is the only one with data.
+//! ```text
+//! if (!ChFiKPart_ComputeData::Compute(DStr, SD, HS1, HS2, Or1, Or2, Spine, iedge)) { }
+//! else if (!SplitKPart(SD, LSD, Spine, iedge, HS1, It1, HS2, It2, intf, intl)) {
+//!   LSD.Clear();
+//! }
+//! else { iedgelastkpart = iedge; }
+//! ```
+//!
+//! `Compute`'s answer is only ever read by that `else if`: a `true` from here
+//! sends the `SurfData` into [`crate::chfi3d::builder::split_k_part`], which is
+//! UNPORTED (`ChFi3d_Builder_SpKP.cxx:749-1160`) and answers `Err`. Wiring the
+//! ported `Compute` now would therefore turn every plane/plane fillet edge from
+//! the empty arm into a failure, which is not what OCCT does. `Ok(false)` is
+//! the empty arm, and the corner is simply not built yet.
 
 use crate::chfi_ds::{SpineHandle, SurfData};
 use crate::topopebrep::ds::DataStructure;
 use crate::topopebrep::tool::adaptor::SurfaceAdaptor;
 
 /// `ChFiKPart_ComputeData::Compute(DStr, SD, HS1, HS2, Or1, Or2, Spine, IEdge)`
-/// (`ChFiKPart_ComputeData.cxx`) — **UNPORTED**, answers `Ok(false)`.
+/// (`ChFiKPart_ComputeData.cxx:52-637`) — the builder-side wire, see the module
+/// comment for why it is still cut.
 #[allow(clippy::too_many_arguments)]
 pub fn ch_fi_kpart_compute_data(
     _ds: &mut DataStructure,

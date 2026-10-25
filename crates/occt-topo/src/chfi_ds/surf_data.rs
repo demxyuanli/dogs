@@ -206,6 +206,19 @@ impl SurfData {
         &self.intf2
     }
 
+    /// `ChangeInterferenceOnS1()` (`lxx:164-167`) read as the reference OCCT
+    /// returns, so that `Data->ChangeInterferenceOnS1().SetInterference(...)`
+    /// (`ChFiKPart_ComputeData_FilPlnPln.cxx:140-143`) writes in place.
+    pub fn interference_on_s1_mut(&mut self) -> &mut FaceInterference {
+        &mut self.intf1
+    }
+
+    /// `ChangeInterferenceOnS2()` (`lxx:170-173`), the `intf2` mirror of
+    /// [`Self::interference_on_s1_mut`].
+    pub fn interference_on_s2_mut(&mut self) -> &mut FaceInterference {
+        &mut self.intf2
+    }
+
     /// `VertexFirstOnS1()` (`lxx:108-111`).
     pub fn vertex_first_on_s1(&self) -> &CommonPoint {
         &self.pfirst_on_s1
