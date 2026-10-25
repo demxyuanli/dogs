@@ -339,6 +339,30 @@ impl Stripe {
         self.index_last_p_on_s2 = index;
     }
 
+    /// `SetCurve(Index, First)` (`cxx:87-99`).
+    pub fn set_curve(&mut self, index: i32, first: bool) {
+        if first {
+            self.index_of_curve1 = index;
+        } else {
+            self.index_of_curve2 = index;
+        }
+    }
+
+    /// `SetIndexPoint(Index, First, OnS)` (`cxx:232-259`).
+    pub fn set_index_point(&mut self, index: i32, first: bool, on_s: i32) {
+        if first {
+            if on_s == 1 {
+                self.index_first_p_on_s1 = index;
+            } else {
+                self.index_first_p_on_s2 = index;
+            }
+        } else if on_s == 1 {
+            self.index_last_p_on_s1 = index;
+        } else {
+            self.index_last_p_on_s2 = index;
+        }
+    }
+
     /// `Parameters(First, Pdeb, Pfin)` (`cxx:57-69`).
     pub fn parameters(&self, first: bool) -> (f64, f64) {
         if first {
@@ -365,15 +389,6 @@ impl Stripe {
             self.index_of_curve1
         } else {
             self.index_of_curve2
-        }
-    }
-
-    /// `SetCurve(Index, First)` (`cxx:101-113`).
-    pub fn set_curve(&mut self, index: i32, first: bool) {
-        if first {
-            self.index_of_curve1 = index;
-        } else {
-            self.index_of_curve2 = index;
         }
     }
 
@@ -445,21 +460,6 @@ impl Stripe {
             self.index_last_p_on_s1
         } else {
             self.index_last_p_on_s2
-        }
-    }
-
-    /// `SetIndexPoint(Index, First, OnS)` (`cxx:230-256`).
-    pub fn set_index_point(&mut self, index: i32, first: bool, on_s: i32) {
-        if first {
-            if on_s == 1 {
-                self.index_first_p_on_s1 = index;
-            } else {
-                self.index_first_p_on_s2 = index;
-            }
-        } else if on_s == 1 {
-            self.index_last_p_on_s1 = index;
-        } else {
-            self.index_last_p_on_s2 = index;
         }
     }
 

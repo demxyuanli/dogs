@@ -68,6 +68,22 @@
 //!   (`ChFi3d_Builder_0.cxx:604-683`), [`tgt_kp`] (`_2.cxx:373-398`) and
 //!   [`crate::chfi3d::builder_0_helpers::ch_fi3d_solid_index`]
 //!   (`ChFi3d_Builder_0.cxx:2300-2321`) under it,
+//! - [`ChFi3dBuilder::perform_set_of_k_gen`] ([`perform_set_of_k_gen`],
+//!   `_2.cxx:3298-3881`), the walk of every `ElSpine` of the spine through
+//!   `PerformSetOfSurfOnElSpine`, then — outside the simultaneous run — the
+//!   twisted-section repair (`:3318-3648`) with `ChFi3d_IntTraces`
+//!   ([`crate::chfi3d::builder_0_helpers::ch_fi3d_int_traces`],
+//!   `ChFi3d_Builder_0.cxx:1234-1447`), the six `ChFi3d_mkbound` overloads
+//!   ([`crate::chfi3d::builder_0_helpers::mkbound_curve`] and its siblings,
+//!   `:1750-1967`) and `ChFi3d_ReparamPcurv`
+//!   ([`crate::chfi3d::builder_0_helpers::ch_fi3d_reparam_pcurv`],
+//!   `:1472-...`) on the `GeomFill_ConstrainedFilling` patch, the point
+//!   tolerance update (`:3650-3754`) and the `myEVIMap` edge / new-face links
+//!   (`:3755-3878`),
+//! - [`ChFi3dBuilder::perform_set_of_surf`] (`_2.cxx:3882-3900`): the solid
+//!   index, `PerformSetOfKPart` when the spine is not split, then the two above
+//!   and `ChFi3d_MakeExtremities` (`:1766-2046`, with `ChFi3d_SingularExtremity`
+//!   `:1635-1743` and `IsFree` `:1744-1765`) in [`make_extremities`],
 //!
 //! UNPORTED — the orchestration above the data layer, whose `BRepBlend` /
 //! `BlendFunc` dependencies (the four walking drivers, the four `*Rad` surface
@@ -89,16 +105,11 @@
 //! - `ChFi3d_PerformElSpine` (`ChFi3d_Builder_0.cxx:4797-5352`) in
 //!   [`crate::chfi3d::builder_0_helpers::ch_fi3d_perform_el_spine`]: it needs
 //!   `ChFi3d_ApproxByC2` and `CurveCleaner`,
-//! - `PerformSetOfKGen` (`_2.cxx:3298-3881`), with `ChFi3d_IntTraces`
-//!   (`ChFi3d_Builder_0.cxx:1234-1471`), the five `ChFi3d_mkbound` overloads
-//!   (`:1750-1861`) and `ChFi3d_ReparamPcurv` (`:1472-...`),
-//! - `PerformSetOfSurf` (`_2.cxx:3882-3900`) — it needs the two above —, with
-//!   `ChFi3d_MakeExtremities` (`_2.cxx:1766-2046`),
-//!   `ChFi3d_SingularExtremity` (`:1635-1743`) and `IsFree` (`:1744-1765`),
-//! - `PerformSetOfSurfOnElSpine` (`ChFi3d_Builder_2.cxx:2207-3003`) — ported,
-//!   but still without a caller; its obstacle arms need the edge-contact
-//!   `PerformSurf` / `SimulSurf` of the subclasses, so they stay on the
-//!   `ChFi3d_Builder_NotImp.cxx` `throw` defaults for now —, `PerformOneCorner`,
+//! - `PerformSetOfSurfOnElSpine` (`ChFi3d_Builder_2.cxx:2207-3003`) — ported and
+//!   now called from `PerformSetOfKGen`, but its obstacle arms need the
+//!   edge-contact `PerformSurf` / `SimulSurf` of the subclasses, so they stay on
+//!   the `ChFi3d_Builder_NotImp.cxx` `throw` defaults for now —,
+//!   `PerformOneCorner`,
 //!   `IntersectMoreCorner`, `PerformMoreSurfdata`, `PerformIntersectionAtEnd`,
 //!   `FindFace` (`ChFi3d_Builder_C1.cxx:4533-4600`), `MoreSurfdata`
 //!   (`ChFi3d_Builder_C1.cxx:4601-...`).
@@ -126,10 +137,13 @@ mod call_perform_surf;
 mod complete_data;
 mod compute_data;
 mod compute_data_face_face;
+mod make_extremities;
 mod perform_element;
 mod perform_extremity;
 mod perform_helpers;
 mod perform_set_of_k_part;
+mod perform_set_of_k_gen;
+mod perform_set_of_surf;
 mod search_face;
 mod simul_data;
 mod simul_data_face_face;
