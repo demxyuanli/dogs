@@ -33,6 +33,7 @@ use std::sync::Arc;
 use occt_math::MathVector;
 
 use crate::brep_top_adaptor_topol_tool::TopolTool;
+use crate::abs::State;
 use crate::chfi_ds::{ElSpine, SpineHandle, SurfData};
 use crate::topopebrep::tool::adaptor::SurfaceAdaptor;
 
@@ -104,5 +105,30 @@ pub trait ChFi3dSurfOps {
         soldep: &MathVector,
         intf: &mut i32,
         intl: &mut i32,
+    ) -> bool;
+
+    /// `PerformFirstSection(S, HGuide, Choix, S1, S2, I1, I2, Par, SolDep, Pos1,
+    /// Pos2)` (`hxx:577-588`) — pure virtual (`= 0`), the initial-section
+    /// construction `ChFi3d_Builder::StartSol` dispatches to.
+    ///
+    /// `par` is the guideline parameter the caller starts from; the subclass
+    /// answers the four `SolDep` coordinates and the two `TopAbs_State`s.
+    /// OCCT declares the method `const`; the port keeps `&mut self` so a caller
+    /// can hold one `&mut dyn ChFi3dSurfOps` for both this and `PerformSurf` /
+    /// `SimulSurf`.
+    #[allow(clippy::too_many_arguments)]
+    fn perform_first_section(
+        &mut self,
+        spine: &SpineHandle,
+        guide: &Arc<ElSpine>,
+        choix: i32,
+        s1: &SurfaceAdaptor,
+        s2: &SurfaceAdaptor,
+        i1: &Rc<RefCell<TopolTool>>,
+        i2: &Rc<RefCell<TopolTool>>,
+        par: f64,
+        sol_dep: &mut MathVector,
+        pos1: &mut State,
+        pos2: &mut State,
     ) -> bool;
 }

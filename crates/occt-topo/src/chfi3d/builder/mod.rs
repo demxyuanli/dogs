@@ -35,7 +35,13 @@
 //!   [`ChFi3dBuilder::stripe_orientations`] (`_2.cxx:826-857`), the two drivers
 //!   that choose the face pair / `Choix` handed to the subclass, with the two
 //!   protected pure virtuals they dispatch to stated as
-//!   [`ChFi3dSurfOps`] (`ChFi3d_Builder.hxx:203-221`, `:445-466`).
+//!   [`ChFi3dSurfOps`] (`ChFi3d_Builder.hxx:203-221`, `:445-466`),
+//! - [`ChFi3dBuilder::start_sol_el_spine`] ([`start_sol`],
+//!   `ChFi3d_Builder_2.cxx:900-1108`), the first-section search along the
+//!   guideline, with its file statics `BonVoisin` (`_2.cxx:213-318`) and
+//!   `Projection` (`_2.cxx:320-370`) in [`builder_2_helpers::start_sol`] and
+//!   `ChFi3d_InterPlaneEdge` (`ChFi3d_Builder_0.cxx:718-767`) in
+//!   [`crate::chfi3d::builder_0_helpers`].
 //!
 //! UNPORTED — the orchestration above the data layer, whose `BRepBlend` /
 //! `BlendFunc` dependencies (the four walking drivers, the four `*Rad` surface
@@ -44,19 +50,18 @@
 //! - `Compute` (`ChFi3d_Builder.cxx:178-680`), `PerformSingularCorner`
 //!   (`:682-757`), `PerformFilletOnVertex` (`:759-922`), `ExtentAnalyse`
 //!   (`:144-176`),
-//! - `PerformFirstSection` (`ChFi3d_Builder.hxx:577-588`), `SimulKPart`
+//! - `PerformFirstSection` (`ChFi3d_Builder.hxx:577-588`) is declared in
+//!   [`ChFi3dSurfOps`] but has no implementor (pure virtual in OCCT, implemented
+//!   by `ChFi3d_FilBuilder` / `ChFi3d_ChBuilder`), together with `SimulKPart`
 //!   (`hxx:201`) and the three edge-contact overloads of `PerformSurf` /
 //!   `SimulSurf` (`hxx:223-302`, `:399-540`), `PerformTwoCornerbyInter`,
-//!   `SplitKPart` — pure virtual in OCCT, they are implemented by
-//!   `ChFi3d_FilBuilder` / `ChFi3d_ChBuilder`,
+//!   `SplitKPart`,
 //! - `PerformSetOfSurfOnElSpine` (`ChFi3d_Builder_2.cxx:2207-...`),
 //!   `PerformOneCorner`,
 //!   `IntersectMoreCorner`, `PerformMoreSurfdata`, `PerformIntersectionAtEnd`,
 //!   `FindFace` (`ChFi3d_Builder_C1.cxx:4533-4600`), `MoreSurfdata`
-//!   (`ChFi3d_Builder_C1.cxx:4601-...`), `StartSol` (`_2.cxx:900-1110`,
-//!   `:1161-`) with its file statics `BonVoisin` (`_2.cxx:213-318`),
-//!   `Projection` (`:320-370`) and `ChFi3d_InterPlaneEdge`
-//!   (`ChFi3d_Builder_0.cxx:718-767`).
+//!   (`ChFi3d_Builder_C1.cxx:4601-...`), the second `StartSol` overload
+//!   (`_2.cxx:1162-`).
 //!
 //! Divergences that are not heuristics (each is also stated at the call site):
 //! - `occ::handle<T>` becomes an owned value (`HDataStructure`, `HBuilder`) or
@@ -87,6 +92,7 @@ mod perform_helpers;
 mod search_face;
 mod simul_data;
 mod simul_data_face_face;
+mod start_sol;
 mod store_data;
 mod surf_ops;
 mod update_line;

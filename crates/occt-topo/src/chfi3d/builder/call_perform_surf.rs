@@ -43,7 +43,7 @@ use super::ChFi3dBuilder;
 
 /// `It->Initialize((const occ::handle<Adaptor3d_Surface>&)HS)` on the adaptor's
 /// own surface and face.
-fn initialize_topol_tool(
+pub(super) fn initialize_topol_tool(
     it: &Rc<RefCell<TopolTool>>,
     hs: &SurfaceAdaptor,
 ) -> Result<(), String> {

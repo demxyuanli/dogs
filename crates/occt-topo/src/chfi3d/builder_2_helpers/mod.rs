@@ -15,5 +15,7 @@
 //! module where the `myVEMap` / `myEFMap` it reads live.
 
 pub mod search_face;
+pub mod start_sol;
 
 pub use search_face::{is_g1, is_input, search_face_on_v};
+pub use start_sol::{bon_voisin, projection};

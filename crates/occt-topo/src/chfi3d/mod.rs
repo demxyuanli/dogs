@@ -14,6 +14,7 @@
 //! | `ChFi3d_Builder` (`ChFi3d_Builder.hxx:77-848`) | [`builder::ChFi3dBuilder`] |
 
 pub mod builder;
+pub mod builder_0_helpers;
 pub mod builder_2_helpers;
 pub mod builder_6_helpers;
 pub mod builder_helpers;
