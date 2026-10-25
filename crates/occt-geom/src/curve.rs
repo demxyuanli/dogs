@@ -100,6 +100,11 @@ pub trait Curve: Send + Sync {
     /// `GeomToStep_MakeBSplineCurveWithKnotsAndRationalBSplineCurve`
     /// (`GeomToStep_MakeBoundedCurve.cxx:52-62`) branches on `IsRational`.
     fn bspline_weights(&self) -> Option<&[f64]> { None }
+    /// `occ::down_cast<Geom_BSplineCurve>(curve)` — the concrete curve when
+    /// this is a `Geom_BSplineCurve`, `None` otherwise (what a failed
+    /// `down_cast` yields). Needed by `ChFiDS_ElSpine::SetOrigin`
+    /// (`ChFiDS_ElSpine.cxx:236-240`), which re-knots the B-spline itself.
+    fn as_bspline_curve(&self) -> Option<&crate::GeomBSplineCurve> { None }
     /// Poles when this is a `Geom_BezierCurve`; `None` otherwise.
     /// Source: `Adaptor3d_Curve::GetType() == GeomAbs_BezierCurve`.
     fn bezier_poles(&self) -> Option<&[GpPnt]> { None }

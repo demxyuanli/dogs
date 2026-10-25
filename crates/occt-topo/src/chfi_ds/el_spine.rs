@@ -13,12 +13,13 @@
 //!   `GeomAdaptor_Curve::Trim` (the overload reuses the same adaptor when the
 //!   range is unchanged), and no ported `TKFillet` code calls
 //!   `ElSpine::Trim`,
-//! - `SetOrigin` (`cxx:230-244`): it `down_cast`s the inner curve to
-//!   `Geom_BSplineCurve`; `Curve` exposes no downcast, only
-//!   `bspline_poles` / `bspline_knots`. The B-spline side already exists as
-//!   `GeomBSplineCurve::set_origin_u` (`occt-geom/src/bspline_curve/periodic.rs:162`),
-//! - `Bezier` / `BSpline` (`cxx:374-384`): same missing downcast; no ported
-//!   `TKFillet` caller.
+//! - `Bezier` / `BSpline` (`cxx:374-384`): they `down_cast` the inner curve and
+//!   build an adaptor of the converted curve; no ported `TKFillet` caller.
+//!   `SetOrigin` (`cxx:230-244`) **is** ported: [`ElSpine::set_origin`] uses
+//!   [`Curve::as_bspline_curve`] (`occt-geom/src/curve.rs`) plus
+//!   `GeomBSplineCurve::set_origin_u`
+//!   (`occt-geom/src/bspline_curve/periodic.rs:162`), the same re-knotting as
+//!   `Geom_BSplineCurve::SetOrigin(U, Tol)` (`Geom_BSplineCurve.cxx:913-970`),
 //!
 //! Divergences that are not heuristics:
 //! - `occ::handle<T>` becomes `Option<Arc<T>>` (null handle) or `Arc<T>`,
@@ -194,6 +195,35 @@ impl ElSpine {
             return None;
         }
         Some(self.period)
+    }
+
+    /// `SetOrigin(O)` (`cxx:230-244`): move the origin of a periodic spine to
+    /// `O`.
+    ///
+    /// OCCT throws `Standard_Failure("Elspine non periodique")` when the flag
+    /// is false, and does nothing when the inner curve does not `down_cast` to
+    /// a `Geom_BSplineCurve` (`cxx:236-241`). The port answers the throw as
+    /// `Err` and keeps the silent non-B-spline case silent.
+    ///
+    /// `Geom_BSplineCurve::SetOrigin(U, Tol)` (`Geom_BSplineCurve.cxx:913-970`)
+    /// re-knots the curve in place, so the stored handle is replaced by the
+    /// re-knotted clone, exactly like `curve.Load(bs)` (`cxx:240`) reloads the
+    /// adaptor.
+    pub fn set_origin(&mut self, o: f64) -> Result<(), String> {
+        if !self.periodic {
+            return Err("Standard_Failure: Elspine non periodique".into());
+        }
+        let Some(curve) = self.curve.as_ref() else {
+            return Ok(());
+        };
+        let Some(bs) = curve.as_bspline_curve() else {
+            return Ok(());
+        };
+        let mut bs = bs.clone();
+        bs.set_origin_u(o, occt_core::precision::PCONFUSION)
+            .map_err(str::to_string)?;
+        self.curve = Some(Arc::new(bs));
+        Ok(())
     }
 
     /// `EvalD0(theAbsC)` (`cxx:174-177`).

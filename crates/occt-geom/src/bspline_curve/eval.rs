@@ -101,6 +101,10 @@ impl GeomBSplineCurve {
 }
 
 impl Curve for GeomBSplineCurve {
+    fn as_bspline_curve(&self) -> Option<&GeomBSplineCurve> {
+        Some(self)
+    }
+
     fn d0(&self, u: f64) -> GpPnt {
         // `Geom_BSplineCurve::EvalD0` (`Geom_BSplineCurve_1.cxx:174-194`) ->
         // `BSplCLib::D0` over `myKnots` + `&myMults` (distinct knots).

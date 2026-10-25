@@ -35,7 +35,7 @@
 //! | `ChFi3d_SameParameter` (`cxx:1602-1640`) | [`same_parameter::same_parameter`], [`same_parameter::same_parameter_range`] |
 //! | `ChFi3d_TrsfTrans` (`cxx:2174-2186`) | [`fil_common_point::trsf_trans`] |
 //! | `ChFi3d_FilCommonPoint` (`cxx:2193-2296`) | [`fil_common_point::fil_common_point`] |
-//! | `CompParam` (`ChFi3d_Builder_6.cxx:209-311`) | [`comp_param::comp_param`] |
+//! | `CompParam` (`ChFi3d_Builder_6.cxx:209-302`) | [`comp_param::comp_param`] |
 //!
 //! UNPORTED in this batch, with their OCCT location:
 //! - `ChFi3d_BoundSrfImpl` / `ChFi3d_BoundFac` / `ChFi3d_BoundSrf`

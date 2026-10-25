@@ -9,9 +9,13 @@
 //! | `ChFi3d_FilletShape` (`ChFi3d_FilletShape.hxx:28-33`) | [`fillet_shape::FilletShape`] |
 //! | `ChFi3d_SearchSing` (`ChFi3d_SearchSing.hxx:22-52`, `.cxx:27-57`) | [`search_sing::SearchSing`] |
 //! | the `ChFi3d_Builder_0.cxx` free functions | [`builder_helpers`] |
+//! | the `ChFi3d_Builder_6.cxx` file statics | [`builder_6_helpers`] |
+//! | the `ChFi3d_Builder_2.cxx` file statics (`IsInput`, `IsG1`, `SearchFaceOnV`) | [`builder_2_helpers`] |
 //! | `ChFi3d_Builder` (`ChFi3d_Builder.hxx:77-848`) | [`builder::ChFi3dBuilder`] |
 
 pub mod builder;
+pub mod builder_2_helpers;
+pub mod builder_6_helpers;
 pub mod builder_helpers;
 pub mod coefficient;
 pub mod connect_type;

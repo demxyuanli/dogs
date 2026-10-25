@@ -14,9 +14,14 @@
 //!   (`ChFi3d_Builder.cxx:950-977`),
 //! - [`StoreData`](store_data::store_data) (`ChFi3d_Builder_6.cxx:629-1005`),
 //!   the four `CompleteData` overloads ([`complete_data`], `_6.cxx:393-624`),
-//!   the two `ComputeData` overloads ([`compute_data`], `_6.cxx:1009-1342`), the
-//!   two `SimulData` overloads ([`simul_data`], `_6.cxx:1346-1669`) and the
-//!   `UpdateLine` helper ([`update_line::update_line`], `_6.cxx:344-387`).
+//!   the four `ComputeData` overloads ([`compute_data`], `_6.cxx:1009-1342`, and
+//!   the face / face one, `_6.cxx:1676-2507`), the four `SimulData` overloads
+//!   ([`simul_data`], `_6.cxx:1346-1669`, and the face / face one,
+//!   `_6.cxx:2511-2703`) and the `UpdateLine` helper
+//!   ([`update_line::update_line`], `_6.cxx:344-387`),
+//! - [`ChFi3dBuilder::search_face`] (`ChFi3d_Builder_2.cxx:1523-1627`), the
+//!   `SearchFace` member the face / face `ComputeData` walks its extremities
+//!   with.
 //!
 //! UNPORTED — the orchestration above the data layer, whose `BRepBlend` /
 //! `BlendFunc` dependencies (the four walking drivers, the four `*Rad` surface
@@ -25,11 +30,6 @@
 //! - `Compute` (`ChFi3d_Builder.cxx:178-680`), `PerformSingularCorner`
 //!   (`:682-757`), `PerformFilletOnVertex` (`:759-922`), `ExtentAnalyse`
 //!   (`:144-176`),
-//! - the face / face `ComputeData` (`ChFi3d_Builder_6.cxx:1674-2508`) and
-//!   `SimulData` (`:2509-2703`) overloads, which take the `ChFiDS_Spine` and
-//!   build their singular points through `CompBlendPoint` (also UNPORTED),
-//! - `CompBlendPoint` (`ChFi3d_Builder_6.cxx:304-339`, the `V` / `E` / `W` ->
-//!   `Blend_Point` corner used by the two overloads above),
 //! - `PerformExtremity` (`ChFi3d_Builder_1.cxx:714-885`), `PerformElement`
 //!   (`:887-1179`),
 //! - the `SimulSurf` overloads, `PerformTwoCornerbyInter`, `SplitKPart`,
@@ -62,7 +62,10 @@ use occt_geom::Surface as GeomSurface;
 
 mod complete_data;
 mod compute_data;
+mod compute_data_face_face;
+mod search_face;
 mod simul_data;
+mod simul_data_face_face;
 mod store_data;
 mod update_line;
 
