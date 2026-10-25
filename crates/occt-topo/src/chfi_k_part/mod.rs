@@ -32,6 +32,26 @@
 //! chamfer_plane_plane_tail
 //!                    the `ChangeSurf`..`return true` range shared by the two
 //!                    (`ChPlnPln.cxx:163-271` = `ChAsymPlnPln.cxx:157-265`)
+//! chamfer_plane_cylinder_circle
+//!                    ChFiKPart_MakeChamfer(Plane, Cylinder), circle spine
+//!                    (`ChFiKPart_ComputeData_ChPlnCyl.cxx:64-363`)
+//! chamfer_plane_cylinder_line
+//!                    ChFiKPart_MakeChamfer(Plane, Cylinder), line spine
+//!                    (`ChFiKPart_ComputeData_ChPlnCyl.cxx:372-592`)
+//! chamfer_cylinder_cone_tail
+//!                    the cone tail shared by the two above
+//!                    (`ChPlnCyl.cxx:145-362` = `ChAsymPlnCyl.cxx:151-367`)
+//! chamfer_cylinder_plane_tail
+//!                    the plane tail shared by the line overloads
+//!                    (`ChPlnCyl.cxx:471-591` = `ChAsymPlnCyl.cxx:536-653`)
+//! chamfer_plane_cone  ChFiKPart_MakeChamfer(Plane, Cone), Sym / TwoDist
+//!                    (`ChFiKPart_ComputeData_ChPlnCon.cxx:49-166`)
+//! chamfer_asym_plane_cylinder_circle / _line
+//!                    ChFiKPart_MakeChAsym(Plane, Cylinder), DistAngle
+//!                    (`ChAsymPlnCyl.cxx:65-369` / `:376-655`)
+//! chamfer_asym_plane_cone
+//!                    ChFiKPart_MakeChAsym(Plane, Cone), DistAngle
+//!                    (`ChFiKPart_ComputeData_ChAsymPlnCon.cxx:57-705`)
 //! dispatcher         ChFiKPart_ComputeData::Compute
 //!                    (`ChFiKPart_ComputeData.cxx`)
 //! ```
@@ -43,7 +63,15 @@
 //! [`crate::chfi3d::builder::split_k_part`]. Answering `false` there keeps the
 //! empty arm OCCT takes when no corner data was produced.
 
+pub mod chamfer_asym_plane_cone;
+pub mod chamfer_asym_plane_cylinder_circle;
+pub mod chamfer_asym_plane_cylinder_line;
 pub mod chamfer_asym_plane_plane;
+pub mod chamfer_cylinder_cone_tail;
+pub mod chamfer_cylinder_plane_tail;
+pub mod chamfer_plane_cone;
+pub mod chamfer_plane_cylinder_circle;
+pub mod chamfer_plane_cylinder_line;
 pub mod chamfer_plane_plane;
 pub mod chamfer_plane_plane_tail;
 pub mod corner_spine;
@@ -54,7 +82,13 @@ pub mod fillet_plane_cylinder;
 pub mod fillet_plane_cylinder_circle;
 pub mod fillet_plane_plane;
 
+pub use chamfer_asym_plane_cone::ch_fi_kpart_make_ch_asym_plane_cone;
 pub use chamfer_asym_plane_plane::ch_fi_kpart_make_ch_asym_plane_plane;
+pub use chamfer_asym_plane_cylinder_circle::ch_fi_kpart_make_ch_asym_plane_cylinder_circle;
+pub use chamfer_asym_plane_cylinder_line::ch_fi_kpart_make_ch_asym_plane_cylinder_line;
+pub use chamfer_plane_cone::ch_fi_kpart_make_chamfer_plane_cone;
+pub use chamfer_plane_cylinder_circle::ch_fi_kpart_make_chamfer_plane_cylinder_circle;
+pub use chamfer_plane_cylinder_line::ch_fi_kpart_make_chamfer_plane_cylinder_line;
 pub use chamfer_plane_plane::ch_fi_kpart_make_chamfer_plane_plane;
 pub use corner_spine::ch_fi_kpart_corner_spine;
 pub use dispatcher::ch_fi_kpart_compute_data;
