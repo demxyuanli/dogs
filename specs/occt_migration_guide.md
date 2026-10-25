@@ -34,33 +34,35 @@
 
 ## 1. 全景：Rust 侧体量、测试与门禁现状
 
-### 1.1 五个 crate 的实测体量（2026-10-24）
+### 1.1 五个 crate 的实测体量（2026-10-25，T-302 收口后）
 
 | crate | `.rs` 文件 | 行数 | lib 单测 | `UNPORTED` 出现 | 分布文件 |
 |---|---:|---:|---:|---:|---:|
-| `occt-core` | 227 | 47,757 | 283 passed / 0 failed | 27 | 20 |
-| `occt-math` | 68 | 16,553 | 210 passed / 0 failed | 4 | 3 |
-| `occt-geom` | 323 | 87,844 | 143 passed / 0 failed | 77 | 38 |
-| `occt-geom2d` | 75 | 20,442 | 72 passed / 0 failed | 10 | 7 |
-| `occt-topo` | 1,130 | 323,455 | 1254 passed / 0 failed | 236 | 164 |
-| **合计** | **1,823** | **496,051** | **1,962** | **354** | **232** |
+| `occt-core` | 227 | 47,823 | 283 passed / 0 failed | 25 | 20 |
+| `occt-math` | 68 | 16,555 | 210 passed / 0 failed | 4 | 3 |
+| `occt-geom` | 326 | 89,005 | 143 passed / 0 failed | 81 | 37 |
+| `occt-geom2d` | 76 | 20,621 | 72 passed / 0 failed | 10 | 7 |
+| `occt-topo` | 1,303 | 363,009 | 1254 passed / 0 failed | 240 | 171 |
+| **合计** | **2,000** | **537,013** | **1,962** | **360** | **238** |
 
 - 全部 `UNPORTED` 标记**均带 OCCT 文件与行号出处**，无「假出处」。
 - OCCT 全树（`.cxx/.hxx/.lxx/.gxx`）：**13,803 文件 / 2,439,487 行**。
-- 本仓 Rust 行数 / OCCT 全树 ≈ **20.3%**；下一轮 7 波次再加 390,414 行 OCCT 对应实现。
-- `UNPORTED` 较 2026-10-22（168 处 / 118 文件）增 185 处 / 113 文件，增量集中在
-  `occt-topo/src/topopebrep/`（303 文件 / 73,399 行）、`approx_int/`（7 文件 / 2,212 行）、
-  `brep_approx/`（10 文件 / 2,168 行）三处新落地的模块——属「先按分支标出来再补」，不是回退。
+- 本仓 Rust 行数 / OCCT 全树 ≈ **22.0%**；下一轮 7 波次再加 390,414 行 OCCT 对应实现。
+- `UNPORTED` 较 2026-10-24 快照（354 处 / 232 文件）增 6 处 / 6 文件，增量全部在
+  `occt-topo/src/chfi3d/`：T-294～T-302 的 `ChFi3d_Builder` 各层按 `.cxx` 分支先标出
+  未接线的惰性挂点（`ChFiKPart_ComputeData::Compute` / `SplitKPart` /
+  `ChFi3d_PerformElSpine` / `SimulKPart` / `Compute` / `ExtentAnalyse` 等），
+  属「先按分支标出来再补」，不是回退。
 
-### 1.2 门禁基线（本轮实跑，2026-10-24）
+### 1.2 门禁基线（本轮实跑，2026-10-25）
 
 | 门禁 | 命令 | 读数 |
 |---|---|---|
 | 编译 | `cargo check --manifest-path crates/<crate>/Cargo.toml --offline --all-targets`（5 个 crate） | **0 errors**（警告为既有基线数） |
-| 单元测试 | `cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --lib` | **1254 passed / 0 failed**（27.9s） |
+| 单元测试 | `cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --lib` | **1254 passed / 0 failed**（20.7s） |
 | 其余四 crate | `cargo test --manifest-path crates/<crate>/Cargo.toml --offline --lib` | core 283 / math 210 / geom 143 / geom2d 72，**全 0 failed** |
 | 门禁套件 | `cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --tests` | **13 个套件、69 passed / 0 failed**（含 lib 共 14 套件 / 1323 passed） |
-| STEP 对拍 | `cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --test step_obj_gates` | **4 passed**（23 个模型对 `data/occ-*.obj`，203.5s） |
+| STEP 对拍 | `cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --test step_obj_gates` | **4 passed**（23 个模型对 `data/occ-*.obj`，125.7s） |
 | 整体导出 | `cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example export_data_obj` | **15 ok / 0 err** |
 
 **13 个门禁套件**（`crates/occt-topo/tests/`，套件名沿用不改）：
