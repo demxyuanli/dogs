@@ -6,24 +6,24 @@
 //! (OCCT 8.0.0).
 //!
 //! Divergences that are not heuristics:
-//! - `occ::handle<Adaptor2d_Curve2d>` becomes `Option<Arc<dyn Curve2d>>`: the
+//! - `occ::handle<Adaptor2d_Curve2d>` becomes `Option<Curve2dAdaptor>`: the
 //!   empty constructor (`cxx:22-25`) leaves the handle null, and `Arc()` hands
 //!   it back without a guard in OCCT, so the port keeps the null case
-//!   observable instead of raising,
+//!   observable instead of raising. The port keeps OCCT's *adaptor* rather
+//!   than the bare curve because `ChFi3d_Builder_6.cxx:2238-2239` downcasts
+//!   the handle to `BRepAdaptor_Curve2d` to read `Edge()`; [`Curve2dAdaptor`]
+//!   is that concrete type here,
 //! - `IntSurf_Transition` becomes [`IntSurfTransition`], the crate's value
 //!   type.
 
-use std::sync::Arc;
-
-use occt_geom2d::curve::Curve2d;
-
+use crate::brep_adaptor_curve2d::Curve2dAdaptor;
 use crate::intsurf_transition::IntSurfTransition;
 
 /// `class BRepBlend_PointOnRst` (`hxx:34-75`).
 #[derive(Clone)]
 pub struct PointOnRst {
     /// `arc` (`hxx:70`)
-    arc: Option<Arc<dyn Curve2d>>,
+    arc: Option<Curve2dAdaptor>,
     /// `traline` (`hxx:71`)
     traline: IntSurfTransition,
     /// `traarc` (`hxx:72`)
@@ -63,7 +63,7 @@ impl PointOnRst {
 
     /// `BRepBlend_PointOnRst(A, Param, TLine, TArc)` (`cxx:27-38`).
     pub fn with_arc(
-        arc: Arc<dyn Curve2d>,
+        arc: Curve2dAdaptor,
         param: f64,
         traline: IntSurfTransition,
         traarc: IntSurfTransition,
@@ -79,7 +79,7 @@ impl PointOnRst {
     /// `SetArc(A, Param, TLine, TArc)` (`cxx:40-47`).
     pub fn set_arc(
         &mut self,
-        arc: Arc<dyn Curve2d>,
+        arc: Curve2dAdaptor,
         param: f64,
         traline: IntSurfTransition,
         traarc: IntSurfTransition,
@@ -91,7 +91,7 @@ impl PointOnRst {
     }
 
     /// `Arc()` (`lxx:18-21`).
-    pub fn arc(&self) -> Option<&Arc<dyn Curve2d>> {
+    pub fn arc(&self) -> Option<&Curve2dAdaptor> {
         self.arc.as_ref()
     }
 

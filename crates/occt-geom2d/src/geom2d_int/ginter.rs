@@ -163,10 +163,26 @@ impl Geom2dIntGInter {
 
     /// `ComputeDomain(C1, TolDomain)` (`gxx:120-177`).
     pub fn compute_domain(&self, c: &dyn Curve2d, tol_domain: f64) -> IntRes2dDomain {
+        Self::domain_over_range(
+            c,
+            curve_tool::geom2d_first_parameter(c),
+            curve_tool::geom2d_last_parameter(c),
+            tol_domain,
+        )
+    }
+
+    /// The same `ComputeDomain(C1, TolDomain)` (`gxx:120-177`) over an explicit
+    /// range: OCCT reads `theC1.FirstParameter()` / `LastParameter()` of the
+    /// `Geom2dAdaptor_Curve` it was handed, and a `BRepAdaptor_Curve2d` narrows
+    /// that range to its edge's p-curve (`BRepAdaptor_Curve2d.cxx:51-62`).
+    pub fn domain_over_range(
+        c: &dyn Curve2d,
+        first: f64,
+        last: f64,
+        tol_domain: f64,
+    ) -> IntRes2dDomain {
         match curve_tool::geom2d_curve_type(c) {
             GeomAbsCurveType2d::Ellipse | GeomAbsCurveType2d::Circle => {
-                let first = curve_tool::geom2d_first_parameter(c);
-                let last = curve_tool::geom2d_last_parameter(c);
                 let p1 = curve_tool::geom2d_value(c, first);
                 let p2 = curve_tool::geom2d_value(c, last);
                 let mut d = IntRes2dDomain::bounded(&p1, first, tol_domain, &p2, last, tol_domain);
@@ -174,8 +190,8 @@ impl Geom2dIntGInter {
                 d
             }
             _ => {
-                let param_inf = curve_tool::geom2d_first_parameter(c);
-                let param_sup = curve_tool::geom2d_last_parameter(c);
+                let param_inf = first;
+                let param_sup = last;
                 let mut d = IntRes2dDomain::new();
                 if param_inf > -INFINITE {
                     if param_sup < INFINITE {

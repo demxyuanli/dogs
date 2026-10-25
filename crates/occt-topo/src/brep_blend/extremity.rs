@@ -15,14 +15,13 @@
 //!   `:60-64`) becomes `Err`,
 //! - `occ::handle<Adaptor3d_HVertex>` becomes `Option<HVertex>`: the null case
 //!   is observable through [`Extremity::vertex`] instead of raising,
-//! - `occ::handle<Adaptor2d_Curve2d>` becomes `Arc<dyn Curve2d>`, and
+//! - `occ::handle<Adaptor2d_Curve2d>` becomes `Curve2dAdaptor` (the OCCT
+//!   `BRepAdaptor_Curve2d` downcast the consumers rely on), and
 //!   `NCollection_Sequence<BRepBlend_PointOnRst>` becomes `Vec<PointOnRst>`.
 
-use std::sync::Arc;
-
 use occt_core::gp::{GpPnt, GpVec};
-use occt_geom2d::curve::Curve2d;
 
+use crate::brep_adaptor_curve2d::Curve2dAdaptor;
 use crate::brep_top_adaptor_hvertex::HVertex;
 use crate::intsurf_transition::IntSurfTransition;
 
@@ -186,15 +185,19 @@ impl Extremity {
     }
 
     /// `AddArc(A, Param, TLine, TArc)` (`cxx:143-150`).
+    ///
+    /// `A` is `handle(Adaptor2d_Curve2d)` in OCCT; the port takes the
+    /// [`Curve2dAdaptor`] itself so the edge behind the arc stays reachable
+    /// (`ChFi3d_Builder_6.cxx:2238-2239` reads it through the downcast).
     pub fn add_arc(
         &mut self,
-        arc: Arc<dyn Curve2d>,
+        arc: &Curve2dAdaptor,
         param: f64,
         tline: IntSurfTransition,
         tarc: IntSurfTransition,
     ) {
         self.seqpt
-            .push(PointOnRst::with_arc(arc, param, tline, tarc));
+            .push(PointOnRst::with_arc(arc.clone(), param, tline, tarc));
     }
 
     /// `Parameters(U, V)` (`lxx:43-46`).

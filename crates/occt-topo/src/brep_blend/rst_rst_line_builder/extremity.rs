@@ -144,8 +144,8 @@ impl RstRstLineBuilder {
         iter.borrow_mut().init();
         if !is_vtx {
             self.transition(on_first, arc, param, &mut tline, &mut tarc);
-            if let Some(curve) = super::super::walking::arc_curve(arc) {
-                extrem.add_arc(curve, param, tline, tarc);
+            if arc.curve().is_some() {
+                extrem.add_arc(arc, param, tline, tarc);
             }
             return;
         }
@@ -172,8 +172,8 @@ impl RstRstLineBuilder {
                         if TopolTool::identical(vtx, &iv) {
                             let prm = BlendTool::parameter(vtx, &other);
                             self.transition(on_first, &other, prm, &mut tline, &mut tarc);
-                            if let Some(curve) = super::super::walking::arc_curve(&other) {
-                                extrem.add_arc(curve, prm, tline, tarc);
+                            if other.curve().is_some() {
+                                extrem.add_arc(&other, prm, tline, tarc);
                             }
                         }
                     }
@@ -181,8 +181,8 @@ impl RstRstLineBuilder {
                 }
             } else {
                 self.transition(on_first, &other, param, &mut tline, &mut tarc);
-                if let Some(curve) = super::super::walking::arc_curve(&other) {
-                    extrem.add_arc(curve, param, tline, tarc);
+                if other.curve().is_some() {
+                    extrem.add_arc(&other, param, tline, tarc);
                 }
             }
             iter.borrow_mut().next();

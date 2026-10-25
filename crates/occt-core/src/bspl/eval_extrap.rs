@@ -211,8 +211,7 @@ pub fn eval_1d_weighted(
 /// `BSplCLib::Eval(Parameter, PeriodicFlag, DerivativeRequest, ExtrapMode,
 /// Degree, FlatKnots, ArrayDimension, Poles, Results)` (`BSplCLib.cxx:3640-3790`)
 /// for `ArrayDimension == 1`. Returns `LocalRequest + 1` values.
-pub fn eval_1d(
-    parameter: f64,
+pub fn eval_1d(    parameter: f64,
     is_periodic: bool,
     derivative_request: i32,
     extrap_mode: [i32; 2],
@@ -261,6 +260,69 @@ pub fn eval_1d(
             inverse /= ii as f64;
         }
         eval_polynomial(plan.delta, new_request, degree, 1, &taylor, &mut results);
+    }
+    Some(results)
+}
+
+/// `BSplCLib::Eval(Parameter, PeriodicFlag, DerivativeRequest, ExtrapMode,
+/// Degree, FlatKnots, ArrayDimension, Poles, Results)` (`BSplCLib.cxx:3640-3790`)
+/// for a general `ArrayDimension`: the pole block of one index is `dimension`
+/// long and the result is derivative-major, `(LocalRequest + 1) * dimension`
+/// values.
+pub fn eval_dim(
+    parameter: f64,
+    is_periodic: bool,
+    derivative_request: i32,
+    extrap_mode: [i32; 2],
+    degree: i32,
+    flat_knots: &[f64],
+    dimension: usize,
+    poles: &[f64],
+) -> Option<Vec<f64>> {
+    let plan = prepare(
+        parameter,
+        is_periodic,
+        derivative_request,
+        extrap_mode,
+        degree,
+        flat_knots,
+    )?;
+    let dim = dimension.max(1);
+    let order = degree + 1;
+    let n_orders = (plan.local_request + 1) as usize;
+    let mut results = vec![0.0; n_orders * dim];
+    let span_sum = |basis_row: &[f64]| -> Vec<f64> {
+        let mut index1 = plan.first_non_zero;
+        let mut value = vec![0.0; dim];
+        for &b in basis_row.iter().take(order as usize) {
+            let base = index1.max(1) as usize - 1;
+            for (k, slot) in value.iter_mut().enumerate() {
+                *slot += poles.get(base * dim + k).copied().unwrap_or(0.0) * b;
+            }
+            index1 = index1 % plan.modulus + 1;
+        }
+        value
+    };
+    if !plan.extrapolating[0] && !plan.extrapolating[1] {
+        for ii in 0..n_orders {
+            let value = span_sum(&plan.basis[ii]);
+            results[ii * dim..(ii + 1) * dim].copy_from_slice(&value);
+        }
+    } else {
+        let mut new_request = derivative_request;
+        if new_request > degree {
+            new_request = degree;
+        }
+        let mut taylor = vec![0.0; n_orders * dim];
+        let mut inverse = 1.0;
+        for ii in 1..=n_orders {
+            let value = span_sum(&plan.basis[ii - 1]);
+            for k in 0..dim {
+                taylor[(ii - 1) * dim + k] = value[k] * inverse;
+            }
+            inverse /= ii as f64;
+        }
+        eval_polynomial(plan.delta, new_request, degree, dim, &taylor, &mut results);
     }
     Some(results)
 }

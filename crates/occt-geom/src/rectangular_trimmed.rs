@@ -619,6 +619,13 @@ impl Surface for GeomRectangularTrimmedSurface {
         self.basis.gp_torus()
     }
 
+    // Same `GeomAdaptor_Surface::load` unwrapping as `gp_pln` above
+    // (`GeomAdaptor_Surface.cxx:423-425`): the adaptor type of a trimmed patch
+    // is the type of its basis surface, which is what
+    // `GeomLib::ExtendKPart` (`GeomLib.cxx:1433-1434`) switches on.
+    fn is_surface_of_linear_extrusion(&self) -> bool {
+        self.basis.is_surface_of_linear_extrusion()
+    }
     fn u_iso_curve(&self, u: f64) -> Option<Arc<dyn Curve>> {
         // `Geom_RectangularTrimmedSurface.cxx:444-458`. `Geom_TrimmedCurve`
         // keeps the basis parameter (`Geom_TrimmedCurve.cxx:212-215`).

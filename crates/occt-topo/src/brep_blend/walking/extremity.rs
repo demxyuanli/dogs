@@ -188,8 +188,8 @@ impl Walking {
         };
 
         self.transition(on_first, &arc, param, &mut tline, &mut tarc);
-        if let Some(curve) = super::arc_curve(&arc) {
-            extrem.add_arc(curve, param, tline, tarc);
+        if arc.curve().is_some() {
+            extrem.add_arc(&arc, param, tline, tarc);
         }
         if is_vtx {
             if let Some(v) = vtx {
@@ -235,8 +235,8 @@ impl Walking {
                     let mut tline = IntSurfTransition::new();
                     let mut tarc = IntSurfTransition::new();
                     self.transition(on_first, &arc, prm, &mut tline, &mut tarc);
-                    if let Some(curve) = super::arc_curve(&arc) {
-                        extrem.add_arc(curve, prm, tline, tarc);
+                    if arc.curve().is_some() {
+                        extrem.add_arc(&arc, prm, tline, tarc);
                     }
                 }
                 iter.next_vertex();

@@ -24,6 +24,42 @@ mod tests;
 pub use self::eval::eval_bspline_surface;
 pub use self::fit::fit_surface_grid;
 
+/// `Rational(Weights, Urational, Vrational)` (`Geom_BSplineSurface.cxx:110-138`):
+/// the `Geom_BSplineSurface` constructor that takes a weight grid only keeps it
+/// when two adjacent weights differ by more than `Epsilon(|w|)`, so a globally
+/// constant weight array — `1` or any other value — yields a non-rational
+/// surface, and so does a grid whose variation stays at the level of the last
+/// bit.
+///
+/// The two OCCT flags are merged because the port stores a single weight grid
+/// (`weights.is_some()` covers `myURational || myVRational`); every consumer of
+/// the distinction (`GeomLib::ExtendSurfByLength`, `GeomLib.cxx:1545-1550`)
+/// reads the two flags in the same disjunction.
+pub fn is_really_rational(weights: &[Vec<f64>]) -> bool {
+    u_rational(weights) || v_rational(weights)
+}
+
+/// `Urational` of `Rational()` (`Geom_BSplineSurface.cxx:127-137`): one weight
+/// differs from its neighbour along the second pole index.
+fn u_rational(weights: &[Vec<f64>]) -> bool {
+    weights.iter().any(|row| {
+        row.windows(2)
+            .any(|pair| (pair[0] - pair[1]).abs() > occt_core::precision::epsilon(pair[0].abs()))
+    })
+}
+
+/// `Vrational` of `Rational()` (`Geom_BSplineSurface.cxx:113-125`): one weight
+/// differs from its neighbour along the first pole index.
+fn v_rational(weights: &[Vec<f64>]) -> bool {
+    let rows = weights.len();
+    (0..rows.saturating_sub(1)).any(|i| {
+        weights[i].iter().zip(weights[i + 1].iter()).any(|(a, b)| {
+            (a - b).abs() > occt_core::precision::epsilon(a.abs())
+        })
+    })
+}
+
+
 /// Cache of `Geom_BSplineSurface::Resolution`'s derivative bound, i.e. OCCT's
 /// `myMaxDerivInvOk` / `myUMaxDerivInv` / `myVMaxDerivInv`
 /// (`Geom_BSplineSurface.hxx:1318-1323`, `Geom_BSplineSurface_1.cxx:2197-2221`).
@@ -382,36 +418,14 @@ impl GeomBSplineSurface {
     /// weight grid, so the predicate is recomputed from it, mirroring that
     /// helper exactly.
     pub fn is_u_rational(&self) -> bool {
-        let Some(weights) = self.weights.as_ref() else {
-            return false;
-        };
-        for row in weights {
-            for j in 0..row.len().saturating_sub(1) {
-                if (row[j] - row[j + 1]).abs() > occt_core::precision::epsilon(row[j].abs()) {
-                    return true;
-                }
-            }
-        }
-        false
+        self.weights.as_ref().is_some_and(|weights| u_rational(weights))
     }
 
     /// `Geom_BSplineSurface::IsVRational()` (`Geom_BSplineSurface.hxx:146`):
     /// `Vrational` in `Geom_BSplineSurface.cxx:113-125`, i.e. a weight differs
     /// from its neighbour along the *first* pole index at one second index.
     pub fn is_v_rational(&self) -> bool {
-        let Some(weights) = self.weights.as_ref() else {
-            return false;
-        };
-        let n_v = self.nb_poles_v();
-        for j in 0..n_v {
-            for i in 0..weights.len().saturating_sub(1) {
-                let a = weights[i][j];
-                if (a - weights[i + 1][j]).abs() > occt_core::precision::epsilon(a.abs()) {
-                    return true;
-                }
-            }
-        }
-        false
+        self.weights.as_ref().is_some_and(|weights| v_rational(weights))
     }
 
     /// Distinct knots and multiplicities from a flat knot vector.

@@ -91,8 +91,8 @@ impl CsWalking {
                 return;
             };
             self.transition(&arc, param, &mut tline, &mut tarc);
-            if let Some(curve) = super::super::walking::arc_curve(&arc) {
-                extrem.add_arc(curve, param, tline, tarc);
+            if arc.curve().is_some() {
+                extrem.add_arc(&arc, param, tline, tarc);
             }
         } else {
             let Some(vertex) = vtx else {
@@ -116,16 +116,16 @@ impl CsWalking {
                         if identical {
                             let prm = BlendTool::parameter(vertex, &arc);
                             self.transition(&arc, prm, &mut tline, &mut tarc);
-                            if let Some(curve) = super::super::walking::arc_curve(&arc) {
-                                extrem.add_arc(curve, prm, tline, tarc);
+                            if arc.curve().is_some() {
+                                extrem.add_arc(&arc, prm, tline, tarc);
                             }
                         }
                         iter.next_vertex();
                     }
                 } else {
                     self.transition(&arc, param, &mut tline, &mut tarc);
-                    if let Some(curve) = super::super::walking::arc_curve(&arc) {
-                        extrem.add_arc(curve, param, tline, tarc);
+                    if arc.curve().is_some() {
+                        extrem.add_arc(&arc, param, tline, tarc);
                     }
                 }
                 nbarc += 1;

@@ -11,21 +11,30 @@
 //! - `FaceTangency` (`_1.cxx:564-623`),
 //! - `UpdateTolesp` (`ChFi3d_Builder_C2.cxx:814-824`),
 //! - `Reset` (`ChFi3d_Builder.cxx:924-948`) and `Generated`
-//!   (`ChFi3d_Builder.cxx:950-977`).
+//!   (`ChFi3d_Builder.cxx:950-977`),
+//! - [`StoreData`](store_data::store_data) (`ChFi3d_Builder_6.cxx:629-1005`),
+//!   the four `CompleteData` overloads ([`complete_data`], `_6.cxx:393-624`),
+//!   the two `ComputeData` overloads ([`compute_data`], `_6.cxx:1009-1342`), the
+//!   two `SimulData` overloads ([`simul_data`], `_6.cxx:1346-1669`) and the
+//!   `UpdateLine` helper ([`update_line::update_line`], `_6.cxx:344-387`).
 //!
-//! UNPORTED — every one of these needs the walking kernels of `BRepBlend_Line`
-//! / `Blend_Function` (`BRepBlend`, `BlendFunc`, wave S3 batches 2 and 3):
+//! UNPORTED — the orchestration above the data layer, whose `BRepBlend` /
+//! `BlendFunc` dependencies (the four walking drivers, the four `*Rad` surface
+//! functions, `AppFuncRoot` / `AppSurface`) are now all ported:
 //!
 //! - `Compute` (`ChFi3d_Builder.cxx:178-680`), `PerformSingularCorner`
 //!   (`:682-757`), `PerformFilletOnVertex` (`:759-922`), `ExtentAnalyse`
 //!   (`:144-176`),
+//! - the face / face `ComputeData` (`ChFi3d_Builder_6.cxx:1674-2508`) and
+//!   `SimulData` (`:2509-2703`) overloads, which take the `ChFiDS_Spine` and
+//!   build their singular points through `CompBlendPoint` (also UNPORTED),
+//! - `CompBlendPoint` (`ChFi3d_Builder_6.cxx:304-339`, the `V` / `E` / `W` ->
+//!   `Blend_Point` corner used by the two overloads above),
 //! - `PerformExtremity` (`ChFi3d_Builder_1.cxx:714-885`), `PerformElement`
 //!   (`:887-1179`),
 //! - the `SimulSurf` overloads, `PerformTwoCornerbyInter`, `SplitKPart`,
 //!   `SimulKPart` (`ChFi3d_Builder.hxx:203-520`) — pure virtual in OCCT, they
 //!   are implemented by `ChFi3d_FilBuilder` / `ChFi3d_ChBuilder`,
-//! - `ComputeData` / `CompleteData` / `SimulData` / `StoreData`
-//!   (`ChFi3d_Builder_6.cxx:395-2703`),
 //! - `PerformSetOfSurfOnElSpine` (`ChFi3d_Builder_2.cxx:2207-...`),
 //!   `ConexFaces` (`ChFi3d_Builder_2.cxx:859-...`), `PerformOneCorner`,
 //!   `IntersectMoreCorner`, `PerformMoreSurfdata`, `PerformIntersectionAtEnd`,
@@ -50,6 +59,15 @@ use std::sync::Arc;
 
 use occt_core::kernel::geomabs::Shape;
 use occt_geom::Surface as GeomSurface;
+
+mod complete_data;
+mod compute_data;
+mod simul_data;
+mod store_data;
+mod update_line;
+
+pub use store_data::store_data;
+pub use update_line::update_line;
 
 use crate::abs::{Orientation, ShapeType};
 use crate::brep_tool::BRepTool;

@@ -31,6 +31,11 @@
 //! | `ChFi3d_Spine` (`cxx:888-903`) | [`spine_geom::spine`] |
 //! | `ChFi3d_Parameters` (`cxx:4671-4703`) | [`surface_params::parameters`] |
 //! | `ChFi3d_IsSmooth` (`cxx:5855-5942`) | [`smooth::is_smooth`] |
+//! | `ChFi3d_CheckSameParameter` (`cxx:1565-1595`) | [`same_parameter::check_same_parameter`] |
+//! | `ChFi3d_SameParameter` (`cxx:1602-1640`) | [`same_parameter::same_parameter`], [`same_parameter::same_parameter_range`] |
+//! | `ChFi3d_TrsfTrans` (`cxx:2174-2186`) | [`fil_common_point::trsf_trans`] |
+//! | `ChFi3d_FilCommonPoint` (`cxx:2193-2296`) | [`fil_common_point::fil_common_point`] |
+//! | `CompParam` (`ChFi3d_Builder_6.cxx:209-311`) | [`comp_param::comp_param`] |
 //!
 //! UNPORTED in this batch, with their OCCT location:
 //! - `ChFi3d_BoundSrfImpl` / `ChFi3d_BoundFac` / `ChFi3d_BoundSrf`
@@ -49,8 +54,11 @@
 //!   which the port has only as global cubic interpolation.
 
 pub mod box2d;
+pub mod comp_param;
 pub mod faces;
+pub mod fil_common_point;
 pub mod period;
+pub mod same_parameter;
 pub mod seam;
 pub mod smooth;
 pub mod spine_geom;
@@ -59,8 +67,11 @@ pub mod topology_stats;
 pub mod vertex_edges;
 
 pub use box2d::{boite, boite_of_four};
+pub use comp_param::comp_param;
 pub use faces::{conex_faces, edge_state, eval_conti};
+pub use fil_common_point::{fil_common_point, trsf_trans};
 pub use period::{in_period, search_pivot};
+pub use same_parameter::{check_same_parameter, same_parameter, same_parameter_range};
 pub use seam::{couture, couture_on_vertex, is_pseudo_seam};
 pub use smooth::is_smooth;
 pub use spine_geom::{circular_spine, spine};
