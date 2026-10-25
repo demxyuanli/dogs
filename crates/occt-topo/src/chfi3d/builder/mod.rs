@@ -59,7 +59,15 @@
 //!   (`:2283-2412`), one turn of the `while (!fini)` loop in `step.rs`
 //!   (`:2416-2988`), the three obstacle arms in
 //!   `perform_set_of_surf/obstacles.rs` and the splice in
-//!   `perform_set_of_surf/splice.rs`.
+//!   `perform_set_of_surf/splice.rs`,
+//! - [`ChFi3dBuilder::perform_set_of_k_part`] ([`perform_set_of_k_part`],
+//!   `_2.cxx:3004-3281`), the first of the two walks `PerformSetOfSurf` runs:
+//!   the particular-corner scan of the spine, its `SurfData` sequence and the
+//!   `ElSpine` list `PerformSetOfKGen` then walks, with
+//!   [`crate::chfi3d::builder_0_helpers::ch_fi3d_k_particular`]
+//!   (`ChFi3d_Builder_0.cxx:604-683`), [`tgt_kp`] (`_2.cxx:373-398`) and
+//!   [`crate::chfi3d::builder_0_helpers::ch_fi3d_solid_index`]
+//!   (`ChFi3d_Builder_0.cxx:2300-2321`) under it,
 //!
 //! UNPORTED — the orchestration above the data layer, whose `BRepBlend` /
 //! `BlendFunc` dependencies (the four walking drivers, the four `*Rad` surface
@@ -71,7 +79,22 @@
 //! - `PerformFirstSection` (`ChFi3d_Builder.hxx:577-588`) is declared in
 //!   [`ChFi3dSurfOps`] but has no implementor (pure virtual in OCCT, implemented
 //!   by `ChFi3d_FilBuilder` / `ChFi3d_ChBuilder`), together with `SimulKPart`
-//!   (`hxx:201`), `PerformTwoCornerbyInter`, `SplitKPart`,
+//!   (`hxx:201`, declared with the `ChFi3d_Builder_NotImp.cxx` answer as its
+//!   default), `PerformTwoCornerbyInter`,
+//! - `SplitKPart` (`ChFi3d_Builder_SpKP.cxx:749-1160`) in [`split_k_part`]: it
+//!   needs `Geom2dHatch_Hatcher` / `Geom2dHatch_Intersector` and the `Tri` /
+//!   `FillSD` / `CpSD` statics of the same file,
+//! - `ChFiKPart_ComputeData::Compute` in [`crate::chfi3d::chfi_k_part`] — the
+//!   `ChFiKPart` package, which is the cell that feeds the whole KPart branch,
+//! - `ChFi3d_PerformElSpine` (`ChFi3d_Builder_0.cxx:4797-5352`) in
+//!   [`crate::chfi3d::builder_0_helpers::ch_fi3d_perform_el_spine`]: it needs
+//!   `ChFi3d_ApproxByC2` and `CurveCleaner`,
+//! - `PerformSetOfKGen` (`_2.cxx:3298-3881`), with `ChFi3d_IntTraces`
+//!   (`ChFi3d_Builder_0.cxx:1234-1471`), the five `ChFi3d_mkbound` overloads
+//!   (`:1750-1861`) and `ChFi3d_ReparamPcurv` (`:1472-...`),
+//! - `PerformSetOfSurf` (`_2.cxx:3882-3900`) — it needs the two above —, with
+//!   `ChFi3d_MakeExtremities` (`_2.cxx:1766-2046`),
+//!   `ChFi3d_SingularExtremity` (`:1635-1743`) and `IsFree` (`:1744-1765`),
 //! - `PerformSetOfSurfOnElSpine` (`ChFi3d_Builder_2.cxx:2207-3003`) — ported,
 //!   but still without a caller; its obstacle arms need the edge-contact
 //!   `PerformSurf` / `SimulSurf` of the subclasses, so they stay on the
@@ -106,7 +129,7 @@ mod compute_data_face_face;
 mod perform_element;
 mod perform_extremity;
 mod perform_helpers;
-mod perform_set_of_surf;
+mod perform_set_of_k_part;
 mod search_face;
 mod simul_data;
 mod simul_data_face_face;
@@ -114,6 +137,7 @@ mod start_sol;
 mod start_sol_obstacle;
 mod store_data;
 mod stripe_surgery;
+mod split_k_part;
 mod surf_ops;
 mod update_line;
 

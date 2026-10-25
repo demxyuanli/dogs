@@ -137,6 +137,23 @@ pub trait ChFi3dSurfOps {
         pos2: &mut State,
     ) -> bool;
 
+    /// `SimulKPart(SD)` (`hxx:201`) — pure virtual (`= 0`) and `const` in OCCT;
+    /// implemented by `ChFi3d_FilBuilder` (`ChFi3d_FilBuilder.cxx:475-...`) and
+    /// `ChFi3d_ChBuilder` (`ChFi3d_ChBuilder.cxx:655-...`), both of which only
+    /// fill `SD`'s simplification data, never geometry.
+    ///
+    /// `PerformSetOfKPart` calls it for every split `SurfData` when it runs in
+    /// simulation mode (`ChFi3d_Builder_2.cxx:3126-3129`). No subclass is ported
+    /// yet, so the default carries the `ChFi3d_Builder_NotImp.cxx` answer and
+    /// `PerformSetOfKPart` reports it as `Err`.
+    ///
+    /// `const` becomes `&mut self` for the same reason as
+    /// [`Self::perform_first_section`]; `const handle<SurfData>&` becomes
+    /// `&mut SurfData` because the two subclass bodies write through the handle.
+    fn simul_k_part(&mut self, _sd: &mut SurfData) -> Result<(), String> {
+        Err("ChFi3d_Builder::SimulKPart : Not Implemented".into())
+    }
+
     // ------------------------------------------------------------------
     // The six edge-contact overloads: virtual with a base body that throws.
     // ------------------------------------------------------------------

@@ -18,6 +18,7 @@ pub mod builder_0_helpers;
 pub mod builder_2_helpers;
 pub mod builder_6_helpers;
 pub mod builder_helpers;
+pub mod chfi_k_part;
 pub mod coefficient;
 pub mod connect_type;
 pub mod fillet_shape;
