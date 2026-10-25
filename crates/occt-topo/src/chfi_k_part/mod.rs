@@ -12,7 +12,8 @@
 //! Module layout:
 //! ```text
 //! fcts               ChFiKPart_InPeriod / _PCurve / _IndexCurveInDS /
-//!                    _IndexSurfaceInDS (`ChFiKPart_ComputeData_Fcts.cxx`)
+//!                    _IndexSurfaceInDS / _ProjPC
+//!                    (`ChFiKPart_ComputeData_Fcts.cxx`)
 //! corner_spine       ChFiKPart_CornerSpine (`ChFiKPart_ComputeData_CS.cxx`)
 //! fillet_plane_plane ChFiKPart_MakeFillet(Plane, Plane)
 //!                    (`ChFiKPart_ComputeData_FilPlnPln.cxx`)
@@ -54,6 +55,12 @@
 //!                    (`ChFiKPart_ComputeData_ChAsymPlnCon.cxx:57-705`)
 //! dispatcher         ChFiKPart_ComputeData::Compute
 //!                    (`ChFiKPart_ComputeData.cxx`)
+//! sphere_corner      ChFiKPart_Sphere
+//!                    (`ChFiKPart_ComputeData_Sphere.cxx:47-206`)
+//! rotule             ChFiKPart_MakeRotule
+//!                    (`ChFiKPart_ComputeData_Rotule.cxx:43-173`)
+//! compute_corner     the three ComputeCorner overloads
+//!                    (`ChFiKPart_ComputeData.cxx:641-762`)
 //! ```
 //!
 //! Not wired into [`crate::chfi3d::builder::perform_set_of_k_part`] yet: the
@@ -74,6 +81,7 @@ pub mod chamfer_plane_cylinder_circle;
 pub mod chamfer_plane_cylinder_line;
 pub mod chamfer_plane_plane;
 pub mod chamfer_plane_plane_tail;
+pub mod compute_corner;
 pub mod corner_spine;
 pub mod dispatcher;
 pub mod fcts;
@@ -81,6 +89,8 @@ pub mod fillet_plane_cone;
 pub mod fillet_plane_cylinder;
 pub mod fillet_plane_cylinder_circle;
 pub mod fillet_plane_plane;
+pub mod rotule;
+pub mod sphere_corner;
 
 pub use chamfer_asym_plane_cone::ch_fi_kpart_make_ch_asym_plane_cone;
 pub use chamfer_asym_plane_plane::ch_fi_kpart_make_ch_asym_plane_plane;
@@ -91,10 +101,14 @@ pub use chamfer_plane_cylinder_circle::ch_fi_kpart_make_chamfer_plane_cylinder_c
 pub use chamfer_plane_cylinder_line::ch_fi_kpart_make_chamfer_plane_cylinder_line;
 pub use chamfer_plane_plane::ch_fi_kpart_make_chamfer_plane_plane;
 pub use corner_spine::ch_fi_kpart_corner_spine;
+pub use compute_corner::{
+    ch_fi_kpart_compute_corner_plane_cylinder, ch_fi_kpart_compute_corner_rotule,
+    ch_fi_kpart_compute_corner_sphere,
+};
 pub use dispatcher::ch_fi_kpart_compute_data;
 pub use fcts::{
     ch_fi_kpart_in_period, ch_fi_kpart_index_curve_in_ds, ch_fi_kpart_index_surface_in_ds,
-    ch_fi_kpart_p_curve,
+    ch_fi_kpart_p_curve, ch_fi_kpart_proj_pc,
 };
 pub use fillet_plane_cone::ch_fi_kpart_make_fillet_plane_cone;
 pub use fillet_plane_cylinder::ch_fi_kpart_make_fillet_plane_cylinder_line;

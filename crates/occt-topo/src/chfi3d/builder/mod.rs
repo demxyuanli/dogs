@@ -117,8 +117,10 @@
 //! - `SplitKPart` (`ChFi3d_Builder_SpKP.cxx:749-1160`) in [`split_k_part`]: it
 //!   needs `Geom2dHatch_Hatcher` / `Geom2dHatch_Intersector` and the `Tri` /
 //!   `FillSD` / `CpSD` statics of the same file,
-//! - `ChFiKPart_ComputeData::Compute` in [`crate::chfi3d::chfi_k_part`] — the
-//!   `ChFiKPart` package, which is the cell that feeds the whole KPart branch,
+//! - `ChFiKPart_ComputeData::ComputeCorner` — the three overloads are ported
+//!   ([`crate::chfi3d::chfi_k_part`]), but their OCCT callers
+//!   `PerformTwoCorner` / `PerformThreeCorner` (`ChFi3d_Builder_C1.cxx`) are
+//!   not,
 //! - `PerformSetOfSurfOnElSpine` (`ChFi3d_Builder_2.cxx:2207-3003`) — ported and
 //!   now called from `PerformSetOfKGen`, but its obstacle arms need the
 //!   edge-contact `PerformSurf` / `SimulSurf` of the subclasses, so they stay on

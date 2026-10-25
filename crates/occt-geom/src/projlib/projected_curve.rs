@@ -27,6 +27,7 @@ use std::sync::Arc;
 use occt_core::gp::{GpPnt, GpPnt2d};
 use occt_core::kernel::geomabs::{CurveType, SurfaceType};
 use occt_core::precision;
+use occt_geom2d::bezier_curve::Geom2dBezierCurve;
 use occt_geom2d::bspline_curve::Geom2dBSplineCurve;
 use occt_geom2d::curve::Curve2d;
 
@@ -320,6 +321,30 @@ impl ProjectedCurve {
     /// `GetType()` (`cxx:1047-1051`): the type of the projector result.
     pub fn get_type(&self) -> CurveType {
         self.result.curve_type
+    }
+
+    /// `Line()` (`cxx:1054-1057`) delegating to `ProjLib_Projector::Line()`
+    /// (`ProjLib_Projector.cxx:88-96`): OCCT raises `Standard_NoSuchObject`
+    /// when the projector type is not `GeomAbs_Line`.
+    pub fn line(&self) -> Result<occt_core::gp::GpLin2d, String> {
+        if self.result.curve_type != CurveType::Line {
+            return Err("Standard_NoSuchObject: ProjLib_Projector::Line".into());
+        }
+        Ok(self.result.lin)
+    }
+
+    /// `Bezier()` (`cxx:1157-1160`) delegating to
+    /// `ProjLib_Projector::Bezier()` (`ProjLib_Projector.cxx:234-237`), which
+    /// returns `myBezier` with no type check — hence `Option`, not `Result`.
+    pub fn bezier(&self) -> Option<Arc<Geom2dBezierCurve>> {
+        self.result.bezier.clone()
+    }
+
+    /// `BSpline()` (`cxx:1164-1167`) delegating to
+    /// `ProjLib_Projector::BSpline()` (`ProjLib_Projector.cxx:245-251`), also
+    /// an unguarded `myBSpline` reader.
+    pub fn bspline(&self) -> Option<Arc<Geom2dBSplineCurve>> {
+        self.result.bspline.clone()
     }
 
     /// `IsDone()` of the `myResult` projector — the port's stand-in for

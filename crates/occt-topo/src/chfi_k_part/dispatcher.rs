@@ -10,12 +10,11 @@
 //! (`ChFiDS_Sym` / `ChFiDS_TwoDist` / the distance-angle kind) and then by the
 //! same surface pair (`cxx:216-637`).
 //!
-//! UNPORTED arms. Each of them answers `Ok(false)`, which is the value the
-//! caller's `if (!Compute(...)) { }` empty arm handles
-//! (`ChFi3d_Builder_2.cxx:3070-3072`), and names the `.cxx` it comes from:
-//! - `ChFiKPart_ComputeData_Sphere.cxx:47-204` / `_Rotule.cxx:43-169` — the
-//!   three `ComputeCorner` overloads (`cxx:641-714`, `:716-732`, `:734-762`),
-//!   which come with the corner batch together with `ChFiKPart_ProjPC`.
+//! The three `ComputeCorner` overloads (`cxx:641-714`, `:716-732`, `:734-762`)
+//! are not part of this dispatch — OCCT calls them from
+//! `PerformTwoCorner` / `PerformThreeCorner` (`ChFi3d_Builder_C1.cxx`), which
+//! are still UNPORTED — so they live in [`super::compute_corner`] as
+//! [`super::ch_fi_kpart_compute_corner_plane_cylinder`] / `_sphere` / `_rotule`.
 //!
 //! Every chamfer pair of `cxx:216-636` is wired: `Plane/Plane` to
 //! [`super::chamfer_plane_plane`] / [`super::chamfer_asym_plane_plane`],

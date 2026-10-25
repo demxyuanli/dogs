@@ -258,6 +258,12 @@ impl SurfaceAdaptor {
         self.surface.as_ref().map(|s| s.d1(u, v))
     }
 
+    /// `Adaptor3d_Surface::Value(U, V, P)` = `D0`, which
+    /// `GeomAdaptor_Surface::D0` forwards to `mySurf->D0`.
+    pub fn d0(&self, u: f64, v: f64) -> Option<GpPnt> {
+        self.surface.as_ref().map(|s| s.d0(u, v))
+    }
+
     /// `Adaptor3d_Surface::D2(U, V, P, D1U, D1V, D2U, D2V, D2UV)`:
     /// `GeomAdaptor_Surface::D2` forwards to `mySurf->D2` for every untrimmed
     /// surface, so this is [`occt_geom::Surface::d2`] on the loaded surface.

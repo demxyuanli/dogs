@@ -239,6 +239,28 @@ impl SurfData {
         &self.plast_on_s2
     }
 
+    /// `ChangeVertexFirstOnS1()` (`lxx:108-111`) read as the reference it
+    /// returns, so that `Data->ChangeVertexFirstOnS1().SetPoint(...)`
+    /// (`ChFiKPart_ComputeData.cxx:701`) writes in place.
+    pub fn vertex_first_on_s1_mut(&mut self) -> &mut CommonPoint {
+        &mut self.pfirst_on_s1
+    }
+
+    /// `ChangeVertexLastOnS1()` (`lxx:115-118`).
+    pub fn vertex_last_on_s1_mut(&mut self) -> &mut CommonPoint {
+        &mut self.plast_on_s1
+    }
+
+    /// `ChangeVertexFirstOnS2()` (`lxx:126-129`).
+    pub fn vertex_first_on_s2_mut(&mut self) -> &mut CommonPoint {
+        &mut self.pfirst_on_s2
+    }
+
+    /// `ChangeVertexLastOnS2()` (`lxx:133-136`).
+    pub fn vertex_last_on_s2_mut(&mut self) -> &mut CommonPoint {
+        &mut self.plast_on_s2
+    }
+
     /// `ChangeIndexOfS1(Index)` (`lxx:138-141`).
     pub fn set_index_of_s1(&mut self, index: i32) {
         self.index_of_s1 = index;

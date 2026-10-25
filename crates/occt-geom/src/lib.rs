@@ -65,6 +65,8 @@ pub mod geom_adaptor_local;
 pub mod geom_bnd_lib;
 pub mod extrema;
 pub mod extrema_pc;
+pub mod extrema_el_c;
+pub mod gce_make_circ;
 pub mod bspline_surface;
 mod bspline_surface_remove_knot;
 mod bspline_surface_segment;
