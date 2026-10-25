@@ -13,6 +13,7 @@ pub mod compute_pcurv;
 pub mod curve_cleaner;
 pub mod enlarge_box;
 pub mod eval_tol_reached;
+pub mod fil_interf;
 pub mod int_traces;
 pub mod inter_plane_edge;
 pub mod k_particular;
@@ -35,6 +36,10 @@ pub use enlarge_box::{
     ch_fi3d_enlarge_box_surf_data,
 };
 pub use eval_tol_reached::ch_fi3d_eval_tol_reached;
+pub use fil_interf::{
+    ch_fi3d_contains, ch_fi3d_fil_curve_in_ds, ch_fi3d_fil_point_in_ds, ch_fi3d_fil_vertex_in_ds,
+    ch_fi3d_orientation, cut_edge, find_index_point, query_add_vertex_in_edge, reset_both_points,
+};
 pub use int_traces::ch_fi3d_int_traces;
 pub use inter_plane_edge::inter_plane_edge;
 pub use k_particular::ch_fi3d_k_particular;
