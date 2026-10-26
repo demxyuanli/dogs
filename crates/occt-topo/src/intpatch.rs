@@ -101,6 +101,10 @@ pub mod wline_tool;
 pub mod intersection;
 #[path = "intpatch_trim_inf_surf.rs"]
 mod trim_inf_surf;
+#[path = "intpatch_trim_both_surf.rs"]
+mod trim_both_surf;
+#[path = "intpatch_pl_intersection.rs"]
+mod pl_intersection;
 pub use intersection::PatchIntersection;
 
 /// Sample points from the intersection curves of `a` and `b`, retaining only

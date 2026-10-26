@@ -2,17 +2,21 @@
 //! Source: `IntPatch_Intersection.cxx` Perform / GeomGeomPerfom /
 //! GeomParamPerfom / ParamParamPerfom.
 
+use occt_core::gp::{GpAx1, GpDir, GpLin};
 use occt_geom::Surface;
 
 use crate::brep_surface::{classify_surface, SurfaceKind};
-use crate::geom_int::{GeomIntLine, TopolTool};
+use crate::geom_bnd_lib_surface3d::{surface_kind, GeomAbsSurfaceType};
+use crate::geom_int::{GeomIntLine, GLine, GLineKind, TopolTool};
 use crate::int_tools_wline::PatchPoint;
 use crate::intpatch::aline_to_wline::ALineToWLine;
 use crate::intpatch::impimp::{try_set_quad, ImpImpIntersection};
 use crate::intpatch::wline_tool;
 
 use super::impprm::ImpPrmIntersection;
+use super::pl_intersection;
 use super::prmprm::PrmPrmIntersection;
+use super::trim_both_surf;
 use super::trim_inf_surf;
 
 /// `IntPatch_Intersection`.
@@ -178,9 +182,11 @@ impl PatchIntersection {
     /// 8-argument `Perform` on the trimmed pair (see
     /// `intpatch_trim_inf_surf.rs`).
     ///
-    /// Both domains infinite (`:1710-1750`). **UNPORTED**:
-    /// `FUN_PL_Intersection` (`:450-963`) and `FUN_TrimBothSurf` (`:964-...`)
-    /// have no Rust body, so this arm keeps passing the untrimmed pair.
+    /// Both domains infinite (`:1710-1750`): `FUN_PL_Intersection` first
+    /// (`:1718-1741`); when the two surfaces do share collinear iso lines the
+    /// result is one `IntPatch_GLine` per point and the arm ends there.
+    /// Otherwise `FUN_TrimBothSurf` with `TV = 1.e+8` (`:1742-1747`) cuts the
+    /// unbounded directions and the ordinary `Perform` runs on the pair.
     fn run_prmprm(
         &mut self,
         s1: &dyn Surface,
@@ -236,7 +242,50 @@ impl PatchIntersection {
                 self.uv_max_step,
             );
         } else {
-            pp.perform(s1, d1, s2, d2, tol_tang, tol_arc, self.fleche, self.uv_max_step);
+            // `:1710-1750`: both domains are infinite.
+            let t1 = surface_kind(s1);
+            let t2 = surface_kind(s2);
+            // `if (typs1 == GeomAbs_OtherSurface || typs2 == GeomAbs_OtherSurface)
+            // { done = false; return; }` (`:1712-1716`).
+            if t1 == GeomAbsSurfaceType::OtherSurface || t2 == GeomAbsSurfaceType::OtherSurface {
+                self.done = false;
+                return;
+            }
+            let pl = pl_intersection::pl_intersection(s1, t1, s2, t2);
+            if pl.is_ok {
+                // `'COLLINEAR LINES'` (`:1722-1741`).
+                if pl.points.is_empty() {
+                    self.done = false;
+                    return;
+                }
+                let Ok(d) = GpDir::from_vec(&pl.dir) else {
+                    self.done = false;
+                    return;
+                };
+                for p in &pl.points {
+                    // `gp_Lin lin(sop.Value(ip), gp_Dir(v));
+                    //  IntPatch_Line gl = new IntPatch_GLine(lin, false);`
+                    let lin = GpLin::new(GpAx1::new(*p, d));
+                    self.slin
+                        .push(GeomIntLine::Geometric(GLine::new(GLineKind::Lin(lin))));
+                }
+                self.done = true;
+                return;
+            }
+            // `'NON - COLLINEAR LINES'` (`:1742-1748`).
+            let (ns1, ns2) = trim_both_surf::trim_both_surf(s1, t1, s2, t2, 1.0e8);
+            let ts1: &dyn Surface = ns1.as_deref().unwrap_or(s1);
+            let ts2: &dyn Surface = ns2.as_deref().unwrap_or(s2);
+            pp.perform(
+                ts1,
+                d1,
+                ts2,
+                d2,
+                tol_tang,
+                tol_arc,
+                self.fleche,
+                self.uv_max_step,
+            );
         }
         self.done = pp.is_done();
         self.empty = pp.is_empty();

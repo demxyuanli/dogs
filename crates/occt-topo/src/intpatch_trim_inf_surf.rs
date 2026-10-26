@@ -191,7 +191,7 @@ pub(crate) fn trim_inf_surf(
 /// `new Geom_RectangularTrimmedSurface(mySurf, First, Last, true)` wrapped in
 /// an adaptor. The trimmed surface carries the range, so the port returns it
 /// directly.
-fn u_trim(s: &dyn Surface, first: f64, last: f64) -> Option<Arc<dyn Surface>> {
+pub(crate) fn u_trim(s: &dyn Surface, first: f64, last: f64) -> Option<Arc<dyn Surface>> {
     GeomRectangularTrimmedSurface::one_param(Arc::from(s.clone_dyn()), first, last, true)
         .ok()
         .map(|t| Arc::new(t) as Arc<dyn Surface>)
@@ -199,7 +199,7 @@ fn u_trim(s: &dyn Surface, first: f64, last: f64) -> Option<Arc<dyn Surface>> {
 
 /// `GeomAdaptor_Surface::VTrim(First, Last, Tol)`: the V mirror of
 /// [`u_trim`].
-fn v_trim(s: &dyn Surface, first: f64, last: f64) -> Option<Arc<dyn Surface>> {
+pub(crate) fn v_trim(s: &dyn Surface, first: f64, last: f64) -> Option<Arc<dyn Surface>> {
     GeomRectangularTrimmedSurface::one_param(Arc::from(s.clone_dyn()), first, last, false)
         .ok()
         .map(|t| Arc::new(t) as Arc<dyn Surface>)

@@ -19,7 +19,10 @@ use occt_core::gp::{
 use occt_geom::projlib;
 use occt_geom::{Curve, Surface};
 use occt_geom2d::curve::Curve2d;
-use occt_geom2d::{Geom2dBezierCurve, Geom2dBSplineCurve, Geom2dCircle, Geom2dEllipse, Geom2dLine};
+use occt_geom2d::{
+    Geom2dBezierCurve, Geom2dBSplineCurve, Geom2dCircle, Geom2dEllipse, Geom2dHyperbola, Geom2dLine,
+    Geom2dParabola,
+};
 
 use crate::brep_surface::{
     classify_surface, edge_pcurve_on_face, is_plane_type, SurfaceKind,
@@ -264,6 +267,32 @@ pub(crate) fn project_curve_on_plane(curve: &dyn Curve, pln: &GpPln) -> Option<A
         let (dx, dy) = projlib::eval_pln_dir2d(&pln, &d);
         let dir2 = GpDir2d::new(dx, dy).ok()?;
         return Some(Arc::new(Geom2dLine::new(GpAx2d::new(loc, dir2))));
+    }
+    if let Some(p) = curve.gp_parabola() {
+        // `ProjLib_Plane::Project(gp_Parab)` (`cxx:143-154`): project the
+        // position, keep `Focal()`.
+        let p2d = projlib::eval_pln_pnt2d(&pln, &p.location());
+        let (xx, xy) = projlib::eval_pln_dir2d(&pln, p.position().x_direction());
+        let (yx, yy) = projlib::eval_pln_dir2d(&pln, p.position().y_direction());
+        let vx = GpDir2d::new(xx, xy).ok()?;
+        let vy = GpDir2d::new(yx, yy).ok()?;
+        let ax = GpAx22d::new(p2d, vx, vy).ok()?;
+        return Some(Arc::new(Geom2dParabola::from_axes(ax, p.focal)));
+    }
+    if let Some(h) = curve.gp_hyperbola() {
+        // `ProjLib_Plane::Project(gp_Hypr)` (`cxx:158-169`): project the
+        // position, keep both radii.
+        let p2d = projlib::eval_pln_pnt2d(&pln, &h.location());
+        let (xx, xy) = projlib::eval_pln_dir2d(&pln, h.position().x_direction());
+        let (yx, yy) = projlib::eval_pln_dir2d(&pln, h.position().y_direction());
+        let vx = GpDir2d::new(xx, xy).ok()?;
+        let vy = GpDir2d::new(yx, yy).ok()?;
+        let ax = GpAx22d::new(p2d, vx, vy).ok()?;
+        return Some(Arc::new(Geom2dHyperbola::from_axes(
+            ax,
+            h.major_radius,
+            h.minor_radius,
+        )));
     }
     None
 }
