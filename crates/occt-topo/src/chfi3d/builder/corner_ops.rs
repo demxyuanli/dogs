@@ -68,14 +68,14 @@ pub trait ChFi3dCornerOps {
     /// `PerformIntersectionAtEnd(Index)` (`hxx:786`, body
     /// `ChFi3d_Builder_C1.cxx:1828-3770`).
     ///
-    /// `cxx:1828-2136` (the prologue: counts, sewing edge, regular adjacent
-    /// edges, the `PerformMoreSurfdata` / `PerformMoreThreeCorner` dispatches,
-    /// `ChFi3d_BoundSurf`, the end-curve orientation and `checkShrink`) is
-    /// ported as the inherent
-    /// [`super::ChFi3dBuilder::perform_intersection_at_end`]; `cxx:2136-3770`
-    /// is UNPORTED and answers [`super::EndIntersectionExit::RestUnported`].
-    /// Implementations must forward to the inherent method and dispatch its
-    /// exits the way `PerformOneCorner` dispatches
+    /// `cxx:1828-2580` is ported as the inherent
+    /// [`super::ChFi3dBuilder::perform_intersection_at_end`] (prologue, the two
+    /// end edges, the face chains); `cxx:2582-3769` is UNPORTED and answers
+    /// [`super::EndIntersectionExit::RestUnported`]. The three other exits
+    /// (`PerformMoreSurfdata`, `PerformMoreThreeCorner(1)`,
+    /// `IntersectMoreCorner`) are body calls OCCT makes itself, so
+    /// implementations must forward to the inherent method and dispatch them
+    /// the way `PerformOneCorner` dispatches
     /// [`super::OneCornerExit::IntersectionAtEnd`].
     fn perform_intersection_at_end(&mut self, index: usize) -> Result<(), String>;
 

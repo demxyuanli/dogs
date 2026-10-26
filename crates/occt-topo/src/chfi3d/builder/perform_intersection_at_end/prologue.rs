@@ -438,5 +438,16 @@ pub(super) fn prologue(
         prev_sd_param: 0.0,
         mid_p2d: GpPnt2d::zero(),
         mid_ipoint: 0,
+        nbface: 0,
+        nb: 1,
+        edges: vec![None; super::NN],
+        faces: vec![None; super::NN],
+        tabedg: Vec::new(),
+        find_on_f1: false,
+        find_on_f2: false,
+        one_intersection1: false,
+        one_intersection2: false,
+        face_sau: None,
+        edge_sau: None,
     })))
 }

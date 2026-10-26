@@ -10,7 +10,18 @@
 //!   analysis (`ChFi3d_edge_common_faces` + `ChFi3d::IsTangentFaces`), the two
 //!   `PerformMoreSurfdata` / `PerformMoreThreeCorner` dispatches, the bounded
 //!   fillet surface (`ChFi3d_BoundSurf`), the orientation of the end curve and
-//!   the `checkShrink` detection.
+//!   the `checkShrink` detection,
+//! - [`corner_faces`] — `cxx:2136-2280`: the DS faces, the `nbface` split, the
+//!   two end edges and the `CV1.IsVertex()` / `CV2.IsVertex()` re-selection of
+//!   an end edge by the distance from the corner vertex,
+//! - [`face_chains`] — `cxx:2281-2580`: the `nface == 3` face chain (and its
+//!   `ChFiDS_OnSame` sub-case), the "more than three edges" search over the
+//!   free edges with the `nbarete == 4` / `== 5` collapses, and the
+//!   `onecorner` answer.
+//!
+//! `cxx:2582-3769` (the per-face intersection, the DS storage and the shrink
+//! tail) is UNPORTED; the entry answers
+//! [`EndIntersectionExit::RestUnported`] after the three ported stages.
 //!
 //! Translation notes:
 //! - `PerformMoreSurfdata(Index)` (`cxx:2000-2004`) is UNPORTED
@@ -26,6 +37,8 @@
 //!   `SeqFil.Remove(num)` (`cxx:1965`), is applied to the real sequence
 //!   immediately because `ChFi3d_IndexOfSurfData` re-reads it right after.
 
+mod corner_faces;
+mod face_chains;
 mod prologue;
 
 use std::sync::Arc;
@@ -35,11 +48,14 @@ use occt_geom::Curve;
 use occt_geom2d::curve::Curve2d;
 
 use crate::abs::Orientation;
-use crate::chfi_ds::{FaceInterference, SpineHandle, State, StripeHandle, SurfData};
+use crate::chfi_ds::{CommonPoint, FaceInterference, SpineHandle, State, StripeHandle, SurfData};
 use crate::shape::{Edge, Face, TopoShape};
 use crate::topopebrep::tool::adaptor::SurfaceAdaptor;
 
 use super::ChFi3dBuilder;
+
+/// `const int nn = 15;` (`cxx:1842`) — the capacity of `Edge[]` / `Face[]`.
+pub const NN: usize = 15;
 
 /// The ways `PerformIntersectionAtEnd` hands its corner over to another body.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,8 +66,42 @@ pub enum EndIntersectionExit {
     /// `cxx:2006-2010` / `cxx:2161-2165`: `PerformMoreThreeCorner(Index, 1);
     /// return;` with the `nbcourb` argument OCCT passes.
     MoreThreeCorner(usize),
-    /// The port stops after the prologue: `cxx:2136-3770` is UNPORTED.
+    /// `cxx:2508-2509`: `IntersectMoreCorner(Index); return;`. The callee is
+    /// UNPORTED (`cxx:4708-4800`), a `ChFi3d_Builder` member rather than a
+    /// `ChFi3dCornerOps` entry point.
+    IntersectMoreCorner,
+    /// `IntersectMoreCorner` / the ported prologue and face search are done;
+    /// `cxx:2582-3769` is UNPORTED.
     RestUnported,
+}
+
+/// `SeqFil(num)`, 1-based like the OCCT sequence.
+pub(super) fn fd_of(st: &EndIntersection) -> Result<Arc<SurfData>, String> {
+    st.num
+        .checked_sub(1)
+        .and_then(|i| st.seq.get(i))
+        .cloned()
+        .ok_or_else(|| "PerformIntersectionAtEnd: SeqFil(num) is out of range".to_string())
+}
+
+/// `CV1 = Fd->ChangeVertex(isfirst, 1)` / `CV2` (`cxx:1984-1985`), as copies.
+pub(super) fn end_points(st: &EndIntersection) -> Result<(CommonPoint, CommonPoint), String> {
+    let fd = fd_of(st)?;
+    Ok((
+        fd.vertex(st.is_first, 1).clone(),
+        fd.vertex(st.is_first, 2).clone(),
+    ))
+}
+
+/// Writes the two `CV` back into `SeqFil(num)` — the `ChangeVertex` reference
+/// `cxx:1984-1985` binds.
+pub(super) fn store_end_points(st: &mut EndIntersection, cv1: &CommonPoint, cv2: &CommonPoint) {
+    let Some(slot) = st.num.checked_sub(1).and_then(|i| st.seq.get_mut(i)) else {
+        return;
+    };
+    let fd = Arc::make_mut(slot);
+    *fd.vertex_mut(st.is_first, 1) = cv1.clone();
+    *fd.vertex_mut(st.is_first, 2) = cv2.clone();
 }
 
 /// The locals of `PerformIntersectionAtEnd` that the prologue produces.
@@ -160,6 +210,33 @@ pub(super) struct EndIntersection {
     pub mid_p2d: GpPnt2d,
     /// `midIpoint` (`cxx:2092`)
     pub mid_ipoint: i32,
+    /// `nbface` (`cxx:2137`, `:2153-2160`, recomputed at `:2445` / `:2504` /
+    /// `:2529` / `:2546` / `:2567` / `:2577`).
+    pub nbface: i32,
+    /// `nb` (`cxx:2137`)
+    pub nb: usize,
+    /// `Edge[nn]` (`cxx:2138`): index 0..`nn-1`, `None` is the C array's
+    /// default-constructed null edge.
+    pub edges: Vec<Option<Edge>>,
+    /// `Face[nn]` (`cxx:2142`): same convention.
+    pub faces: Vec<Option<Face>>,
+    /// `tabedg` (`cxx:1856`, `NCollection_Array1(0, nn)`)
+    pub tabedg: Vec<TopoShape>,
+    /// `faceprol[nn]`, `proledge[nn]`, `prolface[nn + 1]`, `shrink[nn]`,
+    /// `indcurve[nn]`, `Interfedge[nn]`, `InterfPC[nn]`, `InterfPS[nn]`
+    /// (`cxx:2586-2591`) are declared here because `cxx:2136-2580` fills their
+    /// running state; the arrays themselves belong to `cxx:2597-3769`.
+    pub find_on_f1: bool,
+    /// `findonf2` (`cxx:2144`)
+    pub find_on_f2: bool,
+    /// `oneintersection1` (`cxx:2140`)
+    pub one_intersection1: bool,
+    /// `oneintersection2` (`cxx:2141`)
+    pub one_intersection2: bool,
+    /// `facesau` (`cxx:2139`)
+    pub face_sau: Option<Face>,
+    /// `edgesau` (`cxx:2139`)
+    pub edge_sau: Option<Edge>,
 }
 
 impl EndIntersection {
@@ -184,11 +261,24 @@ impl ChFi3dBuilder {
             prologue::PrologueOut::Continue(st) => st,
             prologue::PrologueOut::Exit(exit) => return Ok(exit),
         };
-        // `cxx:2136-3770` is UNPORTED: "find faces intersecting with the fillet
-        // and edges limiting intersections" (`:2130-2596`), the per-face
-        // intersection and surface extension (`:2597-3127`), the DS storage
-        // (`:3128-3250`), the edge limitations (`:3251-3537`) and the shrink /
-        // tolerance tail (`:3538-3769`).
+        // `cxx:2136-2170`.
+        if let Some(exit) = corner_faces::start(self, &mut st)? {
+            st.flush();
+            return Ok(exit);
+        }
+        // `cxx:2175-2280`.
+        let (mut cv1, mut cv2) = end_points(&st)?;
+        corner_faces::resolve_end_edges(self, &mut st, &mut cv1, &mut cv2)?;
+        store_end_points(&mut st, &cv1, &cv2);
+        // `cxx:2281-2580`.
+        if let Some(exit) = face_chains::collect_faces(self, &mut st)? {
+            st.flush();
+            return Ok(exit);
+        }
+        // `cxx:2582-3769` is UNPORTED: the per-face intersection and surface
+        // extension (`:2597-3127`), the DS storage (`:3128-3250`), the edge
+        // limitations (`:3251-3537`) and the shrink / tolerance tail
+        // (`:3538-3769`). Their locals are declared at `cxx:2582-2596`.
         st.flush();
         Ok(EndIntersectionExit::RestUnported)
     }
