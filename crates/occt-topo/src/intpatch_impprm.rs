@@ -32,6 +32,9 @@ use surf_func::SurfFunction;
 #[path = "intpatch_impprm_ends.rs"]
 mod ends;
 use ends::attach_wline_ends;
+#[path = "intpatch_impprm_restriction.rs"]
+mod restriction;
+use restriction::place_restriction_vertices;
 
 /// Analytic types accepted as the implicit side (`ImpPrm` Quadric switch).
 fn is_impprm_quadric(s: &dyn Surface) -> bool {
@@ -169,8 +172,23 @@ impl ImpPrmIntersection {
             process_rline(&mut self.slin, s1, s2, tol_arc, true);
         }
 
+        // `IntPatch_ImpPrmIntersection.cxx:1766-1806`: write the restriction
+        // vertices of the implicit surface (resp. the parametric surface when
+        // `reversed`), drop the lines left with <= 2 points, and move the
+        // walking lines behind the restriction lines.
+        place_restriction_vertices(
+            &mut self.slin,
+            s1,
+            d1,
+            s2,
+            d2,
+            reversed,
+            tol_tang,
+        );
+
         self.empty = self.slin.is_empty();
         self.done = true;
+        eprintln!("IMPPRM-PROBE lines={}", self.slin.len());
     }
 
     pub fn is_done(&self) -> bool {

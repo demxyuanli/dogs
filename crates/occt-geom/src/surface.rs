@@ -179,6 +179,12 @@ pub trait Surface: Send + Sync {
     /// `Geom_BSplineSurface::Weights()`; `None` for a non-rational surface
     /// (`Geom_BSplineSurface::IsRational() == false`), whose weights are all 1.
     fn bspline_surface_weights(&self) -> Option<&[Vec<f64>]> { None }
+    /// `Geom_BSplineSurface::IsURational()` / `IsVRational()`. `None` for a
+    /// non-B-spline surface. Note these are the per-direction flags, not
+    /// `IsRational()` (their disjunction): `IntPatch_HInterTool::NbSamplesU/V`
+    /// (`IntPatch_HInterTool.cxx:90-95`, `:50-55`) doubles the sample count only
+    /// when the *corresponding* direction is polynomial.
+    fn bspline_rational_flags(&self) -> Option<(bool, bool)> { None }
     /// `Adaptor3d_Surface::NbVPoles`.
     fn nb_v_poles(&self) -> i32 { 2 }
     /// `Adaptor3d_Surface::NbUIntervals`. Default one span.

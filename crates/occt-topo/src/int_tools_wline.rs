@@ -9,6 +9,7 @@
 
 use std::sync::Arc;
 
+use occt_core::bnd::{BndBox, BndBox2d};
 use occt_core::gp::{GpPnt, GpPnt2d, GpVec2d};
 use occt_core::precision::{ANGULAR, PCONFUSION, RESOLUTION};
 use occt_geom::Surface;
@@ -245,6 +246,15 @@ impl WLine {
         &mut self.vertices[i]
     }
 
+    /// `IntPatch_WLine::Replace(Index, Pnt)` (`IntPatch_WLine.cxx`): overwrite
+    /// the 1-based vertex `Index`.
+    pub fn replace(&mut self, index: i32, p: PatchPoint) {
+        let i = (index as usize).saturating_sub(1);
+        if i < self.vertices.len() {
+            self.vertices[i] = p;
+        }
+    }
+
     /// `GetCreatingWay`.
     pub fn creating_way(&self) -> WLineWay {
         self.creating_way
@@ -287,6 +297,58 @@ impl WLine {
         if i < self.points.len() {
             self.points.remove(i);
         }
+    }
+
+    /// `IntSurf_LineOn2S::IsOutBox(Pxyz)` (`IntSurf_LineOn2S.cxx:78-124`).
+    ///
+    /// OCCT caches the box in `myBxyz` and invalidates it on `RemovePoint`;
+    /// the port recomputes it per call. Every call site here queries the box
+    /// while the point set is stable, so the answer is the cached one.
+    pub fn is_out_box(&self, p: &GpPnt) -> bool {
+        if self.points.is_empty() {
+            return false;
+        }
+        let mut b = BndBox::new();
+        for q in &self.points {
+            b.add_point(&q.p);
+        }
+        if let Some((x0, y0, z0, x1, y1, z1)) = b.get() {
+            let (dx, dy, dz) = (x1 - x0, y1 - y0, z1 - z0);
+            let e = if dx > dy { dx.max(dz) } else { dy.max(dz) };
+            b.enlarge(e * 0.01);
+        }
+        b.is_out(p)
+    }
+
+    /// `IntSurf_LineOn2S::IsOutSurf1Box(P1uv)` (`cxx:126-157`).
+    pub fn is_out_surf1_box(&self, p: &GpPnt2d) -> bool {
+        self.is_out_uv_box(p, true)
+    }
+
+    /// `IntSurf_LineOn2S::IsOutSurf2Box(P2uv)` (`cxx:159-190`).
+    pub fn is_out_surf2_box(&self, p: &GpPnt2d) -> bool {
+        self.is_out_uv_box(p, false)
+    }
+
+    /// Shared body of the two UV box queries (`cxx:126-190`).
+    fn is_out_uv_box(&self, p: &GpPnt2d, on_first: bool) -> bool {
+        if self.points.is_empty() {
+            return false;
+        }
+        let mut b = BndBox2d::new();
+        for q in &self.points {
+            let (u, v) = if on_first {
+                (q.u1, q.v1)
+            } else {
+                (q.u2, q.v2)
+            };
+            b.add_point(&GpPnt2d::new(u, v));
+        }
+        if let Some((u0, v0, u1, v1)) = b.get() {
+            let (du, dv) = (u1 - u0, v1 - v0);
+            b.enlarge(if du > dv { du * 0.01 } else { dv * 0.01 });
+        }
+        b.is_out(p)
     }
 
     /// First/last vertices when none were attached (`ComputeVertexParameters` empty case).

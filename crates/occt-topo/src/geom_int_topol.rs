@@ -52,6 +52,11 @@ pub struct TopolTool {
     vmin: f64,
     vmax: f64,
     class2d: Option<FClass2d>,
+    /// The face the domain was built from (`from_face`), `None` for the
+    /// UV-box domain of a bare surface. It is what
+    /// [`Self::brep_tool`] needs to rebuild the `Adaptor3d_TopolTool` view
+    /// OCCT's `IntPatch_RstInt::PutVertexOnLine` walks.
+    face: Option<Face>,
     /// `Adaptor3d_TopolTool::myVtx` — the vertexes of the restriction arcs.
     /// OCCT rebuilds them per arc in `Initialize(C)`
     /// (`Adaptor3d_TopolTool.cxx:235-254`); the port holds every arc's
@@ -70,6 +75,7 @@ impl TopolTool {
             vmin,
             vmax,
             class2d: None,
+            face: None,
             vertices: Vec::new(),
         }
         .with_arc_vertices()
@@ -92,6 +98,7 @@ impl TopolTool {
             vmin,
             vmax,
             class2d,
+            face: Some(face.clone()),
             vertices: Vec::new(),
         }
         .with_arc_vertices()
@@ -178,6 +185,31 @@ impl TopolTool {
     /// (`Adaptor3d_TopolTool.cxx:611-614`).
     pub fn vertex_orientation(&self, index: usize) -> Orientation {
         self.vertices[index].hvertex.orientation
+    }
+
+    /// The face domain as the `BRepTopAdaptor_TopolTool` that
+    /// `Adaptor3d_TopolTool` would be for it, initialized on `s`.
+    ///
+    /// `IntPatch_PrmPrmIntersection.cxx:683` hands its `Adaptor3d_TopolTool`
+    /// straight to `IntPatch_RstInt::PutVertexOnLine`, which walks that tool's
+    /// restriction arcs (`IntPatch_RstInt.cxx:549-553`). The port keeps two
+    /// views of the same domain (`geom_int::TopolTool` for the intersectors,
+    /// `brep_top_adaptor_topol_tool::TopolTool` for the restriction walker), so
+    /// this rebuilds the second one from the face.
+    ///
+    /// A domain built by [`Self::from_surface`] has no face and no restriction
+    /// arcs; the returned tool then has an empty arc list, exactly like the
+    /// `GeomAdaptor_Surface` domain OCCT builds without a topological face.
+    pub fn brep_tool(&self, s: &dyn Surface) -> crate::brep_top_adaptor_topol_tool::TopolTool {
+        let mut tool = crate::brep_top_adaptor_topol_tool::TopolTool::new();
+        let surface: Arc<dyn Surface> = Arc::from(s.clone_dyn());
+        match &self.face {
+            Some(face) => {
+                let _ = tool.initialize(surface, face);
+            }
+            None => tool.initialize_surface_only(surface),
+        }
+        tool
     }
 
     /// `Adaptor3d_TopolTool::Classify(P, Tol)`.

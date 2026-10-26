@@ -269,6 +269,8 @@ impl Surface for GeomBSplineSurface {
 
     fn bspline_surface_weights(&self) -> Option<&[Vec<f64>]> { self.weights.as_deref() }
 
+    fn bspline_rational_flags(&self) -> Option<(bool, bool)> { Some(self.occt_rational_flags()) }
+
     fn nb_u_poles(&self) -> i32 {
         self.nb_poles_u() as i32
     }

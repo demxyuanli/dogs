@@ -194,6 +194,15 @@ impl RLine {
         self.vertices.push(p);
     }
 
+    /// `IntPatch_RLine::Replace(Index, Pnt)`: overwrite the 1-based vertex
+    /// `Index`.
+    pub fn replace(&mut self, index: i32, p: PatchPoint) {
+        let i = (index as usize).saturating_sub(1);
+        if i < self.vertices.len() {
+            self.vertices[i] = p;
+        }
+    }
+
     /// `SetFirstPoint(IndFirst)` (`IntPatch_PointLine.cxx`).
     pub fn set_first_point(&mut self, ind_first: i32) {
         self.has_first_point = true;
@@ -327,6 +336,13 @@ impl GeomIntLine {
     }
 
     pub fn as_wline(&self) -> Option<&WLine> {
+        match self {
+            GeomIntLine::Walking(w) => Some(w),
+            _ => None,
+        }
+    }
+
+    pub fn as_wline_mut(&mut self) -> Option<&mut WLine> {
         match self {
             GeomIntLine::Walking(w) => Some(w),
             _ => None,

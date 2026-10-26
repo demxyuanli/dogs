@@ -2,6 +2,11 @@
 pub mod traversal;
 pub mod bvh_ops;
 pub mod bvh_query;
+pub mod box_3d;
+pub mod tree_3d;
+pub mod radix_sorter_3d;
+pub mod linear_builder_3d;
+pub mod pair_traverse_3d;
 use crate::gp::GpPnt;
 use crate::bnd::BndBox;
 

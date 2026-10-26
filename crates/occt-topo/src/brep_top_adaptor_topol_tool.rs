@@ -136,6 +136,27 @@ impl TopolTool {
         self.current_curve = Some(c.clone());
     }
 
+    /// The `Initialize(S)` state for a surface that has no topological face.
+    ///
+    /// OCCT's `Initialize(S)` (`.cxx:71-95`) takes the face out of the
+    /// `BRepAdaptor_Surface` and throws `Standard_ConstructionError` when
+    /// there is none; a `GeomAdaptor_Surface` domain therefore never reaches
+    /// `BRepTopAdaptor_TopolTool`. The port keeps one `geom_int::TopolTool`
+    /// view that also covers the surface-only case
+    /// (`geom_int::TopolTool::from_surface`), and this is its counterpart
+    /// here: the surface is remembered (so `NbSamplesU/V` still work) and
+    /// `myCurves` stays empty, i.e. the domain has no restriction arcs.
+    pub fn initialize_surface_only(&mut self, surface: Arc<dyn Surface>) {
+        self.face = None;
+        self.fclass2d = None;
+        self.nb_samples_u = -1;
+        self.surface = Some(surface);
+        self.curves.clear();
+        self.curve_index = 0;
+        self.vertexes.clear();
+        self.vertex_index = 0;
+    }
+
     /// `Initialize()` (`.cxx:64-67`): `Standard_NotImplemented`.
     pub fn initialize_not_implemented() -> Result<(), String> {
         Err("BRepTopAdaptor_TopolTool::Initialize() is not implemented".to_string())
