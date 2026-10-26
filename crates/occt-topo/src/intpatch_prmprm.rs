@@ -15,12 +15,40 @@
 //!    the restriction vertices (`IntPatch_RstInt::PutVertexOnLine`, `:683-690`)
 //!    and append the line (`AddWLine`, `:4085-4143`).
 //!
-//! The other `Perform` overloads of the `.cxx` are not wired here:
-//! `ImplementPolyhedron` / `Perform(Surf1, Poly1, D1, ...)` self-interference
-//! (`:932-1583`), the `LOfPnts` start-point list (`:1827-2175`), the single
-//! start point (`:2176-2328`) and the grille-based variant (`:2488-3490`) are
-//! still unported; `intpatch_prmprm_depart.rs` (the `PointDepart` helper,
-//! `:3492-3991`) is kept for the `LOfPnts` overload.
+//! The other `Perform` overloads of the `.cxx`:
+//!
+//! * `Perform(Surf1, D1, ...)` self-interference entry (`:324-331`) and its
+//!   `Perform(Surf1, Poly1, D1, ...)` body (`:932-1466`): see
+//!   `intpatch_prmprm_self.rs` (`perform_self_surface` /
+//!   `perform_self_polyhedron`);
+//! * single start point `Perform(... U1Depart, V1Depart, ...)` (`:2176-2325`):
+//!   see `intpatch_prmprm_start.rs` (`perform_from_point`);
+//! * `NewLine` (`:1470-1580`): see `intpatch_prmprm_newline.rs`
+//!   (`PrmPrmIntersection::new_line`).
+//!
+//! Still UNPORTED, with the branch each one needs:
+//!
+//! * `Perform(..., NCollection_List<IntSurf_PntOn2S>& LOfPnts)` (`:1827-2175`).
+//!   The whole overload is blocked on `IntWalk_PWalking::PutToBoundary`
+//!   (`IntWalk_PWalking.cxx:2951-3157`, called at `:2058`), which in turn needs
+//!   `IsParallel` (`IntWalk_PWalking.cxx:118-200`), `SeekPointOnBoundary`
+//!   (`:2716-2950`), `DistanceMinimizeByGradient` (`:2394-2531`),
+//!   `DistanceMinimizeByExtrema` (`:2532-2586`) and `HandleSingleSingularPoint`
+//!   (`:2587-2715`). It also calls the `SeveralWlinesProcessing` helper
+//!   (`:65-271`) at `:2152` and `MakeNewPoint` (`:2452-2483`), neither of which
+//!   is ported yet.
+//! * grille variant `Perform(..., bool ClearFlag)` (`:2488-3403`). Its fast
+//!   branch (`:2524-3198`, taken when `NbU1*NbV1 <= 2500 && NbU2*NbV2 <= 2500`)
+//!   is built on `IntPolyh_Intersection`, a package the port does not have at
+//!   all, so the whole branch is UNPORTED. The fallback branch (`:3200-3402`)
+//!   is driven by `PointDepart` (`:3492-3991`, already ported in
+//!   `intpatch_prmprm_depart.rs`) and needs `PW.PutToBoundary`,
+//!   `PW.SeekAdditionalPoints` (`:3284`), `PW.MaxStep` and `AdjustOnPeriodic`
+//!   (`:2329-2448`), none of which is ported.
+//! * `RemplitLin` / `RemplitTri` / `Remplit` (`:1690-1826`) are the
+//!   `IntPatch_PrmPrmIntersection_T3Bits` fillers used only inside
+//!   `PointDepart`; the port's `point_depart` inlines the same lattice walks,
+//!   so these three members have no separate Rust body.
 
 use occt_core::gp::GpVec;
 use occt_geom::Surface;
@@ -42,6 +70,12 @@ mod prmprm_t3bits;
 mod prmprm_depart;
 #[path = "intpatch_prmprm_section_point.rs"]
 mod section_point;
+#[path = "intpatch_prmprm_self.rs"]
+mod self_intersection;
+#[path = "intpatch_prmprm_start.rs"]
+mod start_point;
+#[path = "intpatch_prmprm_newline.rs"]
+mod new_line_sampling;
 #[path = "intpatch_prmprm_wline.rs"]
 mod wline_helpers;
 
@@ -372,12 +406,143 @@ impl PrmPrmIntersection {
         self.done
     }
 
+    /// `Perform(Surf1, D1, TolTangency, Epsilon, Deflection, Increment)`
+    /// (`cxx:324-331`): builds `IntPatch_Polyhedron Poly1(Surf1,
+    /// D1->NbSamplesU(), D1->NbSamplesV())` and forwards to the polyhedron
+    /// overload.
+    #[allow(clippy::too_many_arguments)]
+    pub fn perform_self_surface(
+        &mut self,
+        surf: &dyn Surface,
+        d1: &TopolTool,
+        tol_tangency: f64,
+        epsilon: f64,
+        deflection: f64,
+        increment: f64,
+    ) {
+        let poly = IntPatchPolyhedron::with_sizes(surf, d1.nb_samples_u(surf), d1.nb_samples_v(surf));
+        self.perform_self_polyhedron(
+            surf,
+            &poly,
+            d1,
+            tol_tangency,
+            epsilon,
+            deflection,
+            increment,
+        );
+    }
+
+    /// `Perform(Surf1, Poly1, D1, TolTangency, Epsilon, Deflection,
+    /// Increment)` (`cxx:932-1466`): the surface against itself.
+    #[allow(clippy::too_many_arguments)]
+    pub fn perform_self_polyhedron(
+        &mut self,
+        surf: &dyn Surface,
+        poly: &IntPatchPolyhedron,
+        d1: &TopolTool,
+        tol_tangency: f64,
+        epsilon: f64,
+        deflection: f64,
+        increment: f64,
+    ) {
+        self.empty = true;
+        self.done = true;
+        self.slin.clear();
+
+        let mut d1m = d1.brep_tool(surf);
+        self_intersection::perform_self(
+            &mut self.slin,
+            surf,
+            poly,
+            &mut d1m,
+            tol_tangency,
+            epsilon,
+            deflection,
+            increment,
+        );
+        self.empty = self.slin.is_empty();
+    }
+
     pub fn is_empty(&self) -> bool {
         self.empty
     }
 
+    /// `NewLine(Surf1, Surf2, IndexLine, LowPoint, HighPoint, NbPoints)`
+    /// (`cxx:1470-1580`): re-samples line `index_line` between the 1-based
+    /// point indices `low` / `high`.
+    ///
+    /// The `Standard_OutOfRange` guard of `cxx:1479-1482` becomes `None`.
+    pub fn new_line(
+        &self,
+        s1: &dyn Surface,
+        s2: &dyn Surface,
+        index_line: i32,
+        low: i32,
+        high: i32,
+        nb_pnts_to_insert: i32,
+    ) -> Option<WLine> {
+        if index_line > self.nb_lines() || index_line < 1 || low >= high {
+            return None;
+        }
+        let the_line = self.line(index_line).as_wline()?;
+        Some(new_line_sampling::new_line(
+            s1,
+            s2,
+            the_line,
+            low,
+            high,
+            nb_pnts_to_insert,
+        ))
+    }
+
+    /// `Perform(Surf1, D1, Surf2, D2, U1Depart, V1Depart, U2Depart, V2Depart,
+    /// TolTangency, Epsilon, Deflection, Increment)` (`cxx:2176-2325`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn perform_from_point(
+        &mut self,
+        s1: &dyn Surface,
+        d1: &TopolTool,
+        s2: &dyn Surface,
+        d2: &TopolTool,
+        start: [f64; 4],
+        tol_tangency: f64,
+        epsilon: f64,
+        deflection: f64,
+        increment: f64,
+    ) {
+        self.empty = true;
+        self.done = true;
+        self.slin.clear();
+
+        let mut d1m = d1.brep_tool(s1);
+        let mut d2m = d2.brep_tool(s2);
+        start_point::perform_start_point(
+            &mut self.slin,
+            s1,
+            &mut d1m,
+            s2,
+            &mut d2m,
+            start,
+            tol_tangency,
+            epsilon,
+            deflection,
+            increment,
+        );
+        self.empty = self.slin.is_empty();
+    }
+
     pub fn lines(&self) -> &[GeomIntLine] {
         &self.slin
+    }
+
+    /// 1-based `Line(Index)`.
+    pub fn line(&self, index: i32) -> &GeomIntLine {
+        &self.slin[(index - 1) as usize]
+    }
+
+    /// `NbLines()`.
+    pub fn nb_lines(&self) -> i32 {
+        self.slin.len() as i32
     }
 }
 
