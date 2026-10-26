@@ -65,7 +65,7 @@ use occt_geom::Surface;
 
 use crate::brep_top_adaptor_topol_tool::TopolTool as BrepTopolTool;
 use crate::geom_int::{GeomIntLine, TopolTool};
-use crate::int_tools_wline::{PatchPoint, WLine, WLineWay};
+use crate::int_tools_wline::{PatchPoint, PntOn2S, WLine, WLineWay};
 use crate::intpatch_interference_polyhedron::IntPatchInterferencePolyhedron;
 use crate::intpatch_line::IntPatchLine;
 use crate::intpatch_polyhedron::IntPatchPolyhedron;
@@ -88,6 +88,15 @@ mod start_point;
 mod new_line_sampling;
 #[path = "intpatch_prmprm_wline.rs"]
 mod wline_helpers;
+#[path = "intpatch_prmprm_periodic.rs"]
+#[allow(dead_code)]
+mod periodic;
+#[path = "intpatch_prmprm_several.rs"]
+#[allow(dead_code)]
+mod several;
+#[path = "intpatch_prmprm_lofpnts.rs"]
+#[allow(dead_code)]
+mod lofpnts;
 
 use section_point::section_point_to_parameters;
 use wline_helpers::{add_wline, duplicate_of_lines_processing, is_point_on_line};
@@ -414,6 +423,42 @@ impl PrmPrmIntersection {
 
     pub fn is_done(&self) -> bool {
         self.done
+    }
+
+    /// `Perform(Surf1, D1, Surf2, D2, TolTangency, Epsilon, Deflection,
+    /// Increment, LOfPnts)` (`cxx:1827-2172`): walks one line from every given
+    /// start point.
+    ///
+    /// `lof_pnts` are the start points (`IntSurf_PntOn2S` list). The
+    /// `NCollection_List` is passed as a slice: OCCT appends the seam duplicates
+    /// of closed surfaces to it (`cxx:1959`), which only feeds the loop below.
+    #[allow(clippy::too_many_arguments)]
+    pub fn perform_from_points(
+        &mut self,
+        s1: &dyn Surface,
+        d1: &TopolTool,
+        s2: &dyn Surface,
+        d2: &TopolTool,
+        lof_pnts: &[PntOn2S],
+        tol_tangency: f64,
+        epsilon: f64,
+        deflection: f64,
+        increment: f64,
+    ) {
+        lofpnts::perform_from_points(
+            s1,
+            d1,
+            s2,
+            d2,
+            lof_pnts,
+            tol_tangency,
+            epsilon,
+            deflection,
+            increment,
+            &mut self.slin,
+            &mut self.done,
+            &mut self.empty,
+        );
     }
 
     /// `Perform(Surf1, D1, TolTangency, Epsilon, Deflection, Increment)`

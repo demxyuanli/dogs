@@ -11,7 +11,7 @@ use occt_geom::Surface;
 use occt_geom2d::{curve::Curve2d, Geom2dLine};
 
 use crate::abs::Orientation;
-use crate::brep_surface::{classify_surface, face_uv_bounds, SurfaceKind};
+use crate::brep_surface::face_uv_bounds;
 use crate::fclass2d::{FClass2d, FaceState};
 use crate::shape::Face;
 
@@ -382,23 +382,10 @@ fn classify_uv_box(p: GpPnt2d, umin: f64, umax: f64, vmin: f64, vmax: f64, tol: 
 
 /// `Adaptor3d_TopolTool::ComputeSamplePoints` counts (minimum 6).
 fn sample_counts(s: &dyn Surface) -> (i32, i32) {
-    let (mut nbsu, mut nbsv) = match classify_surface(s) {
-        SurfaceKind::Plane => (2, 2),
-        SurfaceKind::Cylinder | SurfaceKind::Cone | SurfaceKind::Sphere | SurfaceKind::Torus => {
-            (15, 15)
-        }
-        SurfaceKind::Other => (10, 10),
-    };
-    if nbsu < 6 {
-        nbsu = 6;
-    }
-    if nbsv < 6 {
-        nbsv = 6;
-    }
-    (nbsu, nbsv)
+    crate::adaptor3d_topol_tool_sample::compute_sample_points(s)
 }
 
-fn finite_uv(a: f64, b: f64) -> (f64, f64) {
+pub(crate) fn finite_uv(a: f64, b: f64) -> (f64, f64) {
     let mut lo = a;
     let mut hi = b;
     if hi < lo {

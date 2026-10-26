@@ -279,6 +279,11 @@ mod geom_bnd_lib_analytic3d;
 mod brep_class_intersector;
 pub use brep_class_intersector::{BRepClassEdge, BRepClassIntersector};
 mod geom_bnd_lib_surface3d;
+/// `Adaptor3d_TopolTool` sampling. `sample_pnts` / `is_uniform_sampling` are
+/// consumed by the pending `IntPatch_PrmPrmIntersection::Perform(..., ClearFlag)`
+/// port (`IntPatch_PrmPrmIntersection.cxx:2488-3491`).
+#[allow(dead_code)]
+mod adaptor3d_topol_tool_sample;
 pub mod geom_abs_curve_type;
 pub mod brep_bnd_lib;
 mod bnd_lib_add2d;
