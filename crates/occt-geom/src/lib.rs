@@ -102,6 +102,7 @@ pub mod geom_lib_check_bspline;
 pub mod geom_lprop;
 pub mod geom_fill;
 pub mod app_par_curves;
+pub mod app_cont;
 pub mod app_def;
 pub mod approx;
 pub mod check_curve_on_surface;

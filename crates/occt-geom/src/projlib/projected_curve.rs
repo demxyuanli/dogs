@@ -18,9 +18,9 @@
 //!   (`ProjLib_CompProjectedCurve.cxx`, 2069 lines) — the `default:` arm
 //!   (`cxx:539-715`), including the `Extrema_ExtPC` search for the singular
 //!   parameter on a surface of revolution's basis curve (`cxx:558-610`).
-//! - `ProjLib_ComputeApprox` (`ProjLib_ComputeApprox.cxx`, 1411 lines) — the
-//!   advanced-projector fallback for an analytic surface whose projector is
-//!   not done (`cxx:717-785`).
+//! - `ExtendC2d` (`cxx:162-238`) and the `GeomLib::SameRange` remake of a
+//!   trimmed approximation result (`cxx:740-766`); the `ProjLib_ComputeApprox`
+//!   fallback itself is ported ([`crate::projlib::ComputeApprox`]).
 
 use std::sync::Arc;
 
@@ -382,10 +382,9 @@ impl ProjectedCurve {
         let first_par = curve.first_parameter();
         let last_par = curve.last_parameter();
         let s_type = surface_type(surface.as_ref());
-        // `CType` (`cxx:376`) is read only by the `ProjLib_ComputeApprox`
-        // fallback (`cxx:769`, `:781`), which is UNPORTED (see the module
-        // docs), so the port keeps the value without a consumer.
-        let _c_type = curve_type(curve.as_ref());
+        // `CType` (`cxx:376`), read by the `ProjLib_ComputeApprox` fallback
+        // (`cxx:769`, `:781`).
+        let c_type = curve_type(curve.as_ref());
         let mut is_analytical_surf = true;
         let mut is_trimmed = [false, false];
         let mut singular_case = [0i32, 0i32];
@@ -539,11 +538,45 @@ impl ProjectedCurve {
         }
 
         if !self.result.done && is_analytical_surf {
-            // UNPORTED: `ProjLib_ComputeApprox` (`ProjLib_ComputeApprox.cxx`)
-            // — the advanced projector for an elementary surface whose
-            // analytic projector answered not-done (`cxx:717-785`).
-            self.curve = Some(curve);
-            return;
+            // `cxx:717-785`: use the advanced analytical projector when the
+            // base analytical projection failed.
+            let mut comp = crate::projlib::ComputeApprox::new();
+            comp.set_tolerance(self.tolerance);
+            comp.set_degree(self.deg_min, self.deg_max);
+            comp.set_max_segments(self.max_segments);
+            comp.set_bnd_pnt(self.bnd_pnt);
+            comp.perform(curve.as_ref(), surface.as_ref());
+            if comp.bezier().is_none() && comp.bspline().is_none() {
+                // the advanced projector has failed too (`cxx:727-730`).
+                self.curve = Some(curve);
+                return;
+            }
+            if is_trimmed[0] || is_trimmed[1] {
+                // UNPORTED: `cxx:740-766` — the `ExtendC2d` segment on the
+                // trimmed end, then `GeomLib::SameRange` back onto
+                // `[FirstPar, LastPar]`. Both run on a `Geom2d_BSplineCurve`
+                // through `Geom2dConvert_CompCurveToBSplineCurve`; the port
+                // leaves the projector undone, so the caller sees no pcurve
+                // for a curve trimmed at a singular pole.
+                self.curve = Some(curve);
+                return;
+            }
+            self.result.done = true;
+            if s_type == SurfaceType::Plane && c_type == CurveType::BezierCurve {
+                // `cxx:769-774`.
+                self.result.curve_type = CurveType::BezierCurve;
+                self.result.bezier = comp.bezier();
+            } else {
+                // `cxx:775-778`.
+                self.result.curve_type = CurveType::BSplineCurve;
+                self.result.bspline = comp.bspline();
+            }
+            // `cxx:781-784`: set the periodicity flag.
+            if s_type == SurfaceType::Plane && c_type == CurveType::BSplineCurve && curve.is_periodic()
+            {
+                self.result.periodic = true;
+            }
+            self.tolerance = comp.tolerance();
         }
 
         // `cxx:787-886`: keep a periodic result inside the surface's parameter

@@ -13,6 +13,7 @@
 //! (`ProjLib_Sphere.cxx:33-249`) and [`torus`] (`ProjLib_Torus.cxx:28-193`).
 
 mod cone;
+mod compute_approx;
 mod cylinder;
 mod plane;
 mod projected_curve;
@@ -21,6 +22,7 @@ mod sphere;
 mod torus;
 
 pub use cone::Cone;
+pub use compute_approx::{ComputeApprox, ProjLibFunction, UvBounds};
 pub use cylinder::Cylinder;
 pub use plane::Plane;
 pub use projected_curve::{
@@ -37,6 +39,21 @@ use occt_core::gp::{
 };
 
 use crate::curve::Curve;
+use crate::surface::Surface;
+
+/// `ProjLib::IsAnaSurf(Adaptor3d_Surface&)` (`ProjLib.cxx`): `true` for the
+/// five elementary surfaces only — a Bezier / BSpline / swept / offset surface
+/// answers `false` even though it is "analytical" in the loose sense.
+pub fn is_ana_surf(s: &dyn Surface) -> bool {
+    matches!(
+        projected_curve::surface_type(s),
+        occt_core::kernel::geomabs::SurfaceType::Plane
+            | occt_core::kernel::geomabs::SurfaceType::Cylinder
+            | occt_core::kernel::geomabs::SurfaceType::Cone
+            | occt_core::kernel::geomabs::SurfaceType::Sphere
+            | occt_core::kernel::geomabs::SurfaceType::Torus
+    )
+}
 
 /// `ProjLib::Project(gp_Pln, gp_Pnt)`.
 pub fn project_pln_pnt(pl: &GpPln, p: &GpPnt) -> GpPnt2d {

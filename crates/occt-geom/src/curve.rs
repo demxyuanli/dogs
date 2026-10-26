@@ -37,6 +37,19 @@ pub trait Curve: Send + Sync {
     fn is_last_open(&self) -> bool { false }
     fn is_periodic(&self) -> bool { false }
     fn period(&self) -> f64 { 0.0 }
+    /// `Adaptor3d_Curve::IsClosed()` (`GeomAdaptor_Curve.cxx:576-585`): an
+    /// infinite range is never closed; otherwise the two ends coincide within
+    /// `Precision::Confusion()`. The predicate is endpoint coincidence, not
+    /// `Geom_Curve::IsClosed()`: a closed but non-periodic B-spline answers
+    /// `true`, a periodic curve trimmed to an arc answers `false`.
+    fn is_closed(&self) -> bool {
+        let (first, last) = (self.first_parameter(), self.last_parameter());
+        use occt_core::precision::Precision;
+        if Precision::is_positive_infinite(last) || Precision::is_negative_infinite(first) {
+            return false;
+        }
+        self.d0(first).distance(&self.d0(last)) <= occt_core::precision::CONFUSION
+    }
     fn continuity(&self) -> u8;
     /// `Geom_Curve::IsCN`. `N < 0` is the range error.
     fn is_cn(&self, n: i32) -> Result<bool, String> {
