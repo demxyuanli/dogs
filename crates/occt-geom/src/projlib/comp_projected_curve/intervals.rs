@@ -45,8 +45,10 @@ impl CompProjectedCurve {
         Ok(self.tab_int.as_deref().unwrap_or(&[]))
     }
 
-    /// `BuildIntervals(S)` (`cxx:1833-2093`).
-    fn build_intervals(&self, shape: u8) -> Result<Vec<f64>, String> {
+    /// `BuildIntervals(S)` (`cxx:1833-2093`). `pub(crate)` for the
+    /// `Adaptor2d_Curve2d` view ([`adaptor`]), whose `Intervals` reports the
+    /// same table.
+    pub(crate) fn build_intervals(&self, shape: u8) -> Result<Vec<f64>, String> {
         // `SforS` (`cxx:1835-1856`).
         let sfor_s: u8 = match shape {
             0 => Shape::C1 as u8,

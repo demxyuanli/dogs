@@ -15,6 +15,7 @@
 
 pub mod bspline_approx_interp;
 pub mod bspl_compute_line;
+pub mod curve_on_surface;
 pub mod compute_line;
 pub mod fit_and_divide;
 pub mod line_tool;

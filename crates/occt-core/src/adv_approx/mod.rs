@@ -6,11 +6,13 @@
 mod cutting;
 mod simple;
 mod approx;
+mod approx_1d_pair_3d;
 mod mixed_dimension;
 
 pub use approx::{
     ApproxAFunction1d3d, ApproxAFunction1dPair, ApproxAFunction2d, ApproxAFunction3d,
     ApproxAFunction3dMulti,
 };
+pub use approx_1d_pair_3d::ApproxAFunction1dPair3d;
 pub use mixed_dimension::ApproxAFunction;
 pub use cutting::{Cutting, DichoCutting, PrefAndRec, PrefCutting};

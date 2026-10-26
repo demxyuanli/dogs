@@ -22,7 +22,7 @@ use super::simple::{EvalFn, SimpleApprox};
 /// continuity at the knot before span `i` (OCCT's 1-based `Continuity(i+1)`),
 /// and entry 0 is never read by the converter.
 #[allow(clippy::too_many_arguments)]
-fn prepare_convert(
+pub(super) fn prepare_convert(
     num_curves: i32,
     max_degree: i32,
     continuity_order: i32,

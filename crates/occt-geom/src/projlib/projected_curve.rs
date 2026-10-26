@@ -12,12 +12,14 @@
 //! **UNPORTED** (approximators, same file):
 //! - `ProjLib_ComputeApproxOnPolarSurface` (`ProjLib_ComputeApproxOnPolarSurface.cxx`,
 //!   2214 lines) — the `GeomAbs_BezierSurface` / `GeomAbs_BSplineSurface` arm
-//!   (`cxx:496-536`). The pole trimming of `:466-493` and the `ExtendC2d`
+//!   (`cxx:460-536`). The pole trimming of `:466-493` and the `ExtendC2d`
 //!   tail (`:507-535`) are ported around it.
-//! - `Approx_CurveOnSurface` + `ProjLib_HCompProjectedCurve`
-//!   (`ProjLib_CompProjectedCurve.cxx`, 2069 lines) — the `default:` arm
-//!   (`cxx:539-715`), including the `Extrema_ExtPC` search for the singular
-//!   parameter on a surface of revolution's basis curve (`cxx:558-610`).
+//! - in the `default:` arm (`cxx:539-715`), the surface-of-revolution
+//!   singularity handling (`cxx:553-610`: `AxeOfRevolution`/`BasisCurve`,
+//!   `Extrema_ExtPC`, `Adaptor3d_Curve::Trim`) and the `ExtendC2d` /
+//!   `GeomLib::SameRange` / `RemoveKnot` tail that follows it
+//!   (`cxx:658-712`). The rest of the arm is [`CompProjectedCurve`] plus
+//!   [`ApproxCurveOnSurface`].
 //! - `ExtendC2d` (`cxx:162-238`) and the `GeomLib::SameRange` remake of a
 //!   trimmed approximation result (`cxx:740-766`); the `ProjLib_ComputeApprox`
 //!   fallback itself is ported ([`crate::projlib::ComputeApprox`]).
@@ -527,13 +529,28 @@ impl ProjectedCurve {
                 // B-spline, which is what this arm returns.
             }
             _ => {
-                // UNPORTED: `cxx:539-715`. The singular-parameter search on a
-                // surface of revolution (`Extrema_ExtPC` over
-                // `mySurface->BasisCurve()`, `cxx:558-610`), the
-                // `ProjLib_HCompProjectedCurve` boundary search and the
-                // `Approx_CurveOnSurface` fit (`cxx:613-713`).
-                self.curve = Some(curve);
-                return;
+                // `cxx:539-715`, see [`super::projected_curve_general`]:
+                // every surface outside the five elementary ones and the two
+                // patch types.
+                is_analytical_surf = false;
+                let Some((a_res, new_tolerance)) = super::projected_curve_general::general_approx(
+                    &surface,
+                    &curve,
+                    self.tolerance,
+                    self.max_dist,
+                    self.deg_max,
+                    self.max_segments,
+                    self.bnd_pnt,
+                ) else {
+                    self.curve = Some(curve);
+                    return;
+                };
+                // `cxx:671-675`: the tolerance shrinks with the fit.
+                self.tolerance = new_tolerance;
+                // `cxx:713-715`: `SetBSpline` / `Done` / `SetType`.
+                self.result.bspline = Some(a_res);
+                self.result.done = true;
+                self.result.curve_type = CurveType::BSplineCurve;
             }
         }
 

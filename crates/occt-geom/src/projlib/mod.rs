@@ -20,6 +20,7 @@ mod plane;
 mod prj_func;
 mod prj_resolve;
 mod projected_curve;
+mod projected_curve_general;
 mod projector;
 mod sphere;
 mod torus;

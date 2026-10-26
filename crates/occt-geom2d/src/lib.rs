@@ -14,6 +14,7 @@
 use std::sync::Arc;
 
 pub mod adaptor_curve;
+pub mod adaptor_trim;
 pub mod curve;
 pub mod bspline_curve;
 pub mod line;

@@ -14,21 +14,19 @@
 //! - [`init`]: `Init` and its sequence post-processing (`cxx:657-1227`),
 //! - [`eval`]: `D0` / `D1` / `D2` / `DN` / `Value` (`cxx:1551-1755`),
 //! - [`intervals`]: `NbIntervals` / `Intervals` / `BuildIntervals`
-//!   (`cxx:1810-2092`).
+//!   (`cxx:1810-2092`),
+//! - [`adaptor`]: the `Adaptor2d_Curve2d` view of the projection that
+//!   `Perform` hands to `Approx_CurveOnSurface`,
+//! - [`perform`]: `ShallowCopy` and `Perform` (`cxx:630-656`,
+//!   `cxx:1229-1408`).
 //!
 //! `mySequence` holds one `NCollection_HSequence<gp_Pnt>` per continuous part
 //! (`hxx:255`); the port stores `Vec<Vec<GpPnt>>`, with OCCT's 1-based
 //! `Value(i)` at `[i - 1]`.
 //!
 //! UNPORTED sections, with the OCCT lines they occupy:
-//! - `Perform` (`cxx:1229-1408`): the approximation branch needs
-//!   `Approx_CurveOnSurface`, which this port does not have. The isoparametric
-//!   and single-point arms are reachable only through `Perform`, so the whole
-//!   method is left out until that class lands.
 //! - `Trim` (`cxx:2095-2103`): needs `Adaptor2d_Curve2d`, which the port does
 //!   not model.
-//! - `ShallowCopy` (`cxx:630-656`): only used by `Perform`'s `UTrim` / `VTrim`
-//!   path, see above.
 //! - `GetSequence` (`cxx:1758-1762`) has no Rust analogue; [`CompProjectedCurve::part`]
 //!   exposes one part at a time.
 
@@ -44,18 +42,26 @@ use crate::curve::Curve;
 use crate::projlib::projected_curve::surface_type;
 use crate::surface::Surface;
 
+mod adaptor;
 mod bounds;
 mod eval;
 mod init;
 mod intervals;
 mod jets;
+mod perform;
 mod splits;
+
+pub(crate) use adaptor::ProjectedCurve2d;
 
 /// `#define FuncTol 1.e-10` (`cxx:53`): the residual tolerance handed to every
 /// `ProjLib_PrjResolve::Perform` call.
 pub(crate) const FUNC_TOL: f64 = 1.0e-10;
 
 /// `ProjLib_CompProjectedCurve` (`hxx:36-280`).
+///
+/// `Clone` is `ShallowCopy` (`cxx:632-654`) without the `tab_int` cache and
+/// the result arrays; [`CompProjectedCurve::shallow_copy`] is the named form.
+#[derive(Clone)]
 pub struct CompProjectedCurve {
     /// `mySurface` (`hxx:251`).
     surface: Option<Arc<dyn Surface>>,
