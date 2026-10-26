@@ -10,6 +10,12 @@ mod func;
 mod int2s;
 #[path = "intwalk_pwalking.rs"]
 mod pwalking;
+#[path = "intwalk_pwalking_dist.rs"]
+#[allow(dead_code)]
+mod pwalking_dist;
+#[path = "intwalk_pwalking_boundary.rs"]
+#[allow(dead_code)]
+mod pwalking_boundary;
 #[path = "intwalk_pwalking_deflect.rs"]
 mod pwalking_deflect;
 #[path = "intwalk_pwalking_perform.rs"]

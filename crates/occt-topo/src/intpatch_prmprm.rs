@@ -29,14 +29,10 @@
 //! Still UNPORTED, with the branch each one needs:
 //!
 //! * `Perform(..., NCollection_List<IntSurf_PntOn2S>& LOfPnts)` (`:1827-2175`).
-//!   The whole overload is blocked on `IntWalk_PWalking::PutToBoundary`
-//!   (`IntWalk_PWalking.cxx:2951-3157`, called at `:2058`), which in turn needs
-//!   `IsParallel` (`IntWalk_PWalking.cxx:118-200`), `SeekPointOnBoundary`
-//!   (`:2716-2950`), `DistanceMinimizeByGradient` (`:2394-2531`),
-//!   `DistanceMinimizeByExtrema` (`:2532-2586`) and `HandleSingleSingularPoint`
-//!   (`:2587-2715`). It also calls the `SeveralWlinesProcessing` helper
-//!   (`:65-271`) at `:2152` and `MakeNewPoint` (`:2452-2483`), neither of which
-//!   is ported yet.
+//!   The whole overload is blocked on the `SeveralWlinesProcessing` helper
+//!   (`:65-271`) at `:2152` and on `MakeNewPoint` (`:2452-2483`); both are
+//!   still missing. Its `PW.PutToBoundary` (`:2058`) is available now
+//!   (`intwalk_pwalking_boundary.rs::put_to_boundary`).
 //! * grille variant `Perform(..., bool ClearFlag)` (`:2488-3403`). The
 //!   dispatch and the sampling preamble (`:2495-2522`) still have no Rust
 //!   body: `Adaptor3d_TopolTool::SamplePnts` / `NbSamplesU` / `NbSamplesV` /
@@ -46,11 +42,12 @@
 //!   `IsUniformSampling` are not.
 //!   Its fast branch (`:2524-3198`, taken when `NbU1*NbV1 <= 2500 &&
 //!   NbU2*NbV2 <= 2500`) is now backed by the ported `IntPolyh_Intersection`
-//!   (`intpolyh/intersection.rs`), but the walking part still cannot run:
-//!   `PW.PutToBoundary` (`:2767`) and `PW.SeekAdditionalPoints` (`:2777`,
-//!   `:3070`) are not ported (`IntWalk_PWalking.cxx:2951-3157`), nor is
-//!   `PW.MaxStep` (`:2921`) or `AdjustOnPeriodic` (`:2329-2448`, called at
-//!   `:2944`).
+//!   (`intpolyh/intersection.rs`) and the walking boundary layer:
+//!   `PW.PutToBoundary` (`:2767`) / `PW.SeekAdditionalPoints` (`:2777`,
+//!   `:3070`) / `PW.MaxStep` (`:2921`) are ported
+//!   (`intwalk_pwalking_boundary.rs`, `intwalk_pwalking_dist.rs:max_step`),
+//!   but `AdjustOnPeriodic` (`:2329-2448`, called at `:2944`) is still
+//!   missing, so the overload body itself is not ported.
 //!   The fallback branch (`:3200-3402`) is driven by `PointDepart`
 //!   (`:3492-3991`, already ported in `intpatch_prmprm_depart.rs`) and
 //!   `PW.PerformFirstPoint` / `PW.Perform` (`intwalk_pwalking.rs:210`,
