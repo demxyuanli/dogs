@@ -122,7 +122,7 @@ impl ChFi3dBuilder {
                     if nba > 3 {
                         // `PerformIntersectionAtEnd(Index);` (`cxx:826`).
                         ops.perform_intersection_at_end(index)?;
-                    } else if ops.more_surfdata(index) {
+                    } else if self.more_surfdata(index) {
                         // `PerformMoreSurfdata(Index);` (`cxx:839-841`).
                         ops.perform_more_surfdata(index)?;
                     } else {

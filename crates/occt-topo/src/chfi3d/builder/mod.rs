@@ -126,14 +126,23 @@
 //!   edge-contact `PerformSurf` / `SimulSurf` of the subclasses, so they stay on
 //!   the `ChFi3d_Builder_NotImp.cxx` `throw` defaults for now —,
 //! - the corner bodies reached through [`ChFi3dCornerOps`]:
-//!   `PerformOneCorner` (`ChFi3d_Builder_C1.cxx:611-...`),
-//!   `PerformIntersectionAtEnd` (`:1828-...`), `PerformMoreSurfdata`
-//!   (`:3771-...`), `FindFace` (`:4533-4600`), `MoreSurfdata` (`:4601-...`),
-//!   `IntersectMoreCorner` (`:4708-...`), and `PerformMoreThreeCorner`
-//!   (`:1237-...`), all of them `ChFiKPart` / `BRepBlend` consumers; the six
-//!   pure virtuals (`PerformTwoCorner`, `PerformThreeCorner`, the three
-//!   `Extent*Corner`, `SetRegul`) stay in the subclasses
-//!   (`ChFi3d_FilBuilder` / `ChFi3d_ChBuilder`).
+//!   `PerformOneCorner` (`ChFi3d_Builder_C1.cxx:611-1827`),
+//!   `PerformIntersectionAtEnd` (`:1828-3770`), `PerformMoreSurfdata`
+//!   (`:3771-4531`), `IntersectMoreCorner` (`:4708-...`), and
+//!   `PerformMoreThreeCorner` (`:1237-1652`), all of them `ChFiKPart` /
+//!   `BRepBlend` consumers; the six pure virtuals (`PerformTwoCorner`,
+//!   `PerformThreeCorner`, the three `Extent*Corner`, `SetRegul`) stay in the
+//!   subclasses (`ChFi3d_FilBuilder` / `ChFi3d_ChBuilder`).
+//! - `ComputeCurve2d` (`ChFi3d_Builder_C1.cxx:456-483`) - UNPORTED with its
+//!   `BRepAlgo_NormalProjection` dependency, see
+//!   [`crate::chfi3d::builder_c1`].
+//!
+//! Ported from `ChFi3d_Builder_C1.cxx` (see [`crate::chfi3d::builder_c1`] for
+//! the file statics):
+//!
+//! - [`ChFi3dBuilder::find_face`] (`:4533-4598`, both overloads),
+//! - [`ChFi3dBuilder::more_surfdata`] (`:4601-4705`), the `const` member
+//!   `PerformFilletOnVertex` branches on.
 //!
 //! Divergences that are not heuristics (each is also stated at the call site):
 //! - `occ::handle<T>` becomes an owned value (`HDataStructure`, `HBuilder`) or
@@ -161,7 +170,9 @@ mod compute_data_face_face;
 mod corner_ops;
 mod extent_analyse;
 mod fil_ds;
+mod find_face;
 mod make_extremities;
+mod more_surfdata;
 mod perform_element;
 mod perform_extremity;
 mod perform_fillet_on_vertex;

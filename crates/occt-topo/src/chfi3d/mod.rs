@@ -11,12 +11,14 @@
 //! | the `ChFi3d_Builder_0.cxx` free functions | [`builder_helpers`] |
 //! | the `ChFi3d_Builder_6.cxx` file statics | [`builder_6_helpers`] |
 //! | the `ChFi3d_Builder_2.cxx` file statics (`IsInput`, `IsG1`, `SearchFaceOnV`) | [`builder_2_helpers`] |
+//! | the `ChFi3d_Builder_C1.cxx` file statics (`Update` x3, `ChFi3d_Recale`, `ChFi3d_ExtendSurface`, `IsShrink`, `containE` / `containV`, `cherche_face` / `cherche_edge1`, `ChFi3d_SelectStripe`) | [`builder_c1`] |
 //! | `ChFi3d_Builder` (`ChFi3d_Builder.hxx:77-848`) | [`builder::ChFi3dBuilder`] |
 
 pub mod builder;
 pub mod builder_0_helpers;
 pub mod builder_2_helpers;
 pub mod builder_6_helpers;
+pub mod builder_c1;
 pub mod builder_helpers;
 pub mod chfi_k_part;
 pub mod coefficient;

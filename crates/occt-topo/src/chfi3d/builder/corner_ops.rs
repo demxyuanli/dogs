@@ -2,17 +2,21 @@
 //!
 //! Source: `ModelingAlgorithms/TKFillet/ChFi3d/ChFi3d_Builder.hxx:388`
 //! (`SetRegul`), `:560-576` (the five corner pure virtuals), `:564` /
-//! `:780-801` (the five non-virtual corner members) (OCCT 8.0.0).
+//! `:780-801` (the five non-virtual corner members, of which `MoreSurfdata` is
+//! ported - see below) (OCCT 8.0.0).
 //!
 //! [`super::ChFi3dBuilder::compute`], `perform_fillet_on_vertex` and
 //! `extent_analyse` call these through `this->`. In OCCT the six pure virtuals
 //! are implemented by `ChFi3d_FilBuilder` / `ChFi3d_ChBuilder`, which are not
-//! ported yet; the five base members are `ChFi3d_Builder_C1.cxx` bodies whose
+//! ported yet; the six base members are `ChFi3d_Builder_C1.cxx` bodies whose
 //! `ChFiKPart` / `BRepBlend` dependencies are not ported either. Both groups
 //! are therefore stated as a trait the caller implements (or fails), so the
 //! orchestration layer keeps the OCCT call graph without a stub that pretends
-//! to work. The trait carries the OCCT signatures with `occ::handle` /
-//! `TopoDS_*` mapped the way the rest of `chfi3d` does:
+//! to work. `MoreSurfdata` is **not** part of the trait: it is ported as
+//! [`super::ChFi3dBuilder::more_surfdata`] (`find_face.rs` /
+//! `more_surfdata.rs`), together with the `ChFi3d_Builder_C1.cxx` file statics
+//! in [`crate::chfi3d::builder_c1`]. The trait carries the OCCT signatures with
+//! `occ::handle` / `TopoDS_*` mapped the way the rest of `chfi3d` does:
 //!
 //! - `const occ::handle<ChFiDS_Stripe>&` → [`StripeHandle`],
 //! - `const NCollection_List<occ::handle<ChFiDS_Stripe>>&` (the stripe list of
@@ -55,12 +59,8 @@ pub trait ChFi3dCornerOps {
     /// trait.
     fn perform_one_corner(&mut self, index: usize, prepare_on_same: bool) -> Result<(), String>;
 
-    /// `MoreSurfdata(Index)` (`hxx:801`, body `ChFi3d_Builder_C1.cxx:4601-...`):
-    /// `const` in OCCT, `UNPORTED` for the same reason.
-    fn more_surfdata(&mut self, index: usize) -> bool;
-
     /// `PerformMoreSurfdata(Index)` (`hxx:784`, body
-    /// `ChFi3d_Builder_C1.cxx:3771-...`), `UNPORTED`.
+    /// `ChFi3d_Builder_C1.cxx:3771-4531`), `UNPORTED`.
     fn perform_more_surfdata(&mut self, index: usize) -> Result<(), String>;
 
     /// `PerformIntersectionAtEnd(Index)` (`hxx:786`, body
