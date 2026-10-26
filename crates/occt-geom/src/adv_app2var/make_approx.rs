@@ -152,8 +152,13 @@ fn mma2ce2(
             minu, maxu, ndimen, nbpnt_u, nbpnt_v, i2rdu, cols, sosotb, disotb, soditb, diditb,
             gssutb, &mut chpair, &mut chimpr,
         )?;
+        // `mma2ce2_` loops over the `nbsesp` subspaces filling `errmax(nd)`
+        // (`AdvApp2Var_ApproxF2var.cxx:4560-4600`). Only the single 3D
+        // subspace used by `GeomConvert_ApproxSurface` is ported.
         if nbsesp != 1 {
-            return Err("UNPORTED AdvApp2Var_Iso::MakeApprox: AdvApp2Var_Iso.cxx:122".into());
+            return Err(format!(
+                "AdvApp2Var_ApproxF2var::mma2ce2_: AdvApp2Var_ApproxF2var.cxx:4560 ({nbsesp})"
+            ));
         }
         let eps = *epsapr.first().ok_or_else(|| {
             "AdvApp2Var_ApproxF2var::mma2ce2_: AdvApp2Var_ApproxF2var.cxx:4387".to_string()
@@ -261,8 +266,13 @@ fn mma2ce2(
             }
         }
     }
+    // `mma2ce2_` loops over the `nbsesp` subspaces filling `errmax(nd)`
+    // (`AdvApp2Var_ApproxF2var.cxx:4560-4600`). Only the single 3D subspace
+    // used by `GeomConvert_ApproxSurface` is ported.
     if nbsesp != 1 {
-        return Err("UNPORTED AdvApp2Var_Iso::MakeApprox: AdvApp2Var_Iso.cxx:122".into());
+        return Err(format!(
+            "AdvApp2Var_ApproxF2var::mma2ce2_: AdvApp2Var_ApproxF2var.cxx:4560 ({nbsesp})"
+        ));
     }
     let eps = *epsapr.first().ok_or_else(|| {
         "AdvApp2Var_ApproxF2var::mma2ce2_: AdvApp2Var_ApproxF2var.cxx:4828".to_string()

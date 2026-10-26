@@ -17,10 +17,13 @@
 //!   `mySurface = BSurf` with the tensor product commented out
 //!   (`cxx:395-476`). It is therefore not ported; `isProduct` is always false,
 //!   exactly as in OCCT.
-//! - The `myForceApproxC1` block (`cxx:288-327`) needs
-//!   `GeomConvert_ApproxSurface`, which has no driver in this tree (only its
-//!   `GeomConvert_ApproxSurface_Eval` helper, `adv_app2var/eval_surface.rs`).
-//!   **UNPORTED**: `GeomFill_Sweep.cxx:288-327`.
+//! - The `myForceApproxC1` block (`cxx:288-327`) runs
+//!   `GeomConvert_ApproxSurface` (`crate::convert_approx_surface`) with
+//!   `Tol = 1.e-4`, `C1` in U and V, degree 14, 16 segments, precision 1, and
+//!   replaces the surface and the two 2d lines when it returns a result.
+//!   In OCCT this block is reached only through `BRepFill_Pipe` /
+//!   `BRepFill_Sweep` / `BRepOffsetAPI_MakePipeShell`, none of which are
+//!   ported, so the branch has no reachable caller here yet.
 //! - `KPartState` collects the locals of `BuildKPart` that the translation and
 //!   rotation parts share (`S`, `Ok`, `UFirst`...); see `k_part.rs`.
 
@@ -35,6 +38,7 @@ use occt_geom2d::trimmed::Geom2dTrimmedCurve;
 
 use crate::approx_sweep_approximation::ApproxSweepApproximation;
 use crate::bspline_surface::GeomBSplineSurface;
+use crate::convert_approx_surface::GeomConvertApproxSurface;
 use crate::geom_fill::location_law::LocationLaw;
 use crate::geom_fill::section_law::SectionLaw;
 use crate::geom_fill::sweep_function::SweepFunction;
@@ -319,11 +323,56 @@ impl Sweep {
         // `Geom_BSplineSurface(..., IsUPeriodic)` (`cxx:286`).
         bs.set_u_periodic_flag(sec.is_u_periodic());
         self.s_error = approx.max_error_on_surf().unwrap_or(self.s_error);
-        self.surface = Some(Arc::new(bs));
 
-        // `cxx:288-327` (force a C1 approximation with
-        // `GeomConvert_ApproxSurface`) is UNPORTED: no driver for
-        // `GeomConvert_ApproxSurface` exists in this tree.
+        // `cxx:288-327`: force a C1 approximation with
+        // `GeomConvert_ApproxSurface` when the direct result is not `C1`.
+        if self.force_approx_c1 && !matches!(bs.is_cnv(1), Ok(true)) {
+            let the_tol = 1.0e-4;
+            let convert = GeomConvertApproxSurface::new(
+                &bs,
+                the_tol,
+                Shape::C1,
+                Shape::C1,
+                14,
+                14,
+                16,
+                1,
+            );
+            if convert.has_result() {
+                if let Some(converted) = convert.into_surface() {
+                    // `cxx:304-307`: two lines of constant U at the first and
+                    // the last U knot, both trimmed to the last V knot.
+                    let u_first = converted.uknots().first().copied().unwrap_or(0.0);
+                    let u_last = converted.uknots().last().copied().unwrap_or(0.0);
+                    let v_last = converted.vknots().last().copied().unwrap_or(0.0);
+                    if let Ok(dir) = GpDir2d::new(0.0, 1.0) {
+                        let first = Geom2dTrimmedCurve::new(
+                            Arc::new(Geom2dLine::new(GpAx2d::new(
+                                GpPnt2d::new(u_first, 0.0),
+                                dir,
+                            ))),
+                            0.0,
+                            v_last,
+                        );
+                        let last = Geom2dTrimmedCurve::new(
+                            Arc::new(Geom2dLine::new(GpAx2d::new(
+                                GpPnt2d::new(u_last, 0.0),
+                                dir,
+                            ))),
+                            0.0,
+                            v_last,
+                        );
+                        // `myCurve2d = HArray1(1, 2)` (`cxx:302`) replaces the
+                        // wider array of `cxx:330-386`.
+                        self.curve2d = vec![Some(Arc::new(first)), Some(Arc::new(last))];
+                        self.c_error = vec![[0.0, 0.0], [0.0, 0.0]];
+                        bs = converted;
+                        self.s_error = the_tol;
+                    }
+                }
+            }
+        }
+        self.surface = Some(Arc::new(bs));
 
         // `cxx:330-386`: the 2d curves.
         if self.curve2d.is_empty() {

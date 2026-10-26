@@ -41,10 +41,11 @@ pub(super) fn discretise_corners(
     let ndimen = ctx.total_dimension();
     let ord_u = ctx.ord_u;
     let ord_v = ctx.ord_v;
-    // `Discretise` hard-codes X/Y/Z (`AdvApp2Var_Patch.cxx:104-105`).
+    // `Discretise` hard-codes X/Y/Z (`AdvApp2Var_Patch.cxx:104-105`), so only
+    // the single 3D subspace used by `GeomConvert_ApproxSurface` reaches it.
     // `IORDRU` / `IORDRV` of -1 are valid (`:115`, `:123`, `:185-188`).
     if ndimen != 3 {
-        return Err("UNPORTED AdvApp2Var_Patch::Discretise: AdvApp2Var_Patch.cxx:104".into());
+        return Err("AdvApp2Var_Patch::Discretise: AdvApp2Var_Patch.cxx:104".into());
     }
     let mut nbpnt_u = ctx.u_roots.len() as i32;
     if ord_u > -1 {

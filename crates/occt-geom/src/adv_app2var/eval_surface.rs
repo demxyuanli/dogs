@@ -88,12 +88,10 @@ pub(super) fn evaluate(
                     )?;
                 }
             }
-            _ => {
-                return Err(
-                    "UNPORTED GeomConvert_ApproxSurface_Eval: GeomConvert_ApproxSurface.cxx:133"
-                        .into(),
-                );
-            }
+            // `switch (Order)` has no `default` in OCCT
+            // (`GeomConvert_ApproxSurface.cxx:133-218`): an order above 4
+            // leaves `Result` untouched and keeps `ErrorCode = 0`.
+            _ => {}
         }
     } else {
         let v_par = const_param;
@@ -155,12 +153,10 @@ pub(super) fn evaluate(
                     )?;
                 }
             }
-            _ => {
-                return Err(
-                    "UNPORTED GeomConvert_ApproxSurface_Eval: GeomConvert_ApproxSurface.cxx:223"
-                        .into(),
-                );
-            }
+            // `switch (Order)` has no `default` in OCCT
+            // (`GeomConvert_ApproxSurface.cxx:223-308`): an order above 4
+            // leaves `Result` untouched and keeps `ErrorCode = 0`.
+            _ => {}
         }
     }
     Ok(error)

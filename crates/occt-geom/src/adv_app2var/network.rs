@@ -23,6 +23,16 @@ pub(super) struct Network {
     v_params: Vec<f64>,
 }
 
+/// `my3DMaxError` / `my3DAverageError` / `myUFrontError` / `myVFrontError`
+/// (`AdvApp2Var_ApproxAFunc2Var.cxx:826-859`) plus `myDone`.
+pub(super) struct Errors3d {
+    pub done: bool,
+    pub max_error: f64,
+    pub average_error: f64,
+    pub u_front_error: f64,
+    pub v_front_error: f64,
+}
+
 impl Network {
     pub(super) fn init(u0: f64, u1: f64, v0: f64, v1: f64, iu: i32, iv: i32) -> Self {
         Self {
@@ -199,15 +209,23 @@ impl Network {
     }
 
     /// `Compute3DErrors` (`AdvApp2Var_ApproxAFunc2Var.cxx:818-863`).
-    /// `Perform` has already set `myDone` (`:341`). Returns that flag.
+    /// `Perform` has already set `myDone` (`:341`). Returns that flag together
+    /// with the four stored error tables (`:852-859`).
     pub(super) fn compute_3d_errors(
         &self,
         nb3: i32,
         tol3: &[f64],
         front3: &[[f64; 4]],
-    ) -> Result<bool, String> {
+    ) -> Result<Errors3d, String> {
+        let mut stored = Errors3d {
+            done: true,
+            max_error: 0.0,
+            average_error: 0.0,
+            u_front_error: 0.0,
+            v_front_error: 0.0,
+        };
         if nb3 < 1 {
-            return Ok(true);
+            return Ok(stored);
         }
         let npatch = self.patches.len();
         if npatch == 0 {
@@ -216,7 +234,6 @@ impl Network {
                     .into(),
             );
         }
-        let mut done = true;
         for iesp in 1..=nb3 {
             if iesp != 1 {
                 return Err(
@@ -246,20 +263,23 @@ impl Network {
                 error_v1 = error_v1.max(patch.iso_errors[1]);
                 error_moy += patch.moy_error;
             }
-            let _u_front = error_u0.max(error_u1);
-            let _v_front = error_v0.max(error_v1);
+            let u_front = error_u0.max(error_u1);
+            let v_front = error_v0.max(error_v1);
             error_moy /= npatch as f64;
-            let _average = error_moy;
+            stored.max_error = error_max;
+            stored.average_error = error_moy;
+            stored.u_front_error = u_front;
+            stored.v_front_error = v_front;
             if error_max > tol
                 || error_u0 > front[2]
                 || error_u1 > front[3]
                 || error_v0 > front[0]
                 || error_v1 > front[1]
             {
-                done = false;
+                stored.done = false;
             }
         }
-        Ok(done)
+        Ok(stored)
     }
 
     /// `SameDegree` (`AdvApp2Var_Network.cxx:135-156`). Counts only rise.

@@ -371,6 +371,7 @@ fn approximate_prefix(
         2, iu, iv, ndu, ndv, precis, 0, 0, 1, &[], &[], &[tol], &[], &[], &[frontier],
     )?;
     occt_geom::adv_app2var::approximate_until_cdi(surf, uf, ul, vf, vl, &ctx, max_segments)
+        .map(|result| result.surface)
 }
 
 fn infinite_extrusion_bspline(

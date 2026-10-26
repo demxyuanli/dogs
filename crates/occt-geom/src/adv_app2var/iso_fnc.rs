@@ -12,7 +12,6 @@
 //! then stores a finished square. `Compute3DErrors` runs when every square
 //! is approximated, and `ConvertBS` returns the B-spline.
 
-use crate::bspline_surface::GeomBSplineSurface;
 use crate::Surface;
 
 use super::context::App2VarContext;
@@ -31,7 +30,7 @@ pub fn approximate_until_cdi(
     v1: f64,
     ctx: &App2VarContext,
     max_patches: i32,
-) -> Result<GeomBSplineSurface, String> {
+) -> Result<super::ApproxAFunc2VarResult, String> {
     let mut frame = super::framework::Framework::init_grid(u0, u1, v0, v1, ctx.ord_u, ctx.ord_v);
     let mut net = super::network::Network::init(u0, u1, v0, v1, ctx.ord_u, ctx.ord_v);
     // `GeomConvert_ApproxSurface.cxx:381-398`: C2 breaks are recommended,
@@ -49,8 +48,16 @@ pub fn approximate_until_cdi(
             |iso, begin, end| approx_iso(surf, ctx, iso, begin, end),
         )?;
         let Some(index) = net.first_not_approx() else {
-            let _done = net.compute_3d_errors(ctx.nb_3d, &ctx.tol_3d, &ctx.tol_3d_front)?;
-            return super::convert_bs::convert_bs(&mut net, ctx);
+            let errors = net.compute_3d_errors(ctx.nb_3d, &ctx.tol_3d, &ctx.tol_3d_front)?;
+            let surface = super::convert_bs::convert_bs(&mut net, ctx)?;
+            return Ok(super::ApproxAFunc2VarResult {
+                surface,
+                is_done: errors.done,
+                max_error: errors.max_error,
+                average_error: errors.average_error,
+                u_front_error: errors.u_front_error,
+                v_front_error: errors.v_front_error,
+            });
         };
         let (pu0, pu1, pv0, pv1) = net.domain(index)?;
         let (step, u_dec, v_dec) = super::discretise::discretise_corners(

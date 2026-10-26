@@ -80,6 +80,8 @@ pub mod gcpnts;
 pub mod convert_bspl;
 pub mod convert_approx_curve;
 pub use convert_approx_curve::GeomConvertApproxCurve;
+pub mod convert_approx_surface;
+pub use convert_approx_surface::GeomConvertApproxSurface;
 pub mod surface_of_revolution;
 pub mod surface_of_linear_extrusion;
 pub mod projlib;
