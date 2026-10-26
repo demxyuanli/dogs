@@ -122,6 +122,8 @@ impl<'a> ALineToWLine<'a> {
             wl.vertices.push(v.clone());
         }
         wl.ensure_end_vertices();
+        // `aWLine->EnablePurging(false)` (`IntPatch_ALineToWLine.cxx:956`).
+        wl.enable_purging(false);
         vec![wl]
     }
 }

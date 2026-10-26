@@ -260,6 +260,7 @@ pub(crate) fn lines_to_wlines(
             u2_period: 0.0,
             v2_period: 0.0,
             creating_way: WLineWay::ImpPrm,
+            purger_allowed: true,
         };
         if n >= 2 {
             out.push((wl, line.clone()));

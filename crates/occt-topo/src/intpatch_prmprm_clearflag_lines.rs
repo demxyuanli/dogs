@@ -168,7 +168,7 @@ pub(crate) fn walk_section_lines(
                         }
                         // `hasBeenAdded = PW.SeekAdditionalPoints(Surf1, Surf2,
                         // aMinNbPoints)` (`cxx:2777`).
-                        let _has_been_added = if pw.nb_points() < MIN_NB_POINTS {
+                        let has_been_added = if pw.nb_points() < MIN_NB_POINTS {
                             pw.seek_additional_points(MIN_NB_POINTS)
                         } else {
                             false
@@ -227,12 +227,6 @@ pub(crate) fn walk_section_lines(
                         if !rejet {
                             // `>=` at `cxx:2867`.
                             let (trans1, trans2) = line_transitions(&pw, s1, s2, false);
-                            // **UNPORTED**: `wline->EnablePurging(!hasBeenAdded)`
-                            // (`cxx:2882`) sets `myIsPurgerAllowed`, which is
-                            // only read by `IntPatch_Intersection.cxx:1356`,
-                            // `:1639` and `:2083`; the port does not implement
-                            // those three purge passes, so the flag has no
-                            // consumer yet.
                             if let Some(mut wline) = finish_walking_line(
                                 &pw,
                                 s1,
@@ -245,6 +239,13 @@ pub(crate) fn walk_section_lines(
                                 p_fin,
                                 tol_tangency,
                             ) {
+                                // `wline->EnablePurging(!hasBeenAdded)`
+                                // (`cxx:2882`). OCCT sets the flag right after
+                                // `new IntPatch_WLine` and before
+                                // `PutVertexOnLine`; that method works on the
+                                // same object, so applying it to the finished
+                                // line is equivalent.
+                                wline.enable_purging(!has_been_added);
                                 lignetrouvee = true;
                                 several_wlines_processing(
                                     s1,

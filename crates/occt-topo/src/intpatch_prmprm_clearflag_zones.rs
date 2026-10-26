@@ -106,7 +106,7 @@ pub(crate) fn walk_tangent_zones(
         }
 
         // `cxx:3065-3074`: no `PutToBoundary` in this pass.
-        let _has_been_added = if pw.nb_points() < MIN_NB_POINTS {
+        let has_been_added = if pw.nb_points() < MIN_NB_POINTS {
             pw.seek_additional_points(MIN_NB_POINTS)
         } else {
             false
@@ -142,9 +142,7 @@ pub(crate) fn walk_tangent_zones(
 
         // `>` at `cxx:3128`.
         let (trans1, trans2) = line_transitions(&pw, s1, s2, true);
-        // **UNPORTED**: `EnablePurging(!hasBeenAdded)` (`cxx:3143`) has no
-        // consumer in the port; see `intpatch_prmprm_clearflag_lines.rs`.
-        if let Some(wline) = finish_walking_line(
+        if let Some(mut wline) = finish_walking_line(
             &pw,
             s1,
             &mut d1m,
@@ -156,6 +154,9 @@ pub(crate) fn walk_tangent_zones(
             p_fin,
             tol_tangency,
         ) {
+            // `wline->EnablePurging(!hasBeenAdded)` (`cxx:3143`), same order
+            // argument as in `intpatch_prmprm_clearflag_lines.rs`.
+            wline.enable_purging(!has_been_added);
             add_wline(slin, wline, deflection);
             *empty = false;
         }

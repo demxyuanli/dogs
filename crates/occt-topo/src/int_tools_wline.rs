@@ -157,6 +157,9 @@ pub struct WLine {
     pub v2_period: f64,
     /// Creating intersector (`GetCreatingWay`).
     pub creating_way: WLineWay,
+    /// `myIsPurgerAllowed` (`IntPatch_WLine.hxx:186-189`), `true` from every
+    /// constructor (`IntPatch_WLine.cxx:39`, `:56`, `:70`).
+    pub purger_allowed: bool,
 }
 
 impl WLine {
@@ -177,7 +180,18 @@ impl WLine {
             u2_period: 0.0,
             v2_period: 0.0,
             creating_way: WLineWay::Unknown,
+            purger_allowed: true,
         }
+    }
+
+    /// `EnablePurging(theIsEnabled)` (`IntPatch_WLine.hxx:186`).
+    pub fn enable_purging(&mut self, is_enabled: bool) {
+        self.purger_allowed = is_enabled;
+    }
+
+    /// `IsPurgingAllowed()` (`IntPatch_WLine.hxx:189`).
+    pub fn is_purging_allowed(&self) -> bool {
+        self.purger_allowed
     }
 
     /// `SetFirstPoint(IndFirst)` (`IntPatch_WLine.cxx`).
@@ -419,6 +433,7 @@ impl WLine {
             u2_period: 0.0,
             v2_period: 0.0,
             creating_way: way,
+            purger_allowed: true,
         }
     }
 }

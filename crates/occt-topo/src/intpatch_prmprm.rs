@@ -42,12 +42,13 @@
 //!   (fallback branch, `:3199-3402`). Wired into
 //!   `PatchIntersection::run_prmprm` for the both-domains-finite case,
 //!   matching `IntPatch_Intersection.cxx:1680`.
-//!   **UNPORTED** inside it: `wline->EnablePurging(!hasBeenAdded)`
-//!   (`:2882`, `:3143`), whose only readers are the three purge passes of
-//!   `IntPatch_Intersection.cxx:1356`, `:1639`, `:2083`; and
-//!   `FUN_TrimInfSurf` (`IntPatch_Intersection.cxx:1712`), so the
-//!   one-infinite-domain arm still passes the untrimmed surface to the
-//!   8-argument `Perform`.
+//!   **UNPORTED** inside it: `FUN_PL_Intersection` (`IntPatch_Intersection.cxx:
+//!   450-963`) and `FUN_TrimBothSurf` (`:964-...`), so the
+//!   both-domains-infinite arm still passes the untrimmed pair. The
+//!   `EnablePurging` flags it writes (`:2882`, `:3143`) *are* consumed: the
+//!   post-processing pass of `IntPatch_Intersection.cxx:1346-1371` is
+//!   `PatchIntersection::post_wline_processing`, and `IntPatch_ALineToWLine`
+//!   output carries `EnablePurging(false)` (`IntPatch_ALineToWLine.cxx:956`).
 //! * `RemplitLin` / `RemplitTri` / `Remplit` (`:1690-1826`) are the
 //!   `IntPatch_PrmPrmIntersection_T3Bits` fillers used only inside
 //!   `PointDepart`; the port's `point_depart` inlines the same lattice walks,
