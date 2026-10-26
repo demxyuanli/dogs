@@ -177,6 +177,7 @@ mod perform_element;
 mod perform_extremity;
 mod perform_fillet_on_vertex;
 mod perform_helpers;
+mod perform_one_corner;
 mod perform_set_of_k_part;
 mod perform_set_of_k_gen;
 mod perform_set_of_surf;

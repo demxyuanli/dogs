@@ -50,13 +50,15 @@ pub trait ChFi3dCornerOps {
     fn extent_three_corner(&mut self, v: &TopoShape, ls: &[StripeHandle]) -> Result<(), String>;
 
     /// `PerformOneCorner(Index, PrepareOnSame = false)` (`hxx:780`, body
-    /// `ChFi3d_Builder_C1.cxx:611-...`).
+    /// `ChFi3d_Builder_C1.cxx:611-1647`).
     ///
-    /// Not a virtual in OCCT: the body is a base-class member that the port
-    /// cannot translate yet (its `PerformTwoCornerbyInter` / `SimulKPart` arms
-    /// need `ChFi3d_FilBuilder`'s edge-contact surfaces), so the implementation
-    /// is injected like the virtuals above. `UNPORTED` - see the note on the
-    /// trait.
+    /// Not a virtual in OCCT: the base-class body is ported as the inherent
+    /// [`super::ChFi3dBuilder::perform_one_corner`] (`builder/perform_one_corner`,
+    /// which also reports the two `PerformIntersectionAtEnd` early returns).
+    /// Callers still reach it through this trait because `PerformOneCorner` is
+    /// called from `PerformFilletOnVertex` with `this`, and the subclasses that
+    /// implement this trait (`ChFi3d_FilBuilder` / `ChFi3d_ChBuilder`) are not
+    /// ported yet; their implementations must forward to the inherent method.
     fn perform_one_corner(&mut self, index: usize, prepare_on_same: bool) -> Result<(), String>;
 
     /// `PerformMoreSurfdata(Index)` (`hxx:784`, body

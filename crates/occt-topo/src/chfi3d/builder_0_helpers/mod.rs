@@ -26,7 +26,7 @@ pub mod solid_index;
 pub mod stripe_edge_inter;
 
 pub use boite::{ch_fi3d_boite, ch_fi3d_boite4};
-pub use bound_surf::ch_fi3d_bound_surf;
+pub use bound_surf::{ch_fi3d_bound_fac, ch_fi3d_bound_surf};
 pub use compute_arete::{ch_fi3d_compute_arete, ComputeArete};
 pub use compute_curves::{ch_fi3d_compute_curves, ComputeCurves};
 pub use compute_pcurv::{ch_fi3d_compute_pcurv, ch_fi3d_compute_pcurv_uv};

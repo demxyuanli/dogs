@@ -16,6 +16,7 @@
 
 use std::sync::Arc;
 
+use occt_geom::approx_same_parameter::{u_resolution, v_resolution};
 use occt_geom::surface::Surface;
 
 use crate::chfi3d::builder_0_helpers::boite::ch_fi3d_boite4;
@@ -29,6 +30,11 @@ use crate::topopebrep::tool::adaptor::SurfaceAdaptor;
 /// `Err` carries the `DStr.Surface(Fd1->Surf()).Surface()` null-handle
 /// dereference OCCT would take, and the missing p-curve on either
 /// interference (OCCT null-dereferences `PCurveOnSurf()`).
+///
+/// OCCT also writes `Du` / `Dv` in every branch (`cxx:4486-4503`) even where
+/// that branch never reads them back; those writes are part of the flow and
+/// are kept verbatim.
+#[allow(unused_assignments)]
 pub fn ch_fi3d_bound_surf(
     ds: &DataStructure,
     fd1: &SurfData,
@@ -107,4 +113,102 @@ pub fn ch_fi3d_bound_surf(
     Ok(SurfaceAdaptor::of_surface_with_range(
         surface, first_u, last_u, first_v, last_v,
     ))
+}
+
+/// `ChFi3d_BoundSrfImpl(SurfaceAdaptor&, Umin, Umax, Vmin, Vmax,
+/// theCheckNaturalBounds)` (`cxx:157-236`), the `BRepAdaptor_Surface`
+/// instantiation of the template: `ChFi3d_BaseSurface` is
+/// `GeomSurfaceOriginal()` (`cxx:118-122`), `ChFi3d_ApplyBounds` is
+/// `Load(GeomSurface, U1, U2, V1, V2, Trsf, TolU, TolV)` (`cxx:141-154`), and
+/// the port's `SurfaceAdaptor` already carries the world surface, so both are
+/// [`SurfaceAdaptor::of_surface_with_range`].
+///
+/// `aStepU / aScaleU` is verbatim: OCCT divides the parameter span by the
+/// adaptor's *parameter* resolution. The two `aPeriodU > 0.` arms then
+/// overwrite the step with `0.1 * (period - span)`.
+fn ch_fi3d_bound_srf_impl(
+    adaptor: &SurfaceAdaptor,
+    umin: f64,
+    umax: f64,
+    vmin: f64,
+    vmax: f64,
+    check_natural_bounds: bool,
+) -> SurfaceAdaptor {
+    // `occ::handle<Geom_Surface> aSurface = ChFi3d_BaseSurface(theSurface);`
+    // then the `Geom_RectangularTrimmedSurface` unwrap (`cxx:169-176`). A null
+    // handle there is the OCCT null dereference; the port answers the adaptor
+    // unchanged.
+    let Some(base) = adaptor.surface() else {
+        return adaptor.clone();
+    };
+    let base = base.rectangular_trimmed_basis().unwrap_or_else(|| Arc::clone(base));
+
+    // `aSurface->Bounds(aU1, aU2, aV1, aV2);` (`cxx:178-179`).
+    let (a_u1, a_u2) = base.u_range();
+    let (a_v1, a_v2) = base.v_range();
+
+    // `cxx:180-188`.
+    let a_period_u = if base.is_u_periodic() { base.u_period() } else { 0.0 };
+    let a_period_v = if base.is_v_periodic() { base.v_period() } else { 0.0 };
+
+    // `cxx:190-197`.
+    let mut a_step_u = umax - umin;
+    let mut a_step_v = vmax - vmin;
+    let a_scale_u = u_resolution(base.as_ref(), 1.0);
+    let a_scale_v = v_resolution(base.as_ref(), 1.0);
+    let a_step3d_u = a_step_u / a_scale_u;
+    let a_step3d_v = a_step_v / a_scale_v;
+
+    // `cxx:198-207`.
+    if a_step3d_u > a_step3d_v {
+        a_step_v = a_step3d_u * a_scale_v;
+    }
+    if a_step3d_v > a_step3d_u {
+        a_step_u = a_step3d_v * a_scale_u;
+    }
+
+    // `cxx:208-215`.
+    if a_period_u > 0.0 {
+        a_step_u = 0.1 * (a_period_u - (umax - umin));
+    }
+    if a_period_v > 0.0 {
+        a_step_v = 0.1 * (a_period_v - (vmax - vmin));
+    }
+
+    // `cxx:217-219`.
+    let mut a_uu1 = umin - a_step_u;
+    let mut a_uu2 = umax + a_step_u;
+    let mut a_vv1 = vmin - a_step_v;
+    let mut a_vv2 = vmax + a_step_v;
+
+    // `cxx:220-232`.
+    if check_natural_bounds {
+        if !base.is_u_periodic() {
+            a_uu1 = a_uu1.max(a_u1);
+            a_uu2 = a_uu2.min(a_u2);
+        }
+        if !base.is_v_periodic() {
+            a_vv1 = a_vv1.max(a_v1);
+            a_vv2 = a_vv2.min(a_v2);
+        }
+    }
+
+    // `ChFi3d_ApplyBounds(theSurface, aSurface, aUU1, aUU2, aVV1, aVV2);`
+    // (`cxx:234`).
+    SurfaceAdaptor::of_surface_with_range(base, a_uu1, a_uu2, a_vv1, a_vv2)
+}
+
+/// `ChFi3d_BoundFac(BRepAdaptor_Surface&, Umin, Umax, Vmin, Vmax,
+/// checknaturalbounds = true)` (`cxx:691-698`, default `hxx:125`):
+/// [`ch_fi3d_bound_srf_impl`] with `theCheckNaturalBounds = true`, which is
+/// what both `PerformOneCorner` call sites (`cxx:1005`, `cxx:1471` / `:1474`)
+/// take.
+pub fn ch_fi3d_bound_fac(
+    adaptor: &SurfaceAdaptor,
+    umin: f64,
+    umax: f64,
+    vmin: f64,
+    vmax: f64,
+) -> SurfaceAdaptor {
+    ch_fi3d_bound_srf_impl(adaptor, umin, umax, vmin, vmax, true)
 }
