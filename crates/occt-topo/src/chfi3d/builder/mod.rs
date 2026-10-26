@@ -177,6 +177,7 @@ mod perform_element;
 mod perform_extremity;
 mod perform_fillet_on_vertex;
 mod perform_helpers;
+mod perform_intersection_at_end;
 mod perform_one_corner;
 mod perform_set_of_k_part;
 mod perform_set_of_k_gen;
@@ -195,6 +196,8 @@ mod surf_ops;
 mod update_line;
 
 pub use corner_ops::ChFi3dCornerOps;
+pub use perform_intersection_at_end::EndIntersectionExit;
+pub use perform_one_corner::OneCornerExit;
 pub use store_data::store_data;
 pub use surf_ops::ChFi3dSurfOps;
 pub use update_line::update_line;
