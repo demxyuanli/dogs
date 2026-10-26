@@ -13,18 +13,24 @@
 //! (`ProjLib_Sphere.cxx:33-249`) and [`torus`] (`ProjLib_Torus.cxx:28-193`).
 
 mod cone;
+mod comp_projected_curve;
 mod compute_approx;
 mod cylinder;
 mod plane;
+mod prj_func;
+mod prj_resolve;
 mod projected_curve;
 mod projector;
 mod sphere;
 mod torus;
 
 pub use cone::Cone;
+pub use comp_projected_curve::CompProjectedCurve;
 pub use compute_approx::{ComputeApprox, ProjLibFunction, UvBounds};
 pub use cylinder::Cylinder;
 pub use plane::Plane;
+pub use prj_func::PrjFunc;
+pub use prj_resolve::PrjResolve;
 pub use projected_curve::{
     compute_tol_u, compute_tol_v, curve_type, iso_is_deg, project, projector_value, surface_type,
     trim_c3d, Constraint, ProjectedCurve,

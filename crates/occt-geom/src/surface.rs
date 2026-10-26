@@ -226,6 +226,53 @@ pub trait Surface: Send + Sync {
     fn try_eval_dn(&self, _u: f64, _v: f64, _nu: i32, _nv: i32) -> Result<GpVec, String> {
         Err("UNPORTED Geom_Surface::EvalDN".into())
     }
+    /// `Adaptor3d_Surface::D3` (`Adaptor3d_Surface.hxx:141-147`, dispatched by
+    /// `GeomAdaptor_Surface::D3` `GeomAdaptor_Surface.cxx:1178-1280`).
+    ///
+    /// The five elementary surfaces go through `ElSLib::*D3`
+    /// (`ElSLib.cxx:1147-1543`, ported in
+    /// [`occt_core::elib::surface_eval_d3`]); every other surface goes through
+    /// `Geom_Surface::EvalD3` ([`Surface::try_eval_dn`]) for the four third
+    /// derivatives and reuses [`Surface::d2`] for the lower orders.
+    ///
+    /// `None` is the arm where OCCT has a real `EvalD3` and the port has none
+    /// (a surface type whose `EvalDN` is not translated). OCCT has no failure
+    /// here, so callers must treat `None` as `UNPORTED`, never as zero.
+    fn d3(&self, u: f64, v: f64) -> Option<crate::surface_d3::SurfD3> {
+        use crate::surface_d3 as sd;
+        if let Some(basis) = self.rectangular_trimmed_basis() {
+            // `Geom_RectangularTrimmedSurface::EvalD3` delegates unchanged.
+            return basis.d3(u, v);
+        }
+        if let Some(pl) = self.gp_pln() {
+            return Some(sd::plane_d3(&pl, u, v));
+        }
+        if let Some(cy) = self.gp_cylinder() {
+            return Some(sd::cylinder_d3(&cy, u, v));
+        }
+        if let Some(co) = self.gp_cone() {
+            return Some(sd::cone_d3(&co, u, v));
+        }
+        if let Some(sp) = self.gp_sphere() {
+            return Some(sd::sphere_d3(&sp, u, v));
+        }
+        if let Some(to) = self.gp_torus() {
+            return Some(sd::torus_d3(&to, u, v));
+        }
+        let (point, d1u, d1v, d2u, d2v, d2uv) = self.d2(u, v);
+        Some(sd::SurfD3 {
+            point,
+            d1u,
+            d1v,
+            d2u,
+            d2v,
+            d2uv,
+            d3u: self.try_eval_dn(u, v, 3, 0).ok()?,
+            d3v: self.try_eval_dn(u, v, 0, 3).ok()?,
+            d3_uuv: self.try_eval_dn(u, v, 2, 1).ok()?,
+            d3_uvv: self.try_eval_dn(u, v, 1, 2).ok()?,
+        })
+    }
     /// Case 3 stores `DN(2,1)` (`D3UUV`) or `DN(1,2)` (`D3UVV`).
     /// Offset overrides this with `EvaluateD3`.
     fn try_eval_d3_uv(&self, u: f64, v: f64, nu: i32, nv: i32) -> Result<GpVec, String> {
