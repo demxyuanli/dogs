@@ -350,3 +350,5 @@ mod bop_same_domain_faces;
 mod bop_fill_internal_verts;
 // Wave S2 — classic boolean engine (`TKBool/TopOpeBRep*`).
 pub mod topopebrep;
+// Wave S2b — `TKGeomAlgo/IntPolyh` polygonal surface intersection.
+pub mod intpolyh;

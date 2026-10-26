@@ -37,14 +37,27 @@
 //!   (`:2587-2715`). It also calls the `SeveralWlinesProcessing` helper
 //!   (`:65-271`) at `:2152` and `MakeNewPoint` (`:2452-2483`), neither of which
 //!   is ported yet.
-//! * grille variant `Perform(..., bool ClearFlag)` (`:2488-3403`). Its fast
-//!   branch (`:2524-3198`, taken when `NbU1*NbV1 <= 2500 && NbU2*NbV2 <= 2500`)
-//!   is built on `IntPolyh_Intersection`, a package the port does not have at
-//!   all, so the whole branch is UNPORTED. The fallback branch (`:3200-3402`)
-//!   is driven by `PointDepart` (`:3492-3991`, already ported in
-//!   `intpatch_prmprm_depart.rs`) and needs `PW.PutToBoundary`,
-//!   `PW.SeekAdditionalPoints` (`:3284`), `PW.MaxStep` and `AdjustOnPeriodic`
-//!   (`:2329-2448`), none of which is ported.
+//! * grille variant `Perform(..., bool ClearFlag)` (`:2488-3403`). The
+//!   dispatch and the sampling preamble (`:2495-2522`) still have no Rust
+//!   body: `Adaptor3d_TopolTool::SamplePnts` / `NbSamplesU` / `NbSamplesV` /
+//!   `UParameters` / `VParameters` / `IsUniformSampling` are only partly
+//!   available (`TopolTool::nb_samples_u` / `nb_samples_v` /
+//!   `sample_point`, `geom_int_topol.rs:224-256`), the parameter arrays and
+//!   `IsUniformSampling` are not.
+//!   Its fast branch (`:2524-3198`, taken when `NbU1*NbV1 <= 2500 &&
+//!   NbU2*NbV2 <= 2500`) is now backed by the ported `IntPolyh_Intersection`
+//!   (`intpolyh/intersection.rs`), but the walking part still cannot run:
+//!   `PW.PutToBoundary` (`:2767`) and `PW.SeekAdditionalPoints` (`:2777`,
+//!   `:3070`) are not ported (`IntWalk_PWalking.cxx:2951-3157`), nor is
+//!   `PW.MaxStep` (`:2921`) or `AdjustOnPeriodic` (`:2329-2448`, called at
+//!   `:2944`).
+//!   The fallback branch (`:3200-3402`) is driven by `PointDepart`
+//!   (`:3492-3991`, already ported in `intpatch_prmprm_depart.rs`) and
+//!   `PW.PerformFirstPoint` / `PW.Perform` (`intwalk_pwalking.rs:210`,
+//!   `intwalk_pwalking_perform.rs:8`), both ported; it calls neither
+//!   `PutToBoundary` nor `SeekAdditionalPoints`, so only the shared
+//!   `IsPointOnLine` / `DublicateOfLinesProcessing` / `AddWLine` helpers are
+//!   needed and they exist (`intpatch_prmprm_wline.rs`).
 //! * `RemplitLin` / `RemplitTri` / `Remplit` (`:1690-1826`) are the
 //!   `IntPatch_PrmPrmIntersection_T3Bits` fillers used only inside
 //!   `PointDepart`; the port's `point_depart` inlines the same lattice walks,

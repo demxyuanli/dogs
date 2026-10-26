@@ -108,7 +108,7 @@
 | S2 | TopOpeBRepDS | 56 | 55 | 72 | 余 `define` 宏头 |
 | S2 | TopOpeBRepTool | 37 | 31 | 350 | 余 `defineG`/`Plos`/`PSoClassif`/`AncestorsTool`/`KRO`+`STATE`（死码） |
 | **S2 合计** | | **174** | **156** | **851** | 2026-10-23 时为 86/171、缺 38,451 行 |
-| S2-IntPatch | IntPatch | 40 | 39 | 257 | 余 `TheIWLineOfTheIWalking`（T-315 后）；`IntPatch_PrmPrmIntersection` 的 `LOfPnts`/grid 重载仍 UNPORTED（T-316 D，依赖 `IntPolyh` 与 `PW.PutToBoundary` 族） |
+| S2-IntPatch | IntPatch | 40 | 39 | 257 | 余 `TheIWLineOfTheIWalking`（T-315 后）；`IntPatch_PrmPrmIntersection` 的 `LOfPnts`/grid 重载仍 UNPORTED（T-316 D，依赖 `PW.PutToBoundary` / `SeekAdditionalPoints` 族；`IntPolyh` 包已由 T-317 落地，grid 变体的快分支不再缺底座） |
 
 - 「未落地行数」= 该类 `.hxx` + `.cxx` 物理行合计。
 - **S2 的算法体已全部落地**（T-278 之后）。剩余 851 行分类：`define`/`defineG` 宏头 195、
