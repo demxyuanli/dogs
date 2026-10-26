@@ -14,10 +14,16 @@
 //!   least-squares / gradient / BFGS support it drives,
 //! - `AppDef_Variational` (`AppDef_Variational.cxx:1-1413`).
 
+pub mod linear_criteria;
 pub mod multi_line;
 pub mod multi_point_constraint;
 pub mod my_line_tool;
+pub mod smooth_criterion;
+pub mod variational;
 
+pub use linear_criteria::LinearCriteria;
 pub use multi_line::MultiLine;
+pub use smooth_criterion::SmoothCriterion;
+pub use variational::Variational;
 pub use multi_point_constraint::MultiPointConstraint;
 pub use my_line_tool::MyLineTool;

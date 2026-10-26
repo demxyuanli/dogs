@@ -9,8 +9,7 @@
 //!   arm runs `AppDef_BSplineCompute`
 //!   ([`BsplComputeLine`](crate::approx::bspl_compute_line::BsplComputeLine)).
 //!   `UseSmoothing` (`gxx:472-541`) drives `AppDef_Variational`
-//!   (`AppDef_Variational.cxx:1-1413`), which is not ported and is reported as
-//!   `UNPORTED` instead of being approximated by another driver.
+//!   ([`Variational`](crate::app_def::variational::Variational)).
 //! - `Perform(Lin, SecGen, NbMaxP)` (`gxx:597-1048`) is the troncon split: it
 //!   scales every row into `[0, 1]`, approximates each troncon with
 //!   `AppDef_Compute`, and concatenates the pieces with
@@ -29,7 +28,8 @@ use occt_math::MathVector;
 
 use crate::app_def::multi_line::MultiLine;
 use crate::app_def::multi_point_constraint::MultiPointConstraint;
-use crate::app_par_curves::constraint::Constraint;
+use crate::app_def::variational::Variational;
+use crate::app_par_curves::constraint::{Constraint, ConstraintCouple};
 use crate::app_par_curves::multi_bspline_curve::MultiBSpCurve;
 use crate::approx::bspl_compute_line::BsplComputeLine;
 use crate::approx::compute_line::ComputeLine;
@@ -53,8 +53,8 @@ impl AppSurf {
         self.internal_perform(lin, f, sp_approx, false)
     }
 
-    /// `PerformSmoothing(Lin, SecGen)` (`gxx:180-183`): the variational branch,
-    /// which is **UNPORTED** (`gxx:472-541`).
+    /// `PerformSmoothing(Lin, SecGen)` (`gxx:180-183`): the variational branch
+    /// (`gxx:472-541`).
     pub fn perform_smoothing<G: AppBlendSectionGenerator>(
         &mut self,
         lin: &Line,
@@ -449,17 +449,6 @@ impl AppSurf {
         self.done = false;
         // `Lin.IsNull()` (`gxx:193-196`): `Line` is a value type here.
 
-        if use_smoothing {
-            // UNPORTED: `gxx:472-541` drives `AppDef_Variational`
-            // (`AppDef_Variational.cxx:1-1413`), which is not ported, so the
-            // request is reported instead of being served by another driver.
-            return Err(
-                "UNPORTED: AppBlend_AppSurf::InternalPerform UseSmoothing branch \
-                 (AppBlend_AppSurf.gxx:472-541)"
-                    .into(),
-            );
-        }
-
         let nb_point = lin.nb_points();
         let mut mult_l = MultiLine::with_size(nb_point.max(0) as usize);
 
@@ -544,8 +533,8 @@ impl AppSurf {
             // two maxima only feed the `OCCT_DEBUG` print.
             let _ = (mytol3d, mytol2d);
             theapprox.spline_value().clone()
-        } else {
-            // `gxx:420-471`: `AppDef_BSplineCompute`.
+        } else if !use_smoothing {
+            // `gxx:421-471`: `AppDef_BSplineCompute`.
             let use_squares = self.nbit == 0;
             let mut theapprox = BsplComputeLine::with_settings(
                 self.dmin,
@@ -600,11 +589,83 @@ impl AppSurf {
             self.tol3d_reached = mytol3d;
             self.tol2d_reached = mytol2d;
             theapprox.value().clone()
+        } else {
+            // `gxx:472-541`: the variational algorithm.
+            //
+            // Every `return;` of this arm leaves `done` at `false`, which the
+            // port spells `return Ok(())`.
+            let mut tab_of_cc = vec![ConstraintCouple::default(); nb_point.max(1) as usize]; // `gxx:476-485`
+            for i in 1..=nb_point {
+                tab_of_cc[(i - 1) as usize] =
+                    ConstraintCouple::from_parts(i, Constraint::NoConstraint);
+            }
+            tab_of_cc[0].set_constraint(cfirst);
+            tab_of_cc[(nb_point - 1) as usize].set_constraint(clast);
+
+            // `AppDef_Variational Variation(multL, 1, NbPoint, TABofCC)`
+            // (`gxx:489`), whose defaults come from
+            // `AppDef_Variational.hxx:62-74`.
+            let mut variation = match Variational::with_defaults(&mult_l, 1, nb_point, &tab_of_cc) {
+                Ok(v) => v,
+                Err(()) => return Ok(()),
+            };
+
+            // `gxx:492-505`.
+            let the_max_segments = 1000;
+            let the_with_min_max = false;
+            let the_with_cutting = true;
+
+            if variation.set_max_degree(self.dmax).is_err() {
+                return Ok(());
+            }
+            if variation.set_continuity(self.continuity).is_err() {
+                return Ok(());
+            }
+            let _ = variation.set_max_segment(the_max_segments);
+            if variation.set_tolerance(self.tol3d).is_err() {
+                return Ok(());
+            }
+            if variation.set_with_min_max(the_with_min_max).is_err() {
+                return Ok(());
+            }
+            let _ = variation.set_with_cutting(the_with_cutting);
+            variation.set_nb_iterations(self.nbit);
+            if variation
+                .set_criterium_weight3(self.critweights[0], self.critweights[1], self.critweights[2])
+                .is_err()
+            {
+                return Ok(());
+            }
+
+            if !variation.is_created() {
+                return Ok(()); // `gxx:508-511`.
+            }
+            if variation.is_over_constrained() {
+                return Ok(()); // `gxx:513-516`.
+            }
+            if variation.approximate().is_err() {
+                return Ok(()); // `gxx:518-525`: `catch (Standard_Failure const&)`.
+            }
+            if !variation.is_done() {
+                return Ok(()); // `gxx:527-530`.
+            }
+
+            let mytol3d = match variation.max_error() {
+                Ok(e) => e,
+                Err(()) => return Ok(()),
+            };
+            let mytol2d = 0.0;
+            self.tol3d_reached = mytol3d;
+            self.tol2d_reached = mytol2d;
+            match variation.value() {
+                Ok(v) => v,
+                Err(()) => return Ok(()),
+            }
         };
 
         self.store_knots_and_mults(&mult_c);
 
-        if self.knownp {
+        if self.knownp && !use_smoothing {
             // `BSplCLib::Reparametrize(F.Parameter(Lin->Point(1)),
             // F.Parameter(Lin->Point(NbPoint)), tabVKnots)` (`gxx:552-557`).
             let u1 = f.parameter(lin.point(1))?;

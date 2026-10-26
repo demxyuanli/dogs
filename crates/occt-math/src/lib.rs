@@ -114,6 +114,7 @@ pub mod plib_hermite;
 pub mod plib_hermit_jacobi;
 pub mod math_crout;
 pub mod uzawa;
+pub mod fem_tool;
 pub use function_set_root::{
     MathFunctionRoot, MathFunctionSetRoot, MathFunctionSetWithDerivatives,
     FunctionWithDerivative, svd_padded, svd_solve_occt,
