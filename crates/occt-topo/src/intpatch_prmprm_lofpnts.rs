@@ -8,14 +8,14 @@ use occt_core::precision::PCONFUSION;
 use occt_geom::Surface;
 
 use crate::geom_int::{GeomIntLine, TopolTool};
-use crate::int_tools_wline::{PntOn2S, WLine, WLineWay};
-use crate::intpatch_line::IntPatchLine;
-use crate::intpatch_rst_int::put_vertex_on_line;
-use crate::intsurf_transition::IntSurfTypeTrans;
+use crate::int_tools_wline::PntOn2S;
 use crate::intwalk::PWalking;
 
 use super::several::several_wlines_processing;
-use super::wline_helpers::{add_wline, duplicate_of_lines_processing, is_point_on_line};
+use super::wline_helpers::{
+    add_wline, duplicate_of_lines_processing, finish_walking_line, is_point_on_line,
+    line_transitions,
+};
 
 /// `Perform(Surf1, D1, Surf2, D2, TolTangency, Epsilon, Deflection,
 /// Increment, LOfPnts)` (`cxx:1827-2172`).
@@ -249,69 +249,23 @@ pub(crate) fn perform_from_points(
             continue;
         }
 
-        // `cxx:2093-2117`: transitions from the normals at the tangent point.
-        let (tg_dir, indextg) = pw.tangent_at_line();
-        let tgline = occt_core::gp::GpVec::from_xyz(tg_dir.xyz());
-        let (locu, locv) = pw.value(indextg).parameters_on_s1();
-        let (_, d1u, d1v) = s1.d1(locu, locv);
-        let norm1 = d1u.crossed(&d1v);
-        let (locu, locv) = pw.value(indextg).parameters_on_s2();
-        let (_, d2u, d2v) = s2.d1(locu, locv);
-        let norm2 = d2u.crossed(&d2v);
-        let (trans1, trans2) = if tgline.dot_cross(&norm2, &norm1) >= 0.0 {
-            (IntSurfTypeTrans::Out, IntSurfTypeTrans::In)
-        } else {
-            (IntSurfTypeTrans::In, IntSurfTypeTrans::Out)
+        // `cxx:2093-2117`: transitions from the normals at the tangent point,
+        // then `new IntPatch_WLine(...)` (`:2118-2121`). `>=` at `:2106`.
+        let (trans1, trans2) = line_transitions(&pw, s1, s2, false);
+        let Some(mut wline) = finish_walking_line(
+            &pw,
+            s1,
+            &mut d1m,
+            s2,
+            &mut d2m,
+            trans1,
+            trans2,
+            point3d_debut,
+            point3d_fin,
+            tol_tangency,
+        ) else {
+            continue;
         };
-
-        let mut wline = WLine::new();
-        wline.base = IntPatchLine::with_transitions(false, trans1, trans2);
-        wline.set_creating_way(WLineWay::PrmPrm);
-        for p in pw.line() {
-            wline.add(*p);
-        }
-
-        // `IntPatch_RstInt::PutVertexOnLine(wline, Surf1, D1, Surf2, true,
-        // TolTang)` (`cxx:2122`) and its Surf2 twin (`:2127`).
-        let mut line = GeomIntLine::Walking(wline);
-        if put_vertex_on_line(&mut line, s1, &mut d1m, s2, true, tol_tangency).is_err() {
-            continue;
-        }
-        if line.as_wline().map_or(true, |w| w.nb_pnts() < 2) {
-            continue;
-        }
-        if put_vertex_on_line(&mut line, s2, &mut d2m, s1, false, tol_tangency).is_err() {
-            continue;
-        }
-        let mut wline = match line {
-            GeomIntLine::Walking(w) => w,
-            _ => continue,
-        };
-        if wline.nb_pnts() < 2 {
-            continue;
-        }
-
-        // `cxx:2132-2150`: the fallback vertices when `PutVertexOnLine` added
-        // none.
-        if wline.nb_vertex() == 0 {
-            let params = pw.value(1).parameters();
-            let mut vtx =
-                crate::int_tools_wline::PatchPoint::new(point3d_debut, 1.0, params.0, params.1, params.2, params.3);
-            vtx.set_tolerance(tol_tangency);
-            wline.vertices.push(vtx);
-
-            let params = pw.value(wline.nb_pnts()).parameters();
-            let mut vtx = crate::int_tools_wline::PatchPoint::new(
-                point3d_fin,
-                wline.nb_pnts() as f64,
-                params.0,
-                params.1,
-                params.2,
-                params.3,
-            );
-            vtx.set_tolerance(tol_tangency);
-            wline.vertices.push(vtx);
-        }
 
         several_wlines_processing(
             s1,

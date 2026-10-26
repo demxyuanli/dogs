@@ -28,49 +28,38 @@
 //!
 //! Still UNPORTED, with the branch each one needs:
 //!
-//! * `Perform(..., NCollection_List<IntSurf_PntOn2S>& LOfPnts)` (`:1827-2175`).
-//!   The whole overload is blocked on the `SeveralWlinesProcessing` helper
-//!   (`:65-271`) at `:2152` and on `MakeNewPoint` (`:2452-2483`); both are
-//!   still missing. Its `PW.PutToBoundary` (`:2058`) is available now
-//!   (`intwalk_pwalking_boundary.rs::put_to_boundary`).
-//! * grille variant `Perform(..., bool ClearFlag)` (`:2488-3403`). The
-//!   dispatch and the sampling preamble (`:2495-2522`) still have no Rust
-//!   body: `Adaptor3d_TopolTool::SamplePnts` / `NbSamplesU` / `NbSamplesV` /
-//!   `UParameters` / `VParameters` / `IsUniformSampling` are only partly
-//!   available (`TopolTool::nb_samples_u` / `nb_samples_v` /
-//!   `sample_point`, `geom_int_topol.rs:224-256`), the parameter arrays and
-//!   `IsUniformSampling` are not.
-//!   Its fast branch (`:2524-3198`, taken when `NbU1*NbV1 <= 2500 &&
-//!   NbU2*NbV2 <= 2500`) is now backed by the ported `IntPolyh_Intersection`
-//!   (`intpolyh/intersection.rs`) and the walking boundary layer:
-//!   `PW.PutToBoundary` (`:2767`) / `PW.SeekAdditionalPoints` (`:2777`,
-//!   `:3070`) / `PW.MaxStep` (`:2921`) are ported
-//!   (`intwalk_pwalking_boundary.rs`, `intwalk_pwalking_dist.rs:max_step`),
-//!   but `AdjustOnPeriodic` (`:2329-2448`, called at `:2944`) is still
-//!   missing, so the overload body itself is not ported.
-//!   The fallback branch (`:3200-3402`) is driven by `PointDepart`
-//!   (`:3492-3991`, already ported in `intpatch_prmprm_depart.rs`) and
-//!   `PW.PerformFirstPoint` / `PW.Perform` (`intwalk_pwalking.rs:210`,
-//!   `intwalk_pwalking_perform.rs:8`), both ported; it calls neither
-//!   `PutToBoundary` nor `SeekAdditionalPoints`, so only the shared
-//!   `IsPointOnLine` / `DublicateOfLinesProcessing` / `AddWLine` helpers are
-//!   needed and they exist (`intpatch_prmprm_wline.rs`).
+//! * `Perform(..., NCollection_List<IntSurf_PntOn2S>& LOfPnts)` (`:1827-2175`):
+//!   see `intpatch_prmprm_lofpnts.rs` (`perform_from_points`). It has no
+//!   production caller in the port: `IntPatch_Intersection.cxx:1677` is the
+//!   only OCCT call site and it is guarded by a non-empty `ListOfPnts`, which
+//!   `PatchIntersection` does not carry.
+//! * grille variant `Perform(..., bool ClearFlag)` (`:2488-3402`): see
+//!   `intpatch_prmprm_clearflag.rs` (dispatch, `SamplePnts`, `Limit = 2500`,
+//!   `IntPolyh_Intersection` construction, `AdjustOnPeriodic`),
+//!   `intpatch_prmprm_clearflag_lines.rs` (fast branch, section lines,
+//!   `:2553-2940`), `intpatch_prmprm_clearflag_zones.rs` (fast branch,
+//!   tangent zones, `:2950-3186`) and `intpatch_prmprm_clearflag_depart.rs`
+//!   (fallback branch, `:3199-3402`). Wired into
+//!   `PatchIntersection::run_prmprm` for the both-domains-finite case,
+//!   matching `IntPatch_Intersection.cxx:1680`.
+//!   **UNPORTED** inside it: `wline->EnablePurging(!hasBeenAdded)`
+//!   (`:2882`, `:3143`), whose only readers are the three purge passes of
+//!   `IntPatch_Intersection.cxx:1356`, `:1639`, `:2083`; and
+//!   `FUN_TrimInfSurf` (`IntPatch_Intersection.cxx:1712`), so the
+//!   one-infinite-domain arm still passes the untrimmed surface to the
+//!   8-argument `Perform`.
 //! * `RemplitLin` / `RemplitTri` / `Remplit` (`:1690-1826`) are the
 //!   `IntPatch_PrmPrmIntersection_T3Bits` fillers used only inside
 //!   `PointDepart`; the port's `point_depart` inlines the same lattice walks,
 //!   so these three members have no separate Rust body.
 
-use occt_core::gp::GpVec;
 use occt_geom::Surface;
 
 use crate::brep_top_adaptor_topol_tool::TopolTool as BrepTopolTool;
 use crate::geom_int::{GeomIntLine, TopolTool};
-use crate::int_tools_wline::{PatchPoint, PntOn2S, WLine, WLineWay};
+use crate::int_tools_wline::{PntOn2S, WLine};
 use crate::intpatch_interference_polyhedron::IntPatchInterferencePolyhedron;
-use crate::intpatch_line::IntPatchLine;
 use crate::intpatch_polyhedron::IntPatchPolyhedron;
-use crate::intpatch_rst_int::put_vertex_on_line;
-use crate::intsurf_transition::IntSurfTypeTrans;
 use crate::intwalk::PWalking;
 
 #[path = "intpatch_prmprm_t3bits.rs"]
@@ -97,9 +86,20 @@ mod several;
 #[path = "intpatch_prmprm_lofpnts.rs"]
 #[allow(dead_code)]
 mod lofpnts;
+#[path = "intpatch_prmprm_clearflag.rs"]
+mod clearflag;
+#[path = "intpatch_prmprm_clearflag_lines.rs"]
+mod clearflag_lines;
+#[path = "intpatch_prmprm_clearflag_zones.rs"]
+mod clearflag_zones;
+#[path = "intpatch_prmprm_clearflag_depart.rs"]
+mod clearflag_depart;
 
 use section_point::section_point_to_parameters;
-use wline_helpers::{add_wline, duplicate_of_lines_processing, is_point_on_line};
+use wline_helpers::{
+    add_wline, duplicate_of_lines_processing, finish_walking_line, is_point_on_line,
+    line_transitions,
+};
 
 /// Parametric x parametric intersection.
 #[derive(Clone)]
@@ -421,6 +421,38 @@ impl PrmPrmIntersection {
         self.empty = self.slin.is_empty();
     }
 
+    /// `Perform(Surf1, D1, Surf2, D2, TolTangency, Epsilon, Deflection,
+    /// Increment, ClearFlag)` (`cxx:2488-3402`): the sample-grid overload the
+    /// `IntPatch_Intersection::ParamParamPerfom` fallback uses.
+    #[allow(clippy::too_many_arguments)]
+    pub fn perform_clear_flag(
+        &mut self,
+        s1: &dyn Surface,
+        d1: &TopolTool,
+        s2: &dyn Surface,
+        d2: &TopolTool,
+        tol_tangency: f64,
+        epsilon: f64,
+        deflection: f64,
+        increment: f64,
+        clear_flag: bool,
+    ) {
+        clearflag::perform_clear_flag(
+            s1,
+            d1,
+            s2,
+            d2,
+            tol_tangency,
+            epsilon,
+            deflection,
+            increment,
+            clear_flag,
+            &mut self.slin,
+            &mut self.done,
+            &mut self.empty,
+        );
+    }
+
     pub fn is_done(&self) -> bool {
         self.done
     }
@@ -711,62 +743,22 @@ fn try_walking(
         return false;
     }
 
-    // `cxx:651-676`: transitions from the normals at the tangent point.
-    let (tg_dir, indextg) = pw.tangent_at_line();
-    let tgline = GpVec::from_xyz(tg_dir.xyz());
-    let (locu, locv) = pw.value(indextg).parameters_on_s1();
-    let (_, d1u, d1v) = s1.d1(locu, locv);
-    let norm1 = d1u.crossed(&d1v);
-    let (locu, locv) = pw.value(indextg).parameters_on_s2();
-    let (_, d2u, d2v) = s2.d1(locu, locv);
-    let norm2 = d2u.crossed(&d2v);
-    let (trans1, trans2) = if tgline.dot_cross(&norm2, &norm1) > 0.0 {
-        (IntSurfTypeTrans::Out, IntSurfTypeTrans::In)
-    } else {
-        (IntSurfTypeTrans::In, IntSurfTypeTrans::Out)
+    // `cxx:651-711` / `:858-918`: `>` at both `DotCross` sites (`:666`, `:873`).
+    let (trans1, trans2) = line_transitions(pw, s1, s2, true);
+    let Some(wl) = finish_walking_line(
+        pw,
+        s1,
+        d1,
+        s2,
+        d2,
+        trans1,
+        trans2,
+        p_debut,
+        p_fin,
+        tol_tangency,
+    ) else {
+        return false;
     };
-
-    // `new IntPatch_WLine(PW.Line(), false, trans1, trans2)` (`cxx:677-679`).
-    let mut wl = WLine::new();
-    wl.base = IntPatchLine::with_transitions(false, trans1, trans2);
-    wl.set_creating_way(WLineWay::PrmPrm);
-    for p in pw.line() {
-        wl.add(*p);
-    }
-
-    let mut line = GeomIntLine::Walking(wl);
-    // `PutVertexOnLine(wline, Surf1, D1, Surf2, true, TolTang)` (`cxx:683`).
-    if put_vertex_on_line(&mut line, s1, d1, s2, true, tol_tangency).is_err() {
-        return false;
-    }
-    if line.as_wline().map_or(true, |w| w.nb_pnts() < 2) {
-        return false;
-    }
-    // `PutVertexOnLine(wline, Surf2, D2, Surf1, false, TolTang)` (`cxx:688`).
-    if put_vertex_on_line(&mut line, s2, d2, s1, false, tol_tangency).is_err() {
-        return false;
-    }
-    let mut wl = match line {
-        GeomIntLine::Walking(w) => w,
-        _ => return false,
-    };
-    if wl.nb_pnts() < 2 {
-        return false;
-    }
-
-    // `cxx:692-711`: the fallback vertices when `PutVertexOnLine` added none.
-    if wl.nb_vertex() == 0 {
-        let params = pw.value(1).parameters();
-        let mut vtx = PatchPoint::new(p_debut, 1.0, params.0, params.1, params.2, params.3);
-        vtx.set_tolerance(tol_tangency);
-        wl.vertices.push(vtx);
-
-        let nbp = wl.nb_pnts();
-        let params = pw.value(nbp).parameters();
-        let mut vtx = PatchPoint::new(p_fin, nbp as f64, params.0, params.1, params.2, params.3);
-        vtx.set_tolerance(tol_tangency);
-        wl.vertices.push(vtx);
-    }
 
     add_wline(slin, wl, deflection);
     true

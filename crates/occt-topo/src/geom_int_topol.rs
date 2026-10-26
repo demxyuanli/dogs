@@ -220,6 +220,23 @@ impl TopolTool {
         classify_uv_box(p, self.umin, self.umax, self.vmin, self.vmax, tol)
     }
 
+    /// `Adaptor3d_TopolTool::DomainIsInfinite` (`Adaptor3d_TopolTool.cxx:962-980`).
+    pub fn domain_is_infinite(&self) -> bool {
+        if Precision::is_negative_infinite(self.umin) {
+            return true;
+        }
+        if Precision::is_positive_infinite(self.umax) {
+            return true;
+        }
+        if Precision::is_negative_infinite(self.vmin) {
+            return true;
+        }
+        if Precision::is_positive_infinite(self.vmax) {
+            return true;
+        }
+        false
+    }
+
     /// `Adaptor3d_TopolTool::NbSamplesU`.
     pub fn nb_samples_u(&self, s: &dyn Surface) -> i32 {
         sample_counts(s).0

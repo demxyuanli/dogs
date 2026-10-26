@@ -23,6 +23,10 @@ pub struct PatchIntersection {
     opposite: bool,
     slin: Vec<GeomIntLine>,
     spnt: Vec<PatchPoint>,
+    /// `myFleche` (`IntPatch_Intersection.cxx:1080`, `:185`).
+    fleche: f64,
+    /// `myUVMaxStep` (`:1084`, `:190`).
+    uv_max_step: f64,
 }
 
 impl PatchIntersection {
@@ -34,7 +38,16 @@ impl PatchIntersection {
             opposite: false,
             slin: Vec::new(),
             spnt: Vec::new(),
+            fleche: 0.01,
+            uv_max_step: 0.01,
         }
+    }
+
+    /// `SetTolerances(TolArc, TolTang, UVMaxStep, Fleche)`
+    /// (`IntPatch_Intersection.cxx:136-173`), including its clamps.
+    pub fn set_tolerances(&mut self, uv_max_step: f64, fleche: f64) {
+        self.fleche = fleche.clamp(1.0e-3, 10.0);
+        self.uv_max_step = uv_max_step.min(0.5);
     }
 
     /// `Perform(S1, D1, S2, D2, TolArc, TolTang)`.
@@ -103,6 +116,18 @@ impl PatchIntersection {
         }
     }
 
+    /// `ParamParamPerfom(S1, D1, S2, D2, TolArc, TolTang, ListOfPnts, typs1,
+    /// typs2)` (`IntPatch_Intersection.cxx:1658-1716`).
+    ///
+    /// Both domains finite: the `ClearFlag` overload with `ClearFlag = true`
+    /// (`:1680`); `ListOfPnts` is empty on every call of this port, so the
+    /// `LOfPnts` branch at `:1676-1679` does not run.
+    ///
+    /// One domain infinite: the 8-argument `Perform`
+    /// (`IntPatch_PrmPrmIntersection.cxx:369-928`, the polyhedron body) on the
+    /// *trimmed* surface (`:1692`, `:1708`). **UNPORTED**: `FUN_TrimInfSurf`
+    /// (`:1712-...`) has no Rust body, so that branch keeps passing the
+    /// untrimmed surface.
     fn run_prmprm(
         &mut self,
         s1: &dyn Surface,
@@ -113,7 +138,21 @@ impl PatchIntersection {
         tol_tang: f64,
     ) {
         let mut pp = PrmPrmIntersection::new();
-        pp.perform(s1, d1, s2, d2, tol_tang, tol_arc, 0.1, 0.01);
+        if !d1.domain_is_infinite() && !d2.domain_is_infinite() {
+            pp.perform_clear_flag(
+                s1,
+                d1,
+                s2,
+                d2,
+                tol_tang,
+                tol_arc,
+                self.fleche,
+                self.uv_max_step,
+                true,
+            );
+        } else {
+            pp.perform(s1, d1, s2, d2, tol_tang, tol_arc, self.fleche, self.uv_max_step);
+        }
         self.done = pp.is_done();
         self.empty = pp.is_empty();
         self.slin.extend(pp.lines().iter().cloned());

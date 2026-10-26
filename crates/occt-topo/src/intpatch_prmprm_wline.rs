@@ -5,10 +5,16 @@
 //! whether a freshly walked `IntWalk_PWalking` line duplicates an already
 //! collected `IntPatch_WLine`, and remove the loser.
 
-use occt_core::gp::{GpDir, GpPnt2d, GpVec};
+use occt_core::gp::{GpDir, GpPnt, GpPnt2d, GpVec};
+use occt_geom::Surface;
 
+use crate::brep_top_adaptor_topol_tool::TopolTool as BrepTopolTool;
 use crate::geom_int::GeomIntLine;
-use crate::int_tools_wline::{PntOn2S, WLine};
+use crate::int_tools_wline::{PatchPoint, PntOn2S, WLine, WLineWay};
+use crate::intpatch_line::IntPatchLine;
+use crate::intpatch_rst_int::put_vertex_on_line;
+use crate::intsurf_transition::IntSurfTypeTrans;
+use crate::intwalk::PWalking;
 
 /// `IsPointOnLine(thePOn2S, theWLine, Deflection)` (`cxx:3993-4081`).
 ///
@@ -129,6 +135,104 @@ pub(crate) fn duplicate_of_lines_processing(
 }
 
 /// `AddWLine(theLines, theWLine, Deflection)` (`cxx:4085-4143`).
+///
+/// The `trans1` / `trans2` pair of `cxx:651-676`, `:858-878`, `:1140-1160`,
+/// `:1356-1376`, `:2093-2117`, `:2273-2280`, `:2855-2875`, `:3119-3136` and
+/// `:3334-3352`, from the normals at the tangent point of the walked line.
+///
+/// The sign test differs between the copies: `DotCross(norm2, norm1) > 0.` at
+/// `:666`, `:873`, `:1145`, `:1361`, `:2273`, `:3128`, `:3343` and `>= 0.` at
+/// `:2106`, `:2867`. `strict` picks between them.
+pub(crate) fn line_transitions(
+    pw: &PWalking,
+    s1: &dyn Surface,
+    s2: &dyn Surface,
+    strict: bool,
+) -> (IntSurfTypeTrans, IntSurfTypeTrans) {
+    let (tg_dir, indextg) = pw.tangent_at_line();
+    let tgline = GpVec::from_xyz(tg_dir.xyz());
+    let (locu, locv) = pw.value(indextg).parameters_on_s1();
+    let (_, d1u, d1v) = s1.d1(locu, locv);
+    let norm1 = d1u.crossed(&d1v);
+    let (locu, locv) = pw.value(indextg).parameters_on_s2();
+    let (_, d2u, d2v) = s2.d1(locu, locv);
+    let norm2 = d2u.crossed(&d2v);
+    let dot = tgline.dot_cross(&norm2, &norm1);
+    let out_first = if strict { dot > 0.0 } else { dot >= 0.0 };
+    if out_first {
+        (IntSurfTypeTrans::Out, IntSurfTypeTrans::In)
+    } else {
+        (IntSurfTypeTrans::In, IntSurfTypeTrans::Out)
+    }
+}
+
+/// `new IntPatch_WLine(PW.Line(), false, trans1, trans2)` through the
+/// `NbVertex() == 0` fallback: `cxx:677-711`, `:879-918`, `:2118-2168`,
+/// `:2880-2912`, `:3140-3177` and `:3355-3389` are the same five steps.
+///
+/// Returns `None` where the `.cxx` does `continue` because
+/// `PutVertexOnLine` reduced the line below two points.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn finish_walking_line(
+    pw: &PWalking,
+    s1: &dyn Surface,
+    d1m: &mut BrepTopolTool,
+    s2: &dyn Surface,
+    d2m: &mut BrepTopolTool,
+    trans1: IntSurfTypeTrans,
+    trans2: IntSurfTypeTrans,
+    point_debut: GpPnt,
+    point_fin: GpPnt,
+    tol_tangency: f64,
+) -> Option<WLine> {
+    let mut wl = WLine::new();
+    wl.base = IntPatchLine::with_transitions(false, trans1, trans2);
+    wl.set_creating_way(WLineWay::PrmPrm);
+    for p in pw.line() {
+        wl.add(*p);
+    }
+
+    // `IntPatch_RstInt::PutVertexOnLine(wline, Surf1, D1, Surf2, true, TolTang)`
+    // (`:683`, `:880`, `:2141`, `:3160`, `:3360`).
+    let mut line = GeomIntLine::Walking(wl);
+    if put_vertex_on_line(&mut line, s1, d1m, s2, true, tol_tangency).is_err() {
+        return None;
+    }
+    if line.as_wline().map_or(true, |w| w.nb_pnts() < 2) {
+        return None;
+    }
+    // `IntPatch_RstInt::PutVertexOnLine(wline, Surf2, D2, Surf1, false, TolTang)`
+    // (`:688`, `:885`, `:2146`, `:3165`, `:3365`).
+    if put_vertex_on_line(&mut line, s2, d2m, s1, false, tol_tangency).is_err() {
+        return None;
+    }
+    let mut wl = match line {
+        GeomIntLine::Walking(w) => w,
+        _ => return None,
+    };
+    if wl.nb_pnts() < 2 {
+        return None;
+    }
+
+    // `cxx:692-711` / `:888-907` / `:2149-2168` / `:2894-2912` / `:3158-3177` /
+    // `:3372-3389`: the fallback vertices when `PutVertexOnLine` added none.
+    if wl.nb_vertex() == 0 {
+        let params = pw.value(1).parameters();
+        let mut vtx = PatchPoint::new(point_debut, 1.0, params.0, params.1, params.2, params.3);
+        vtx.set_tolerance(tol_tangency);
+        wl.vertices.push(vtx);
+
+        let nbp = wl.nb_pnts();
+        let params = pw.value(nbp).parameters();
+        let mut vtx = PatchPoint::new(point_fin, nbp as f64, params.0, params.1, params.2, params.3);
+        vtx.set_tolerance(tol_tangency);
+        wl.vertices.push(vtx);
+    }
+
+    Some(wl)
+}
+
+/// `AddWLine(SLin, wline, Deflection)` (`cxx:4085-4143`).
 ///
 /// Drops every already collected line whose middle point and vertices all lie
 /// on `wline`, then appends `wline`.
