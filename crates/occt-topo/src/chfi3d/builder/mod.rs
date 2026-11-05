@@ -103,46 +103,50 @@
 //!   corner dispatch and the degenerated-corner arc builder; both reach the
 //!   corner bodies through [`ChFi3dCornerOps`],
 //!
-//! UNPORTED — the corner bodies the two dispatchers call:
+//! UNPORTED — what is left of the corner bodies (verified against the port by
+//! `_tasks.md` T-358):
 //!
-//! - `PerformFirstSection` (`ChFi3d_Builder.hxx:577-588`) is declared in
-//!   [`ChFi3dSurfOps`] but has no implementor (pure virtual in OCCT, implemented
-//!   by `ChFi3d_FilBuilder` / `ChFi3d_ChBuilder`), together with `SimulKPart`
-//!   (`hxx:201`, declared with the `ChFi3d_Builder_NotImp.cxx` answer as its
-//!   default), `PerformTwoCornerbyInter`,
-//! - `ChFi3d_FilDS` (`ChFi3d_Builder_0.cxx:2565-3351`, [`fil_ds`]): the whole
-//!   fillet-side DS filling, blocked on `ChFi3d_FilPointInDS` /
-//!   `FilVertexInDS` / `FilCurveInDS` / `Contains` / `CutEdge` /
-//!   `findIndexPoint` / `ChFi3d_ComputePCurv`, none of which is ported,
-//! - `SplitKPart` (`ChFi3d_Builder_SpKP.cxx:749-1160`) in [`split_k_part`]: it
-//!   needs `Geom2dHatch_Hatcher` / `Geom2dHatch_Intersector` and the `Tri` /
-//!   `FillSD` / `CpSD` statics of the same file,
-//! - `ChFiKPart_ComputeData::ComputeCorner` — the three overloads are ported
-//!   ([`crate::chfi3d::chfi_k_part`]), but their OCCT callers
-//!   `PerformTwoCorner` / `PerformThreeCorner` (`ChFi3d_Builder_C1.cxx`) are
-//!   not,
-//! - `PerformSetOfSurfOnElSpine` (`ChFi3d_Builder_2.cxx:2207-3003`) — ported and
-//!   now called from `PerformSetOfKGen`, but its obstacle arms need the
-//!   edge-contact `PerformSurf` / `SimulSurf` of the subclasses, so they stay on
-//!   the `ChFi3d_Builder_NotImp.cxx` `throw` defaults for now —,
-//! - the corner bodies reached through [`ChFi3dCornerOps`]:
-//!   `PerformOneCorner` (`ChFi3d_Builder_C1.cxx:611-1827`),
-//!   `PerformIntersectionAtEnd` (`:1828-3770`), `PerformMoreSurfdata`
-//!   (`:3771-4531`), `IntersectMoreCorner` (`:4708-...`), and
-//!   `PerformMoreThreeCorner` (`:1237-1652`), all of them `ChFiKPart` /
-//!   `BRepBlend` consumers; the six pure virtuals (`PerformTwoCorner`,
-//!   `PerformThreeCorner`, the three `Extent*Corner`, `SetRegul`) stay in the
-//!   subclasses (`ChFi3d_FilBuilder` / `ChFi3d_ChBuilder`).
-//! - `ComputeCurve2d` (`ChFi3d_Builder_C1.cxx:456-483`) - UNPORTED with its
-//!   `BRepAlgo_NormalProjection` dependency, see
-//!   [`crate::chfi3d::builder_c1`].
+//! - the edge-contact `PerformSurf` / `SimulSurf` overloads of the subclasses
+//!   ([`ChFi3dSurfOps`]) stay on the `ChFi3d_Builder_NotImp.cxx` answer where
+//!   OCCT itself has no base body; `SimulKPart` now has the
+//!   `ChFi3d_FilBuilder` / `ChFi3d_ChBuilder` bodies, and
+//!   `PerformFirstSection` likewise (T-351 for the chamfer,
+//!   `fil_builder/perform_first_section.rs` for the fillet),
+//! - `SplitKPart` (`ChFi3d_Builder_SpKP.cxx:749-1160`) in [`split_k_part`]: the
+//!   `Geom2dHatch`-driven arms are translated, the module's own doc lists the
+//!   residuals,
+//! - the vertex-representation loop of
+//!   [`start_sol_obstacle`] (documented at its use site).
+//!
+//! `MakeOffsetEdge`'s `Geom_OffsetSurface::Surface()` canonicalisation is no
+//! longer in this list: [`perform_helpers`] now asks
+//! `GeomOffsetSurface::equivalent_surface` (`Geom_OffsetSurface.cxx:867-992`)
+//! and keeps the offset surface only on the null-handle arm
+//! (`ChFi3d_Builder_1.cxx:169-173`).
+//!
+//! Ported in full (each as its own module): `ChFi3d_FilDS`
+//! (`ChFi3d_Builder_0.cxx:2565-3351`, [`fil_ds`]), `PerformOneCorner`
+//! (`ChFi3d_Builder_C1.cxx:611-1827`, [`perform_one_corner`]),
+//! `PerformMoreThreeCorner` (`ChFi3d_Builder_CnCrn.cxx:1237-3927`,
+//! [`perform_more_three_corner`], including the `GeomPlate` stages from
+//! `cxx:2707`), `IntersectMoreCorner` (`cxx:4708-5445`,
+//! [`intersect_more_corner`]), `PerformIntersectionAtEnd`
+//! (`ChFi3d_Builder_C1.cxx:1828-3766`, [`perform_intersection_at_end`]),
+//! `PerformSetOfSurfOnElSpine` (`ChFi3d_Builder_2.cxx:2207-3003`,
+//! [`perform_set_of_surf`]) and `ComputeCurve2d`
+//! (`ChFi3d_Builder_C1.cxx:456-483`,
+//! [`crate::chfi3d::builder_c1::compute_curve2d`]).
 //!
 //! Ported from `ChFi3d_Builder_C1.cxx` (see [`crate::chfi3d::builder_c1`] for
 //! the file statics):
 //!
 //! - [`ChFi3dBuilder::find_face`] (`:4533-4598`, both overloads),
 //! - [`ChFi3dBuilder::more_surfdata`] (`:4601-4705`), the `const` member
-//!   `PerformFilletOnVertex` branches on.
+//!   `PerformFilletOnVertex` branches on,
+//! - [`ChFi3dBuilder::perform_more_surfdata`] (`:3771-4531`, in
+//!   `builder/perform_more_surfdata`) and
+//!   [`ChFi3dBuilder::perform_intersection_at_end`] (`:1828-3766`, in
+//!   `builder/perform_intersection_at_end`).
 //!
 //! Divergences that are not heuristics (each is also stated at the call site):
 //! - `occ::handle<T>` becomes an owned value (`HDataStructure`, `HBuilder`) or
@@ -162,15 +166,20 @@ use occt_core::kernel::geomabs::Shape;
 
 mod accessors;
 mod call_perform_surf;
+mod ch_builder;
 mod complete_data;
 mod complete_ds;
 mod compute;
 mod compute_data;
 mod compute_data_face_face;
 mod corner_ops;
+mod corner_sd;
+mod ctx;
 mod extent_analyse;
+mod fil_builder;
 mod fil_ds;
 mod find_face;
+mod intersect_more_corner;
 mod make_extremities;
 mod more_surfdata;
 mod perform_element;
@@ -178,25 +187,34 @@ mod perform_extremity;
 mod perform_fillet_on_vertex;
 mod perform_helpers;
 mod perform_intersection_at_end;
+mod perform_more_surfdata;
+mod perform_more_three_corner;
 mod perform_one_corner;
 mod perform_set_of_k_part;
 mod perform_set_of_k_gen;
 mod perform_set_of_surf;
 mod perform_singular_corner;
+mod perform_two_corner_by_inter;
 mod search_face;
 mod simul_data;
-mod simul_data_face_face;
+pub(crate) mod simul_data_face_face;
 mod start_sol;
 mod start_sol_obstacle;
 mod state;
 mod store_data;
 mod stripe_surgery;
 mod split_k_part;
+mod split_surf;
 mod surf_ops;
 mod update_line;
 
 pub use corner_ops::ChFi3dCornerOps;
+pub use ctx::ChFi3dCtx;
+pub use ch_builder::{ChFi3dChBuilder, ChSurfOps};
+pub use fil_builder::{ChFi3dFilBuilder, FilSurfOps};
+pub(crate) use fil_builder::guide_as_curve;
 pub use perform_intersection_at_end::EndIntersectionExit;
+pub(crate) use simul_data_face_face::simul_data_face_face;
 pub use perform_one_corner::OneCornerExit;
 pub use store_data::store_data;
 pub use surf_ops::ChFi3dSurfOps;

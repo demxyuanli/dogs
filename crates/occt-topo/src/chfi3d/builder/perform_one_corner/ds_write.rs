@@ -29,8 +29,8 @@
 //! - `Geom_TrimmedCurve(Ct, prm1, prm2)` (`cxx:1250`) is
 //!   [`GeomAdaptorCurve::with_range`] in the port, for the reason stated in
 //!   `perform_one_corner::mod`.
-//! - `ComputeCurve2d` is UNPORTED (`builder_c1/compute_curve2d.rs`), so the
-//!   `intcouture` write receives `None` for `c2d1` / `c2d2`
+//! - `ComputeCurve2d` (`:456-483`) is ported (`builder_c1/compute_curve2d.rs`)
+//!   and the `intcouture` write takes its `c2d1` / `c2d2` from it
 //!   (`cxx:1338-1342`, `:1537-1541`).
 
 use std::sync::Arc;

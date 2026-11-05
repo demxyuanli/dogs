@@ -439,6 +439,26 @@ impl Spine {
         &mut self.offset_elspines
     }
 
+    /// The offset guideline paired with `guide`: the `ILES` / `ILES_offset`
+    /// walk of `ChFi3d_ChBuilder::SimulSurf` / `PerformSurf`
+    /// (`ChFi3d_ChBuilder.cxx:942-951`, `:1736-1745`), which steps the two
+    /// lists in step and stops on the elementary spine equal to `HGuide`.
+    ///
+    /// `None` when `guide` is not one of `elspines` or `offset_elspines` is
+    /// shorter: OCCT would then leave `OffsetHGuide` null (the assignment is
+    /// inside the `if`, `cxx:948-951`).
+    pub fn offset_el_spine(&self, guide: &Arc<ElSpine>) -> Option<&Arc<ElSpine>> {
+        let idx = self.elspines.iter().position(|e| Arc::ptr_eq(e, guide))?;
+        self.offset_elspines.get(idx)
+    }
+
+    /// The mutable side of [`Self::offset_el_spine`] — `ChangeOffsetElSpines()`
+    /// rather than the read-only member.
+    pub fn offset_el_spine_mut(&mut self, guide: &Arc<ElSpine>) -> Option<&mut Arc<ElSpine>> {
+        let idx = self.elspines.iter().position(|e| Arc::ptr_eq(e, guide))?;
+        self.offset_elspines.get_mut(idx)
+    }
+
     /// The read side of `ChangeOffsetElSpines()`: `PerformSetOfSurfOnElSpine`
     /// walks the two lists in step to find the offset guideline of `HGuide`
     /// (`_2.cxx:2222-2230`).

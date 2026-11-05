@@ -281,7 +281,11 @@ impl ChFi3dBuilder {
     }
 
     /// The `DStr` of the builder, read-only.
-    pub(super) fn ds(&self) -> &crate::topopebrep::ds::DataStructure {
+    ///
+    /// OCCT reads `myDS` directly from `ChFi3d_FilBuilder` subclasses
+    /// (`FilletSurf_InternalBuilder.cxx:610-760`) and from the base class
+    /// (`ChFi3d_Builder_1.cxx:470-488`); the port exposes the same reference.
+    pub fn ds(&self) -> &crate::topopebrep::ds::DataStructure {
         self.my_ds.ds()
     }
 

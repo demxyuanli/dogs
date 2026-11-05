@@ -114,6 +114,7 @@ impl<'a> Walk<'a> {
             )?;
         } else {
             self.ops.perform_surf_contact(
+                self.builder,
                 seq_sd,
                 &*self.guide,
                 Some(&self.spine),
@@ -225,9 +226,11 @@ impl<'a> Walk<'a> {
                 self.rec_s2,
                 self.rec_rst1,
                 &self.soldep_cs,
+                &self.builder.ctx(),
             )?;
         } else {
             self.ops.perform_surf_on_s1(
+                self.builder,
                 seq_sd,
                 &*self.guide,
                 Some(&self.spine),
@@ -332,9 +335,11 @@ impl<'a> Walk<'a> {
                 self.rec_s1,
                 self.rec_rst2,
                 &self.soldep_cs,
+                &self.builder.ctx(),
             )?;
         } else {
             self.ops.perform_surf_on_s2(
+                self.builder,
                 seq_sd,
                 &*self.guide,
                 Some(&self.spine),

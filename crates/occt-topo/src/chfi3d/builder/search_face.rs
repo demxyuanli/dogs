@@ -25,6 +25,7 @@
 //! - a null `TopoDS_Face` / `TopoDS_Edge` has no counterpart in the port: the
 //!   `FRef` parameter is an `Option` and a missing arc answers `false`.
 
+use super::ctx::ChFi3dCtx;
 use super::ChFi3dBuilder;
 
 use crate::chfi_ds::{CommonPoint, SpineHandle};
@@ -35,6 +36,24 @@ use crate::chfi3d::builder_2_helpers::{is_g1, is_input, search_face_on_v};
 
 impl ChFi3dBuilder {
     /// `SearchFace(Spine, Pc, FRef, FVoi)` (`ChFi3d_Builder_2.cxx:1523-1627`).
+    ///
+    /// The body reads only `myVEMap` / `myEFMap`, so it lives on
+    /// [`ChFi3dCtx`] and this is the plain-base forwarding the callers use.
+    pub fn search_face(
+        &self,
+        spine: Option<&SpineHandle>,
+        pc: &CommonPoint,
+        f_ref: Option<&Face>,
+        f_voi: &mut Option<Face>,
+    ) -> bool {
+        self.ctx().search_face(spine, pc, f_ref, f_voi)
+    }
+}
+
+impl<'a> ChFi3dCtx<'a> {
+    /// `SearchFace(Spine, Pc, FRef, FVoi)` (`ChFi3d_Builder_2.cxx:1523-1627`),
+    /// as the subclass virtuals call it (they hold a [`ChFi3dCtx`], not the
+    /// base object).
     ///
     /// `f_voi` is the out-parameter `FVoi`; it is set on every path that reached
     /// `FVoi.Nullify()` (`cxx:1533`), even when the answer is `false`.
@@ -62,8 +81,8 @@ impl ChFi3dBuilder {
                 let nb_faces = search_face_on_v(
                     pc,
                     f_ref,
-                    &self.my_ve_map,
-                    &self.my_ef_map,
+                    &self.ve_map,
+                    &self.ef_map,
                     f_voi,
                     &mut fbis,
                 );
@@ -104,7 +123,7 @@ impl ChFi3dBuilder {
 
             // `for (ItE.Initialize(myVEMap(Pc.Vertex())); ItE.More() &&
             // (!FindFace); ItE.Next())` (`cxx:1569-1619`).
-            for value in self.my_ve_map.get_from_key(vertex) {
+            for value in self.ve_map.get_from_key(vertex) {
                 if find_face {
                     break;
                 }
@@ -112,13 +131,13 @@ impl ChFi3dBuilder {
                     continue;
                 };
                 let mut trouve = f_ref.is_some_and(|f_ref| {
-                    self.my_ef_map
+                    self.ef_map
                         .get_from_key(&e.0)
                         .iter()
                         .any(|f| topo_tools::is_same(f, &f_ref.0))
                 });
                 if trouve {
-                    find_face = is_g1(&self.my_ef_map, &e, f_ref, f_voi);
+                    find_face = is_g1(&self.ef_map, &e, f_ref, f_voi);
                 }
                 if !find_face {
                     continue;
@@ -146,7 +165,7 @@ impl ChFi3dBuilder {
                     if !touches {
                         continue;
                     }
-                    if self.my_ef_map.get_from_key(&edge.0).iter().any(|f| {
+                    if self.ef_map.get_from_key(&edge.0).iter().any(|f| {
                         f_voi
                             .as_ref()
                             .is_some_and(|f_voi| topo_tools::is_same(f, &f_voi.0))
@@ -165,7 +184,7 @@ impl ChFi3dBuilder {
             let Some(arc) = Edge::wrap(arc.clone()) else {
                 return false;
             };
-            return is_g1(&self.my_ef_map, &arc, f_ref, f_voi);
+            return is_g1(&self.ef_map, &arc, f_ref, f_voi);
         }
         // `return false;` (`cxx:1626`).
         false

@@ -7,7 +7,8 @@
 //!
 //! - `ChFi3d_SetPointTolerance(DStr, box, IP)` (`cxx:319-331`),
 //! - `ChFi3d_IndexPointInDS(P1, DStr)` (`cxx:2325-2338`),
-//! - `ChFi3d_IndexOfSurfData(V1, CD, sens)` (`cxx:3446-3491`).
+//! - `ChFi3d_IndexOfSurfData(V1, CD, sens)` (`cxx:3446-3491`),
+//! - `ChFi3d_EdgeFromV1(V1, CD, sens)` (`cxx:3495-3536`).
 //!
 //! Translation notes:
 //! - `BRep_Builder B; B.UpdateVertex(P1.Vertex(), P1.Point(), P1.Tolerance())`
@@ -148,5 +149,70 @@ pub fn ch_fi3d_index_of_surf_data(
     }
     // `else throw Standard_ConstructionError("ChFi3d_IndexOfSurfData() -
     // wrong construction parameters");` (`cxx:3485-3489`).
+    Err("ChFi3d_IndexOfSurfData() - wrong construction parameters".to_string())
+}
+
+/// `ChFi3d_EdgeFromV1(V1, CD, sens)` (`cxx:3495-3536`): the first (or last,
+/// `sens = -1`) edge of the stripe's spine whose stored vertex is `v1`.
+///
+/// `TopExp::FirstVertex` / `LastVertex` already fold in the edge orientation
+/// (`tools2d::edge_vertices_cumulative`), so the two `Orientation() ==
+/// TopAbs_REVERSED` swaps of the OCCT body (`cxx:3503-3509`, `:3519-3525`) are
+/// the plain calls here. `Standard_ConstructionError` (`cxx:3534`) is the
+/// `Err`, and `sens` answers `1` on the first edge, `-1` on the last one
+/// (`cxx:3500`, `:3528`) — it is assigned before the check, as in OCCT.
+pub fn ch_fi3d_edge_from_v1(
+    v1: &TopoShape,
+    stripe: &StripeHandle,
+    sens: &mut i32,
+) -> Result<TopoShape, String> {
+    let spine = {
+        let guard = stripe
+            .read()
+            .map_err(|_| "ChFi3d_EdgeFromV1: poisoned stripe".to_string())?;
+        guard
+            .spine()
+            .cloned()
+            .ok_or_else(|| "ChFi3d_EdgeFromV1: the stripe has no spine".to_string())?
+    };
+    // `sens = 1;` (`cxx:3500`).
+    *sens = 1;
+    // `const TopoDS_Edge& E = spine->Edges(1);` (`cxx:3502`).
+    let e = {
+        let guard = spine
+            .read()
+            .map_err(|_| "ChFi3d_EdgeFromV1: poisoned spine".to_string())?;
+        guard
+            .edges(1)
+            .cloned()
+            .ok_or_else(|| "ChFi3d_EdgeFromV1: the spine has no first edge".to_string())?
+    };
+    // `if (Vref.IsSame(V1)) return E;` (`cxx:3510-3513`).
+    if let Some(vref) = first_vertex(&e) {
+        if is_same(&vref, v1) {
+            return Ok(e);
+        }
+    }
+    // `const TopoDS_Edge& E1 = spine->Edges(spine->NbEdges()); sens = -1;`
+    // (`cxx:3515-3528`).
+    let e1 = {
+        let guard = spine
+            .read()
+            .map_err(|_| "ChFi3d_EdgeFromV1: poisoned spine".to_string())?;
+        guard
+            .edges(guard.nb_edges())
+            .cloned()
+            .ok_or_else(|| "ChFi3d_EdgeFromV1: the spine has no last edge".to_string())?
+    };
+    *sens = -1;
+    // `if (Vref.IsSame(V1)) return E1;` (`cxx:3529-3532`).
+    if let Some(vref) = last_vertex(&e1) {
+        if is_same(&vref, v1) {
+            return Ok(e1);
+        }
+    }
+    // `else throw Standard_ConstructionError("ChFi3d_IndexOfSurfData() -
+    // wrong construction parameters");` (`cxx:3533-3535`), the same message
+    // OCCT reuses here.
     Err("ChFi3d_IndexOfSurfData() - wrong construction parameters".to_string())
 }

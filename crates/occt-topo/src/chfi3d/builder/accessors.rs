@@ -13,7 +13,7 @@ use occt_geom::Surface as GeomSurface;
 use super::{edge_index_in_spine, is_tangent_faces, spine_of, ChFi3dBuilder};
 use crate::abs::Orientation;
 use crate::brep_tool::BRepTool;
-use crate::chfi_ds::{ChFiDSMap, ErrorStatus, SpineHandle};
+use crate::chfi_ds::{ChFiDSMap, ErrorStatus, SpineHandle, StripeHandle};
 use crate::shape::{Edge, Face, TopoShape, Vertex};
 use crate::topo_tools::is_same;
 use crate::topopebrep::build::HBuilder;
@@ -22,6 +22,14 @@ impl ChFi3dBuilder {
     /// `IsDone()` (`ChFi3d_Builder_1.cxx:384-387`).
     pub fn is_done(&self) -> bool {
         self.done
+    }
+
+    /// `fleche` (`ChFi3d_Builder.hxx:376`), the deflection `SetParams` stores
+    /// (`ChFi3d_Builder_1.cxx:358-372`). OCCT reads the protected member
+    /// directly from `PerformTwoCorner` / `PerformThreeCorner`; the port exposes
+    /// it to those sibling modules.
+    pub fn fleche(&self) -> f64 {
+        self.fleche
     }
 
     /// `Shape()` (`ChFi3d_Builder_1.cxx:391-395`): `Standard_NoSuchObject` when
@@ -283,6 +291,30 @@ impl ChFi3dBuilder {
     /// The protected `myShape` (`hxx:842`), the input shape of the builder.
     pub fn input_shape(&self) -> &TopoShape {
         &self.my_shape
+    }
+
+    /// The protected `myListStripe` (`hxx:755`), in creation order.
+    ///
+    /// OCCT reads it directly from the API classes that wrap a builder
+    /// (`BRepFilletAPI_MakeFillet.cxx`, `FilletSurf_InternalBuilder.cxx`); the
+    /// port exposes the slice to those siblings.
+    pub fn stripes(&self) -> &[StripeHandle] {
+        &self.my_list_stripe
+    }
+
+    /// The protected `tolesp` (`hxx:744`), the tolerance on the spine.
+    pub fn tolesp(&self) -> f64 {
+        self.tolesp
+    }
+
+    /// The protected `tolapp3d` (`hxx:747`), the 3d approximation tolerance.
+    pub fn tolapp3d(&self) -> f64 {
+        self.tolapp3d
+    }
+
+    /// The protected `myConti` (`hxx:748`), the internal continuity.
+    pub fn continuity(&self) -> Shape {
+        self.my_conti
     }
 
     /// `FaceTangency(E0, E1, V)` (`ChFi3d_Builder_1.cxx:564-623`): the faces

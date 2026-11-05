@@ -2,10 +2,13 @@
 //!
 //! Source: `ModelingAlgorithms/TKFillet/ChFi3d/ChFi3d_Builder_C1.cxx`
 //! (OCCT 8.0.0). The corner bodies themselves (`PerformOneCorner`,
-//! `PerformMoreThreeCorner`, `PerformIntersectionAtEnd`, `PerformMoreSurfdata`,
-//! `IntersectMoreCorner`) are still UNPORTED - they consume
-//! `ChFi3d_FilBuilder`'s edge-contact surfaces and `BRepBlend`. This module
-//! carries the helpers those bodies and the two ported member functions
+//! `PerformMoreThreeCorner`, `IntersectMoreCorner`) are ported outside this
+//! module, in `chfi3d::builder::perform_one_corner` /
+//! `chfi3d::builder::perform_more_three_corner` /
+//! `chfi3d::builder::intersect_more_corner`. `PerformIntersectionAtEnd` and
+//! `PerformMoreSurfdata` are ported as the inherent `chfi3d::builder` members
+//! named below. This module carries the helpers those bodies and the two
+//! member functions
 //! ([`crate::chfi3d::builder::ChFi3dBuilder::find_face`] /
 //! [`crate::chfi3d::builder::ChFi3dBuilder::more_surfdata`]) call:
 //!
@@ -26,17 +29,15 @@
 //! | `containE` (`:1764-1785`) | [`face_queries::contain_e`] |
 //! | `IsShrink` (`:1792-1825`) | [`face_queries::is_shrink`] |
 //!
-//! UNPORTED, with the OCCT range of each body:
-//!
-//! - `PerformOneCorner` (`:611-1827`),
-//! - `PerformMoreThreeCorner` (`:1237-1652`),
-//! - `PerformIntersectionAtEnd` (`:1828-3770`),
-//! - `PerformMoreSurfdata` (`:3771-4531`),
-//! - `IntersectMoreCorner` (`:4708-...`),
-//! - `ComputeCurve2d` (`:456-483`): depends on `BRepAlgo_NormalProjection`
-//!   (the whole `BRepAlgo_NormalProjection.cxx` + `BRepAlgo_Approx`), which is
-//!   not ported; [`compute_curve2d::compute_curve2d`] documents the gap and
-//!   answers `None`.
+//! UNPORTED: nothing in this file's source range. `ComputeCurve2d` (`:456-483`)
+//! was unblocked once `BRepAlgo_NormalProjection` landed (`T-336`,
+//! `occt-topo/src/normal_projection.rs`); [`compute_curve2d::compute_curve2d`]
+//! now runs the real projection, and all six OCCT call sites call it:
+//! `ChFi3d_Builder_C1.cxx:1338` / `:1342`
+//! (`builder/perform_one_corner/ds_write.rs`), `:1536` / `:1540` and `:1569` /
+//! `:1572` (`builder/perform_one_corner/tail.rs`), `:3434` / `:3504`
+//! (`builder/perform_intersection_at_end/edge_limits.rs`) and `:5188` / `:5192`
+//! (`builder/intersect_more_corner/ds_write.rs`).
 //!
 //! Divergences that are not heuristics (each is also stated at the call site):
 //!

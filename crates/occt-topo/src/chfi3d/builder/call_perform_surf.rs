@@ -77,7 +77,7 @@ impl ChFi3dBuilder {
     /// on an internal / external orientation).
     #[allow(clippy::too_many_arguments)]
     pub fn call_perform_surf(
-        &self,
+        &mut self,
         ops: &mut dyn ChFi3dSurfOps,
         stripe: &StripeHandle,
         simul: bool,
@@ -172,9 +172,11 @@ impl ChFi3dBuilder {
                 soldep,
                 intf,
                 intl,
+                &self.ctx(),
             )
         } else {
             ops.perform_surf(
+                self,
                 seq_sd,
                 hguide,
                 spine,
@@ -249,9 +251,11 @@ impl ChFi3dBuilder {
                         soldep,
                         intf,
                         intl,
+                        &self.ctx(),
                     )
                 } else {
                     ops.perform_surf(
+                        self,
                         seq_sd,
                         hguide,
                         spine,

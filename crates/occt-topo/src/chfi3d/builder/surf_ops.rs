@@ -13,9 +13,9 @@
 //!
 //! OCCT leaves both to `ChFi3d_FilBuilder` / `ChFi3d_ChBuilder`, so the base
 //! class cannot define them. The port states the same thing with a trait: the
-//! subclasses are not ported yet, so [`ChFi3dSurfOps`] has no implementor in
-//! the crate, and the callers that need it ([`super::call_perform_surf`]) take
-//! `&mut dyn ChFi3dSurfOps`.
+//! fillet builder answers it with [`FilSurfOps`], and the chamfer builder is
+//! not ported yet, so the callers that need it ([`super::call_perform_surf`])
+//! take `&mut dyn ChFi3dSurfOps`.
 //!
 //! Divergences that are not heuristics:
 //! - `occ::handle<ChFiDS_SurfData>&` is `&mut SurfData` (`SimulSurf`) and
@@ -42,6 +42,9 @@ use crate::brep_top_adaptor_topol_tool::TopolTool;
 use crate::chfi_ds::{ElSpine, SpineHandle, SurfData};
 use crate::topopebrep::tool::adaptor::SurfaceAdaptor;
 
+use super::ctx::ChFi3dCtx;
+use super::ChFi3dBuilder;
+
 /// The protected virtuals of `ChFi3d_Builder` that `ChFi3d_FilBuilder` /
 /// `ChFi3d_ChBuilder` override (`hxx:203-221`, `:445-466`).
 ///
@@ -55,9 +58,21 @@ pub trait ChFi3dSurfOps {
     ///
     /// `data` is `NCollection_Sequence<handle(ChFiDS_SurfData)>`, `false` is
     /// OCCT's "did not compute".
+    ///
+    /// `ctx` carries the base members the subclass body reads (`tolapp3d`,
+    /// `tolesp`, ...) — see [`ChFi3dCtx`]; OCCT's override reads them off
+    /// `this` because it is a member of the same object.
+    ///
+    /// `PerformSurf` differs from `SimulSurf` in one respect: it calls back
+    /// into the base (`ComputeData`, `CompleteData`, `SplitSurf`), so it
+    /// receives the whole [`ChFi3dBuilder`] mutably instead of the read-only
+    /// [`ChFi3dCtx`] view. The two are disjoint borrows at every call site
+    /// (`Walk::builder` and `Walk::ops`), which is exactly the `this` the C++
+    /// override has.
     #[allow(clippy::too_many_arguments)]
     fn perform_surf(
         &mut self,
+        base: &mut ChFi3dBuilder,
         data: &mut Vec<Arc<SurfData>>,
         guide: &mut Arc<ElSpine>,
         spine: Option<&SpineHandle>,
@@ -87,7 +102,7 @@ pub trait ChFi3dSurfOps {
     ///
     /// `false` is OCCT's "did not simulate". The six edge-contact overloads of
     /// both functions are the throwing defaults further down; `SimulKPart`
-    /// (`hxx:201`) is still missing.
+    /// (`hxx:201`) is declared below with its base body.
     #[allow(clippy::too_many_arguments)]
     fn simul_surf(
         &mut self,
@@ -110,6 +125,7 @@ pub trait ChFi3dSurfOps {
         soldep: &MathVector,
         intf: &mut i32,
         intl: &mut i32,
+        ctx: &ChFi3dCtx<'_>,
     ) -> bool;
 
     /// `PerformFirstSection(S, HGuide, Choix, S1, S2, I1, I2, Par, SolDep, Pos1,
@@ -135,22 +151,31 @@ pub trait ChFi3dSurfOps {
         sol_dep: &mut MathVector,
         pos1: &mut State,
         pos2: &mut State,
+        ctx: &ChFi3dCtx<'_>,
     ) -> bool;
 
     /// `SimulKPart(SD)` (`hxx:201`) — pure virtual (`= 0`) and `const` in OCCT;
-    /// implemented by `ChFi3d_FilBuilder` (`ChFi3d_FilBuilder.cxx:475-...`) and
+    /// implemented by `ChFi3d_FilBuilder` (`ChFi3d_FilBuilder.cxx:475-554`) and
     /// `ChFi3d_ChBuilder` (`ChFi3d_ChBuilder.cxx:655-...`), both of which only
     /// fill `SD`'s simplification data, never geometry.
     ///
     /// `PerformSetOfKPart` calls it for every split `SurfData` when it runs in
-    /// simulation mode (`ChFi3d_Builder_2.cxx:3126-3129`). No subclass is ported
-    /// yet, so the default carries the `ChFi3d_Builder_NotImp.cxx` answer and
-    /// `PerformSetOfKPart` reports it as `Err`.
+    /// simulation mode (`ChFi3d_Builder_2.cxx:3126-3129`).
     ///
     /// `const` becomes `&mut self` for the same reason as
     /// [`Self::perform_first_section`]; `const handle<SurfData>&` becomes
-    /// `&mut SurfData` because the two subclass bodies write through the handle.
-    fn simul_k_part(&mut self, _sd: &mut SurfData) -> Result<(), String> {
+    /// `&mut SurfData` because the two subclass bodies write through the
+    /// handle.
+    ///
+    /// `ds` is the base class member `myDS` the two OCCT bodies read
+    /// (`ChFi3d_FilBuilder.cxx:477`). The port passes it in because the
+    /// subclass carries only its own members (see
+    /// [`ChFi3dFilBuilder`](super::fil_builder::ChFi3dFilBuilder)).
+    fn simul_k_part(
+        &mut self,
+        _sd: &mut SurfData,
+        _ds: &crate::topopebrep::ds::HDataStructure,
+    ) -> Result<(), String> {
         Err("ChFi3d_Builder::SimulKPart : Not Implemented".into())
     }
 
@@ -177,6 +202,7 @@ pub trait ChFi3dSurfOps {
     #[allow(clippy::too_many_arguments)]
     fn perform_surf_on_s1(
         &mut self,
+        _base: &mut ChFi3dBuilder,
         _data: &mut Vec<Arc<SurfData>>,
         _guide: &Arc<ElSpine>,
         _spine: Option<&SpineHandle>,
@@ -215,6 +241,7 @@ pub trait ChFi3dSurfOps {
     #[allow(clippy::too_many_arguments)]
     fn perform_surf_on_s2(
         &mut self,
+        _base: &mut ChFi3dBuilder,
         _data: &mut Vec<Arc<SurfData>>,
         _guide: &Arc<ElSpine>,
         _spine: Option<&SpineHandle>,
@@ -253,6 +280,7 @@ pub trait ChFi3dSurfOps {
     #[allow(clippy::too_many_arguments)]
     fn perform_surf_contact(
         &mut self,
+        _base: &mut ChFi3dBuilder,
         _data: &mut Vec<Arc<SurfData>>,
         _guide: &Arc<ElSpine>,
         _spine: Option<&SpineHandle>,
@@ -321,6 +349,7 @@ pub trait ChFi3dSurfOps {
         _rec_s: bool,
         _rec_rst: bool,
         _soldep: &MathVector,
+        _ctx: &ChFi3dCtx<'_>,
     ) -> Result<(), String> {
         Err("SimulSurf Not Implemented".to_string())
     }
@@ -357,6 +386,7 @@ pub trait ChFi3dSurfOps {
         _rec_s: bool,
         _rec_rst: bool,
         _soldep: &MathVector,
+        _ctx: &ChFi3dCtx<'_>,
     ) -> Result<(), String> {
         Err("SimulSurf Not Implemented".to_string())
     }

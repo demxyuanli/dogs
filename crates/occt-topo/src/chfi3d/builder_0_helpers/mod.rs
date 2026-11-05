@@ -10,49 +10,64 @@ pub mod compute_arete;
 pub mod compute_curves;
 pub mod compute_curves_walking;
 pub mod compute_pcurv;
+pub mod computes_int_pc;
 pub mod curve_cleaner;
 pub mod enlarge_box;
 pub mod eval_tol_reached;
+pub mod extr_spine_carac;
 pub mod fil_interf;
+pub mod int_cs;
 pub mod int_traces;
 pub mod inter_plane_edge;
+pub mod is_in_front;
 pub mod k_particular;
 pub mod mkbound;
+pub mod parameters;
 pub mod perform_el_spine;
 pub mod point_in_ds;
 pub mod project_pcurv;
 pub mod reparam_pcurv;
+pub mod search_fd;
 pub mod solid_index;
 pub mod stripe_edge_inter;
+pub mod trim_curve;
 
 pub use boite::{ch_fi3d_boite, ch_fi3d_boite4};
 pub use bound_surf::{ch_fi3d_bound_fac, ch_fi3d_bound_surf};
 pub use compute_arete::{ch_fi3d_compute_arete, ComputeArete};
 pub use compute_curves::{ch_fi3d_compute_curves, ComputeCurves};
 pub use compute_pcurv::{ch_fi3d_compute_pcurv, ch_fi3d_compute_pcurv_uv};
+pub use computes_int_pc::{ch_fi3d_computes_int_pc, ch_fi3d_computes_int_pc_point};
 pub use curve_cleaner::curve_cleaner;
 pub use enlarge_box::{
     ch_fi3d_enlarge_box_curve, ch_fi3d_enlarge_box_edge, ch_fi3d_enlarge_box_pcurve,
     ch_fi3d_enlarge_box_surf_data,
 };
 pub use eval_tol_reached::ch_fi3d_eval_tol_reached;
+pub use extr_spine_carac::ch_fi3d_extr_spine_carac;
 pub use fil_interf::{
     ch_fi3d_contains, ch_fi3d_fil_curve_in_ds, ch_fi3d_fil_point_in_ds, ch_fi3d_fil_vertex_in_ds,
     ch_fi3d_orientation, cut_edge, find_index_point, query_add_vertex_in_edge, reset_both_points,
 };
+pub use int_cs::ch_fi3d_int_cs;
 pub use int_traces::ch_fi3d_int_traces;
 pub use inter_plane_edge::inter_plane_edge;
+pub use is_in_front::{ch_fi3d_is_in_front, IsInFrontState};
 pub use k_particular::ch_fi3d_k_particular;
 pub use mkbound::{
     build_p_curve_dirs, build_p_curve_vec2d, build_p_curve_vec3d, mkbound_curve,
     mkbound_curve_segment, mkbound_pfac2d, mkbound_pfac3d, mkbound_segment,
     mkbound_segment_adaptor,
 };
+pub use parameters::ch_fi3d_parameters;
 pub use perform_el_spine::ch_fi3d_perform_el_spine;
 pub use point_in_ds::{
-    ch_fi3d_index_of_surf_data, ch_fi3d_index_point_in_ds, ch_fi3d_set_point_tolerance,
+    ch_fi3d_edge_from_v1, ch_fi3d_index_of_surf_data, ch_fi3d_index_point_in_ds,
+    ch_fi3d_set_point_tolerance,
 };
 pub use project_pcurv::ch_fi3d_project_pcurv;
 pub use reparam_pcurv::ch_fi3d_reparam_pcurv;
+pub use search_fd::{ch_fi3d_search_fd, SearchFdAnswer};
 pub use solid_index::ch_fi3d_solid_index;
 pub use stripe_edge_inter::ch_fi3d_stripe_edge_inter;
+pub use trim_curve::{ch_fi3d_trim_curve, ch_fi3d_trim_curve_range};

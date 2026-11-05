@@ -38,47 +38,52 @@ use crate::chfi_ds::ElSpine;
 use super::compute_data::point_parameter;
 use super::ChFi3dBuilder;
 
-impl ChFi3dBuilder {
-    /// `SimulData(Data, HGuide, Lin, S1, I1, S2, PC2, I2, Decroch, Func, FInv,
-    /// FInvP, FInvC, PFirst, MaxStep, Fleche, TolGuide, First, Last, Soldep,
-    /// NbSecMin, Inside, Appro, Forward, RecP, RecS, RecRst)`
-    /// (`ChFi3d_Builder_6.cxx:1346-1501`).
-    ///
-    /// Simulation head of the path edge / face for the bypass of obstacles.
-    #[allow(clippy::too_many_arguments)]
-    #[allow(unused_assignments)]
-    pub fn simul_data_surf_rst(
-        &mut self,
-        hguide: &ElSpine,
-        lin: &mut Option<Rc<RefCell<Line>>>,
-        s1: Arc<dyn Surface>,
-        i1: Rc<RefCell<TopolTool>>,
-        s2: Arc<dyn Surface>,
-        pc2: Curve2dAdaptor,
-        i2: Rc<RefCell<TopolTool>>,
-        decroch: &mut bool,
-        func: &mut dyn BlendSurfRstFunction,
-        finv: &mut dyn BlendFuncInv,
-        finv_p: &mut dyn BlendSurfPointFuncInv,
-        finv_c: &mut dyn BlendSurfCurvFuncInv,
-        p_first: f64,
-        max_step: f64,
-        fleche: f64,
-        tol_guide: f64,
-        first: &mut f64,
-        last: &mut f64,
-        soldep: &MathVector,
-        nb_sec_min: i32,
-        inside: bool,
-        approx: bool,
-        forward: bool,
-        rec_p: bool,
-        rec_s: bool,
-        rec_rst: bool,
-    ) -> bool {
-        // `BRepBlend_SurfRstLineBuilder TheWalk(S1, I1, S2, PC2, I2)`
-        // (`cxx:1377`).
-        let mut the_walk = SurfRstLineBuilder::new(s1, i1, s2, pc2, i2);
+/// `SimulData(Data, HGuide, Lin, S1, I1, S2, PC2, I2, Decroch, Func, FInv,
+/// FInvP, FInvC, PFirst, MaxStep, Fleche, TolGuide, First, Last, Soldep,
+/// NbSecMin, Inside, Appro, Forward, RecP, RecS, RecRst)`
+/// (`ChFi3d_Builder_6.cxx:1346-1501`).
+///
+/// Simulation head of the path edge / face for the bypass of obstacles.
+///
+/// `tolapp3d` / `tolapp2d` are the two base-class members the body reads
+/// (`hxx:744-745`); passing them instead of `this` mirrors
+/// [`super::simul_data_face_face::simul_data_face_face`], whose only caller
+/// family is the same one — the `ChFi3d_FilBuilder` virtuals.
+#[allow(clippy::too_many_arguments)]
+#[allow(unused_assignments)]
+pub fn simul_data_surf_rst(
+    tolapp3d: f64,
+    tolapp2d: f64,
+    hguide: &ElSpine,
+    lin: &mut Option<Rc<RefCell<Line>>>,
+    s1: Arc<dyn Surface>,
+    i1: Rc<RefCell<TopolTool>>,
+    s2: Arc<dyn Surface>,
+    pc2: Curve2dAdaptor,
+    i2: Rc<RefCell<TopolTool>>,
+    decroch: &mut bool,
+    func: &mut dyn BlendSurfRstFunction,
+    finv: &mut dyn BlendFuncInv,
+    finv_p: &mut dyn BlendSurfPointFuncInv,
+    finv_c: &mut dyn BlendSurfCurvFuncInv,
+    p_first: f64,
+    max_step: f64,
+    fleche: f64,
+    tol_guide: f64,
+    first: &mut f64,
+    last: &mut f64,
+    soldep: &MathVector,
+    nb_sec_min: i32,
+    inside: bool,
+    approx: bool,
+    forward: bool,
+    rec_p: bool,
+    rec_s: bool,
+    rec_rst: bool,
+) -> bool {
+    // `BRepBlend_SurfRstLineBuilder TheWalk(S1, I1, S2, PC2, I2)`
+    // (`cxx:1377`).
+    let mut the_walk = SurfRstLineBuilder::new(s1, i1, s2, pc2, i2);
 
         let reverse = !forward || inside;
         let sp_first = hguide.first_parameter();
@@ -107,8 +112,8 @@ impl ChFi3dBuilder {
                 p_first,
                 target,
                 soldep,
-                self.tolapp3d,
-                self.tolapp2d,
+                tolapp3d,
+                tolapp2d,
                 tol_guide,
                 rec_rst,
                 rec_p,
@@ -131,8 +136,8 @@ impl ChFi3dBuilder {
                 new_first,
                 *last,
                 ms,
-                self.tolapp3d,
-                self.tolapp2d,
+                tolapp3d,
+                tolapp2d,
                 tol_guide,
                 &par_sol,
                 fleche,
@@ -182,6 +187,7 @@ impl ChFi3dBuilder {
         true
     }
 
+impl ChFi3dBuilder {
     /// `SimulData(Data, HGuide, Lin, S1, PC1, I1, Decroch1, S2, PC2, I2,
     /// Decroch2, Func, FInv1, FInvP1, FInv2, FInvP2, PFirst, MaxStep, Fleche,
     /// TolGuide, First, Last, Soldep, NbSecMin, Inside, Appro, Forward, RecP1,

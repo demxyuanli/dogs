@@ -53,7 +53,7 @@ impl ChFi3dBuilder {
                         .ok_or_else(|| {
                             "ExtentAnalyse: empty stripe list for ExtentOneCorner".to_string()
                         })?;
-                    ops.extent_one_corner(&vtx, first)?;
+                    ops.extent_one_corner(self, &vtx, first)?;
                 }
                 2 => {
                     if nbedges <= 3 {
@@ -62,7 +62,7 @@ impl ChFi3dBuilder {
                             .find_from_index(iv)
                             .map(|l| l.to_vec())
                             .unwrap_or_default();
-                        ops.extent_two_corner(&vtx, &list)?;
+                        ops.extent_two_corner(self, &vtx, &list)?;
                     }
                 }
                 3 => {
@@ -72,7 +72,7 @@ impl ChFi3dBuilder {
                             .find_from_index(iv)
                             .map(|l| l.to_vec())
                             .unwrap_or_default();
-                        ops.extent_three_corner(&vtx, &list)?;
+                        ops.extent_three_corner(self, &vtx, &list)?;
                     }
                 }
                 // `default: break;` (`:170-171`).

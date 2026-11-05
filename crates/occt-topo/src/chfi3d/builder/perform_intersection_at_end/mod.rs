@@ -17,19 +17,35 @@
 //! - [`face_chains`] — `cxx:2281-2580`: the `nface == 3` face chain (and its
 //!   `ChFiDS_OnSame` sub-case), the "more than three edges" search over the
 //!   free edges with the `nbarete == 4` / `== 5` collapses, and the
-//!   `onecorner` answer.
-//!
-//! `cxx:2582-3769` (the per-face intersection, the DS storage and the shrink
-//! tail) is UNPORTED; the entry answers
-//! [`EndIntersectionExit::RestUnported`] after the three ported stages.
+//!   `onecorner` answer,
+//! - [`face_loop`] — `cxx:2582-3145`: the per-face intersection loop (the
+//!   `nb == 1` p-curve arm with its `isOnSame1` `IntersUpdateOnSame`, the
+//!   `Pardeb` / `Parfin` fill, `ChFi3d_Boite` + `ChFi3d_BoundFac` and the
+//!   `ChFi3d_ComputeCurves` call with its `PerformMoreThreeCorner` hand-over),
+//! - [`edge_cut`] — `cxx:2767-2952`, `:2953-2992` and `:2998-3052`: the end
+//!   edge's curve against the fillet surface with the
+//!   `GeomLib::ExtendSurfByLength` and `GeomInt_IntSS` fallbacks, the `Hc2`
+//!   arm and the `isOnSame2` close,
+//! - [`ds_store`] — `cxx:3146-3264` and `:3576-3610`: the `p1` / `p2` range of
+//!   `Cc`, its two end points and `Tolerance`s in the DS, the
+//!   `TopOpeBRepDS_Curve` with its two `CurvePointInterference`s, the two end
+//!   `Edge[0]` / `Edge[nbface]` interferences, then the `InterfPC` / `InterfPS`
+//!   of each iteration and the appends into the shape / surface interferences,
+//! - [`edge_limits`] — `cxx:3262-3532`: the limitation of `Edge[nb]`, either
+//!   by the parameter already computed by [`edge_cut`] or by the new curve
+//!   `Ct` built from the end vertex with its two p-curves,
+//! - [`shrink`] — `cxx:3534-3572` and `:3611-3766`: the shrunk end's p-curve
+//!   on `IsurfPrev`, and the tail (`stripe->InDS`, the
+//!   `ChFi3d_ComputeArete` rebuild of the other end, the `CommonPoint` carry
+//!   and the self-intersection tolerance of `midIpoint`).
 //!
 //! Translation notes:
-//! - `PerformMoreSurfdata(Index)` (`cxx:2000-2004`) is UNPORTED
-//!   (`ChFi3d_Builder_C1.cxx:3771-4531`), and `PerformMoreThreeCorner(Index, 1)`
-//!   (`cxx:2008`, `:2163`) is one of the injected corner entry points, so both
-//!   answer an [`EndIntersectionExit`] instead of recursing; the caller
-//!   dispatches them like `PerformOneCorner` does for
-//!   `PerformIntersectionAtEnd`.
+//! - `PerformMoreSurfdata(Index)` (`cxx:2000-2004`) is ported as the inherent
+//!   [`ChFi3dBuilder::perform_more_surfdata`] (`builder/perform_more_surfdata`)
+//!   and `PerformMoreThreeCorner(Index, 1)` (`cxx:2008`, `:2163`) is one of the
+//!   injected corner entry points, so both answer an [`EndIntersectionExit`]
+//!   instead of recursing; the caller dispatches them like `PerformOneCorner`
+//!   does for `PerformIntersectionAtEnd`.
 //! - `SeqFil` (`stripe->ChangeSetOfSurfData()->ChangeSequence()`) cannot be
 //!   held as a `&mut` into the stripe while the body also reads the DS, so the
 //!   port keeps [`EndIntersection::seq`] as a copy and writes it back with
@@ -38,8 +54,13 @@
 //!   immediately because `ChFi3d_IndexOfSurfData` re-reads it right after.
 
 mod corner_faces;
+mod ds_store;
+mod edge_cut;
+mod edge_limits;
 mod face_chains;
+mod face_loop;
 mod prologue;
+mod shrink;
 
 use std::sync::Arc;
 
@@ -61,18 +82,20 @@ pub const NN: usize = 15;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EndIntersectionExit {
     /// `cxx:2000-2004`: `if (MoreSurfdata(Index)) { PerformMoreSurfdata(Index);
-    /// return; }`. The callee is UNPORTED (`cxx:3771-4531`).
+    /// return; }`. The callee is
+    /// [`ChFi3dBuilder::perform_more_surfdata`] (`cxx:3771-4531`).
     MoreSurfdata,
     /// `cxx:2006-2010` / `cxx:2161-2165`: `PerformMoreThreeCorner(Index, 1);
     /// return;` with the `nbcourb` argument OCCT passes.
     MoreThreeCorner(usize),
     /// `cxx:2508-2509`: `IntersectMoreCorner(Index); return;`. The callee is
-    /// UNPORTED (`cxx:4708-4800`), a `ChFi3d_Builder` member rather than a
+    /// [`ChFi3dBuilder::intersect_more_corner`] (`cxx:4708-5445`, ported in
+    /// `builder/intersect_more_corner`), a `ChFi3d_Builder` member rather than a
     /// `ChFi3dCornerOps` entry point.
     IntersectMoreCorner,
-    /// `IntersectMoreCorner` / the ported prologue and face search are done;
-    /// `cxx:2582-3769` is UNPORTED.
-    RestUnported,
+    /// The body ran to its end (`cxx:3766`): no hand-over, the corner stayed
+    /// with `PerformIntersectionAtEnd`.
+    Done,
 }
 
 /// `SeqFil(num)`, 1-based like the OCCT sequence.
@@ -106,8 +129,9 @@ pub(super) fn store_end_points(st: &mut EndIntersection, cv1: &CommonPoint, cv2:
 
 /// The locals of `PerformIntersectionAtEnd` that the prologue produces.
 ///
-/// Fields that only `cxx:2136-3770` reads are still written here, exactly as
-/// the still-unported stages expect them.
+/// Fields that only `cxx:2136-3770` reads are still written here, in OCCT order,
+/// so each stage of [`face_loop`] / [`edge_cut`] / [`edge_limits`] /
+/// [`ds_store`] / [`shrink`] reads the value the body it translates wrote.
 #[allow(dead_code)]
 pub(super) struct EndIntersection {
     /// `Vtx`
@@ -168,7 +192,8 @@ pub(super) struct EndIntersection {
     pub fi1: FaceInterference,
     /// `Fi2` (`cxx:2013`)
     pub fi2: FaceInterference,
-    /// `Cc`, `Pc`, `Ps` (`cxx:2017-2018`) — filled by the unported stages.
+    /// `Cc`, `Pc`, `Ps` (`cxx:2017-2018`) — written by [`face_loop`] from
+    /// `ChFi3d_ComputeCurves`.
     pub cc: Option<Arc<dyn Curve>>,
     /// `Pc`
     pub pc: Option<Arc<dyn Curve2d>>,
@@ -184,7 +209,8 @@ pub(super) struct EndIntersection {
     pub sdprev: Option<Arc<SurfData>>,
     /// `tolpt` (`cxx:2031`)
     pub tolpt: f64,
-    /// `tolreached` (`cxx:2032`) — filled by the unported stages.
+    /// `tolreached` (`cxx:2032`) — written by [`face_loop`] with the
+    /// `ChFi3d_ComputeCurves` tolerance.
     pub tol_reached: f64,
     /// `orcourbe` (`cxx:2071-2078`)
     pub or_courbe: Orientation,
@@ -237,6 +263,13 @@ pub(super) struct EndIntersection {
     pub face_sau: Option<Face>,
     /// `edgesau` (`cxx:2139`)
     pub edge_sau: Option<Edge>,
+    /// `EdgeSpine` (`cxx:1853`, `:1898-1910`) — the spine edge at this end,
+    /// read again by the `myEVIMap` update of `cxx:2817-2835`.
+    pub edge_spine: TopoShape,
+    /// `Fi1Length` (`cxx:2101`) — the fillet length along `Fi1`.
+    pub fi1_length: f64,
+    /// `Fi2Length` (`cxx:2109`)
+    pub fi2_length: f64,
 }
 
 impl EndIntersection {
@@ -249,10 +282,11 @@ impl EndIntersection {
 }
 
 impl ChFi3dBuilder {
-    /// `PerformIntersectionAtEnd(Index)` (`ChFi3d_Builder_C1.cxx:1828-3770`).
+    /// `PerformIntersectionAtEnd(Index)` (`ChFi3d_Builder_C1.cxx:1828-3766`).
     ///
-    /// `Err` carries the throws of the ported prologue; the corner hand-overs
-    /// answer an [`EndIntersectionExit`].
+    /// `Err` carries the throws of the body; the corner hand-overs answer an
+    /// [`EndIntersectionExit`], a clean run answers
+    /// [`EndIntersectionExit::Done`].
     pub fn perform_intersection_at_end(
         &mut self,
         index: usize,
@@ -275,11 +309,15 @@ impl ChFi3dBuilder {
             st.flush();
             return Ok(exit);
         }
-        // `cxx:2582-3769` is UNPORTED: the per-face intersection and surface
-        // extension (`:2597-3127`), the DS storage (`:3128-3250`), the edge
-        // limitations (`:3251-3537`) and the shrink / tolerance tail
-        // (`:3538-3769`). Their locals are declared at `cxx:2582-2596`.
+        // `cxx:2582-3145`: the per-face intersection loop.
+        if let Some(exit) = face_loop::intersect_faces(self, &mut st)? {
+            st.flush();
+            return Ok(exit);
+        }
+        // `cxx:3146-3766` runs inside the loop and after it: the DS storage,
+        // the edge limitations, the shrink block, `InterfPC` / `InterfPS`,
+        // the face / edge appends and the shrink tail.
         st.flush();
-        Ok(EndIntersectionExit::RestUnported)
+        Ok(EndIntersectionExit::Done)
     }
 }

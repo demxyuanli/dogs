@@ -20,20 +20,12 @@
 //! `Spine->Mode() == ChFiDS_ConstThroatWithPenetrationChamfer`
 //! (`:3271-3278`); `PerformSetOfKGen` is the other caller.
 //!
-//! UNPORTED:
-//! - `GeomConvert::C0BSplineToC1BSplineCurve(BSpline, tol, 0.1)`
-//!   (`GeomConvert.cxx:1313-1338`) has no port: it needs
-//!   `C0BSplineToArrayOfC1BSplineCurve` (`:1342-1390`) and the 3D `ConcatC1`
-//!   chain (`:1021-1311`: `GeomLProp::Continuity`, `ReorderArrayOfG1Curves`,
-//!   `Indexmin`, `Need2DegRepara`, `Pretreatment`, `Hermit::Solution`,
-//!   `MultNumandDenom`, `BSplCLib::FunctionReparameterise`), and only the
-//!   `Geom2dConvert` pair of the 2D module is ported. The
-//!   `if (BSpline->IsRational())` block (`cxx:5199-5214`) is therefore skipped;
-//!   OCCT keeps the unconverted curve in its own `else` arm whenever the
-//!   conversion moves `FirstParameter` (`cxx:5207-5213`), which is the curve
-//!   this port leaves in place.
-//!
 //! Divergences that are not heuristics:
+//! - `GeomConvert::C0BSplineToC1BSplineCurve(BSpline, tol, 0.1)`
+//!   (`cxx:5203`) comes from `occt_geom::geom_convert_concat`; the
+//!   `Standard_ConstructionError` / `Standard_DimensionError` throws of that
+//!   chain are the `Err` here, so a failed conversion ends `PerformElSpine`
+//!   instead of leaving `BSpline` unconverted.
 //! - `BRep_Tool::Curve(E, First, Last)` is [`BRepTool::edge_curve_world`]:
 //!   OCCT hands back the curve in the edge's own frame, and every quantity it
 //!   is compared against here (`Spine->D1`, `Spine->Parameter`, the pcurve
@@ -63,6 +55,7 @@ use occt_geom::bspline_curve::GeomBSplineCurve;
 use occt_geom::convert_bspl::{curve_to_bspline_curve, CompCurveToBSplineCurve};
 use occt_geom::curve::Curve;
 use occt_geom::gcpnts::abscissa_point_with_guess;
+use occt_geom::geom_convert_concat::c0_bspline_to_c1_bspline_curve;
 use occt_geom::geom_lib_extend_curve::{adjust_extremity, extend_curve_to_point};
 use occt_geom::line::GeomLine;
 use occt_geom::trimmed::GeomTrimmedCurve;
@@ -589,10 +582,17 @@ pub fn ch_fi3d_perform_el_spine(
     }
 
     // `if (BSpline->IsRational()) { C1 = Copy;
-    // GeomConvert::C0BSplineToC1BSplineCurve(C1, tol, 0.1); ... }`
-    // (`cxx:5199-5214`) — UNPORTED, see the module doc: the curve stays as
-    // concatenated, which is OCCT's own `else` arm when the conversion would
-    // move `FirstParameter`.
+    // GeomConvert::C0BSplineToC1BSplineCurve(C1, tol, 0.1);
+    // if (C1->FirstParameter() == BSpline->FirstParameter()) BSpline = C1; }`
+    // (`cxx:5199-5213`).
+    if bspline.is_rational() {
+        let c1 = c0_bspline_to_c1_bspline_curve(&bspline, tol, 0.1)
+            .map_err(|e| format!("ChFi3d_PerformElSpine: C0BSplineToC1BSplineCurve: {e}"))?;
+        // Il faut s'assurer que l'origine n'a pas bouge (cts21158).
+        if c1.first_parameter() == bspline.first_parameter() {
+            bspline = c1;
+        }
+    }
 
     // Correction C2 or C3 (if possible) (`cxx:5216-5269`).
     // `if ((caredeb || carefin) && BSpline->Degree() < 8) BSpline->IncreaseDegree(8);`

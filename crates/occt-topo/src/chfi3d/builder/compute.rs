@@ -111,7 +111,7 @@ impl ChFi3dBuilder {
                 }
             } else if first_status == SpineState::FreeBoundary {
                 if let Some(vtx) = &first_vertex {
-                    ops.extent_one_corner(vtx, stripe.clone())?;
+                    ops.extent_one_corner(self, vtx, stripe.clone())?;
                 }
             }
             if is_at_most_break_point(last_status) {
@@ -120,7 +120,7 @@ impl ChFi3dBuilder {
                 }
             } else if last_status == SpineState::FreeBoundary {
                 if let Some(vtx) = &last_vertex {
-                    ops.extent_one_corner(vtx, stripe.clone())?;
+                    ops.extent_one_corner(self, vtx, stripe.clone())?;
                 }
             }
         }
@@ -418,7 +418,7 @@ impl ChFi3dBuilder {
 
                 // `SetRegul();` (`cxx:574`): the regularities are coded after
                 // cutting.
-                ops.set_regul()?;
+                ops.set_regul(self)?;
             }
         }
 

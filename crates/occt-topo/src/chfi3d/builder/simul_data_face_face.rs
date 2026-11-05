@@ -34,42 +34,45 @@ use crate::brep_top_adaptor_topol_tool::TopolTool;
 use crate::chfi_ds::ElSpine;
 
 use super::compute_data::point_parameter;
-use super::ChFi3dBuilder;
 
-impl ChFi3dBuilder {
-    /// `SimulData(Data, HGuide, AdditionalHGuide, Lin, S1, I1, S2, I2, Func,
-    /// FInv, PFirst, MaxStep, Fleche, tolguide, First, Last, Inside, Appro,
-    /// Forward, Soldep, NbSecMin, RecOnS1, RecOnS2)`
-    /// (`ChFi3d_Builder_6.cxx:2511-2703`).
-    ///
-    /// Simulation head of the path face / face.
-    #[allow(clippy::too_many_arguments)]
-    #[allow(unused_assignments)]
-    pub fn simul_data_face_face(
-        &mut self,
-        hguide: &mut Arc<ElSpine>,
-        mut additional_hguide: Option<&mut Arc<ElSpine>>,
-        lin: &mut Option<Rc<RefCell<Line>>>,
-        s1: Arc<dyn Surface>,
-        i1: Rc<RefCell<TopolTool>>,
-        s2: Arc<dyn Surface>,
-        i2: Rc<RefCell<TopolTool>>,
-        func: &mut dyn BlendFunction,
-        finv: &mut dyn BlendFuncInv,
-        p_first: f64,
-        max_step: f64,
-        fleche: f64,
-        tol_guide: f64,
-        first: &mut f64,
-        last: &mut f64,
-        inside: bool,
-        approx: bool,
-        forward: bool,
-        soldep: &MathVector,
-        nb_sec_min: i32,
-        rec_on_s1: bool,
-        rec_on_s2: bool,
-    ) -> bool {
+/// `ChFi3d_Builder::SimulData(Data, HGuide, AdditionalHGuide, Lin, S1, I1, S2,
+/// I2, Func, FInv, PFirst, MaxStep, Fleche, tolguide, First, Last, Inside,
+/// Appro, Forward, Soldep, NbSecMin, RecOnS1, RecOnS2)`
+/// (`ChFi3d_Builder_6.cxx:2511-2703`).
+///
+/// Simulation head of the path face / face.
+///
+/// OCCT's body reads exactly one member of `this`, namely `tolapp3d`
+/// (`cxx:2583`, `:2601`), which the port takes as `tolapp3d`: the only caller
+/// family is `ChFi3d_FilBuilder::SimulSurf` / `PerformSurf`, and those bodies
+/// reach the base through [`super::ctx::ChFi3dCtx`] instead of `this`.
+#[allow(clippy::too_many_arguments)]
+#[allow(unused_assignments)]
+pub fn simul_data_face_face(
+    tolapp3d: f64,
+    hguide: &mut Arc<ElSpine>,
+    mut additional_hguide: Option<&mut Arc<ElSpine>>,
+    lin: &mut Option<Rc<RefCell<Line>>>,
+    s1: Arc<dyn Surface>,
+    i1: Rc<RefCell<TopolTool>>,
+    s2: Arc<dyn Surface>,
+    i2: Rc<RefCell<TopolTool>>,
+    func: &mut dyn BlendFunction,
+    finv: &mut dyn BlendFuncInv,
+    p_first: f64,
+    max_step: f64,
+    fleche: f64,
+    tol_guide: f64,
+    first: &mut f64,
+    last: &mut f64,
+    inside: bool,
+    approx: bool,
+    forward: bool,
+    soldep: &MathVector,
+    nb_sec_min: i32,
+    rec_on_s1: bool,
+    rec_on_s2: bool,
+) -> bool {
         // `BRepBlend_Walking TheWalk(S1, S2, I1, I2, HGuide);
         // TheWalk.Check2d(false);` (`cxx:2535-2536`).
         let mut the_walk = Walking::new(
@@ -103,7 +106,7 @@ impl ChFi3dBuilder {
                 p_first,
                 target,
                 soldep,
-                self.tolapp3d,
+                tolapp3d,
                 tol_guide,
                 rec_on_s1,
                 rec_on_s2,
@@ -134,7 +137,7 @@ impl ChFi3dBuilder {
                 new_first,
                 target,
                 ms,
-                self.tolapp3d,
+                tolapp3d,
                 tol_guide,
                 &par_sol,
                 fleche,
@@ -220,8 +223,7 @@ impl ChFi3dBuilder {
 
         // `First = Lin->Point(1).Parameter(); Last =
         // Lin->Point(Nbpnt).Parameter();` (`cxx:2700-2701`).
-        *first = point_parameter(&line, 1);
-        *last = point_parameter(&line, nbpnt);
-        true
-    }
+    *first = point_parameter(&line, 1);
+    *last = point_parameter(&line, nbpnt);
+    true
 }

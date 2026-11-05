@@ -30,13 +30,14 @@
 //!   `GeomAdaptor_Curve` over `(first, last)` in the port: `Geom_TrimmedCurve`
 //!   in this port reparameterises to `[0, 1]`, while every DS interference the
 //!   body writes carries OCCT basis parameters (`Udeb`, `par2`, `Ufin`).
-//! - `ComputeCurve2d` (`cxx:456-483`) is UNPORTED (it needs
-//!   `BRepAlgo_NormalProjection`, see `builder_c1/compute_curve2d.rs`), so the
-//!   `intcouture` DS write at `cxx:1338-1342` / `:1570-1575` receives `None`.
+//! - `ComputeCurve2d` (`cxx:456-483`) is ported in
+//!   `builder_c1/compute_curve2d.rs` and wired at the `intcouture` DS write;
+//!   the `c2d1` / `c2d2` of `cxx:1338-1342` / `:1569-1575` come from it
+//!   (`ds_write::write_split`, `tail`).
 
 mod ds_write;
 mod intersection;
-mod setup;
+pub(super) mod setup;
 mod tail;
 
 use std::sync::Arc;

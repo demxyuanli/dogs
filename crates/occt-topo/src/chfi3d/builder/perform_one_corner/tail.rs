@@ -16,8 +16,8 @@
 //!   never used again (`cxx:1508` only).
 //! - `Geom_TrimmedCurve(zob3d, Udeb, par2)` (`cxx:1522-1523`) is
 //!   [`GeomAdaptorCurve::with_range`], as in the rest of `perform_one_corner`.
-//! - `ComputeCurve2d` is UNPORTED (`builder_c1/compute_curve2d.rs`), so `c2d1`
-//!   / `c2d2` are `None` (`cxx:1537-1541`, `:1569-1575`).
+//! - `ComputeCurve2d` is ported (`builder_c1/compute_curve2d.rs`), so `c2d1`
+//!   / `c2d2` are the real projected p-curves (`cxx:1537-1541`, `:1569-1575`).
 //! - `VARIANT 2` (`cxx:1399`, `:1441-1443`, `:1600-1602`, `:1621-1627`) is not
 //!   compiled: OCCT `#define`s `VARIANT1` (`cxx:1403`), and `V2` is only read
 //!   by `VARIANT 2`. The `V2` search of `cxx:1424-1435` is kept because it is

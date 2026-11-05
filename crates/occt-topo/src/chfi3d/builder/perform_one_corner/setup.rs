@@ -28,14 +28,14 @@ use super::super::ChFi3dBuilder;
 use super::{OneCorner, OneCornerExit};
 
 /// `DStr.Shape(I)` as a face (`TopoDS::Face(DStr.Shape(I))`).
-fn ds_face(ds: &DataStructure, i: i32) -> Option<Face> {
+pub(crate) fn ds_face(ds: &DataStructure, i: i32) -> Option<Face> {
     ds.shape(i, false).map(Face)
 }
 
 /// `for (ex.Init(E, TopAbs_VERTEX); ...) if (Vtx.IsSame(ex.Current()))` for an
 /// edge: the two vertices `TopExp_Explorer` reports, either of which may be
 /// absent on a degenerate edge.
-fn edge_contains_vertex(shape: &TopoShape, vtx: &TopoShape) -> bool {
+pub(crate) fn edge_contains_vertex(shape: &TopoShape, vtx: &TopoShape) -> bool {
     let e = Edge(shape.clone());
     let (v1, v2) = edge_vertices(&e);
     v1.map(|v| is_same(&v.0, vtx)).unwrap_or(false)
@@ -45,7 +45,7 @@ fn edge_contains_vertex(shape: &TopoShape, vtx: &TopoShape) -> bool {
 /// `TopExp_Explorer(F.Oriented(TopAbs_FORWARD), TopAbs_EDGE)`: the face's wires
 /// with the face orientation composed in, then each wire's edges with the wire
 /// orientation composed in. That is the orientation `ex.Current()` reports.
-fn face_edges(f: &Face) -> Vec<TopoShape> {
+pub(crate) fn face_edges(f: &Face) -> Vec<TopoShape> {
     let mut out = Vec::new();
     for wire in crate::iterator::cumulated_children(&f.0) {
         if wire.shape_type() != ShapeType::Wire {

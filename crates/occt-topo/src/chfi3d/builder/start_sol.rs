@@ -307,6 +307,7 @@ impl ChFi3dBuilder {
                     &mut sol_dep,
                     &mut pos1,
                     &mut pos2,
+                    &self.ctx(),
                 )
             {
                 *p1 = GpPnt2d::new(sol_dep.value(1), sol_dep.value(2));
@@ -410,6 +411,7 @@ impl ChFi3dBuilder {
                 &mut sol_dep,
                 &mut pos1,
                 &mut pos2,
+                &self.ctx(),
             );
 
             // `gp_Pnt P; gp_Vec V; HGuide->D1(w, P, V);` (`cxx:1059-1061`).
@@ -498,6 +500,7 @@ impl ChFi3dBuilder {
                         &mut sol_dep,
                         &mut pos1,
                         &mut pos2,
+                        &self.ctx(),
                     ) {
                         *p1 = GpPnt2d::new(sol_dep.value(1), sol_dep.value(2));
                         *p2 = GpPnt2d::new(sol_dep.value(3), sol_dep.value(4));

@@ -2,8 +2,10 @@
 //!
 //! Source: `ModelingAlgorithms/TKFillet/ChFi3d/ChFi3d_Builder.hxx:388`
 //! (`SetRegul`), `:560-576` (the five corner pure virtuals), `:564` /
-//! `:780-801` (the five non-virtual corner members, of which `MoreSurfdata` is
-//! ported - see below) (OCCT 8.0.0).
+//! `:780-801` (the five non-virtual corner members, none of which is in this
+//! trait any more: `MoreSurfdata`, `PerformIntersectionAtEnd` and
+//! `PerformMoreThreeCorner` are inherent methods of
+//! [`super::ChFi3dBuilder`]) (OCCT 8.0.0).
 //!
 //! [`super::ChFi3dBuilder::compute`], `perform_fillet_on_vertex` and
 //! `extent_analyse` call these through `this->`. In OCCT the six pure virtuals
@@ -30,24 +32,56 @@
 use crate::chfi_ds::StripeHandle;
 use crate::shape::TopoShape;
 
+use super::ChFi3dBuilder;
+
 /// The corner-side entry points of `ChFi3d_Builder`.
+///
+/// The bodies that OCCT implements in the subclasses read the base state
+/// (`myRegul`, `myCoup`, `myDS`, `PerformOneCorner` / `PerformMoreSurfdata` /
+/// `PerformIntersectionAtEnd`), so every method that needs it takes `base`
+/// explicitly — the same disjoint-borrow shape as
+/// [`super::ChFi3dSurfOps::perform_surf`], and for the same reason: the caller
+/// holds `base` mutably while dispatching into the injected implementation.
 pub trait ChFi3dCornerOps {
     /// `SetRegul()` (`hxx:388`): the regularities are coded after the cut.
-    fn set_regul(&mut self) -> Result<(), String>;
+    fn set_regul(&mut self, base: &ChFi3dBuilder) -> Result<(), String>;
     /// `PerformTwoCorner(Index)` (`hxx:560`).
-    fn perform_two_corner(&mut self, index: usize) -> Result<(), String>;
+    fn perform_two_corner(&mut self, base: &mut ChFi3dBuilder, index: usize)
+        -> Result<(), String>;
 
     /// `PerformThreeCorner(Index)` (`hxx:562`).
-    fn perform_three_corner(&mut self, index: usize) -> Result<(), String>;
+    fn perform_three_corner(
+        &mut self,
+        base: &mut ChFi3dBuilder,
+        index: usize,
+    ) -> Result<(), String>;
 
     /// `ExtentOneCorner(V, S)` (`hxx:566-568`).
-    fn extent_one_corner(&mut self, v: &TopoShape, s: StripeHandle) -> Result<(), String>;
+    ///
+    /// `base` is the read-only view of the base object: the chamfer body reads
+    /// `myEFMap` through `ConexFaces` (`ChFi3d_ChBuilder.cxx:2283-2318`).
+    fn extent_one_corner(
+        &mut self,
+        base: &ChFi3dBuilder,
+        v: &TopoShape,
+        s: StripeHandle,
+    ) -> Result<(), String>;
 
     /// `ExtentTwoCorner(V, LS)` (`hxx:569-572`).
-    fn extent_two_corner(&mut self, v: &TopoShape, ls: &[StripeHandle]) -> Result<(), String>;
+    fn extent_two_corner(
+        &mut self,
+        base: &ChFi3dBuilder,
+        v: &TopoShape,
+        ls: &[StripeHandle],
+    ) -> Result<(), String>;
 
     /// `ExtentThreeCorner(V, LS)` (`hxx:573-576`).
-    fn extent_three_corner(&mut self, v: &TopoShape, ls: &[StripeHandle]) -> Result<(), String>;
+    fn extent_three_corner(
+        &mut self,
+        base: &ChFi3dBuilder,
+        v: &TopoShape,
+        ls: &[StripeHandle],
+    ) -> Result<(), String>;
 
     /// `PerformOneCorner(Index, PrepareOnSame = false)` (`hxx:780`, body
     /// `ChFi3d_Builder_C1.cxx:611-1647`).
@@ -59,31 +93,40 @@ pub trait ChFi3dCornerOps {
     /// called from `PerformFilletOnVertex` with `this`, and the subclasses that
     /// implement this trait (`ChFi3d_FilBuilder` / `ChFi3d_ChBuilder`) are not
     /// ported yet; their implementations must forward to the inherent method.
-    fn perform_one_corner(&mut self, index: usize, prepare_on_same: bool) -> Result<(), String>;
+    fn perform_one_corner(
+        &mut self,
+        base: &mut ChFi3dBuilder,
+        index: usize,
+        prepare_on_same: bool,
+    ) -> Result<(), String>;
 
     /// `PerformMoreSurfdata(Index)` (`hxx:784`, body
-    /// `ChFi3d_Builder_C1.cxx:3771-4531`), `UNPORTED`.
-    fn perform_more_surfdata(&mut self, index: usize) -> Result<(), String>;
-
-    /// `PerformIntersectionAtEnd(Index)` (`hxx:786`, body
-    /// `ChFi3d_Builder_C1.cxx:1828-3770`).
+    /// `ChFi3d_Builder_C1.cxx:3771-4531`).
     ///
-    /// `cxx:1828-2580` is ported as the inherent
-    /// [`super::ChFi3dBuilder::perform_intersection_at_end`] (prologue, the two
-    /// end edges, the face chains); `cxx:2582-3769` is UNPORTED and answers
-    /// [`super::EndIntersectionExit::RestUnported`]. The three other exits
-    /// (`PerformMoreSurfdata`, `PerformMoreThreeCorner(1)`,
-    /// `IntersectMoreCorner`) are body calls OCCT makes itself, so
-    /// implementations must forward to the inherent method and dispatch them
-    /// the way `PerformOneCorner` dispatches
-    /// [`super::OneCornerExit::IntersectionAtEnd`].
-    fn perform_intersection_at_end(&mut self, index: usize) -> Result<(), String>;
+    /// Ported as the inherent
+    /// [`super::ChFi3dBuilder::perform_more_surfdata`] (`builder/perform_more_surfdata`:
+    /// the prologue plus `sections` / `store`). Also not a virtual in OCCT; the
+    /// implementations must forward there.
+    fn perform_more_surfdata(
+        &mut self,
+        base: &mut ChFi3dBuilder,
+        index: usize,
+    ) -> Result<(), String>;
 
-    /// `PerformMoreThreeCorner(Index, nbcourb)` (`hxx:564`, body
-    /// `ChFi3d_Builder_C1.cxx:1237-...`), `UNPORTED`.
-    ///
-    /// Not a virtual in OCCT either (no `= 0` on `hxx:564`); it sits here with
-    /// the same injected-implementation rationale.
-    fn perform_more_three_corner(&mut self, index: usize, nbcourb: usize)
-        -> Result<(), String>;
+    // `PerformIntersectionAtEnd(Index)` (`hxx:786`, body
+    // `ChFi3d_Builder_C1.cxx:1828-3766`) is *not* in this trait: the whole body
+    // is ported as the inherent
+    // [`super::ChFi3dBuilder::perform_intersection_at_end`], and the three exits
+    // it can take (`PerformMoreSurfdata` `cxx:2006-2010`,
+    // `PerformMoreThreeCorner(1)` `cxx:2161-2165`, `IntersectMoreCorner`
+    // `cxx:2508-2509`) are base-internal calls of that same body, dispatched by
+    // `perform_fillet_on_vertex` from the returned
+    // [`super::EndIntersectionExit`].
+    //
+    // `PerformMoreThreeCorner(Index, nbcourb)` (`hxx:564`, body
+    // `ChFi3d_Builder_CnCrn.cxx:1237-3927`) is not a virtual in OCCT either and
+    // is likewise *not* in this trait: it is the inherent
+    // [`super::ChFi3dBuilder::perform_more_three_corner`]
+    // (`builder/perform_more_three_corner`), ported through `cxx:1581` and
+    // UNPORTED from `cxx:1583` on.
 }

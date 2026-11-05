@@ -43,7 +43,6 @@ use crate::chfi3d::side::next_side;
 use crate::chfi_ds::{ChamfMode, ElSpine, SpineHandle, StripeHandle, SurfData};
 
 use super::call_perform_surf::initialize_topol_tool;
-use super::split_k_part::split_k_part;
 use super::surf_ops::ChFi3dSurfOps;
 use super::ChFi3dBuilder;
 
@@ -82,9 +81,9 @@ impl ChFi3dBuilder {
     /// `PerformSetOfKPart(Stripe, Simul)` (`cxx:3004-3281`).
     ///
     /// `ops` is the [`ChFi3dSurfOps`] the `SimulKPart` dispatch goes to; `Err`
-    /// covers the OCCT throws, an unbound spine / face pair, and the two
-    /// UNPORTED call-outs ([`ch_fi_kpart_compute_data`] answers "no data"
-    /// instead of failing, [`split_k_part`] answers `Err`).
+    /// covers the OCCT throws and an unbound spine / face pair.
+    /// [`ch_fi_kpart_compute_data`] answers "no data" instead of failing, the
+    /// way `ChFiKPart_ComputeData::Compute` uses its `Standard_Boolean` result.
     pub fn perform_set_of_k_part(
         &mut self,
         ops: &mut dyn ChFi3dSurfOps,
@@ -262,7 +261,7 @@ impl ChFi3dBuilder {
                 // The empty arm of OCCT: no data, nothing is appended.
             } else {
                 let sd = Arc::new(sd);
-                if !split_k_part(
+                if !self.split_k_part(
                     &sd,
                     &mut lsd,
                     &spine,
@@ -322,12 +321,16 @@ impl ChFi3dBuilder {
             for j in 0..lsd.len() {
                 // `occ::handle<ChFiDS_SurfData>& curSD = LSD.ChangeValue(j);`
                 // (`cxx:3125`).
-                let cur_sd = lsd[j].clone();
+                let mut cur_sd = lsd[j].clone();
 
                 // `if (Simul) { SimulKPart(curSD); }` (`cxx:3126-3129`).
                 if simul {
+                    // OCCT writes through the handle; the port keeps the clone
+                    // that is about to be appended, so `Sect` sees the
+                    // simplification sections.
                     let mut sd_mut = (*cur_sd).clone();
-                    ops.simul_k_part(&mut sd_mut)?;
+                    ops.simul_k_part(&mut sd_mut, &self.my_ds)?;
+                    cur_sd = Arc::new(sd_mut);
                 }
 
                 // `SeqSurf.Append(curSD);` (`cxx:3130`).

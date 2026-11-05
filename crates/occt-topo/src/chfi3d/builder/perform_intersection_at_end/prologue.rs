@@ -300,8 +300,9 @@ pub(super) fn prologue(
     }
 
     // `double tolpt = 1.e-4; double tolreached;` (`cxx:2031-2032`): OCCT leaves
-    // `tolreached` uninitialised until `ChFi3d_ComputeCurves` writes it, which
-    // happens in the unported `cxx:2597-3127`; the port starts it at 0.
+    // `tolreached` uninitialised until `ChFi3d_ComputeCurves` writes it in the
+    // per-face loop (`cxx:2597-3127`, ported in `face_loop`, which stores it
+    // back through `EndIntersection::tol_reached`); the prologue starts it at 0.
     let tolpt = 1.0e-4;
     let tol_reached = 0.0;
 
@@ -449,5 +450,8 @@ pub(super) fn prologue(
         one_intersection2: false,
         face_sau: None,
         edge_sau: None,
+        edge_spine,
+        fi1_length,
+        fi2_length,
     })))
 }

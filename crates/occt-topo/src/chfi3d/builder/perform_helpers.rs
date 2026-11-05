@@ -16,9 +16,10 @@
 //!   where OCCT would spin with a stale `CurEdge` / `CurFace`,
 //! - `ConcatCurves` appends a null `Geom_Curve` and loops forever when every
 //!   `Add` fails; the port stops instead,
-//! - `Geom_OffsetSurface::Surface()` canonicalisation is UNPORTED, so
-//!   `MakeOffsetEdge` always takes OCCT's null-handle fallback (see
-//!   [`make_offset_edge`]).
+//! - `MakeOffsetEdge` asks `Geom_OffsetSurface::Surface()`
+//!   (`Geom_OffsetSurface.cxx:867-992`) for an equivalent canonical surface and
+//!   keeps the offset surface only when it answers null, as `cxx:169-173` does;
+//!   the canonicalisation is [`occt_geom::GeomOffsetSurface::equivalent_surface`].
 
 use std::sync::Arc;
 
@@ -157,13 +158,6 @@ pub(super) fn concat_curves(
 ///
 /// `None` is OCCT's null `TopoDS_Edge` (no intersection line, a failed trim, or
 /// an out-of-range concatenation).
-///
-/// UNPORTED — `Geom_OffsetSurface::Surface()` (`Geom_OffsetSurface.cxx:867+`)
-/// returns an *equivalent canonical* surface (translated plane, wider cylinder,
-/// ...) when one exists, so OCCT usually feeds an exact analytic surface to
-/// `GeomInt_IntSS`. That canonicalisation is not ported, so this function takes
-/// OCCT's own `if (OffsetTrGS1.IsNull()) OffsetTrGS1 = MakeOffsetSurf;` arm
-/// (`cxx:169-174`) unconditionally and intersects the general offset surface.
 pub(super) fn make_offset_edge(
     edge: &Edge,
     distance: f64,
@@ -186,7 +180,15 @@ pub(super) fn make_offset_edge(
         offset = distance;
     }
     let make_offset_surf = GeomOffsetSurface::new(Arc::new(tr_gs1), offset);
-    let offset_tr_gs1: Arc<dyn Surface> = Arc::new(make_offset_surf);
+    // `occ::handle<Geom_Surface> OffsetTrGS1 = MakeOffsetSurf->Surface();
+    // if (OffsetTrGS1.IsNull()) OffsetTrGS1 = MakeOffsetSurf;` (`cxx:169-173`).
+    // `Surface()` (`Geom_OffsetSurface.cxx:867-992`) answers an equivalent
+    // canonical surface (translated plane, radius-shifted cylinder, ...) so the
+    // intersection below sees an analytic surface whenever one exists.
+    let offset_tr_gs1: Arc<dyn Surface> = match make_offset_surf.equivalent_surface() {
+        Some(equivalent) => equivalent,
+        None => Arc::new(make_offset_surf),
+    };
     let gs2 = BRepTool::face_surface(&f2)?;
     let tr_gs2 = GeomRectangularTrimmedSurface::uv(
         gs2,

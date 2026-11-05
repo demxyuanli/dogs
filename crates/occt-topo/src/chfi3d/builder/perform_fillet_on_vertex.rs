@@ -22,15 +22,22 @@
 //! | other | - | `PerformMoreThreeCorner` |
 //!
 //! `nba` is `ChFi3d_NumberOfSharpEdges(Vtx, myVEMap, myEFMap)`; the commented
-//! face-count block of `cxx:793-813` is not translated. Every dispatch target
-//! except `PerformTwoCorner` / `PerformThreeCorner` is `UNPORTED` in the port
-//! and lives on [`ChFi3dCornerOps`], so the caller supplies (or fails) them.
+//! face-count block of `cxx:793-813` is not translated. `PerformIntersectionAtEnd`
+//! is the base body itself: its three internal exits are dispatched here from the
+//! returned [`EndIntersectionExit`] (`PerformMoreSurfdata` / `IntersectMoreCorner`
+//! / `PerformMoreThreeCorner` are all base members, the first two fully ported
+//! and the third up to `cxx:1581` — see `perform_more_three_corner`). The
+//! subclass bodies of the other corners (`PerformTwoCorner` /
+//! `PerformThreeCorner` / `Extent*Corner`) live on [`ChFi3dCornerOps`], so the
+//! caller supplies them; `Extent*Corner` and `SetRegul` are ported for the
+//! fillet builder (`chfi3d/builder/fil_builder/extent_corner.rs` /
+//! `set_regul.rs`), the two `Perform*Corner` bodies are not.
 
 use crate::chfi3d::builder_helpers::number_of_sharp_edges;
 use crate::chfi_ds::State;
 use crate::shape::Vertex;
 
-use super::{ChFi3dBuilder, ChFi3dCornerOps};
+use super::{ChFi3dBuilder, ChFi3dCornerOps, EndIntersectionExit};
 
 impl ChFi3dBuilder {
     /// `PerformFilletOnVertex(Index)` (`cxx:759-920`).
@@ -121,31 +128,31 @@ impl ChFi3dBuilder {
                     }
                     if nba > 3 {
                         // `PerformIntersectionAtEnd(Index);` (`cxx:826`).
-                        ops.perform_intersection_at_end(index)?;
+                        self.dispatch_end_intersection_exit(index)?;
                     } else if self.more_surfdata(index) {
                         // `PerformMoreSurfdata(Index);` (`cxx:839-841`).
-                        ops.perform_more_surfdata(index)?;
+                        ops.perform_more_surfdata(self, index)?;
                     } else {
                         // `PerformOneCorner(Index);` (`cxx:846`).
-                        ops.perform_one_corner(index, false)?;
+                        ops.perform_one_corner(self, index, false)?;
                     }
                 }
                 2 => {
                     if nba > 3 {
-                        ops.perform_more_three_corner(index, count)?;
+                        self.perform_more_three_corner(index, count)?;
                     } else {
-                        ops.perform_two_corner(index)?;
+                        ops.perform_two_corner(self, index)?;
                     }
                 }
                 3 => {
                     if nba > 3 {
-                        ops.perform_more_three_corner(index, count)?;
+                        self.perform_more_three_corner(index, count)?;
                     } else {
-                        ops.perform_three_corner(index)?;
+                        ops.perform_three_corner(self, index)?;
                     }
                 }
                 n => {
-                    ops.perform_more_three_corner(index, n)?;
+                    self.perform_more_three_corner(index, n)?;
                 }
             }
         } else if toujoursdegenere {
@@ -153,7 +160,31 @@ impl ChFi3dBuilder {
             self.perform_singular_corner(index)?;
         } else {
             // `PerformMoreThreeCorner(Index, i); // Last chance...` (`cxx:917`).
-            ops.perform_more_three_corner(index, count)?;
+            self.perform_more_three_corner(index, count)?;
+        }
+        Ok(())
+    }
+
+    /// `PerformIntersectionAtEnd(Index)` followed by the three exits that body
+    /// takes (`cxx:2006-2010` → `PerformMoreSurfdata`, `cxx:2161-2165` →
+    /// `PerformMoreThreeCorner(1)`, `cxx:2508-2509` → `IntersectMoreCorner`).
+    ///
+    /// Both OCCT callers of `PerformIntersectionAtEnd` dispatch those exits
+    /// identically: `PerformFilletOnVertex` at `cxx:826` and `PerformOneCorner`
+    /// at `cxx:821-825` / `cxx:910-914`. All three targets are non-virtual base
+    /// members, so the inherent methods are called directly.
+    pub(crate) fn dispatch_end_intersection_exit(&mut self, index: usize) -> Result<(), String> {
+        match self.perform_intersection_at_end(index)? {
+            EndIntersectionExit::Done => {}
+            EndIntersectionExit::MoreSurfdata => {
+                self.perform_more_surfdata(index)?;
+            }
+            EndIntersectionExit::MoreThreeCorner(n) => {
+                self.perform_more_three_corner(index, n)?;
+            }
+            EndIntersectionExit::IntersectMoreCorner => {
+                self.intersect_more_corner(index)?;
+            }
         }
         Ok(())
     }
