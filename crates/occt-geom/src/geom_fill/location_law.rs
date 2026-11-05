@@ -159,4 +159,12 @@ pub trait LocationLaw: Send + Sync {
     fn rotation(&self) -> Result<GpPnt, String> {
         Err("Standard_NotImplemented: GeomFill_SectionLaw::Rotation".into())
     }
+
+    /// `occ::down_cast<GeomFill_LocationGuide>` on a location-law handle
+    /// (`BRepFill_PipeShell.cxx:494`, `:1215`, `:1257`). The port has no RTTI on
+    /// trait objects, so every law answers `None` unless it *is* a
+    /// [`LocationGuide`](crate::geom_fill::LocationGuide).
+    fn as_location_guide(&self) -> Option<&crate::geom_fill::LocationGuide> {
+        None
+    }
 }

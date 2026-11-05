@@ -116,6 +116,47 @@ pub fn eval_poly0(coeffs: &[f64], degree: i32, dimension: usize, u: f64, out: &m
     }
 }
 
+/// `PLib::EvalPoly2Var` (`PLib.cxx:1055-1114`) with explicit derivative
+/// requests.
+///
+/// Coefficients are `u`-major, then `v`, then the `dimension` coordinates
+/// (`PLib.cxx:1065-1094`): the `u` polynomial takes blocks of
+/// `(v_degree + 1) * dimension` values, the `v` polynomial takes one
+/// `dimension`-wide coefficient inside a block. `out` holds exactly
+/// `dimension` values, the block selected by the two derivative requests.
+pub fn eval_poly2var_deriv(
+    u: f64,
+    v: f64,
+    u_deriv: i32,
+    v_deriv: i32,
+    u_degree: i32,
+    v_degree: i32,
+    dimension: usize,
+    coeffs: &[f64],
+    out: &mut [f64],
+) {
+    if dimension == 0 {
+        return;
+    }
+    let u_req = u_deriv.max(0) as usize;
+    let v_req = v_deriv.max(0) as usize;
+    let udim = (v_degree + 1).max(0) as usize * dimension;
+    let mut index = udim * u_req;
+    let mut curve = vec![0.0; udim * (u_req + 1)];
+    let mut point = vec![0.0; dimension * (v_req + 1)];
+    eval_polynomial(u, u_deriv, u_degree, udim, coeffs, &mut curve);
+    eval_polynomial(
+        v,
+        v_deriv,
+        v_degree,
+        dimension,
+        &curve[index..],
+        &mut point,
+    );
+    index = dimension * v_req;
+    out[..dimension].copy_from_slice(&point[index..index + dimension]);
+}
+
 /// `PLib::EvalPolynomial` (`PLib.cxx:945-1026`) for `derivative_request >= 0`.
 ///
 /// Coefficients are stored degree-major, dimension-minor (`PLib.cxx:951-966`).

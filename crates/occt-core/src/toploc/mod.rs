@@ -142,6 +142,33 @@ impl TopLocLocation {
         }
     }
 
+    /// `TopLoc_Location::Predivided` (`TopLoc_Location.cxx:138-153`):
+    /// `Other.Inverted() * this`.
+    ///
+    /// The reference's three short cuts are kept because they decide
+    /// `IsIdentity()` on the result, which callers use to skip the transform
+    /// altogether: identity `Other` returns `this`, identity `this` returns
+    /// `Other.Inverted()`, and `this == Other` returns the identity location.
+    pub fn predivided(&self, other: &Self) -> Self {
+        if other.is_identity() {
+            return self.clone();
+        }
+        if self.is_identity() {
+            return other.inverted();
+        }
+        if self.is_equal(other) {
+            return Self::identity();
+        }
+        // `Other.Inverted().Multiplied(*this)`: one datum holding the product,
+        // which has the same cumulative transformation as the reference's
+        // two-datum chain.
+        let inv = other
+            .transformation()
+            .inverted()
+            .unwrap_or_else(|_| GpTrsf::identity());
+        Self::composed(&inv, self.clone())
+    }
+
     /// Is identity (no transform)?
     pub fn is_identity(&self) -> bool {
         self.head.is_none()

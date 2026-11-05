@@ -222,6 +222,38 @@ impl SVD {
         }
         Ok(x)
     }
+
+    /// `math_SVD::Solve(B, X, Eps)` (`math_SVD.cxx:41-68`): the singular values
+    /// below `Eps * max(Diag)` are set to zero before `SVD_Solve`
+    /// (`math_Recipes.cxx:712-750`), which then contributes nothing for them.
+    ///
+    /// [`Self::solve`] is not this overload: it thresholds at `1.e-15 *
+    /// max(Diag)`, whereas the OCCT declaration's default is `Eps = 1.e-6`
+    /// (`math_SVD.hxx:53`). Call this method to reproduce an explicit `Eps`.
+    pub fn solve_with_eps(&self, b: &MathVector, eps: f64) -> Result<MathVector, MathStatus> {
+        let m = self.u.row_count();
+        let n = self.v.row_count();
+        let min_n = self.w.len();
+        let mut tmp = MathVector::new(1, min_n);
+        let wmax = (1..=min_n).fold(0.0f64, |mx, i| mx.max(self.w.value(i)));
+        let wmin = eps * wmax;
+
+        for j in 1..=min_n {
+            let w = self.w.value(j);
+            let mut s = 0.0;
+            if w != 0.0 && !(w < wmin) {
+                for i in 1..=m { s += self.u.value(i, j) * b.value(i) / w; }
+            }
+            tmp.set_value(j, s);
+        }
+        let mut x = MathVector::new(1, n);
+        for j in 1..=n {
+            let mut s = 0.0;
+            for jj in 1..=min_n { s += self.v.value(j, jj) * tmp.value(jj); }
+            x.set_value(j, s);
+        }
+        Ok(x)
+    }
 }
 
 #[cfg(test)]

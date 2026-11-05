@@ -1,6 +1,6 @@
 //! 2D vector. Source: `gp_Vec2d.hxx`
 use crate::precision::REAL_SMALL;
-use crate::gp::{xy::GpXY, mat2d::GpMat2d, dir2d::GpDir2d, trsf2d::GpTrsf2d, trsf_form::TrsfForm};
+use crate::gp::{xy::GpXY, mat2d::GpMat2d, dir2d::GpDir2d, pnt2d::GpPnt2d, trsf2d::GpTrsf2d, trsf_form::TrsfForm};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GpVec2d { pub coord: GpXY }
@@ -86,5 +86,14 @@ impl GpVec2d {
     pub fn set_linear_form_2(&mut self,a1:f64,v1:&Self,a2:f64,v2:&Self) { self.coord.set_linear_form_2(a1,&v1.coord,a2,&v2.coord); }
     pub fn set_linear_form_add(&mut self,v1:&Self,v2:&Self) { self.coord.set_linear_form_add(&v1.coord,&v2.coord); }
     pub fn set_linear_form_add_scaled(&mut self,a1:f64,v1:&Self,v2:&Self) { self.coord.set_linear_form_add_scaled(a1,&v1.coord,&v2.coord); }
+    /// `gp_Vec2d::Rotate(Angle)` (`gp_Vec2d.hxx:392-397`): `coord.Multiply(
+    /// aT.VectorialPart())` with `aT = gp_Trsf2d::SetRotation((0,0), Angle)`.
+    pub fn rotate(&mut self, ang: f64) {
+        let mut t = GpTrsf2d::identity();
+        t.set_rotation(&GpPnt2d::new(0.0, 0.0), ang);
+        self.coord.multiply_mat2d(&t.vectorial_part());
+    }
+    /// `gp_Vec2d::Rotated(Angle)` (`gp_Vec2d.hxx:313-318`).
+    pub fn rotated(&self, ang: f64) -> Self { let mut r = *self; r.rotate(ang); r }
 }
 impl Default for GpVec2d { fn default() -> Self { Self::zero() } }

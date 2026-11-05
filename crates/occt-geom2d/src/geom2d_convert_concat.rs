@@ -1,10 +1,11 @@
-//! `Geom2dConvert::ConcatC1` and `C0BSplineToC1BSplineCurve`
-//! (`Geom2dConvert.cxx:1149-1542`).
+//! `Geom2dConvert::ConcatG1`, `Geom2dConvert::ConcatC1` and
+//! `C0BSplineToC1BSplineCurve` (`Geom2dConvert.cxx:571-1542`).
 //!
 //! Ported branches:
-//! * junction `Continuity` (`cxx:748-852`);
+//! * junction `Continuity` (`cxx:748-852`, 6-argument overload `:856-863`);
 //! * `Pretreatment` / `NeedToBeTreated` / `Need2DegRepara` / `Indexmin` /
 //!   `ReorderArrayOfG1` (`cxx:571-712`);
+//! * `ConcatG1` (`cxx:899-1145`);
 //! * open / multi-group `ConcatC1` via `CompCurveToBSplineCurve2d::Add`
 //!   (`cxx:1394-1453`);
 //! * closed single-group path including Need2DegRepara
@@ -518,6 +519,177 @@ pub fn concat_c1(
     }
 
     Ok((array_of_indices, array_of_concatenated))
+}
+
+/// `Geom2dConvert::ConcatG1` (`Geom2dConvert.cxx:899-1145`): concatenates the
+/// curves as far as G1 continuity holds; a junction that is only C0 starts a
+/// new curve.
+///
+/// `array_of_curves` is `ArrayOfCurves` and is mutated in place by
+/// `Pretreatment` / `ReorderArrayOfG1`, `array_of_toler` is `ArrayOfToler`.
+/// `closed_flag` is `ClosedFlag` in/out (`cxx:978-985` clears it);
+/// the answer is `ArrayOfConcatenated`.
+///
+/// The junction test is the 6-argument local `Continuity`
+/// (`Geom2dConvert.cxx:856-863`), i.e. `Precision::Confusion()` /
+/// `Precision::Angular()`. There is no `NeedToBeTreated` /
+/// `MultNumandDenom` pass (`cxx:1095`, `:1133` add the curves unchanged), and
+/// the open-group `Add` uses `ArrayOfToler`, not the reordered
+/// `local_tolerance` (`cxx:1133`).
+pub fn concat_g1(
+    array_of_curves: &mut [Geom2dBSplineCurve],
+    array_of_toler: &[f64],
+    closed_flag: &mut bool,
+    closed_tolerance: f64,
+) -> Result<Vec<Geom2dBSplineCurve>, &'static str> {
+    let nb_curve = array_of_curves.len();
+    if nb_curve == 0 {
+        return Ok(Vec::new());
+    }
+    let mut local_tolerance = array_of_toler.to_vec();
+    let mut tab_g1 = vec![false; nb_curve.saturating_sub(1)];
+
+    // `cxx:921-946`: junction continuity.
+    let mut pre_last = 0.0;
+    for i in 0..nb_curve {
+        if i >= 1 {
+            let first = array_of_curves[i].first_parameter();
+            let cont = continuity_at(
+                &array_of_curves[i - 1],
+                &array_of_curves[i],
+                pre_last,
+                first,
+                true,
+                true,
+                CONFUSION,
+                ANGULAR,
+            )?;
+            if shape_lt(cont, Shape::C0) {
+                return Err("Geom2dConvert curves not C0");
+            }
+            tab_g1[i - 1] = shape_ge(cont, Shape::G1);
+        }
+        pre_last = array_of_curves[i].last_parameter();
+    }
+
+    // `cxx:948-961`: group count.
+    let mut index = 0usize;
+    let mut nb_group = 0usize;
+    let mut nb_vertex_group0 = 0usize;
+    while index <= nb_curve - 1 {
+        let mut nb_vertex_g1 = 0usize;
+        while index + nb_vertex_g1 < nb_curve - 1 && tab_g1[index + nb_vertex_g1] {
+            nb_vertex_g1 += 1;
+        }
+        nb_group += 1;
+        if index == 0 {
+            nb_vertex_group0 = nb_vertex_g1;
+        }
+        index = index + 1 + nb_vertex_g1;
+    }
+
+    if *closed_flag && nb_group != 1 {
+        nb_group -= 1;
+        reorder_array_of_g1(
+            array_of_curves,
+            &mut local_tolerance,
+            &mut tab_g1,
+            nb_vertex_group0,
+            closed_tolerance,
+        );
+    }
+
+    let mut array_of_concatenated: Vec<Geom2dBSplineCurve> = Vec::with_capacity(nb_group);
+
+    pretreatment(array_of_curves);
+    let need_double = need_2deg_repara(array_of_curves);
+    // `cxx:978-985`: only the MaxDegree()/2 guard clears ClosedFlag.
+    if nb_group == 1 && *closed_flag && need_double {
+        let curve1 = &array_of_curves[nb_curve - 1];
+        if curve1.degree() > 25 / 2 {
+            *closed_flag = false;
+        }
+    }
+
+    if nb_group == 1 && *closed_flag {
+        // `cxx:987-1108`: the closed single-group case.
+        let indexmin = indexmin(array_of_curves);
+        if indexmin != nb_curve - 1 {
+            reorder_array_of_g1(
+                array_of_curves,
+                &mut local_tolerance,
+                &mut tab_g1,
+                indexmin,
+                closed_tolerance,
+            );
+        }
+        let mut curve2: Option<Geom2dBSplineCurve> = None;
+        for j in 0..nb_curve {
+            let mut curve1 = array_of_curves[j].clone();
+            if j == 0 {
+                curve2 = Some(curve1);
+            } else {
+                if j == nb_curve - 1 && need_double {
+                    let prev = curve2.as_ref().ok_or("Geom2dConvert Concatenation Error")?;
+                    curve1 = closed_need2deg_repara(prev, &curve1, &array_of_curves[0])?;
+                }
+                let mut c = CompCurveToBSplineCurve2d::from_bspline(
+                    curve2.take().ok_or("Geom2dConvert Concatenation Error")?,
+                    DEFAULT_PARAMETERISATION,
+                );
+                // `cxx:1095-1097`: `Add(Curve1, local_tolerance(j-1))`, `After` default.
+                let fusion = c
+                    .add(&curve1, local_tolerance[j - 1], false)
+                    .map_err(|_| "Geom2dConvert Concatenation Error")?;
+                if !fusion {
+                    return Err("Geom2dConvert Concatenation Error");
+                }
+                curve2 = c.into_curve();
+            }
+        }
+        let mut curve2 = curve2.ok_or("Geom2dConvert Concatenation Error")?;
+        // `cxx:1103-1106`.
+        curve2.set_periodic();
+        let last_idx = curve2.last_u_knot_index();
+        let (_, umults) = curve2.distinct_knots_and_mults();
+        let m = umults[(last_idx - 1) as usize];
+        let _ = curve2.remove_knot(last_idx, m - 1, CONFUSION);
+        array_of_concatenated.push(curve2);
+    } else {
+        // `cxx:1110-1144`: one pass per G1 group.
+        let mut index = 0usize;
+        for _ in 0..nb_group {
+            let mut nb_vertex_g1 = 0usize;
+            while index + nb_vertex_g1 < nb_curve - 1 && tab_g1[index + nb_vertex_g1] {
+                nb_vertex_g1 += 1;
+            }
+            let mut group_curve: Option<Geom2dBSplineCurve> = None;
+            for j in index..=(index + nb_vertex_g1) {
+                let curve1 = array_of_curves[j].clone();
+                if index == j {
+                    group_curve = Some(curve1);
+                } else {
+                    let mut c = CompCurveToBSplineCurve2d::from_bspline(
+                        group_curve.take().ok_or("Geom2dConvert Concatenation Error")?,
+                        DEFAULT_PARAMETERISATION,
+                    );
+                    // `cxx:1133`: `Add(Curve1, ArrayOfToler(j-1))`.
+                    let fusion = c
+                        .add(&curve1, array_of_toler[j - 1], false)
+                        .map_err(|_| "Geom2dConvert Concatenation Error")?;
+                    if !fusion {
+                        return Err("Geom2dConvert Concatenation Error");
+                    }
+                    group_curve = c.into_curve();
+                }
+            }
+            array_of_concatenated
+                .push(group_curve.ok_or("Geom2dConvert Concatenation Error")?);
+            index = index + 1 + nb_vertex_g1;
+        }
+    }
+
+    Ok(array_of_concatenated)
 }
 
 /// `Geom2dConvert::C0BSplineToC1BSplineCurve` (`Geom2dConvert.cxx:1459-1542`).

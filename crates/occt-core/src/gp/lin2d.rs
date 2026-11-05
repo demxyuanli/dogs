@@ -12,10 +12,19 @@ impl GpLin2d {
     #[inline] pub fn direction(&self) -> &GpDir2d { &self.pos.vdir }
     pub fn set_position(&mut self, a: GpAx2d) { self.pos = a; }
     pub fn angle(&self, other: &Self) -> f64 { self.pos.vdir.angle(&other.pos.vdir) }
+    /// `gp_Lin2d::Distance(P)` (`gp_Lin2d.hxx` inl): `|(P - Location) ^
+    /// Direction|`. The cross product keeps full relative accuracy for a point
+    /// close to the line, where `sqrt(|V|^2 - (V.Dir)^2)` collapses.
     pub fn distance(&self, p: &GpPnt2d) -> f64 {
         let dx = p.x() - self.pos.loc.x(); let dy = p.y() - self.pos.loc.y();
-        let dot = dx * self.pos.vdir.x + dy * self.pos.vdir.y;
-        (dx*dx + dy*dy - dot*dot).sqrt()
+        (dx * self.pos.vdir.y - dy * self.pos.vdir.x).abs()
+    }
+    /// `gp_Lin2d::SquareDistance(P)` (`gp_Lin2d.hxx` inl): the square of the
+    /// cross product of `V = P - Location` and the direction.
+    pub fn square_distance(&self, p: &GpPnt2d) -> f64 {
+        let dx = p.x() - self.pos.loc.x(); let dy = p.y() - self.pos.loc.y();
+        let cross = dx * self.pos.vdir.y - dy * self.pos.vdir.x;
+        cross * cross
     }
     /// `gp_Lin2d::Coefficients(A, B, C)` (`gp_Lin2d.hxx:91-96`): the normalized
     /// coefficients of `A*X + B*Y + C = 0`.

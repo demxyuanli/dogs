@@ -1,13 +1,12 @@
-//! `TKGeomAlgo/LocalAnalysis` — local continuity analysis between two
-//! curves / surfaces.
+//! `TKGeomAlgo/LocalAnalysis` — the code lives in `occt-geom`
+//! (`occt-geom/src/local_analysis/`), because `LocalAnalysis` is a TKGeomAlgo
+//! package and `GeomPlate_BuildPlateSurface` is its only consumer
+//! (`GeomPlate_BuildPlateSurface.cxx:833-863`, `:2771-2779`).
 //!
-//! Source: `src/ModelingAlgorithms/TKGeomAlgo/LocalAnalysis/`.
-//!
-//! | OCCT | here |
-//! |---|---|
-//! | `LocalAnalysis_SurfaceContinuity` (`SurfaceContinuity.hxx:33-241`) | [`surface_continuity::SurfaceContinuity`] |
-//! | `LocalAnalysis_StatusErrorType` (`StatusErrorType.hxx:21-29`) | [`surface_continuity::StatusErrorType`] |
+//! The re-export keeps the `crate::local_analysis::...` paths of the
+//! `occt-topo` callers (`chfi3d/tangent_faces.rs`,
+//! `shape_upgrade/divide_continuity.rs`) unchanged.
 
-pub mod surface_continuity;
+pub use occt_geom::local_analysis::surface_continuity;
 
 pub use surface_continuity::{StatusErrorType, SurfaceContinuity};

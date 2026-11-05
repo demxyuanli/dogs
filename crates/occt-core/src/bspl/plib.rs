@@ -329,6 +329,32 @@ pub fn coefficients_poles(coefs: &[crate::gp::GpPnt]) -> Vec<crate::gp::GpPnt> {
     poles
 }
 
+/// `PLib::CoefficientsPoles(const NCollection_Array1<gp_Pnt2d>& Coefs, ...)`
+/// (`PLib.cxx:1497-1508`) with `NoWeights()`: the 2D arm of the same
+/// `dim = 2` recurrence (`PLib.cxx:1522-1589`). Point `0` and point `n-1` are
+/// copied; interior points are divided by `Bin(n-1, i)` and then accumulated
+/// from the low end.
+pub fn coefficients_poles_2d(coefs: &[crate::gp::GpPnt2d]) -> Vec<crate::gp::GpPnt2d> {
+    let reflen = coefs.len();
+    if reflen == 0 {
+        return Vec::new();
+    }
+    let mut poles = coefs.to_vec();
+    for i in 2..reflen {
+        let cnp = bin((reflen as i32) - 1, (i as i32) - 1);
+        let p = coefs[i - 1];
+        poles[i - 1] = crate::gp::GpPnt2d::new(p.x() / cnp, p.y() / cnp);
+    }
+    for i in 1..reflen {
+        for j in (i..reflen).rev() {
+            let prev = poles[j - 1];
+            let cur = poles[j];
+            poles[j] = crate::gp::GpPnt2d::new(cur.x() + prev.x(), cur.y() + prev.y());
+        }
+    }
+    poles
+}
+
 /// `PLib::CoefficientsPoles` grid with `WCoefs` (`PLib.cxx:1754-1816`).
 pub fn coefficients_poles_grid_w(
     coefs: &[Vec<crate::gp::GpPnt>],

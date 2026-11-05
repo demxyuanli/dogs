@@ -66,8 +66,37 @@ impl Geom2dTrimmedCurve {
         &self.basis
     }
 
+    /// `Geom2d_TrimmedCurve::SetTrim(U1, U2)` (`Geom2d_TrimmedCurve.hxx:...`,
+    /// the two-argument overload of `SetTrim(U1, U2, Sense, theAdjustPeriodic)`
+    /// with `Sense = theAdjustPeriodic = true`).
+    pub fn set_trim_range(&mut self, u1: f64, u2: f64) {
+        self.set_trim(u1, u2, true, true);
+    }
+
+    /// Replaces the basis curve. OCCT keeps the basis behind a shared handle,
+    /// so `Bisector_BisecAna::SetTrim(uf, ul)` retrims a curve that every other
+    /// holder of the same handle sees (`MAT2d_Tool2d.cxx:1247`); the port hands
+    /// the rebuilt basis back through this setter instead.
+    pub fn set_basis_curve(&mut self, curve: Arc<dyn Curve2d>) {
+        self.basis = curve;
+    }
+
     /// `Geom2d_TrimmedCurve::SetTrim` (`cxx:98-154`).
     fn set_trim(&mut self, u1: f64, u2: f64, sense: bool, adjust_periodic_flag: bool) {
+        thread_local! {
+            static DEPTH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+        }
+        struct Guard;
+        impl Drop for Guard {
+            fn drop(&mut self) {
+                DEPTH.with(|d| d.set(d.get() - 1));
+            }
+        }
+        DEPTH.with(|d| d.set(d.get() + 1));
+        let _guard = Guard;
+        if DEPTH.with(|d| d.get()) > 12 {
+            panic!("set_trim recursion u1={u1} u2={u2} sense={sense} adj={adjust_periodic_flag}");
+        }
         if u1 == u2 {
             return;
         }
@@ -121,6 +150,12 @@ impl Curve2d for Geom2dTrimmedCurve {
     }
     fn last_parameter(&self) -> f64 {
         self.u_trim2
+    }
+    /// `Geom2d_TrimmedCurve::ReversedParameter` (`Geom2d_TrimmedCurve.cxx:92-95`):
+    /// the basis answers, so a trim with an infinite limit does not turn the
+    /// result into `NaN` the way `FirstParameter() + LastParameter() - U` would.
+    fn reversed_parameter(&self, u: f64) -> f64 {
+        self.basis.reversed_parameter(u)
     }
     fn is_periodic(&self) -> bool {
         if self.basis.is_periodic() {
@@ -228,6 +263,11 @@ impl Curve2d for Geom2dTrimmedCurve {
     }
     fn trimmed_basis(&self) -> Option<&dyn Curve2d> {
         Some(self.basis.as_ref())
+    }
+
+    /// `occ::down_cast<Geom2d_TrimmedCurve>(C)`: this curve is one.
+    fn trimmed_copy2d(&self) -> Option<Geom2dTrimmedCurve> {
+        Some(self.clone())
     }
 
     /// `Geom2dAdaptor_Curve::Resolution`: a `Geom2d_TrimmedCurve` is unwrapped to

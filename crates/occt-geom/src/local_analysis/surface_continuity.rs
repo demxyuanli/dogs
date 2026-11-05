@@ -42,9 +42,10 @@
 
 use occt_core::gp::GpDir;
 use occt_core::kernel::geomabs::Shape;
-use occt_geom::Surface;
-use occt_geom::geom_lprop::SlProps;
 use occt_geom2d::Curve2d;
+
+use crate::Surface;
+use crate::geom_lprop::SlProps;
 
 use std::f64::consts::{FRAC_PI_2, PI};
 

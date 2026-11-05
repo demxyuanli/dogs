@@ -164,6 +164,9 @@ impl Curve2d for Geom2dBSplineCurve {
     fn is_bspline2d(&self) -> bool {
         true
     }
+    fn bspline2d(&self) -> Option<&Geom2dBSplineCurve> {
+        Some(self)
+    }
     /// `Geom2dAdaptor_Curve::Resolution`'s `GeomAbs_BSplineCurve` arm
     /// (`Geom2dAdaptor_Curve.cxx:1211-1215`) -> `Geom2d_BSplineCurve::Resolution`
     /// (`Geom2d_BSplineCurve_1.cxx:764-806`), implemented as the inherent

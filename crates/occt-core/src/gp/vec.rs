@@ -71,6 +71,22 @@ impl GpVec {
         diff.square_magnitude() <= RESOLUTION * RESOLUTION
     }
 
+    /// `gp_Vec::IsEqual(theOther, theLinearTolerance, theAngularTolerance)`
+    /// (`gp_Vec.cxx:32-48`): the 2-argument [`GpVec::is_equal`] is the
+    /// `gp::Resolution()` special case, this is the tolerance overload.
+    pub fn is_equal_tol(&self, other: &GpVec, lin_tol: f64, ang_tol: f64) -> bool {
+        let a_magnitude = self.magnitude();
+        let an_other_magnitude = other.magnitude();
+        let diff = (a_magnitude - an_other_magnitude).abs();
+        if a_magnitude <= lin_tol || an_other_magnitude <= lin_tol {
+            // `gp_Vec.cxx:38-42`: the angle is not consulted.
+            diff <= lin_tol
+        } else {
+            // `gp_Vec.cxx:43-47`.
+            diff <= lin_tol && self.angle(other) <= ang_tol
+        }
+    }
+
     /// self + other (consuming self)
     pub fn add(mut self, other: &GpVec) -> Self {
         self.coord = self.coord.added(&other.coord);
@@ -202,6 +218,21 @@ impl GpVec {
         Self {
             coord: self.coord.multiplied(-1.0),
         }
+    }
+
+    /// `gp_Vec::Rotated(const gp_Ax1&, Ang)` (`gp_Vec.cxx:91-96`): the vector
+    /// turned by `angle` around `axis`, about the axis *line* (the axis
+    /// location does not matter for a vector).
+    ///
+    /// Implemented through `gp_Trsf::SetRotation(gp_Ax1, Ang)` +
+    /// `Transformed`, which is the same rotation operator `gp_Vec::Rotate`
+    /// (`gp_Vec.cxx:83-89`) applies in place.
+    pub fn rotated(&self, axis: &crate::gp::GpAx1, angle: f64) -> Self {
+        let mut t = crate::gp::GpTrsf::identity();
+        if t.set_rotation_ax1(axis, angle).is_err() {
+            return *self;
+        }
+        self.transformed(&t)
     }
 
     /// `gp_Vec::Angle()` (`gp_Vec.hxx:488-495`): raise iff either

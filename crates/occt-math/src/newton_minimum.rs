@@ -186,6 +186,31 @@ fn lu_solve(a: &MathMatrix, indx: &[usize], b: &mut MathVector) {
     }
 }
 
+/// Snapshot of the `math_NewtonMinimum` fields that `IsConverged()` reads
+/// (`math_NewtonMinimum.lxx:19-23`), so a redefined convergence test
+/// (`FairCurve_Newton::IsConverged`, `FairCurve_Newton.cxx:45-50`) can inspect
+/// them without borrowing the iterator itself.
+#[derive(Clone, Copy, Debug)]
+pub struct NewtonConvergence {
+    /// `TheStep.Norm()`.
+    pub step_norm: f64,
+    /// `TheMinimum`.
+    pub minimum: f64,
+    /// `PreviousMinimum`.
+    pub previous_minimum: f64,
+    /// `XTol`.
+    pub x_tol: f64,
+}
+
+impl NewtonConvergence {
+    /// `math_NewtonMinimum::IsConverged()` (`math_NewtonMinimum.lxx:19-23`).
+    pub fn default_test(&self) -> bool {
+        self.step_norm <= self.x_tol
+            || (self.minimum - self.previous_minimum).abs()
+                <= self.x_tol * self.previous_minimum.abs()
+    }
+}
+
 /// `math_NewtonMinimum` (`math_NewtonMinimum.hxx:34-129`).
 pub struct NewtonMinimum {
     status: MathStatus,
@@ -257,9 +282,19 @@ impl NewtonMinimum {
 
     /// `IsConverged()` (`math_NewtonMinimum.lxx:19-23`).
     pub fn is_converged(&self) -> bool {
-        self.step.norm() <= self.x_tol
-            || (self.minimum - self.previous_minimum).abs()
-                <= self.x_tol * self.previous_minimum.abs()
+        self.convergence_state().default_test()
+    }
+
+    /// Snapshot of the fields `IsConverged()` reads, for sub-classes that
+    /// redefine the test (`FairCurve_Newton::IsConverged`,
+    /// `FairCurve_Newton.cxx:45-50`).
+    pub fn convergence_state(&self) -> NewtonConvergence {
+        NewtonConvergence {
+            step_norm: self.step.norm(),
+            minimum: self.minimum,
+            previous_minimum: self.previous_minimum,
+            x_tol: self.x_tol,
+        }
     }
 
     /// `IsDone()` (`math_NewtonMinimum.lxx:25-28`).
@@ -294,12 +329,29 @@ impl NewtonMinimum {
     }
 
     /// `Perform(theFunction, theStartingPoint)`
-    /// (`math_NewtonMinimum.cxx:77-263`).
+    /// (`math_NewtonMinimum.cxx:77-263`), with the base `IsConverged()`
+    /// (`math_NewtonMinimum.lxx:19-23`) as the convergence test.
     pub fn perform(
         &mut self,
         f: &dyn MathMultipleVarFunctionWithHessian,
         starting_point: &MathVector,
     ) {
+        self.perform_with(f, starting_point, |c| c.default_test());
+    }
+
+    /// `Perform(theFunction, theStartingPoint)` (`math_NewtonMinimum.cxx:77-263`)
+    /// with a caller-supplied convergence test. OCCT's `Perform` calls the
+    /// virtual `IsConverged()` once per iteration (`cxx:222`); subclasses such
+    /// as `FairCurve_Newton` (`FairCurve_Newton.cxx:45-50`) redefine it, which
+    /// is what the `is_converged` argument stands in for.
+    pub fn perform_with<C>(
+        &mut self,
+        f: &dyn MathMultipleVarFunctionWithHessian,
+        starting_point: &MathVector,
+        is_converged: C,
+    ) where
+        C: Fn(&NewtonConvergence) -> bool,
+    {
         let n = self.location.upper() - self.location.lower() + 1;
         let mut point1 = starting_point.clone();
         let mut point2 = MathVector::new(1, n);
@@ -431,7 +483,12 @@ impl NewtonMinimum {
                 }
             }
 
-            if self.is_converged() {
+            if is_converged(&NewtonConvergence {
+                step_norm: self.step.norm(),
+                minimum: self.minimum,
+                previous_minimum: self.previous_minimum,
+                x_tol: self.x_tol,
+            }) {
                 nb_conv += 1;
             } else {
                 nb_conv = 0;

@@ -41,7 +41,10 @@ pub trait Curve2d: Send + Sync {
     fn first_parameter(&self) -> f64;
     fn last_parameter(&self) -> f64;
     fn is_periodic(&self) -> bool { false }
-    fn period(&self) -> f64 { 0.0 }
+    /// `Geom2d_Curve::Period()` (`Geom2d_Curve.cxx:55-60`): the base
+    /// implementation is `LastParameter() - FirstParameter()`; the analytic
+    /// classes with a fixed period override it.
+    fn period(&self) -> f64 { self.last_parameter() - self.first_parameter() }
     fn continuity(&self) -> u8;
     fn transform(&mut self, t: &GpTrsf2d);
     fn reverse(&mut self);
@@ -80,6 +83,15 @@ pub trait Curve2d: Send + Sync {
     /// `STANDARD_TYPE(Geom2d_BSplineCurve)` — for `Geom2dConvert::CurveToBSplineCurve`.
     fn is_bspline2d(&self) -> bool {
         false
+    }
+
+    /// `occ::down_cast<Geom2d_BSplineCurve>`: the exact `Geom2d_BSplineCurve`,
+    /// `None` for every other type. `Geom2d_TrimmedCurve` forwards
+    /// [`Curve2d::is_bspline2d`] to its basis
+    /// (`Geom2dAdaptor_Curve.cxx:284-288`) but is not an exact
+    /// `STANDARD_TYPE(Geom2d_BSplineCurve)`, so it answers `None` here.
+    fn bspline2d(&self) -> Option<&Geom2dBSplineCurve> {
+        None
     }
 
     /// `STANDARD_TYPE(Geom2d_Line)` — true only for an exact `Geom2d_Line`,
@@ -251,6 +263,31 @@ pub trait Curve2d: Send + Sync {
     /// Knots()`, the `Knot(j)` values `ShapeAnalysis_TransferParametersProj::
     /// CorrectParameter` snaps onto, `Proj.cxx:268-279`); `None` otherwise.
     fn bspline_knots2d(&self) -> Option<&[f64]> {
+        None
+    }
+
+    /// `occ::down_cast<Geom2d_TrimmedCurve>(C)` as an owned copy, so a caller
+    /// can run `SetTrim` on it without touching the shared curve. Only
+    /// [`Geom2dTrimmedCurve`](crate::Geom2dTrimmedCurve) answers `Some`.
+    fn trimmed_copy2d(&self) -> Option<crate::trimmed::Geom2dTrimmedCurve> {
+        None
+    }
+
+    /// `STANDARD_TYPE(Bisector_BisecAna)` then `occ::down_cast`.
+    /// `Bisector_Inter::SinglePerform` branches on it (`Bisector_Inter.cxx:239`).
+    fn bisector_bisec_ana(&self) -> Option<&crate::bisector::BisectorBisecAna> {
+        None
+    }
+
+    /// `STANDARD_TYPE(Bisector_BisecCC)` then `occ::down_cast`
+    /// (`Bisector_Inter.cxx:290`, `:418`).
+    fn bisector_bisec_cc(&self) -> Option<&crate::bisector::BisectorBisecCC> {
+        None
+    }
+
+    /// `STANDARD_TYPE(Bisector_BisecPC)` then `occ::down_cast`
+    /// (`Bisector_Inter.cxx:279`).
+    fn bisector_bisec_pc(&self) -> Option<&crate::bisector::BisectorBisecPC> {
         None
     }
 

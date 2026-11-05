@@ -255,7 +255,95 @@ impl GeomTrimmedCurveBasis {
         Self { basis, first, last }
     }
 
+    /// `Geom_TrimmedCurve(C, U1, U2, Sense)` (`Geom_TrimmedCurve.hxx:80-84`,
+    /// `cxx:55-74`) followed by `SetTrim(U1, U2, Sense, true)`
+    /// (`cxx:95-151`, `theAdjustPeriodic` defaults to `true`): a non-periodic
+    /// basis keeps `[min(U1,U2), max(U1,U2)]` and reverses the whole curve when
+    /// `Sense` disagrees with `U1 < U2`; a periodic basis keeps `U1..U2` and
+    /// reverses when `Sense` is false.
+    ///
+    /// The result evaluates in the basis parameters, like OCCT's
+    /// `Geom_TrimmedCurve`, and reports the (possibly reversed) trimming
+    /// parameters from `FirstParameter()` / `LastParameter()`.
+    pub fn with_sense(
+        basis: Arc<dyn Curve>,
+        u1: f64,
+        u2: f64,
+        sense: bool,
+    ) -> Result<Self, &'static str> {
+        let mut trimmed = Self {
+            basis,
+            first: u1,
+            last: u2,
+        };
+        trimmed.set_trim(u1, u2, sense, true)?;
+        Ok(trimmed)
+    }
+
     pub fn basis_curve(&self) -> &Arc<dyn Curve> { &self.basis }
+
+    /// `Geom_TrimmedCurve::Reverse()` (`Geom_TrimmedCurve.cxx:78-83`):
+    /// reverse the basis, remap both trims through `ReversedParameter`, then
+    /// `SetTrim(U1, U2, true, false)`.
+    fn reverse_trim(&mut self) {
+        let u1 = self.basis.reversed_parameter(self.last);
+        let u2 = self.basis.reversed_parameter(self.first);
+        let mut basis = self.basis.clone_dyn();
+        basis.reverse();
+        self.basis = Arc::from(basis);
+        // The recursive `SetTrim` can only ask for one more reversal, exactly
+        // like `Geom_TrimmedCurve::Reverse` + `SetTrim` in OCCT.
+        let _ = self.set_trim(u1, u2, true, false);
+    }
+
+    /// `Geom_TrimmedCurve::SetTrim(U1, U2, Sense, theAdjustPeriodic)`
+    /// (`Geom_TrimmedCurve.cxx:95-151`).
+    fn set_trim(
+        &mut self,
+        u1: f64,
+        u2: f64,
+        sense: bool,
+        adjust_periodic: bool,
+    ) -> Result<(), &'static str> {
+        if u1 == u2 {
+            return Err("Geom_TrimmedCurve::U1 == U2");
+        }
+        let udeb = self.basis.first_parameter();
+        let ufin = self.basis.last_parameter();
+        let (mut t1, mut t2, same_sense);
+        if self.basis.is_periodic() {
+            // `cxx:108-125`.
+            same_sense = sense;
+            t1 = u1;
+            t2 = u2;
+            if adjust_periodic {
+                let preci = ((t2 - t1).abs() / 2.0).min(occt_core::precision::PCONFUSION);
+                occt_core::elib::clib::adjust_periodic(udeb, ufin, preci, &mut t1, &mut t2);
+            }
+        } else {
+            // `cxx:127-143`.
+            if u1 < u2 {
+                same_sense = sense;
+                t1 = u1;
+                t2 = u2;
+            } else {
+                same_sense = !sense;
+                t1 = u2;
+                t2 = u1;
+            }
+            if (udeb - t1) > occt_core::precision::PCONFUSION
+                || (t2 - ufin) > occt_core::precision::PCONFUSION
+            {
+                return Err("Geom_TrimmedCurve::parameters out of range");
+            }
+        }
+        self.first = t1;
+        self.last = t2;
+        if !same_sense {
+            self.reverse_trim(); // `cxx:147-150`
+        }
+        Ok(())
+    }
 }
 
 impl Curve for GeomTrimmedCurveBasis {

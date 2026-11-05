@@ -2,7 +2,12 @@
 //! These enums classify curves, surfaces, and geometric properties.
 
 /// Type of parametric curve. Source: `GeomAbs_CurveType`
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// The declaration order is the numeric order of `GeomAbs_CurveType.hxx:22-33`
+/// (`GeomAbs_Line = 0` … `GeomAbs_OtherCurve = 8`), so `PartialOrd` reproduces
+/// the `GetType() < GetType()` comparisons of the `.cxx` bodies
+/// (`ChFi2d_FilletAlgo.cxx:115`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum CurveType { Line, Circle, Ellipse, Hyperbola, Parabola, BezierCurve, BSplineCurve, OffsetCurve, OtherCurve }
 
 /// Type of parametric surface. Source: `GeomAbs_SurfaceType`

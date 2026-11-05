@@ -11,6 +11,7 @@ mod compute_patches;
 mod constraints;
 mod convert_bs;
 mod context;
+mod criterion;
 mod degree_error;
 mod degree_reduce;
 mod discretise;
@@ -31,7 +32,11 @@ mod table_expand;
 mod xmaxj4;
 
 pub use context::{context_until_roots, App2VarContext};
-pub use iso_fnc::approximate_until_cdi;
+pub use criterion::{
+    patch_coefficients, Criterion, CriterionBase, CriterionPatch, CriterionRepartition,
+    CriterionType,
+};
+pub use iso_fnc::{approximate_until_cdi, approximate_until_cdi_with_criterion};
 
 /// Result of `AdvApp2Var_ApproxAFunc2Var` (`AdvApp2Var_ApproxAFunc2Var.hxx:86-192`).
 ///
@@ -54,4 +59,9 @@ pub struct ApproxAFunc2VarResult {
     pub u_front_error: f64,
     /// `VFrontError(3, 1)` (`cxx:1134-1142`).
     pub v_front_error: f64,
+    /// `CritError(3, 1)` (`cxx:1146-1152`): `myCriterionError`, the maximum
+    /// `CritValue` over the surviving squares (`ComputeCritError`,
+    /// `cxx:868-887`). Stays `0` when no criterion ran, because
+    /// `myNumSubSpaces[2] == 0` in that case.
+    pub criterion_error: f64,
 }

@@ -382,6 +382,11 @@ impl Curve2d for Geom2dOffsetCurve {
     fn first_parameter(&self) -> f64 { self.basis.first_parameter() }
     fn last_parameter(&self) -> f64 { self.basis.last_parameter() }
 
+    /// `Geom2d_OffsetCurve::ReversedParameter` (`Geom2d_OffsetCurve.cxx:99-102`):
+    /// the basis answers, which is not `FirstParameter() + LastParameter() - U`
+    /// for the infinite bases (line, parabola, hyperbola).
+    fn reversed_parameter(&self, u: f64) -> f64 { self.basis.reversed_parameter(u) }
+
     /// `Geom2d_OffsetCurve::EvalD3` (`Geom2d_OffsetCurve.cxx:289-327`) →
     /// `Geom2d_OffsetCurveUtils::EvaluateD3` (`pxx:460-484`) →
     /// [`Self::calculate_d3`]. The basis fourth derivative is `EvalDN(U, 4)`

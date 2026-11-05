@@ -44,6 +44,12 @@
 //! `gp_sphere` / `gp_torus` / `is_surface_of_linear_extrusion` /
 //! `is_surface_of_revolution` / `is_bspline_surface` / `is_bezier_surface`,
 //! see [`ext_ps_surface_type`]), not from a sampling classifier.
+//!
+//! [`GenLocateExtPs`] (`gen_locate_ext_ps.rs`) is `Extrema_GenLocateExtPS`, the
+//! local (one starting `(U, V)`) counterpart of `Extrema_ExtPS`: the distance
+//! branch minimizes [`ExtremaFuncPsDist`] with `math_BFGS` / `math_FRPR`, the
+//! normal-projection branch solves the [`ExtremaFuncPsNorm`] system with
+//! `math_FunctionSetRoot` / `math_NewtonFunctionSetRoot`.
 mod prelude {
 
 pub(crate) use std::cmp::Ordering;
@@ -63,6 +69,7 @@ mod analytic_solvers;
 mod elementary_curve_extrema;
 mod extrusion_point_extrema;
 mod gen_ext_ps;
+mod gen_locate_ext_ps;
 mod numeric_extrema;
 mod point_surface_extrema;
 mod revolution_point_extrema;
@@ -70,6 +77,7 @@ pub use analytic_solvers::*;
 pub(crate) use elementary_curve_extrema::vec_angle_with_ref;
 pub use extrusion_point_extrema::*;
 pub use gen_ext_ps::*;
+pub use gen_locate_ext_ps::*;
 pub use numeric_extrema::*;
 pub use point_surface_extrema::*;
 pub use revolution_point_extrema::*;

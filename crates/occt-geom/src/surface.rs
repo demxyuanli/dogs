@@ -89,12 +89,22 @@ pub trait Surface: Send + Sync {
     fn gp_cone(&self) -> Option<GpCone> { None }
     /// `STANDARD_TYPE(Geom_SurfaceOfRevolution)`.
     fn is_surface_of_revolution(&self) -> bool { false }
+    /// `STANDARD_TYPE(GeomPlate_Surface)`.
+    ///
+    /// The only RTTI test on this class is
+    /// `mySurfinit->DynamicType() == STANDARD_TYPE(GeomPlate_Surface)`
+    /// (`GeomPlate_Surface.cxx:99`), which decides whether `Bounds` forwards to
+    /// the init surface or answers from `SetBounds`.
+    fn as_plate_surface(&self) -> Option<&crate::geom_plate::PlateSurface> { None }
     /// `STANDARD_TYPE(Geom_OffsetSurface)`.
     fn is_offset_surface(&self) -> bool { false }
     /// `Geom_OffsetSurface::BasisSurface`.
     fn offset_basis_surface(&self) -> Option<Arc<dyn Surface>> { None }
     /// `Geom_OffsetSurface::Offset`.
     fn offset_distance(&self) -> Option<f64> { None }
+    /// `Geom_OffsetSurface::Surface` (`Geom_OffsetSurface.cxx:867-992`): the
+    /// equivalent non-offset surface, when the basis has one.
+    fn offset_equivalent_surface(&self) -> Option<Arc<dyn Surface>> { None }
     /// `STANDARD_TYPE(Geom_RectangularTrimmedSurface)` then `BasisSurface()`.
     fn rectangular_trimmed_basis(&self) -> Option<Arc<dyn Surface>> { None }
     /// The `Geom_RectangularTrimmedSurface` trim state

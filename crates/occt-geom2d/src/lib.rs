@@ -34,9 +34,15 @@ pub mod hermit;
 pub mod comp_curve_to_bspline;
 pub mod convert_approx_curve;
 pub mod geom2d_api;
+pub mod geom2d_api_inter_curve_curve;
 pub mod geom2d_api_interpolate;
+pub mod geom2d_api_project_point_on_curve;
 pub mod geom2d_int;
+pub mod gcpnts_quasi_uniform_deflection;
 pub mod offset2d;
+pub mod gce_make_circ2d;
+pub mod geom2d_convert_approx_arcs_segments;
+pub mod geom2d_convert_ppoint;
 
 pub use curve::Curve2d;
 pub use bspline_curve::Geom2dBSplineCurve;
@@ -52,8 +58,15 @@ pub use geom2d_convert_concat::{c0_bspline_to_c1_bspline_curve, concat_c1};
 pub use convert_approx_curve::Geom2dConvertApproxCurve;
 pub use curve_ops::*;
 pub mod extrema2d;
+pub mod fair_curve;
 pub mod cl_props2d;
+pub mod cur_and_inf;
 pub mod curve_tools2d;
+pub mod gcc;
+pub mod gcc_int;
+pub mod gcc_ana_bisec;
+pub mod gce2d;
+pub mod bisector;
 
 /// Type alias for OCCT's Handle(Geom2d_Curve) — Arc is the Rust equivalent.
 pub type HandleCurve2d = Arc<dyn Curve2d>;

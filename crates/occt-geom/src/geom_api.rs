@@ -36,6 +36,8 @@ use occt_geom2d::line::Geom2dLine;
 use occt_geom2d::parabola::Geom2dParabola;
 
 use crate::curve::Curve;
+use crate::extrema::ExtremaPair;
+use crate::extrema_cc::curve_curve_extrema_all_range;
 use crate::extrema_ss::ExtremaExtSS;
 use crate::projlib;
 use crate::surface::Surface;
@@ -108,6 +110,124 @@ pub fn project_point_on_surface(s: &dyn Surface, p: &GpPnt, tol: f64) -> Option<
     }
     let (u, v, point) = ex.point(best);
     Some(PointOnSurface { u, v, point, distance: point.distance(p) })
+}
+
+/// `GeomAPI_ExtremaCurveCurve`
+/// (`GeomAPI_ExtremaCurveCurve.hxx:48-190`,
+/// `GeomAPI_ExtremaCurveCurve.cxx:27-236`).
+///
+/// `Init` runs `Extrema_ExtCC` with `Tol = Precision::PConfusion()`
+/// (`cxx:100-114`): the explicit-range overload installs its own
+/// `U1min/U1max/U2min/U2max`, the two-handle one the curves' own ranges. The
+/// result is `myIsDone = myExtCC.IsDone() && myExtCC.NbExt() > 0` plus the
+/// index of the smallest `SquareDistance` (`cxx:116-131`). `Points`,
+/// `Parameters` and `Distance` answer for the index their caller passes
+/// (`cxx:152-236`).
+///
+/// UNPORTED: the `LowerDistance*`, `NearestPoints` and `Total*` accessors
+/// (`cxx:238-330`), which have no consumer in this port.
+pub struct ExtremaCurveCurve {
+    /// The `myExtCC` solution vector. `Extrema_ExtCC` keeps its solutions in
+    /// the order its `Perform` produced them; `myIndex` only records *which*
+    /// one is the smallest, it does not reorder them.
+    extrema: Vec<ExtremaPair>,
+    /// `myIsDone` (`cxx:115`).
+    is_done: bool,
+    /// `myIndex` (`cxx:120`), 1-based; `0` while `!myIsDone`.
+    index: i32,
+}
+
+impl ExtremaCurveCurve {
+    /// `GeomAPI_ExtremaCurveCurve(C1, C2)` (`cxx:42-46`): the two curves' own
+    /// ranges (`cxx:63-93`).
+    pub fn new(c1: &dyn Curve, c2: &dyn Curve) -> Self {
+        Self::from_solutions(curve_curve_extrema_all_range(
+            c1,
+            c2,
+            c1.first_parameter(),
+            c1.last_parameter(),
+            c2.first_parameter(),
+            c2.last_parameter(),
+        ))
+    }
+
+    /// `GeomAPI_ExtremaCurveCurve(C1, C2, U1min, U1max, U2min, U2max)`
+    /// (`cxx:48-57`) -> `Init(C1, C2, U1min, U1max, U2min, U2max)`
+    /// (`cxx:96-131`).
+    pub fn with_ranges(
+        c1: &dyn Curve,
+        c2: &dyn Curve,
+        u1min: f64,
+        u1max: f64,
+        u2min: f64,
+        u2max: f64,
+    ) -> Self {
+        Self::from_solutions(curve_curve_extrema_all_range(
+            c1, c2, u1min, u1max, u2min, u2max,
+        ))
+    }
+
+    /// `cxx:115-131`: `myIsDone` and `myIndex`.
+    fn from_solutions(extrema: Vec<ExtremaPair>) -> Self {
+        let is_done = !extrema.is_empty();
+        let mut index = 0;
+        if is_done {
+            let mut dist2_min = extrema[0].distance * extrema[0].distance;
+            index = 1;
+            for (i, e) in extrema.iter().enumerate().skip(1) {
+                let dist2 = e.distance * e.distance;
+                if dist2 < dist2_min {
+                    dist2_min = dist2;
+                    index = i as i32 + 1;
+                }
+            }
+        }
+        Self { extrema, is_done, index }
+    }
+
+    /// `NbExtrema()` (`cxx:136-148`): `myExtCC.NbExt()` while done, else `0`.
+    pub fn nb_extrema(&self) -> i32 {
+        if self.is_done {
+            self.extrema.len() as i32
+        } else {
+            0
+        }
+    }
+
+    /// `myIndex`: the 1-based index of the smallest distance, `0` when not
+    /// done.
+    pub fn index(&self) -> i32 {
+        self.index
+    }
+
+    /// `Points(Index, P1, P2)` (`cxx:152-165`).
+    pub fn points(&self, index: i32) -> (GpPnt, GpPnt) {
+        assert!(
+            index >= 1 && index <= self.nb_extrema(),
+            "GeomAPI_ExtremaCurveCurve::Points: Standard_OutOfRange"
+        );
+        let e = &self.extrema[index as usize - 1];
+        (e.p1, e.p2)
+    }
+
+    /// `Parameters(Index, U1, U2)` (`cxx:170-185`).
+    pub fn parameters(&self, index: i32) -> (f64, f64) {
+        assert!(
+            index >= 1 && index <= self.nb_extrema(),
+            "GeomAPI_ExtremaCurveCurve::Parameters: Standard_OutOfRange"
+        );
+        let e = &self.extrema[index as usize - 1];
+        (e.u1, e.u2)
+    }
+
+    /// `Distance(Index)` (`cxx:190-203`).
+    pub fn distance(&self, index: i32) -> f64 {
+        assert!(
+            index >= 1 && index <= self.nb_extrema(),
+            "GeomAPI_ExtremaCurveCurve::Distance: Standard_OutOfRange"
+        );
+        self.extrema[index as usize - 1].distance
+    }
 }
 
 /// `GeomAPI_ExtremaSurfaceSurface`

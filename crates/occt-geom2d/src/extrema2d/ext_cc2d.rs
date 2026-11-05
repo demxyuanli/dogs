@@ -298,6 +298,28 @@ impl ExtremaExtCC2d {
     ) {
         self.done = ext.is_done(); // `:539`
         self.is_par = ext.is_parallel(); // `:540`
+        if std::env::var("MAT2D_DEBUG").is_ok() {
+            eprintln!(
+                "EXTEL done={} par={} nbext={} trim1=[{:.6},{:.6}] trim2=[{:.6},{:.6}]",
+                self.done,
+                self.is_par,
+                ext.nb_ext(),
+                ut11,
+                ut12,
+                ut21,
+                ut22
+            );
+            for i in 1..=ext.nb_ext() {
+                let (p1, p2) = ext.points(i);
+                eprintln!(
+                    "  EXTEL pt{} u1={:.6} u2={:.6} d2={:.6}",
+                    i,
+                    p1.parameter(),
+                    p2.parameter(),
+                    ext.square_distance(i)
+                );
+            }
+        }
         if !self.done || self.is_par {
             // `:541-544`
             return;

@@ -294,6 +294,12 @@ impl LocationLaw for LocationGuide {
         self.lock().curve.clone()
     }
 
+    /// `occ::down_cast<GeomFill_LocationGuide>` (`BRepFill_PipeShell.cxx:494`,
+    /// `:1215`, `:1257`): this *is* the guide law, so the cast succeeds.
+    fn as_location_guide(&self) -> Option<&LocationGuide> {
+        Some(self)
+    }
+
     /// `GeomFill_LocationGuide::SetTrsf` (`cxx:563-580`).
     fn set_trsf(&self, transfo: &GpMat) {
         let mut st = self.lock();

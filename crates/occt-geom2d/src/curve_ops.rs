@@ -51,6 +51,17 @@ pub fn curve2d_length(c: &dyn Curve2d) -> f64 {
     length_2d(c, a, b, None)
 }
 
+/// `GCPnts_AbscissaPoint::Length(theC, theU1, theU2)`
+/// (`GCPnts_AbscissaPoint.cxx:342-347`): the tolerance-less overload, i.e.
+/// `length(theC, theU1, theU2, nullptr)` (`:371-423`). Returns `NaN` for
+/// non-finite parameters (a port guard).
+pub fn curve2d_length_between(c: &dyn Curve2d, u1: f64, u2: f64) -> f64 {
+    if !u1.is_finite() || !u2.is_finite() {
+        return f64::NAN;
+    }
+    length_2d(c, u1, u2, None)
+}
+
 /// `GCPnts_AbscissaPoint::Length(theC, theU1, theU2, theTol)`
 /// (`GCPnts_AbscissaPoint.cxx:361-367`, body `:371-423`): the tolerance overload
 /// of [`curve2d_length`]. On the `Parametrized` arm of [`compute_type_2d`] it is

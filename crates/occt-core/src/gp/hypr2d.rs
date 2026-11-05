@@ -24,6 +24,17 @@ impl GpHypr2d {
     pub fn transformed(&self, t: &GpTrsf2d) -> Self { let mut r=*self; r.transform(t); r }
     pub fn translate_vec(&mut self, v: &GpVec2d) { self.pos.point.translate_vec(v); }
     pub fn translated_vec(&self, v: &GpVec2d) -> Self { let mut r=*self; r.translate_vec(v); r }
+    /// `gp_Hypr2d::YAxis()` (`gp_Hypr2d.hxx:262`).
+    #[inline] pub fn y_axis(&self) -> GpAx2d { self.pos.y_axis() }
+    /// `gp_Hypr2d::OtherBranch()` (`gp_Hypr2d.hxx:275-282`): the axis becomes
+    /// `gp_Ax2d(Location, XDirection().Reversed())` and the handedness
+    /// (`isSign`) is kept, so both stored directions flip.
+    pub fn other_branch(&self) -> Self {
+        let mut r = *self;
+        r.pos.x_reverse();
+        r.pos.y_reverse();
+        r
+    }
 }
 
 impl Default for GpHypr2d { fn default() -> Self { Self { pos: GpAx22d::standard(), major_radius: 1.0, minor_radius: 1.0 } } }

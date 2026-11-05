@@ -88,6 +88,20 @@ impl Geom2dIntGInter {
         tol_conf: f64,
         tol: f64,
     ) {
+        thread_local! {
+            static DEPTH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+        }
+        struct Guard;
+        impl Drop for Guard {
+            fn drop(&mut self) {
+                DEPTH.with(|d| d.set(d.get() - 1));
+            }
+        }
+        DEPTH.with(|d| d.set(d.get() + 1));
+        let _guard = Guard;
+        if DEPTH.with(|d| d.get()) > 40 {
+            panic!("Geom2dIntGInter::perform recursion depth");
+        }
         self.internal_perform(c1, d1, c2, d2, tol_conf, tol);
     }
 

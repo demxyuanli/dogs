@@ -51,7 +51,7 @@ mod jets;
 mod perform;
 mod splits;
 
-pub(crate) use adaptor::ProjectedCurve2d;
+pub use adaptor::ProjectedCurve2d;
 
 /// `#define FuncTol 1.e-10` (`cxx:53`): the residual tolerance handed to every
 /// `ProjLib_PrjResolve::Perform` call.

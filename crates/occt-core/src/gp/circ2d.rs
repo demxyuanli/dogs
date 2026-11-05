@@ -14,6 +14,14 @@ impl GpCirc2d {
     #[inline] pub fn radius(&self) -> f64 { self.radius }
     pub fn set_location(&mut self, p: GpPnt2d) { self.pos.set_location(p); }
     pub fn set_radius(&mut self, r: f64) { self.radius = r; }
+    /// `gp_Circ2d::Distance(const gp_Pnt2d&)` (`gp_Circ2d.hxx:274-285`):
+    /// `|Radius - |P - Location||`.
+    pub fn distance(&self, p: &GpPnt2d) -> f64 { (self.radius - self.pos.point.distance(p)).abs() }
+    /// `gp_Circ2d::SquareDistance(const gp_Pnt2d&)` (`gp_Circ2d.hxx:299-306`).
+    pub fn square_distance(&self, p: &GpPnt2d) -> f64 {
+        let d = self.radius - self.pos.point.distance(p);
+        d * d
+    }
     pub fn set_axis(&mut self, a: GpAx22d) { self.pos = a; }
     pub fn x_axis(&self) -> GpAx2d { GpAx2d::new(self.pos.point, *self.pos.x_direction()) }
     pub fn y_axis(&self) -> GpAx2d { GpAx2d::new(self.pos.point, *self.pos.y_direction()) }

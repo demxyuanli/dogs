@@ -60,7 +60,9 @@ impl Curve2d for Geom2dEllipse {
     fn gp_elips2d(&self) -> Option<occt_core::gp::GpElips2d> { Some(self.pos.clone()) }
     fn clone_dyn(&self) -> Box<dyn crate::curve::Curve2d> { Box::new(self.clone()) }
     fn transform(&mut self, t: &GpTrsf2d) { self.pos.transform(t); }
-    fn reverse(&mut self) { std::mem::swap(&mut self.pos.major_radius, &mut self.pos.minor_radius); }
+    /// `Geom2d_Conic::Reverse` (`Geom2d_Conic.cxx:23-28`): only the Y direction
+    /// of the local frame is reversed, the radii keep their roles.
+    fn reverse(&mut self) { self.pos.pos.y_reverse(); }
     /// `Geom2dAdaptor_Curve::Resolution`'s `GeomAbs_Ellipse` arm
     /// (`Geom2dAdaptor_Curve.cxx:1203-1205`).
     fn resolution(&self, ruv: f64) -> f64 {

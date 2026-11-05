@@ -88,6 +88,24 @@ impl GProps {
         }
     }
 
+    /// Fill a system from an already accumulated `(loc, g, dim, inertia)`.
+    ///
+    /// `BRepGProp::LinearProperties` (`BRepGProp.cxx:121-161`) starts from
+    /// `SProps = GProp_GProps(P)` and then only calls `SProps.Add(...)` on the
+    /// per-edge accumulators, so the four `GProp_GProps` members `myLoc`,
+    /// `myG`, `myDim` and `myInertia` are all a global-properties result ever
+    /// holds. This constructor is that state: `g` is the center of mass
+    /// *relative to* `loc` (`GProp_GProps.hxx:113-116`) and `inertia` is the
+    /// matrix about `loc`, the same convention [`GProps::add`] accumulates in.
+    pub fn from_accumulated(loc: GpPnt, g: GpVec, dim: f64, inertia: GpMat) -> Self {
+        Self {
+            g: GpPnt::from_xyz(&g.coord),
+            loc,
+            dim,
+            inertia,
+        }
+    }
+
     /// Reference point used for inertia accumulation.
     pub fn reference_point(&self) -> GpPnt {
         self.loc

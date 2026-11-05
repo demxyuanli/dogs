@@ -61,6 +61,7 @@ pub fn perform_tangential_curve<C: CurveSecondDeriv>(
     intervals: &[f64],
     degree_min_nb: usize,
 ) -> (Vec<f64>, Vec<GpPnt>) {
+    let trace = std::env::var_os("GCFTRACE").is_some();
     let (first, last) = if first <= last { (first, last) } else { (last, first) };
     let min_nb = min_nb.max(2);
     let min_len = min_len.max(CONFUSION);
@@ -85,6 +86,11 @@ pub fn perform_tangential_curve<C: CurveSecondDeriv>(
     );
     params.push(first);
     points.push(current_point);
+    if trace {
+        eprintln!(
+            "GCF init range=[{first:.17e},{last:.17e}] defl={curvature_deflection:.17e} ang={angular_deflection:.17e} min_nb={min_nb} min_len={min_len:.17e} du={du:.17e} dusave={dusave:.17e} not_done={not_done}"
+        );
+    }
 
     let intervs = if intervals.len() >= 2 {
         intervals.to_vec()
@@ -268,6 +274,12 @@ pub fn perform_tangential_curve<C: CurveSecondDeriv>(
                 } else if coef >= 0.55 || too_large {
                     params.push(u2);
                     points.push(current_point);
+                    if trace {
+                        eprintln!(
+                            "GCF push u2={u2:.17e} du={du:.17e} coef={coef:.6} f={f_coef:.6} a={coef_val:.6} too_large={too_large} too_small={too_small} n={}",
+                            points.len()
+                        );
+                    }
                     prev_point = current_point;
                     correction = false;
                     need_check = true;

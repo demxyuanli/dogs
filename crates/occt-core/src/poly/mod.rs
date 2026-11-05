@@ -11,3 +11,4 @@ pub mod polygon2d;
 pub use triangulation::Triangulation;
 pub use polygon2d::Polygon2D;
 pub use polygon3d::Polygon3D;
+pub use poly_triangulation::PolyPolygonOnTriangulation;

@@ -308,6 +308,13 @@ pub fn cylinder_v_iso(pos: &GpAx3, radius: f64, v: f64) -> GpCirc {
     GpCirc::new(axes, radius)
 }
 
+/// `ElSLib::PlaneUIso` (`ElSLib.cxx:1705-1712`).
+pub fn plane_u_iso(pos: &GpAx3, u: f64) -> GpLin {
+    let ve = GpVec::from_xyz(pos.x_direction().xyz()).multiplied_scalar(u);
+    let loc = pos.location().translated_vec(&ve);
+    GpLin::from_pnt_dir(loc, *pos.y_direction())
+}
+
 /// `ElSLib::CylinderUIso` (`ElSLib.cxx:1716-1723`).
 pub fn cylinder_u_iso(pos: &GpAx3, radius: f64, u: f64) -> GpLin {
     let cy = GpCylinder {

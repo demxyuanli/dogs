@@ -1,27 +1,21 @@
 //! `GeomFill_Pipe::Init` (`GeomFill_Pipe.cxx:364-728`, OCCT 8.0.0).
 //!
 //! Every `Init` stores the path adaptor / first / last section and builds the
-//! `LocationLaw` + `SectionLaw` pair the sweep needs. Which of those arms is
-//! reachable depends on classes that this tree has not ported yet; those arms
-//! are marked UNPORTED with the OCCT source they need, rather than replaced by
-//! an approximation.
-//!
-//! UNPORTED:
-//! - `Init(const Geom2d_Curve&, const Geom_Surface&, const Geom_Curve&)`
-//!   (`cxx:564-581`): needs `Adaptor3d_CurveOnSurface`, which does not exist in
-//!   `occt-geom` (`occt-topo` has `BRepMesh_CurveOnSurface`, a downstream
-//!   class). The `GeomFill_Darboux` arm itself is ported.
+//! `LocationLaw` + `SectionLaw` pair the sweep needs.
 
 use std::sync::Arc;
 
 use occt_core::gp::{GpAx1, GpAx2, GpCirc, GpDir, GpPnt, GpTrsf, GpVec};
 use occt_core::precision::{CONFUSION, PCONFUSION};
+use occt_geom2d::curve::Curve2d;
 
 use crate::circle::GeomCircle;
 use crate::curve::Curve;
+use crate::curve_on_surface::CurveOnSurface;
 use crate::geom_fill::constant_bi_normal::ConstantBiNormal;
 use crate::geom_fill::corrected_frenet::CorrectedFrenet;
 use crate::geom_fill::curve_and_trihedron::CurveAndTrihedron;
+use crate::geom_fill::darboux::Darboux;
 use crate::geom_fill::fixed::Fixed;
 use crate::geom_fill::frenet::Frenet;
 use crate::geom_fill::guide_trihedron_ac::GuideTrihedronAC;
@@ -39,6 +33,7 @@ use crate::geom_fill::trihedron_law::TrihedronLaw;
 use crate::geom_fill::trihedron_with_guide::TrihedronWithGuide;
 use crate::geom_fill::uniform_section::UniformSection;
 use crate::geom_lprop::cl_props::ClProps;
+use crate::surface::Surface;
 
 /// `gp::XOY()` (`gp.hxx`): the standard 3D coordinate system.
 fn xoy() -> GpAx2 {
@@ -337,20 +332,45 @@ impl Pipe {
     /// `GeomFill_Pipe::Init(const Geom2d_Curve&, const Geom_Surface&, const
     /// Geom_Curve&)` (`cxx:564-581`).
     ///
-    /// UNPORTED: `myAdpPath` is an `Adaptor3d_CurveOnSurface`
-    /// (`cxx:570-571`), which `occt-geom` does not have; `GeomFill_Darboux` and
-    /// `GeomFill_SectionPlacement::Perform(Path, Tol)` are ported.
+    /// As in `Init(Path, NSections)` (`cxx:606-674`), OCCT does **not** call
+    /// `Init()` first: `myType` / `myStatus` keep whatever the previous call
+    /// left behind, and only `myAdpPath` / `myLoc` / `mySec` are overwritten.
     pub fn init_path2d_support_section(
         &mut self,
-        _path: Arc<dyn Curve>,
-        _support: Arc<dyn crate::surface::Surface>,
-        _first_sect: Arc<dyn Curve>,
+        path: Arc<dyn Curve2d>,
+        support: Arc<dyn Surface>,
+        first_sect: Arc<dyn Curve>,
     ) -> Result<(), String> {
-        Err(
-            "UNPORTED: GeomFill_Pipe::Init(Geom2d_Curve, Geom_Surface, Geom_Curve) needs \
-             Adaptor3d_CurveOnSurface (GeomFill_Pipe.cxx:564-581)"
-                .into(),
-        )
+        // `cxx:570-571`: `myAdpPath` is an `Adaptor3d_CurveOnSurface` over the
+        // pcurve and the support surface. Its parameter is the pcurve's, so
+        // every 3D evaluation below and in the sweep goes through the chart.
+        let adp_path: Arc<dyn Curve> = Arc::new(CurveOnSurface::new(path.clone(), support.clone()));
+        self.adp_path = Some(adp_path.clone());
+
+        // `cxx:569`: `new GeomFill_Darboux()`. OCCT's `SetCurve` reads the
+        // pcurve/surface bundle back out of the adaptor; the port supplies the
+        // bundle to the constructor instead.
+        let tlaw: Arc<dyn TrihedronLaw> = Arc::new(Darboux::new(path, support));
+        let loc = CurveAndTrihedron::new(tlaw);
+        // `cxx:572-573`.
+        loc.set_curve(adp_path.clone());
+        let loc: Arc<dyn LocationLaw> = Arc::new(loc);
+        self.loc = Some(loc.clone());
+
+        // `cxx:574-576`: `Place.Perform(myAdpPath, Precision::Confusion())`.
+        let mut place = SectionPlacement::new(loc, SectionGeometry::Curve(first_sect));
+        place.perform_on(adp_path.as_ref(), CONFUSION);
+        let sect = place
+            .section(false)?
+            .ok_or_else(|| "GeomFill_SectionPlacement: null section".to_string())?;
+
+        // `cxx:580-581`: the section is uniform over the path's own range.
+        self.sec = Some(Arc::new(UniformSection::new(
+            sect,
+            adp_path.first_parameter(),
+            adp_path.last_parameter(),
+        )?));
+        Ok(())
     }
 
     /// `GeomFill_Pipe::Init(Path, Guide, FirstSect, ByACR, rotat)`

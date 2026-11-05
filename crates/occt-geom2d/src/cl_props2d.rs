@@ -6,7 +6,9 @@
 //! `IsTangentDefined`, `Tangent`, `Curvature`, `Normal`, `ComputeTangent`,
 //! `ComputeCurvature`, `ComputeNormal`).
 //!
-//! Not ported: `CentreOfCurvature` (no caller in the BRepClass chain).
+//! Not ported: nothing (the BRepClass chain only needs the value / derivatives
+//! / curvature / tangent; `SetParameter` and `CentreOfCurvature` are ported for
+//! `BRepFill_OffsetWire::CheckBadEdges`, `cxx:2706-2775`).
 //! The third derivative relies on `Curve2d::d3`, whose trait default returns
 //! zero for curve types that do not override it.
 
@@ -183,6 +185,40 @@ impl<'a> GeomLPropCLProps2d<'a> {
         let b = d1.dot(&d2);
         let norm = GpVec2d::new(d2.x() * a - d1.x() * b, d2.y() * a - d1.y() * b);
         GpDir2d::from_vec2d(&norm).expect("GeomLProp_CLProps2d::Normal: null normal")
+    }
+
+    /// `SetParameter(U)` (`LProp_CurveUtils.hxx:287-298`): the parameter is
+    /// replaced, the derivatives up to the current order are re-evaluated and
+    /// the tangent status is reset to `Undecided`.
+    pub fn set_parameter(&mut self, u: f64) {
+        self.u = u;
+        self.eval_derivatives(self.der_order);
+        self.tangent_status = LPropStatus::Undecided;
+    }
+
+    /// `CentreOfCurvature(P)` (`LProp_CurveUtils.hxx:453-463` over
+    /// `ComputeCentreOfCurvature` `:264-274`). Panics where OCCT throws
+    /// `LProp_NotDefined`.
+    pub fn centre_of_curvature(&mut self) -> GpPnt2d {
+        let curvature = self.curvature();
+        if curvature.abs() <= self.lin_tol {
+            panic!("LProp_NotDefined: GeomLProp_CLProps2d::CentreOfCurvature");
+        }
+        let d1 = self.d1();
+        let d2 = self.d2();
+        // `aNorm = D2 * (D1.D1) - D1 * (D1.D2)`.
+        let mut norm = GpVec2d::new(
+            d2.x() * d1.dot(&d1) - d1.x() * d1.dot(&d2),
+            d2.y() * d1.dot(&d1) - d1.y() * d1.dot(&d2),
+        );
+        let magnitude = norm.magnitude();
+        if magnitude > 0.0 {
+            norm = GpVec2d::new(norm.x() / magnitude, norm.y() / magnitude);
+        }
+        // `aNorm.Divide(theCurvature); theCentre = thePnt.Translated(aNorm)`.
+        let norm = GpVec2d::new(norm.x() / curvature, norm.y() / curvature);
+        let p = self.pnt;
+        GpPnt2d::new(p.x() + norm.x(), p.y() + norm.y())
     }
 
     /// `EvalDerivatives` (`LProp_CurveUtils.hxx:145-162`).

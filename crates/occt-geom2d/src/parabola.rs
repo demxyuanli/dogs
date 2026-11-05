@@ -45,6 +45,10 @@ impl Curve2d for Geom2dParabola {
     }
     fn first_parameter(&self) -> f64 { f64::NEG_INFINITY }
     fn last_parameter(&self) -> f64 { f64::INFINITY }
+    /// `Geom2d_Parabola::ReversedParameter` (`Geom2d_Parabola.cxx:121-124`):
+    /// the parameter is negated. The trait default
+    /// `FirstParameter() + LastParameter() - U` is `NaN` on this infinite range.
+    fn reversed_parameter(&self, u: f64) -> f64 { -u }
     fn continuity(&self) -> u8 { 6 }
     /// `Geom2dAdaptor_Curve::Parabola` (Geom2dAdaptor_Curve.cxx:108-112).
     fn gp_parab2d(&self) -> Option<occt_core::gp::GpParab2d> { Some(self.pos.clone()) }
@@ -56,5 +60,8 @@ impl Curve2d for Geom2dParabola {
         u * t.scale_factor().abs()
     }
     fn transform(&mut self, t: &GpTrsf2d) { self.pos.transform(t); }
-    fn reverse(&mut self) { self.pos.focal = -self.pos.focal; }
+    /// `Geom2d_Conic::Reverse` (`Geom2d_Conic.cxx:23-28`) for a parabola: only
+    /// the Y direction of the local frame is reversed; the focal length stays
+    /// positive (`gp_Parab2d.hxx:176-186`).
+    fn reverse(&mut self) { self.pos.pos.y_reverse(); }
 }

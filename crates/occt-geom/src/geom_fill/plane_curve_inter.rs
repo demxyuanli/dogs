@@ -80,7 +80,11 @@ fn plane_distance(plane_pnt: &GpPnt, normal: &GpVec, p: &GpPnt) -> f64 {
 /// (`...pxx:50-136`) for `GeomAbs_Plane`: per C1 interval, a
 /// `math_FunctionSample` of `NbSamples` points and a `math_FunctionAllRoots`
 /// on the quadric function.
-pub(crate) fn plane_intersections(
+///
+/// `pub` because `BRepFill_PipeShell::Add` (`BRepFill_PipeShell.cxx:505-529`)
+/// runs the same `IntCurveSurface_HInter::Perform(C, GeomAdaptor_Surface)`
+/// against the plane of the profile face.
+pub fn plane_intersections(
     curve: &dyn Curve,
     plane_pnt: &GpPnt,
     normal: &GpVec,

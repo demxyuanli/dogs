@@ -1,6 +1,6 @@
 use crate::curve::Curve2d;
 use occt_core::bspl::knots;
-use occt_core::gp::GpPnt;
+use occt_core::gp::{GpPnt, GpPnt2d};
 
 /// 2D B-spline curve (non-rational), stored as separate x/y pole arrays.
 #[derive(Clone)]
@@ -162,6 +162,26 @@ impl Geom2dBSplineCurve {
     pub fn degree(&self) -> usize { self.degree }
     pub fn first_parameter(&self) -> f64 { self.knots[self.degree] }
     pub fn last_parameter(&self) -> f64 { self.knots[self.knots.len() - 1 - self.degree] }
+
+    /// `Geom2d_BSplineCurve::Pole(Index)` 1-based
+    /// (`Geom2d_BSplineCurve_1.cxx:406-418`).
+    pub fn pole(&self, index: usize) -> Option<GpPnt2d> {
+        if index == 0 || index > self.xs.len() {
+            return None;
+        }
+        Some(GpPnt2d::new(self.xs[index - 1], self.ys[index - 1]))
+    }
+
+    /// `Geom2d_BSplineCurve::SetPole(Index, P)` (`Geom2d_BSplineCurve.cxx:1134-1142`):
+    /// an out-of-range index raises `Standard_OutOfRange` in OCCT, which the
+    /// port reports as a `panic!`.
+    pub fn set_pole(&mut self, index: usize, p: &GpPnt2d) {
+        if index == 0 || index > self.xs.len() {
+            panic!("Geom2d_BSplineCurve::SetPole: Standard_OutOfRange");
+        }
+        self.xs[index - 1] = p.x();
+        self.ys[index - 1] = p.y();
+    }
 
     /// `Geom2d_BSplineCurve::Knot(Index)` (`Geom2d_BSplineCurve_1.cxx:356-360`),
     /// 1-based index into the *distinct* knot array (`myKnots`, as opposed to

@@ -36,7 +36,11 @@ pub trait Curve: Send + Sync {
     /// [`Curve::is_first_open`].
     fn is_last_open(&self) -> bool { false }
     fn is_periodic(&self) -> bool { false }
-    fn period(&self) -> f64 { 0.0 }
+    /// `Geom_Curve::Period()` (`Geom_Curve.cxx:40-45`): the base implementation
+    /// is the curve's own parameter span, `LastParameter() - FirstParameter()`.
+    /// Only the analytic classes with a fixed period override it
+    /// (`Geom_Circle`/`Geom_Ellipse` -> 2*pi).
+    fn period(&self) -> f64 { self.last_parameter() - self.first_parameter() }
     /// `Adaptor3d_Curve::IsClosed()` (`GeomAdaptor_Curve.cxx:576-585`): an
     /// infinite range is never closed; otherwise the two ends coincide within
     /// `Precision::Confusion()`. The predicate is endpoint coincidence, not

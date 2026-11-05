@@ -27,6 +27,7 @@ mod torus;
 
 pub use cone::Cone;
 pub use comp_projected_curve::CompProjectedCurve;
+pub use comp_projected_curve::ProjectedCurve2d;
 pub use compute_approx::{ComputeApprox, ProjLibFunction, UvBounds};
 pub use cylinder::Cylinder;
 pub use plane::Plane;

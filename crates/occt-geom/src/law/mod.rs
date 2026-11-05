@@ -18,12 +18,14 @@
 //! knot_split Law_BSplineKnotSplitting
 //! interpolate Law_Interpolate and Law_Interpol
 //! composite  Law_Composite
+//! handle     the shared `handle(Law_Composite)` adapter
 //! services   the Law static helpers (MixBnd, MixTgt, Reparametrize, Scale)
 //! ```
 
 pub mod bspline;
 pub mod composite;
 pub mod function;
+pub mod handle;
 pub mod interpolate;
 pub mod knot_split;
 pub mod services;
@@ -31,6 +33,7 @@ pub mod services;
 pub use bspline::{LawBSpFunc, LawBSpline};
 pub use composite::LawComposite;
 pub use function::{LawConstant, LawFunction, LawLinear, LawS};
+pub use handle::LawHandle;
 pub use interpolate::{LawInterpol, LawInterpolate};
 pub use knot_split::LawBSplineKnotSplitting;
 pub use services::{

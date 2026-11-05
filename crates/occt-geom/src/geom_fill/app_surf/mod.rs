@@ -22,9 +22,10 @@
 //! - `NCollection_Sequence<Handle(HArray1(gp_Pnt2d)))>` (`seqPoles2d`) is
 //!   `Vec<Vec<GpPnt2d>>`.
 //! - `Math_Vector` (`Param`, `theParams`) is [`occt_math::MathVector`].
-//! - **UNPORTED**: `AppDef_Variational` (`AppDef_Variational.cxx`), which the
-//!   `PerformSmoothing` branch needs (`gxx:472-541`). See
-//!   [`AppSurf::perform_smoothing`].
+//! - `UseSmoothing` (`gxx:472-541`) drives `AppDef_Variational`
+//!   ([`Variational`](crate::app_def::variational::Variational)), ported in
+//!   `app_def/variational/`; `PerformSmoothing` (`gxx:180-183`) is the
+//!   `UseSmoothing == true` entry point.
 
 mod debug;
 mod perform;

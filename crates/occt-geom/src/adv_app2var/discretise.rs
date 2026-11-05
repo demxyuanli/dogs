@@ -25,7 +25,24 @@ fn scale_orders(table: &mut [f64], order: i32, size: usize, span: f64) {
     }
 }
 
+/// `Patch::MakeApprox` plus the two cutting parameters `ComputePatches`
+/// keeps (`AdvApp2Var_ApproxAFunc2Var.cxx:553-575`).
+pub(super) struct CornerStep {
+    /// `myResult(FirstNA).MakeApprox(...)`.
+    pub step: super::make_approx::MakeApprox,
+    /// `Udec`.
+    pub u_dec: f64,
+    /// `Vdec`.
+    pub v_dec: f64,
+    /// `NumDec`, before the `>= 3` decrement of `:574-577`.
+    pub num_dec: i32,
+}
+
 /// Corner constraints and the four frontier discretisations.
+///
+/// `crit_absolute` is `Crit.Type() == AdvApp2Var_Absolute`: `ComputePatches`
+/// then calls `MakeApprox(..., 0)` instead of `MakeApprox(..., NumDec)`
+/// (`AdvApp2Var_ApproxAFunc2Var.cxx:566-573`).
 pub(super) fn discretise_corners(
     frame: &Framework,
     ctx: &App2VarContext,
@@ -37,7 +54,8 @@ pub(super) fn discretise_corners(
     max_patches: i32,
     nb_u: i32,
     nb_v: i32,
-) -> Result<(super::make_approx::MakeApprox, f64, f64), String> {
+    crit_absolute: bool,
+) -> Result<CornerStep, String> {
     let ndimen = ctx.total_dimension();
     let ord_u = ctx.ord_u;
     let ord_v = ctx.ord_v;
@@ -144,6 +162,9 @@ pub(super) fn discretise_corners(
     )?;
     let (num_dec, u_dec, v_dec) =
         super::compute_patches::authorize_cuts(surf, u0, u1, v0, v1, nb_u, nb_v, max_patches)?;
+    // `AdvApp2Var_ApproxAFunc2Var.cxx:566-573`: an absolute criterion always
+    // approximates with `NumDec == 0`, so `mma2ce2_` takes its no-cut arm.
+    let make_dec = if crit_absolute { 0 } else { num_dec };
     let step = super::make_approx::make_approx(
         frame,
         ctx,
@@ -151,13 +172,13 @@ pub(super) fn discretise_corners(
         u1,
         v0,
         v1,
-        num_dec,
+        make_dec,
         &tables.0,
         &tables.2,
         &tables.1,
         &tables.3,
     )?;
-    Ok((step, u_dec, v_dec))
+    Ok(CornerStep { step, u_dec, v_dec, num_dec })
 }
 
 /// `mma2cdi_` through `mma2cd1_` (`AdvApp2Var_ApproxF2var.cxx:3552-3686`).

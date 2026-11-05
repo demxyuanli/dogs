@@ -26,16 +26,22 @@
 //! (`Geom_BezierCurve.cxx:141`, `:210`, `:298`, `:352`).
 use std::sync::Arc;
 
-use occt_core::gp::{GpPnt, GpTrsf, GpVec};
-use occt_core::precision::{APPROXIMATION, RESOLUTION};
+use occt_core::gp::{GpCone, GpCylinder, GpPnt, GpSphere, GpTorus, GpTrsf, GpVec};
+use occt_core::precision::{Precision, APPROXIMATION, CONFUSION, RESOLUTION};
 
 use crate::adv_approx::ApproxAFunction3d;
 use crate::bspline_curve::GeomBSplineCurve;
+use crate::cone::GeomCone;
 use crate::curve::Curve;
+use crate::cylinder::GeomCylinder;
 use crate::offset_surface_eval_dn::{evaluate_d3, evaluate_dn};
 use crate::offset_surface_utils::{evaluate_d0, evaluate_d1};
 use crate::osculating_surface::{OsculatingSurface, OSCULATING_TOL};
+use crate::plane::GeomPlane;
+use crate::rectangular_trimmed::GeomRectangularTrimmedSurface;
+use crate::sphere::GeomSphere;
 use crate::surface::Surface;
+use crate::torus::GeomTorus;
 
 /// `GeomAdaptor_Surface` Offset interval shape (`cxx:664-682`).
 fn offset_interval_continuity(s: u8) -> u8 {
@@ -71,6 +77,116 @@ impl GeomOffsetSurface {
     /// The signed offset distance.
     pub fn offset(&self) -> f64 {
         self.offset
+    }
+
+    /// `Geom_OffsetSurface::Surface` (`Geom_OffsetSurface.cxx:867-992`): the
+    /// equivalent non-offset surface when the basis is a canonical surface, a
+    /// null offset, or a trimmed canonical surface. `None` when no equivalent
+    /// exists.
+    pub fn equivalent_surface(&self) -> Option<Arc<dyn Surface>> {
+        const TOL: f64 = Precision::CONFUSION;
+        // `.cxx:870-873`: no offset - the basis is the answer.
+        if self.offset == 0.0 {
+            return Some(self.basis.clone());
+        }
+        // `.cxx:882-896`: a trimmed basis contributes its basis and its window.
+        let (base, window) = match self.basis.rectangular_trimmed_basis() {
+            Some(b) => {
+                let (u1, u2) = self.basis.u_range();
+                let (v1, v2) = self.basis.v_range();
+                (b, Some((u1, u2, v1, v2)))
+            }
+            None => (self.basis.clone(), None),
+        };
+        let result: Option<Arc<dyn Surface>> = if let Some(pln) = base.gp_pln() {
+            // `.cxx:900-907`: translate along the plane normal.
+            let dir = pln.position().direction();
+            let t = GpVec::new(dir.x(), dir.y(), dir.z()).multiplied_scalar(self.offset);
+            Some(Arc::new(GeomPlane::new(pln.translated_vec(&t))))
+        } else if let Some(cyl) = base.gp_cylinder() {
+            // `.cxx:908-925`: radius carries the offset; a negative radius
+            // reverses the X direction to flip the normal sense.
+            let mut axis = cyl.position();
+            let sign = if axis.is_direct() { 1.0 } else { -1.0 };
+            let radius = cyl.radius() + sign * self.offset;
+            if radius >= TOL {
+                GpCylinder::new(axis, radius)
+                    .ok()
+                    .map(|c| Arc::new(GeomCylinder::new(c)) as Arc<dyn Surface>)
+            } else if radius <= -TOL {
+                axis.x_reverse();
+                GpCylinder::new(axis, -radius)
+                    .ok()
+                    .map(|c| Arc::new(GeomCylinder::new(c)) as Arc<dyn Surface>)
+            } else {
+                None
+            }
+        } else if let Some(cone) = base.gp_cone() {
+            // `.cxx:926-945`: the reference radius moves by the offset
+            // projection, the apex slides along the axis.
+            let mut axis = cone.position();
+            let sign = if axis.is_direct() { 1.0 } else { -1.0 };
+            let alpha = cone.semi_angle();
+            let radius = cone.radius() + sign * self.offset * alpha.cos();
+            if radius >= 0.0 {
+                let dir = axis.direction();
+                let dz = -sign * self.offset * alpha.sin();
+                axis.translate_vec(&GpVec::new(dir.x() * dz, dir.y() * dz, dir.z() * dz));
+                GpCone::new(axis, radius, alpha)
+                    .ok()
+                    .map(|c| Arc::new(GeomCone::new(c)) as Arc<dyn Surface>)
+            } else {
+                None
+            }
+        } else if let Some(sph) = base.gp_sphere() {
+            // `.cxx:946-963`: a negative radius reverses both X and Z.
+            let mut axis = *sph.position();
+            let sign = if axis.is_direct() { 1.0 } else { -1.0 };
+            let radius = sph.radius + sign * self.offset;
+            if radius >= TOL {
+                GpSphere::new(axis, radius)
+                    .ok()
+                    .map(|c| Arc::new(GeomSphere::new(c)) as Arc<dyn Surface>)
+            } else if radius <= -TOL {
+                axis.x_reverse();
+                axis.z_reverse();
+                GpSphere::new(axis, -radius)
+                    .ok()
+                    .map(|c| Arc::new(GeomSphere::new(c)) as Arc<dyn Surface>)
+            } else {
+                None
+            }
+        } else if let Some(tor) = base.gp_torus() {
+            // `.cxx:964-985`: only a non-self-intersecting torus has an
+            // equivalent; a negative minor radius reverses X.
+            let major = tor.major_radius();
+            let mut axis = *tor.position();
+            let sign = if axis.is_direct() { 1.0 } else { -1.0 };
+            let minor = tor.minor_radius() + sign * self.offset;
+            if minor >= TOL && minor <= major {
+                GpTorus::new(axis, major, minor)
+                    .ok()
+                    .map(|c| Arc::new(GeomTorus::new(c)) as Arc<dyn Surface>)
+            } else if minor <= -TOL && -minor <= major {
+                axis.x_reverse();
+                GpTorus::new(axis, major, -minor)
+                    .ok()
+                    .map(|c| Arc::new(GeomTorus::new(c)) as Arc<dyn Surface>)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        // `.cxx:986-990`: re-trim the equivalent to the basis window.
+        match (result, window) {
+            (Some(s), Some((u1, u2, v1, v2))) => {
+                GeomRectangularTrimmedSurface::uv(s, u1, u2, v1, v2)
+                    .ok()
+                    .map(|t| Arc::new(t) as Arc<dyn Surface>)
+            }
+            (r, _) => r,
+        }
     }
 
     /// Unit normal of the basis surface at `(u, v)` (the offset direction).
@@ -267,6 +383,10 @@ impl Surface for GeomOffsetSurface {
 
     fn offset_distance(&self) -> Option<f64> {
         Some(self.offset)
+    }
+
+    fn offset_equivalent_surface(&self) -> Option<Arc<dyn Surface>> {
+        self.equivalent_surface()
     }
 
     /// `Geom_Surface::UReversed` (`Geom_Surface.cxx:33-38`) =

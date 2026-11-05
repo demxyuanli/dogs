@@ -292,4 +292,108 @@ impl GeomBSplineCurve {
             None => 1.0,
         }
     }
+
+    /// `Geom_BSplineCurve::Multiplicity(Index)` (`Geom_BSplineCurve_1.cxx:567-571`):
+    /// 1-based index into `Multiplicities()`. An out-of-range index answers `0`
+    /// where OCCT raises `Standard_OutOfRange`.
+    pub fn multiplicity(&self, index: i32) -> i32 {
+        if index < 1 || index as usize > self.mults.len() {
+            return 0;
+        }
+        self.mults[(index - 1) as usize]
+    }
+
+    /// `Geom_BSplineCurve::FirstUKnotIndex()` (`Geom_BSplineCurve_1.cxx:334-344`).
+    pub fn first_u_knot_index(&self) -> i32 {
+        let mults = self.mults.clone();
+        self.u_knot_index_range(&mults).0
+    }
+
+    /// `Geom_BSplineCurve::LastUKnotIndex()` (`Geom_BSplineCurve_1.cxx:404-414`).
+    pub fn last_u_knot_index(&self) -> i32 {
+        let mults = self.mults.clone();
+        self.u_knot_index_range(&mults).1
+    }
+
+    /// `Geom_BSplineCurve::LocateU(U, ParametricTolerance, I1, I2, false)`
+    /// (`Geom_BSplineCurve_1.cxx:702-750`) without knot repetition, i.e. over
+    /// the stored distinct knots. Returns `(I1, I2)` in 1-based indices.
+    pub fn locate_u(&self, u: f64, parametric_tolerance: f64) -> (i32, i32) {
+        let uknots = &self.distinct;
+        if uknots.is_empty() {
+            return (0, 0);
+        }
+        let mut new_u = u;
+        if self.periodic {
+            new_u = occt_core::bspl::locate::in_period(
+                new_u,
+                self.first_parameter(),
+                self.last_parameter(),
+            );
+        }
+        let u_first = uknots[0];
+        let u_last = uknots[uknots.len() - 1];
+        let tol = parametric_tolerance.abs();
+        if (new_u - u_first).abs() <= tol {
+            return (1, 1);
+        }
+        if (new_u - u_last).abs() <= tol {
+            let n = uknots.len() as i32;
+            return (n, n);
+        }
+        if new_u < u_first {
+            return (0, 1);
+        }
+        if new_u > u_last {
+            let n = uknots.len() as i32;
+            return (n, n + 1);
+        }
+        let mut i1 = occt_core::bspl::locate::hunt_occt(uknots, new_u);
+        i1 = i1.max(1).min(uknots.len() as i32);
+        while (i1 as usize) < uknots.len() && (uknots[i1 as usize] - new_u).abs() <= tol {
+            i1 += 1;
+        }
+        if (uknots[(i1 - 1) as usize] - new_u).abs() <= tol {
+            (i1, i1)
+        } else {
+            (i1, i1 + 1)
+        }
+    }
+
+    /// `Geom_BSplineCurve::Resolution(Tolerance3D, UTolerance)`
+    /// (`Geom_BSplineCurve_1.cxx:756-796`): the parametric tolerance matching a
+    /// 3D tolerance. The periodic arm wraps the poles/weights through
+    /// `BSplCLib::PrepareUnperiodize` first.
+    pub fn resolution(&self, tolerance_3d: f64) -> f64 {
+        if self.periodic {
+            let (_, np) =
+                occt_core::bspl::unperiodize::prepare_unperiodize(self.degree as i32, &self.mults);
+            let n_old = self.poles.len();
+            if n_old == 0 || np == 0 {
+                return tolerance_3d / occt_core::precision::REAL_SMALL;
+            }
+            let new_poles: Vec<GpPnt> = (0..np).map(|i| self.poles[i % n_old].clone()).collect();
+            let new_weights = self
+                .weights
+                .as_ref()
+                .map(|w| (0..np).map(|i| w[i % n_old]).collect::<Vec<_>>());
+            tolerance_3d
+                * occt_core::bspl::bspline_curve_resolution(
+                    &new_poles,
+                    new_weights.as_deref(),
+                    &self.knots,
+                    self.degree as i32,
+                    1.0,
+                )
+        } else {
+            tolerance_3d
+                * occt_core::bspl::bspline_curve_resolution(
+                    &self.poles,
+                    self.weights.as_deref(),
+                    &self.knots,
+                    self.degree as i32,
+                    1.0,
+                )
+        }
+    }
 }

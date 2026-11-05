@@ -335,6 +335,43 @@ impl ProjectedCurve {
         Ok(self.result.lin)
     }
 
+    /// `Circle()` (`cxx:1061-1064`) delegating to `ProjLib_Projector::Circle()`
+    /// (`ProjLib_Projector.cxx:99-106`): the type mismatch is the
+    /// `Standard_NoSuchObject` of the projector accessor.
+    pub fn circle(&self) -> Result<occt_core::gp::GpCirc2d, String> {
+        if self.result.curve_type != CurveType::Circle {
+            return Err("Standard_NoSuchObject: ProjLib_Projector::Circle".into());
+        }
+        Ok(self.result.circ)
+    }
+
+    /// `Ellipse()` (`cxx:1068-1071`) delegating to
+    /// `ProjLib_Projector::Ellipse()` (`ProjLib_Projector.cxx:110-117`).
+    pub fn ellipse(&self) -> Result<occt_core::gp::GpElips2d, String> {
+        if self.result.curve_type != CurveType::Ellipse {
+            return Err("Standard_NoSuchObject: ProjLib_Projector::Ellipse".into());
+        }
+        Ok(self.result.elips)
+    }
+
+    /// `Hyperbola()` (`cxx:1075-1078`) delegating to
+    /// `ProjLib_Projector::Hyperbola()` (`ProjLib_Projector.cxx:121-128`).
+    pub fn hyperbola(&self) -> Result<occt_core::gp::GpHypr2d, String> {
+        if self.result.curve_type != CurveType::Hyperbola {
+            return Err("Standard_NoSuchObject: ProjLib_Projector::Hyperbola".into());
+        }
+        Ok(self.result.hypr)
+    }
+
+    /// `Parabola()` (`cxx:1082-1085`) delegating to
+    /// `ProjLib_Projector::Parabola()` (`ProjLib_Projector.cxx:132-139`).
+    pub fn parabola(&self) -> Result<occt_core::gp::GpParab2d, String> {
+        if self.result.curve_type != CurveType::Parabola {
+            return Err("Standard_NoSuchObject: ProjLib_Projector::Parabola".into());
+        }
+        Ok(self.result.parab)
+    }
+
     /// `Bezier()` (`cxx:1157-1160`) delegating to
     /// `ProjLib_Projector::Bezier()` (`ProjLib_Projector.cxx:234-237`), which
     /// returns `myBezier` with no type check — hence `Option`, not `Result`.
