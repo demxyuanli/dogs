@@ -228,3 +228,101 @@ fn replace_equal(shape: &TopoShape, old: &TopoShape, new: &TopoShape) {
         }
     }
 }
+
+/// `BRepSweep_Revol` (`BRepSweep_Revol.cxx:26-145`): the revolution sweep with
+/// the per-generator history `Shape(gen)` / `FirstShape(gen)` /
+/// `LastShape(gen)`.
+///
+/// `BRepSweep_Revol(S, Ax, Copy)` runs the full turn
+/// (`BRepSweep_Revol.cxx:43-52`); `BRepSweep_Revol(S, Ax, D, Copy)`
+/// (`cxx:26-36`) rejects an angle `<= Precision::Angular()` with
+/// `Standard_ConstructionError`.
+pub struct Revol {
+    rotation: Rotation,
+    dir: NumShape,
+    angle: f64,
+}
+
+impl Revol {
+    /// `BRepSweep_Revol(S, Ax, D, Copy)` (`cxx:26-36`).
+    pub fn new_with_angle(
+        shape: &TopoShape,
+        axis: &GpAx1,
+        angle: f64,
+        copy: bool,
+    ) -> Result<Self, String> {
+        let swept = revol_angle(angle);
+        if swept <= ANGULAR {
+            return Err("BRepSweep_Revol::Constructor".into());
+        }
+        Self::build(shape, axis, swept, copy)
+    }
+
+    /// `BRepSweep_Revol(S, Ax, Copy)` (`cxx:43-52`): a full turn.
+    pub fn new(shape: &TopoShape, axis: &GpAx1, copy: bool) -> Result<Self, String> {
+        Self::build(shape, axis, 2.0 * PI, copy)
+    }
+
+    fn build(shape: &TopoShape, axis: &GpAx1, swept: f64, copy: bool) -> Result<Self, String> {
+        let mut axe = *axis;
+        if swept != swept.abs() {
+            // `Axe(Ax, D)` (`BRepSweep_Revol.cxx`) reverses for a negative
+            // angle.
+            axe.reverse();
+        }
+        // `NumShape(D)` (`cxx:112-123`).
+        let mut num = NumShape::dummy();
+        if (swept - 2.0 * PI).abs() <= ANGULAR {
+            num.init(2, crate::abs::ShapeType::Edge, true, false, false);
+        } else {
+            num.init(2, crate::abs::ShapeType::Edge, false, false, false);
+        }
+        // `Location(Ax, D)` (`cxx:125-131` + `Axe`).
+        let mut gpt = GpTrsf::identity();
+        gpt.set_rotation_ax1(&axe, swept.abs())
+            .map_err(|_| "BRepSweep_Revol::Location".to_string())?;
+        let location = TopLocLocation::composed(&gpt, TopLocLocation::identity());
+        let mut profile = shape.clone();
+        profile.set_orientation(Orientation::Forward);
+        // `myRotation(S.Oriented(TopAbs_FORWARD), ...)` (`cxx:31`, `:45-51`).
+        let rotation = Rotation::new(profile, num, location, axe, swept.abs(), copy)?;
+        Ok(Self {
+            rotation,
+            dir: num,
+            angle: swept.abs(),
+        })
+    }
+
+    /// `Angle()` (`BRepSweep_Revol.cxx:134-142`).
+    pub fn angle(&self) -> f64 {
+        self.angle
+    }
+
+    /// `Shape()` (`cxx:56-59`).
+    pub fn shape(&self) -> Option<TopoShape> {
+        self.rotation.shape()
+    }
+
+    /// `Shape(gen)` (`cxx:62-65`): `BRepSweep_Trsf::Shape(aGenS)`.
+    pub fn shape_of(&self, gen: &TopoShape) -> Option<TopoShape> {
+        super::grid::shape_of(&self.rotation, gen, self.dir)
+    }
+
+    /// `FirstShape(gen)` (`cxx:73-76`).
+    pub fn first_shape_of(&self, gen: &TopoShape) -> Option<TopoShape> {
+        let tool = super::num_shape::NumShapeTool::new(self.dir);
+        if !tool.has_first_vertex() {
+            return None;
+        }
+        self.shape_of(gen)
+    }
+
+    /// `LastShape(gen)` (`cxx:85-88`).
+    pub fn last_shape_of(&self, gen: &TopoShape) -> Option<TopoShape> {
+        let tool = super::num_shape::NumShapeTool::new(self.dir);
+        if !tool.has_last_vertex() {
+            return None;
+        }
+        self.shape_of(gen)
+    }
+}

@@ -101,7 +101,11 @@ enum RevKind {
     Revolution,
 }
 
-fn revolution_ax3(curve: &dyn Curve, first: f64, last: f64, axis: &GpAx1) -> GpAx3 {
+/// `GeomAdaptor_SurfaceOfRevolution::Load(const gp_Ax1&)` (`cxx:100-208`): the
+/// `myAxeRev` `gp_Ax3` built from the basis curve and the axis of revolution.
+/// Shared with `BRepFill_TrimSurfaceTool`'s degenerated-edge branch, which
+/// reads `GeomAdaptor_SurfaceOfRevolution::Axis()` on the same input.
+pub(crate) fn revolution_ax3(curve: &dyn Curve, first: f64, last: f64, axis: &GpAx1) -> GpAx3 {
     let mut oz = *axis.direction();
     let mut yrev = false;
     if let Some(line) = curve.gp_line() {

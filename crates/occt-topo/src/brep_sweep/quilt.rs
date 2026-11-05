@@ -83,13 +83,13 @@ impl ShapeSet {
     }
 }
 
-pub(super) struct Quilt {
+pub struct Quilt {
     bounds: ShapeMap,
     has_copy: bool,
 }
 
 impl Quilt {
-    pub(super) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             bounds: ShapeMap::new(),
             has_copy: false,
@@ -97,7 +97,7 @@ impl Quilt {
     }
 
     /// `BRepTools_Quilt::Add` (`cxx:114-283`).
-    pub(super) fn add(&mut self, shape: &TopoShape) {
+    pub fn add(&mut self, shape: &TopoShape) {
         if self.bounds.contains(shape) {
             return;
         }
@@ -170,7 +170,7 @@ impl Quilt {
 
     /// `BRepTools_Quilt::Bind` for a vertex (`cxx:287-293`).
     #[allow(dead_code)]
-    pub(super) fn bind_vertex(&mut self, old: &TopoShape, new: &TopoShape) {
+    pub fn bind_vertex(&mut self, old: &TopoShape, new: &TopoShape) {
         if !self.bounds.contains(old) {
             self.bounds.add(old, new);
         }
@@ -178,7 +178,7 @@ impl Quilt {
 
     /// `BRepTools_Quilt::Bind` for an edge (`cxx:297-345`).
     #[allow(dead_code)]
-    pub(super) fn bind_edge(&mut self, old: &TopoShape, new: &TopoShape) {
+    pub fn bind_edge(&mut self, old: &TopoShape, new: &TopoShape) {
         if self.bounds.contains(old) {
             return;
         }
@@ -219,7 +219,9 @@ impl Quilt {
         self.has_copy = true;
     }
 
-    fn is_copied(&self, shape: &TopoShape) -> bool {
+    /// `BRepTools_Quilt::IsCopied(S)` (`cxx:349-358`): whether the bound shape
+    /// of `S` is a different shape.
+    pub fn is_copied(&self, shape: &TopoShape) -> bool {
         // `cxx:349-358`.
         match self.bounds.find(shape) {
             Some(bound) => !same_shape(shape, bound),
@@ -227,8 +229,17 @@ impl Quilt {
         }
     }
 
+    /// `BRepTools_Quilt::Copy(S)` (`cxx:363-369`): the bound shape of `S`, or
+    /// `S` itself when it is not bound.
+    pub fn copy(&self, shape: &TopoShape) -> TopoShape {
+        self.bounds
+            .find(shape)
+            .cloned()
+            .unwrap_or_else(|| shape.clone())
+    }
+
     /// `BRepTools_Quilt::Shells` (`cxx:371-589`).
-    pub(super) fn shells(&self) -> TopoShape {
+    pub fn shells(&self) -> TopoShape {
         let mut free_edges = ShapeMap::new();
         let mut face_shell = ShapeMap::new();
         let builder = TopoBuilder::new();
@@ -485,3 +496,4 @@ fn write_pcurve(edge: &TopoShape, face: &TopoShape, curve: Arc<dyn Curve2d>, fir
     let mut ts = edge.tshape.write().expect("tshape");
     ts.edge_core_mut().tolerance = tol;
 }
+
