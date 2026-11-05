@@ -111,6 +111,10 @@ impl BopHistory {
             return Err(unsupported_type(old));
         }
         let id = key_of(old);
+        // prepareModified (`BRepTools_History.cxx:329-333`): a shape that is
+        // modified is no longer removed.
+        self.removed_keys.remove(&id);
+        self.removed.retain(|r| shape_map_key(r) != id);
         // prepareModified: a generation of `new` cannot coexist with a
         // modification of `new`.
         if let Some(list) = self.generated.get_mut(&id) {
@@ -158,6 +162,65 @@ impl BopHistory {
             self.removed.push(s);
         }
         Ok(())
+    }
+
+    /// Records `new` as the only generated shape of `old` for this call.
+    ///
+    /// Port of `BRepTools_History::ReplaceGenerated`
+    /// (`BRepTools_History.cxx:114-125`). Unlike [`Self::add_generated`] the
+    /// OCCT method does not unbind an existing list: it appends to it.
+    pub fn replace_generated(&mut self, old: &TopoShape, new: TopoShape) -> Result<(), String> {
+        if !is_supported_type(old) {
+            return Err(unsupported_type(old));
+        }
+        let id = key_of(old);
+        // prepareGenerated: same preparation as `add_generated`, i.e. the
+        // shape cannot be a modification of `old` at the same time.
+        if let Some(list) = self.modified.get_mut(&id) {
+            list.retain(|m| !same_shape(m, &new));
+            if list.is_empty() {
+                self.modified.remove(&id);
+            }
+        }
+        self.generated.entry(id).or_default().push(new);
+        Ok(())
+    }
+
+    /// Records `new` as the only modified shape of `old` for this call.
+    ///
+    /// Port of `BRepTools_History::ReplaceModified`
+    /// (`BRepTools_History.cxx:128-139`); like
+    /// [`Self::replace_generated`] it appends instead of unbinding.
+    pub fn replace_modified(&mut self, old: &TopoShape, new: TopoShape) -> Result<(), String> {
+        if !is_supported_type(old) {
+            return Err(unsupported_type(old));
+        }
+        let id = key_of(old);
+        // prepareModified (`BRepTools_History.cxx:324-341`).
+        self.removed_keys.remove(&id);
+        self.removed.retain(|r| shape_map_key(r) != id);
+        if let Some(list) = self.generated.get_mut(&id) {
+            list.retain(|g| !same_shape(g, &new));
+            if list.is_empty() {
+                self.generated.remove(&id);
+            }
+        }
+        self.modified.entry(id).or_default().push(new);
+        Ok(())
+    }
+
+    /// Drops the modified/generated/removed relations but keeps the images
+    /// naming table.
+    ///
+    /// Port of the `myHistory = new BRepTools_History` re-initialisation in
+    /// `BOPAlgo_Builder::PrepareHistory` (`BOPAlgo_Builder_4.cxx:148`): the
+    /// builder's `myImages` survives, the history relations are rebuilt from
+    /// the new result shape.
+    pub fn clear_relations(&mut self) {
+        self.modified.clear();
+        self.generated.clear();
+        self.removed.clear();
+        self.removed_keys.clear();
     }
 
     // -----------------------------------------------------------------------
@@ -258,6 +321,63 @@ impl BopHistory {
     /// True if the images table is non-empty.
     pub fn has_any_images(&self) -> bool {
         !self.images.is_empty()
+    }
+
+    // -----------------------------------------------------------------------
+    // Construction from an algorithm's history
+    // -----------------------------------------------------------------------
+
+    /// Builds a history of `arguments` → result from an algorithm that already
+    /// holds the relations in `algo`.
+    ///
+    /// Port of the template constructor `BRepTools_History(theArguments,
+    /// theAlgo)` (`BRepTools_History.hxx:99-131`): every sub-shape of the
+    /// arguments is mapped, unsupported types are skipped, and the
+    /// deleted/modified/generated relations of the algorithm are copied for
+    /// them. Shapes the algorithm knows about but that are not sub-shapes of
+    /// the arguments are not part of the new history.
+    ///
+    /// `algo` is the algorithm's history ([`BopBuilder::history`]
+    /// for `BOPAlgo_Builder`, whose `IsDeleted` / `Modified` / `Generated`
+    /// delegate to it, `BOPAlgo_BuilderShape.hxx:50-92`).
+    ///
+    /// [`BopBuilder::history`]: crate::bop_builder2::BopBuilder::history
+    pub fn of_algorithm(arguments: &[TopoShape], algo: &BopHistory) -> Self {
+        let mut out = Self::new();
+        let mut fence: HashSet<ShapeKey> = HashSet::new();
+        for arg in arguments {
+            // `TopExp::MapShapes(aIt.Value(), anArgsMap)` — the argument and
+            // every sub-shape, keyed like `TopTools_ShapeMapHasher`.
+            for s in crate::topo_tools::all_subshapes(arg) {
+                if !fence.insert(key_of(&s)) || !is_supported_type(&s) {
+                    continue;
+                }
+                if algo.is_deleted(&s) {
+                    let _ = out.add_removed(s.clone());
+                }
+                if let Some(modified) = algo.modified(&s) {
+                    for m in modified.to_vec() {
+                        let _ = out.add_modified(&s, m);
+                    }
+                }
+                if let Some(generated) = algo.generated(&s) {
+                    for g in generated.to_vec() {
+                        let _ = out.add_generated(&s, g);
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// Merges the history of an algorithm run on `arguments` into this one.
+    ///
+    /// Port of `BRepTools_History::Merge(theArguments, theAlgo)`
+    /// (`BRepTools_History.hxx:209-214`): builds the H23 history from the
+    /// algorithm and merges it, i.e. `this = H12 · H23`.
+    pub fn merge_algorithm(&mut self, arguments: &[TopoShape], algo: &BopHistory) {
+        let next = Self::of_algorithm(arguments, algo);
+        self.merge(&next);
     }
 
     // -----------------------------------------------------------------------

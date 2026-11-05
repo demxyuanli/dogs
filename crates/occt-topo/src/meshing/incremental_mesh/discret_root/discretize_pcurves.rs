@@ -133,6 +133,68 @@ impl IncrementalMesh {
                     };
                     let min_pts = tessellator_min_points(tess_curve.as_ref());
                     let tess_edge = model.edge(edge_index)?.edge().clone();
+                    let probe_kind = crate::debug_flags::value("EDEFPROBE").map(|spec| {
+                        let d1a = tess_curve.d1(tess_first);
+                        let d2a = tess_curve.d2(tess_first);
+                        let d2b = tess_curve.d2(tess_last);
+                        (
+                            spec.trim().to_string(),
+                            tess_curve.is_line(),
+                            tess_curve.circle_radius(),
+                            tess_curve
+                                .bspline_poles()
+                                .or_else(|| tess_curve.bezier_poles())
+                                .map(|p| p.len())
+                                .unwrap_or(0),
+                            [
+                                d1a.1.magnitude(),
+                                d2a.1.magnitude(),
+                                d2a.2.magnitude(),
+                                d2b.1.magnitude(),
+                                d2b.2.magnitude(),
+                            ],
+                            tess_curve.period(),
+                            [
+                                tess_curve.trim_basis().is_some() as u32,
+                                tess_curve.offset_curve().is_some() as u32,
+                                tess_curve.bezier_poles().map(|p| p.len()).unwrap_or(0) as u32,
+                                tess_curve.nurbs_degree().unwrap_or(0) as u32,
+                                tess_curve.bspline_knots().map(|k| k.len()).unwrap_or(0) as u32,
+                                tess_curve.continuity() as u32,
+                                tess_curve.parameter_intervals(6).len() as u32,
+                                tess_curve.is_geom_trimmed() as u32,
+                                tess_curve.untrimmed_basis().is_some() as u32,
+                                tess_curve.is_periodic() as u32,
+                                tess_curve.nb_intervals(6) as u32,
+                            ],
+                            [
+                                tess_curve.first_parameter(),
+                                tess_curve.last_parameter(),
+                                tess_curve.d2(0.5 * (tess_first + tess_last)).2.magnitude(),
+                            ],
+                            tess_curve.untrimmed_basis().map(|(b, f, l)| {
+                                [
+                                    f,
+                                    l,
+                                    b.period(),
+                                    b.bspline_poles().map(|p| p.len()).unwrap_or(0) as f64,
+                                    b.nurbs_degree().unwrap_or(0) as f64,
+                                    b.d2(f).2.magnitude(),
+                                    b.continuity() as f64,
+                                ]
+                            }),
+                            {
+                                let mut row = Vec::new();
+                                for k in 0..3 {
+                                    let u = tess_first + (tess_last - tess_first) * (k as f64 / 3.0);
+                                    let (p, d1) = tess_curve.d1(u);
+                                    let d2 = tess_curve.d2(u).2;
+                                    row.push([p.x(), p.y(), p.z(), d1.x(), d1.y(), d1.z(), d2.x(), d2.y(), d2.z()]);
+                                }
+                                row
+                            },
+                        )
+                    });
                     let mut tess = CurveTessellator::from_range_angular_min(
                         tess_curve,
                         tess_first,
@@ -144,6 +206,39 @@ impl IncrementalMesh {
                     );
                     tess.add_internal_vertices(&tess_edge);
                     let mut tess_params = tess.params().to_vec();
+                    // `EDEFPROBE`: the tessellator inputs and the resulting step
+                    // statistics, so a per-edge diff against the OCCT probe's
+                    // `--uv` (`defl= ang= type= n3d=`) can name the deviating
+                    // input instead of guessing from the point list.
+                    if let Some((spec, is_line, radius, poles, dmags, period, kinds, own, basis, evals)) =
+                        probe_kind.as_ref()
+                    {
+                        if spec == &edge_index.to_string() || spec == "*" {
+                            for (k, row) in evals.iter().enumerate() {
+                                eprintln!("EDEFEVAL edge={edge_index} k={k} p={:?} d1={:?} d2={:?}", &row[0..3], &row[3..6], &row[6..9]);
+                            }
+                            let steps: Vec<f64> = tess_params
+                                .windows(2)
+                                .map(|w| w[1] - w[0])
+                                .collect();
+                            let step_min = steps.iter().copied().fold(f64::INFINITY, f64::min);
+                            let step_max = steps.iter().copied().fold(0.0f64, f64::max);
+                            eprintln!(
+                                "EDEFPROBE edge={edge_index} defl={def:.17e} ang={ang:.17e} min_pts={min_pts} min_size={min_size:.17e} same_param={same_param} same_range={same_range} free={is_free} cos={} range=[{tess_first:.17e},{tess_last:.17e}] line={is_line} radius={radius:?} poles={poles} period={period:.17e} d=[{:.6e},{:.6e},{:.6e},{:.6e},{:.6e}] kinds={kinds:?} own=[{:.17e},{:.17e},{:.6e}] basis={basis:?} n={} step=[{step_min:.17e},{step_max:.17e}] first_steps={:?}",
+                                cos_value.is_some(),
+                                own[0],
+                                own[1],
+                                own[2],
+                                dmags[0],
+                                dmags[1],
+                                dmags[2],
+                                dmags[3],
+                                dmags[4],
+                                tess_params.len(),
+                                &steps[..steps.len().min(4)]
+                            );
+                        }
+                    }
                     // `splitByDeflection2d` (`BRepMesh_CurveTessellator.cxx:157-188`).
                     if !is_free && same_param && same_range && tess_params.len() > 1 {
                         let mut pcs = Vec::new();

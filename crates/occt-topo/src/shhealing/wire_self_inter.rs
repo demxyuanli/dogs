@@ -32,8 +32,8 @@ use crate::shhealing::wire_fix::{
 };
 use super::split_tool::cut_edge;
 
-/// `double tolint = 1.0e-10;` (`ShapeAnalysis_Wire.cxx:1296`, `:1426`).
-const TOLINT: f64 = 1.0e-10;
+/// `double tolint = 1.0e-10;` (`ShapeAnalysis_Wire.cxx:1296`, `:1426`, `:1612`).
+pub(in crate::shhealing) const TOLINT: f64 = 1.0e-10;
 
 /// Out-parameters of `ShapeAnalysis_Wire::CheckSelfIntersectingEdge`
 /// (`ShapeAnalysis_Wire.cxx:1269-1342`).
@@ -67,7 +67,7 @@ impl SelfIntersectingEdgeCheck {
 ///
 /// The 3D point comes from the edge's own curve *only* when the edge is
 /// `SameParameter`; otherwise `surf->Adaptor3d()->Value(p2d.X(), p2d.Y())`.
-pub(super) fn point_on_edge(edge: &Edge, surf: &dyn Surface, c2d: &dyn Curve2d, param: f64) -> GpPnt {
+pub(in crate::shhealing) fn point_on_edge(edge: &Edge, surf: &dyn Surface, c2d: &dyn Curve2d, param: f64) -> GpPnt {
     if BRepTool::same_parameter(edge) {
         // `cxx:1253-1261`: `BRep_Tool::Curve(edge, L, f, l)` then
         // `ConS->Value(param).Transformed(L.Transformation())`.

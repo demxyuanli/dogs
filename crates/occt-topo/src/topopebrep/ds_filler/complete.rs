@@ -8,18 +8,18 @@
 //! `Insert1d` (`cxx:1129-1130`) calls `CompleteDS` alone and `Insert2d`
 //! (`cxx:898`) calls `CompleteDS2d` alone.
 //!
-//! UNPORTED steps, with the OCCT source of each:
+//! Every step is translated, in the OCCT order, by the methods below:
 //!
-//! * `GapFiller` (`cxx:742-750`) — `TopOpeBRepDS_GapFiller::Perform`
-//!   (`TopOpeBRepDS_GapFiller.cxx:52-84`), run against the edge connexity of
-//!   `FDSCNX_Prepare` (`cxx:127-220`).
+//! * `GapFiller` (`cxx:742-750`) — [`DsFiller::gap_filler`] over
+//!   [`crate::topopebrep::ds::gap_filler::GapFiller`], driven by the edge
+//!   connexity of `FDSCNX_Prepare`,
 //! * `CompleteDS` (`cxx:754-788`) — the twelve `FUN_ds_*` completion passes
 //!   live in `TopOpeBRepDS_EXPORT.cxx` and are ported in
 //!   [`crate::topopebrep::ds::complete_ds`], which [`DsFiller::complete_ds`]
-//!   calls in the OCCT order.
-//! * `Filter` (`cxx:792-802`) — `TopOpeBRepDS_Filter::ProcessEdgeInterferences`
-//!   / `ProcessCurveInterferences` (`TopOpeBRepDS_Filter.cxx`). [`filter`]
-//!   is a no-op until that class is translated.
+//!   calls in the OCCT order,
+//! * `Filter` (`cxx:792-802`) — [`DsFiller::filter`] runs
+//!   `TopOpeBRepDS_Filter::ProcessEdgeInterferences` /
+//!   `ProcessCurveInterferences` from [`crate::topopebrep::ds::filter`].
 //! * `Checker` (`cxx:882-888`) — commented out in OCCT itself, so there is
 //!   nothing to call.
 

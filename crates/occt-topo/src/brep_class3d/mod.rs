@@ -242,6 +242,20 @@ impl SClassifier {
                 let mut state = FaceState::Out;
                 let mut transition = Transition::Tangent;
                 let mut parmin = f64::MAX;
+                if std::env::var("INF3D_TRACE").is_ok() {
+                    let p = lin.location();
+                    let dir = lin.direction();
+                    let d = dir.xyz();
+                    println!(
+                        "INFP itry={_itry} iface={iface} pnt={:.6},{:.6},{:.6} dir={:.6},{:.6},{:.6}",
+                        p.x(),
+                        p.y(),
+                        p.z(),
+                        d.x,
+                        d.y,
+                        d.z
+                    );
+                }
                 // `aSE.Intersector(CurFace)` (`cxx:153`) is the per-face
                 // intersector kept by the explorer (`myMapOfInter`).
                 for k in 0..expl.faces.len() {
@@ -262,6 +276,14 @@ impl SClassifier {
                     parmin = inter.w_parameter(imin);
                     state = inter.state(imin);
                     transition = inter.transition(imin);
+                    if std::env::var("INF3D_TRACE").is_ok() {
+                        println!(
+                            "INFP itry={_itry} iface={iface} k={k} np={} w={parmin:.12} state={} trans={:?}",
+                            inter.nb_pnt(),
+                            state as i32,
+                            transition
+                        );
+                    }
                 }
                 if state == FaceState::In {
                     // `_cxx:182-195`: Out => infinite point is IN, In => OUT.

@@ -84,6 +84,10 @@ impl TopoShape {
     pub fn set_free(&self, v: bool) { self.tshape.write().unwrap().set_free(v); }
     pub fn is_closed(&self) -> bool { self.tshape.read().unwrap().is_closed() }
     pub fn set_closed(&self, v: bool) { self.tshape.write().unwrap().set_closed(v); }
+    /// `TopoDS_Shape::Infinite()` (`TopoDS_Shape.hxx`), i.e. the `myInfinite`
+    /// flag of `TopoDS_TShape` (`TopoDS_TShape.lxx:30-33`).
+    pub fn infinite(&self) -> bool { self.tshape.read().unwrap().infinite() }
+    pub fn set_infinite(&self, v: bool) { self.tshape.write().unwrap().set_infinite(v); }
 
     pub fn location(&self) -> &TopLocLocation { &self.location }
     pub fn set_location(&mut self, l: &TopLocLocation) { self.location = l.clone(); }

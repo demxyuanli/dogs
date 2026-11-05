@@ -26,7 +26,7 @@
 //! * `NewLine` (`:1470-1580`): see `intpatch_prmprm_newline.rs`
 //!   (`PrmPrmIntersection::new_line`).
 //!
-//! Still UNPORTED, with the branch each one needs:
+//! Remaining overloads of the `.cxx` and where they landed:
 //!
 //! * `Perform(..., NCollection_List<IntSurf_PntOn2S>& LOfPnts)` (`:1827-2175`):
 //!   see `intpatch_prmprm_lofpnts.rs` (`perform_from_points`). It has no
@@ -42,11 +42,13 @@
 //!   (fallback branch, `:3199-3402`). Wired into
 //!   `PatchIntersection::run_prmprm` for the both-domains-finite case,
 //!   matching `IntPatch_Intersection.cxx:1680`.
-//!   **UNPORTED** inside it: `FUN_PL_Intersection` (`IntPatch_Intersection.cxx:
-//!   450-963`) and `FUN_TrimBothSurf` (`:964-...`), so the
-//!   both-domains-infinite arm still passes the untrimmed pair. The
-//!   `EnablePurging` flags it writes (`:2882`, `:3143`) *are* consumed: the
-//!   post-processing pass of `IntPatch_Intersection.cxx:1346-1371` is
+//!   `FUN_PL_Intersection` (`IntPatch_Intersection.cxx:450-963`) is
+//!   `intpatch_pl_intersection.rs` and `FUN_TrimBothSurf` (`:966-1062`) is
+//!   `intpatch_trim_both_surf.rs`; the both-domains-infinite arm of
+//!   `intpatch_intersection.rs` (`run_prmprm`, `:244-266`) calls both,
+//!   matching `IntPatch_Intersection.cxx:1710-1747`. The `EnablePurging` flags the
+//!   grille writes (`:2882`, `:3143`) *are* consumed: the post-processing
+//!   pass of `IntPatch_Intersection.cxx:1346-1371` is
 //!   `PatchIntersection::post_wline_processing`, and `IntPatch_ALineToWLine`
 //!   output carries `EnablePurging(false)` (`IntPatch_ALineToWLine.cxx:956`).
 //! * `RemplitLin` / `RemplitTri` / `Remplit` (`:1690-1826`) are the

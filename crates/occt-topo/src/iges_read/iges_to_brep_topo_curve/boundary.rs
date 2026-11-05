@@ -170,6 +170,39 @@ pub(in crate::iges_read) fn boundary_both(
     })
 }
 
+#[allow(dead_code)]
+pub(in crate::iges_read) fn trace_edges(tag: &str, edges: &[Edge]) {
+    if !crate::debug_flags::iges_trace() {
+        return;
+    }
+    for (i, e) in edges.iter().enumerate() {
+        let f = first_vertex(e);
+        let l = last_vertex(e);
+        let fmt = |v: &Option<crate::shape::Vertex>| match v {
+            Some(v) => {
+                let p = BRepTool::vertex_point(v);
+                format!(
+                    "v{:#x} [{:.12e},{:.12e},{:.12e}] tol={:.1e}",
+                    std::sync::Arc::as_ptr(&v.0.tshape) as usize,
+                    p.x(),
+                    p.y(),
+                    p.z(),
+                    BRepTool::vertex_tolerance(v)
+                )
+            }
+            None => "none".to_string(),
+        };
+        eprintln!(
+            "TRACE {tag} e{} shape={:#x} ori={:?} first={} last={}",
+            i + 1,
+            std::sync::Arc::as_ptr(&e.0.tshape) as usize,
+            e.0.orientation(),
+            fmt(&f),
+            fmt(&l)
+        );
+    }
+}
+
 /// `IGESControl_IGESBoundary::Connect` (`cxx:115-142`): `FixConnected` on the
 /// incoming wire when `connect_next`, then `ConnectNextWire`.
 pub(super) fn connect_wire(

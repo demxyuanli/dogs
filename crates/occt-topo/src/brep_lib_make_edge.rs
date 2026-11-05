@@ -8,7 +8,9 @@
 //!   `cxx:1263`), `IGESToBRep_BasicCurve`, `IGESToBRep_IGESBoundary` and
 //!   `ShapeBuild_Edge::MakeEdge` (`ShapeBuild_Edge.cxx:793`, `:858`) makes.
 //! * `Init(C2d, S, p1, p2)` (`cxx:808-819`) -> `Init(C2d, S, V1, V2, p1, p2)`
-//!   (`cxx:907-1094`).
+//!   (`cxx:907-1094`), including the vertex-taking arms of `cxx:992-1067`
+//!   (`BRepAlgo::ConvertWire` is the caller that passes both vertices,
+//!   `BRepAlgo.cxx:190-205`).
 //! * `Init(C, V1, V2)` (`cxx:543-572`), reached through
 //!   [`init_3d_projecting`], and the vertex-taking arm of
 //!   `Init(C, V1, V2, p1, p2)` (`cxx:603-796`) it feeds; the
@@ -21,12 +23,17 @@
 //! (`cxx:719-727`: `V1.IsSame(V2)` plus a mid-parameter check), so with null
 //! vertices `B.Degenerated(E, false)` (`cxx:791`) is what `Init` writes.
 //!
-//! UNPORTED: the `gp_Pnt`-taking `Init`s (`cxx:522-541` `Init(C, P1, P2)`,
-//! `cxx:575-595` `Init(C, P1, P2, p1, p2)`) and the 2D vertex-taking pair
-//! (`cxx:821-843` `Init(C2d, S, V1, V2)` with its
+//! * `BRepLib_MakeEdge(V1, V2)` (`cxx:185-198`), the vertex-to-vertex straight
+//!   segment -> [`init_line_vertices`]. It is the `BRepLib_MakeEdge` used by
+//!   `BRepFill_TrimShellCorner::MakeFacesNonSec` (`BRepFill_TrimShellCorner.cxx:528`,
+//!   `:542`) to close the corner between two edges.
+//!
+//! UNPORTED: the `Init(C, P1, P2, p1, p2)` overload (`cxx:575-595`) and the 2D
+//! vertex-taking pair (`cxx:821-843` `Init(C2d, S, V1, V2)` with its
 //! `Project(C2d, S, V, p)` at `cxx:115-176`, `cxx:845-876`
 //! `Init(C2d, S, P1, P2)`), plus the `gp_Lin`/`gp_Circ`/... `BRepLib_MakeEdge`
-//! constructors (`cxx:217-386`).
+//! constructors (`cxx:217-386`). The 3D `Init(C, P1, P2)` (`cxx:522-541`) is
+//! [`init_curve_points`].
 //!
 //! The one thing `Init` writes that this module does not: the edge tolerance
 //! `preci` of `B.MakeEdge(E, C, preci)` (`cxx:782`) /
@@ -39,14 +46,17 @@
 use std::sync::Arc;
 
 use occt_core::elib::clib2d;
-use occt_core::gp::GpPnt;
+use occt_core::gp::{GpDir, GpLin, GpPnt, GpVec};
 use occt_core::precision::{Precision, CONFUSION, PCONFUSION, REAL_SMALL};
 use occt_geom::curve::Curve;
+use occt_geom::line::GeomLine;
 use occt_geom::Surface;
 use occt_geom2d::curve::Curve2d;
 
+use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::shape::Vertex;
+use crate::topo_tools::is_same;
 
 /// The decisions `BRepLib_MakeEdge::Init` makes before it fills the edge:
 /// the checked parameter range, the two endpoint vertices (unified when the
@@ -313,6 +323,48 @@ pub fn init_3d(curve: &Arc<dyn Curve>, first: f64, last: f64) -> Option<EdgeBuil
     init_3d_vertices(curve, None, None, first, last)
 }
 
+/// `BRepLib_MakeEdge::BRepLib_MakeEdge(V1, V2)` (`cxx:185-198`): the straight
+/// segment between the two vertex points. `P1 == P2` within `gp::Resolution()`
+/// gives `BRepLib_LineThroughIdenticPoints` (`cxx:189-193`) -> `None`; otherwise
+/// a `Geom_Line` through `P1` with direction `P1 -> P2` is run through
+/// `Init(GL, V1, V2, 0, l)` (`cxx:196`).
+///
+/// Both vertices keep their orientation role of the `Init` contract: `V1` is the
+/// FORWARD end at parameter `0`, `V2` the REVERSED end at `l`.
+pub fn init_line_vertices(p1: &GpPnt, p2: &GpPnt, v1: &Vertex, v2: &Vertex) -> Option<EdgeBuild> {
+    let l = p1.distance(p2);
+    // `cxx:189`: `gp::Resolution()`.
+    if l <= REAL_SMALL {
+        return None;
+    }
+    let dir = GpDir::from_vec(&GpVec::from_pnts(p1, p2)).ok()?;
+    let line = GeomLine::new(GpLin::from_pnt_dir(*p1, dir));
+    init_3d_vertices(&(Arc::new(line) as Arc<dyn Curve>), Some(v1), Some(v2), 0.0, l)
+}
+
+/// `BRepLib_MakeEdge::Init(C, P1, P2)` (`cxx:522-541`): the two vertices are
+/// built at `BRepLib::Precision()` (`cxx:526`), `V2` aliases `V1` when the
+/// points are closer than that tolerance (`cxx:529-533`), and the pair then
+/// goes through `Init(C, V1, V2)` (`cxx:538`), i.e. [`init_3d_projecting`].
+///
+/// `None` is `BRepLib_PointProjectionFailed` (`cxx:555` / `:566`), raised when
+/// [`project`] cannot place a vertex on the curve.
+pub fn init_curve_points(
+    curve: &Arc<dyn Curve>,
+    p1: &GpPnt,
+    p2: &GpPnt,
+) -> Option<EdgeBuild> {
+    let b = TopoBuilder::new();
+    let preci = CONFUSION;
+    let v1 = b.make_vertex(*p1, preci);
+    let v2 = if p1.distance(p2) < preci {
+        v1.clone()
+    } else {
+        b.make_vertex(*p2, preci)
+    };
+    init_3d_projecting(curve, Some(&v1), Some(&v2))
+}
+
 /// `BRepLib_MakeEdge::Init(C2d, S, V1=null, V2=null, p1, p2)` (`cxx:905-1094`).
 /// `None` is the `!IsDone()` of `ParameterOutOfRange` (`cxx:960-964`). Note
 /// there is no punctuality check in the 2D overload.
@@ -322,19 +374,43 @@ pub fn init_2d(
     first: f64,
     last: f64,
 ) -> Option<EdgeBuild> {
+    init_2d_vertices(pc, surf, None, None, first, last)
+}
+
+/// `BRepLib_MakeEdge::Init(C2d, S, VV1, VV2, p1, p2)` (`cxx:905-1094`), the
+/// vertex-taking overload `BRepBuilderAPI_MakeEdge(C, S, V1, V2, p1, p2)`
+/// forwards to (`BRepBuilderAPI_MakeEdge.cxx:483-496`).
+///
+/// `None` is `!IsDone()`; besides `ParameterOutOfRange` (`cxx:960-964`) the
+/// vertex arms raise `DifferentPointsOnClosedCurve` (`cxx:1013`, `:1018`),
+/// `PointWithInfiniteParameter` (`cxx:1032`, `:1052`) and
+/// `DifferentsPointAndParameter` (`cxx:1042`, `:1063`).
+pub fn init_2d_vertices(
+    pc: &Arc<dyn Curve2d>,
+    surf: &Arc<dyn Surface>,
+    vv1: Option<&Vertex>,
+    vv2: Option<&Vertex>,
+    first: f64,
+    last: f64,
+) -> Option<EdgeBuild> {
     let c = basis_2d(pc.as_ref());
     let cf = c.first_parameter();
     let cl = c.last_parameter();
     let mut p1 = first;
     let mut p2 = last;
     let mut reverse = false;
+    // `TopoDS_Vertex V1, V2` (`cxx:931`), filled by the two arms below.
+    let mut v1 = vv1.cloned();
+    let mut v2 = vv2.cloned();
     if c.is_periodic() {
-        // `cxx:934-938`: adjust in period.
+        // `cxx:934-938`: adjust in period; the vertices keep their order.
         clib2d::adjust_periodic(cf, cl, PCONFUSION, &mut p1, &mut p2);
     } else {
         // `cxx:942-956`: reorder; the swap is recorded because the edge ends
         // up stored REVERSED (`cxx:1089-1092`).
         if p1 >= p2 {
+            // `V2 = VV1; V1 = VV2` (`cxx:951-952`).
+            std::mem::swap(&mut v1, &mut v2);
             std::mem::swap(&mut p1, &mut p2);
             reverse = true;
         }
@@ -355,22 +431,80 @@ pub fn init_2d(
     // `cxx:983`: `preci = BRepLib::Precision()`.
     let preci = CONFUSION;
     // `cxx:987`: `closed = (P1.Distance(P2) <= preci)`.
-    let closed = match (q1, q2) {
-        (Some(a), Some(b)) => a.distance(&b) <= preci,
+    let closed = match (&q1, &q2) {
+        (Some(a), Some(b)) => a.distance(b) <= preci,
         _ => false,
     };
     let b = TopoBuilder::new();
-    let (v1, v2) = if closed {
-        // `cxx:994-1000`: both vertices null -> one vertex, `V2 = V1`.
-        let v = b.make_vertex(q1.unwrap_or_else(|| on_surface(p1)), preci);
-        (Some(v.clone()), Some(v))
+    if closed {
+        // `cxx:994-1021`.
+        match (v1.is_none(), v2.is_none()) {
+            (true, true) => {
+                // `cxx:996-999`: both null -> one vertex, `V2 = V1`.
+                let v = b.make_vertex(q1.unwrap_or_else(|| on_surface(p1)), preci);
+                v1 = Some(v.clone());
+                v2 = Some(v);
+            }
+            (true, false) => {
+                // `cxx:1001-1004`: `V1 = V2`.
+                v1 = v2.clone();
+            }
+            (false, true) => {
+                // `cxx:1005-1008`: `V2 = V1`.
+                v2 = v1.clone();
+            }
+            (false, false) => {
+                // `cxx:1010-1021`.
+                let (a, bb) = (v1.as_ref()?, v2.as_ref()?);
+                if !is_same(&a.0, &bb.0) {
+                    // `BRepLib_DifferentPointsOnClosedCurve`
+                    return None;
+                }
+                let dist = q1.as_ref()?.distance(&BRepTool::vertex_point_world(a));
+                if dist > preci.max(BRepTool::vertex_tolerance(a)) {
+                    return None;
+                }
+            }
+        }
     } else {
-        // `cxx:1028-1065`: the not-closed arm, null-vertex branches only.
-        (
-            q1.map(|p| b.make_vertex(p, preci)),
-            q2.map(|p| b.make_vertex(p, preci)),
-        )
-    };
+        // `cxx:1024-1067`: the not-closed arm.
+        if p1_inf {
+            // `cxx:1028-1034`.
+            if v1.is_some() {
+                return None;
+            }
+        } else {
+            match v1.as_ref() {
+                // `cxx:1037-1039`.
+                None => v1 = Some(b.make_vertex(q1?, preci)),
+                // `cxx:1040-1046`.
+                Some(a) => {
+                    let dist = q1.as_ref()?.distance(&BRepTool::vertex_point_world(a));
+                    if dist > preci.max(BRepTool::vertex_tolerance(a)) {
+                        return None;
+                    }
+                }
+            }
+        }
+        if p2_inf {
+            // `cxx:1048-1054`.
+            if v2.is_some() {
+                return None;
+            }
+        } else {
+            match v2.as_ref() {
+                // `cxx:1057-1059`.
+                None => v2 = Some(b.make_vertex(q2?, preci)),
+                // `cxx:1060-1066`.
+                Some(a) => {
+                    let dist = q2.as_ref()?.distance(&BRepTool::vertex_point_world(a));
+                    if dist > preci.max(BRepTool::vertex_tolerance(a)) {
+                        return None;
+                    }
+                }
+            }
+        }
+    }
     Some(EdgeBuild { first: p1, last: p2, v1, v2, closed, reverse, degenerated: false })
 }
 

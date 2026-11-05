@@ -693,9 +693,16 @@ pub fn box_extrusion(s: &dyn Surface, u1: f64, u2: f64, v1: f64, v2: f64, tol: f
 
 /// `GeomBndLib_OffsetSurface::Box` (`OffsetSurface.cxx:33-58`).
 pub fn box_offset_surface(s: &dyn Surface, u1: f64, u2: f64, v1: f64, v2: f64, tol: f64) -> BndBox {
-    // PARK: the analytic-equivalent arm (`OffsetSurface.cxx:38-46`) needs
-    // `Geom_OffsetSurface::Surface()`, which `GeomOffsetSurface` does not
-    // expose, so the conservative arm below is always taken.
+    // `OffsetSurface.cxx:40-48`: the analytic-equivalent arm. An offset with a
+    // canonical equivalent (a plane, a radius-shifted cylinder, ...) is boxed
+    // as that surface over the same window.
+    if let Some(equiv) = s.offset_equivalent_surface() {
+        if surface_kind(unwrap_surface(&equiv).as_ref()) != GeomAbsSurfaceType::OtherSurface {
+            return box_surface_handle(&equiv, u1, u2, v1, v2, tol);
+        }
+    }
+    // `OffsetSurface.cxx:50-58`: conservative fallback, the basis box enlarged
+    // by `|offset|`.
     let (Some(basis), Some(offset)) = (s.offset_basis_surface(), s.offset_distance()) else {
         return box_other_surface(s, u1, u2, v1, v2, tol);
     };

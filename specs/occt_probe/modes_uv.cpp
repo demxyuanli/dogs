@@ -132,10 +132,21 @@ std::optional<int> runUvModes(const ProbeCtx& theCtx)
         const IMeshData::IEdgeHandle& aDEdge = aDWire->GetEdge(aEdgeIt);
         const TopAbs_Orientation      anOri = aDWire->GetEdgeOrientation(aEdgeIt);
         const IMeshData::IPCurveHandle& aPCurve = aDEdge->GetPCurve(aDFace.get(), anOri);
+        // T-129: the deflection the tessellator actually received, plus the 3D
+        // adaptor type (Circle takes `PerformCircular`, everything else
+        // `PerformCurve`) and the 3D polyline size.
+        const BRepAdaptor_Curve aC3(aDEdge->GetEdge());
+        Standard_Real aC3F = 0.0, aC3L = 0.0;
+        const bool aC3Null = BRep_Tool::Curve(aDEdge->GetEdge(), aC3F, aC3L).IsNull();
         std::cout << "UV  w" << aWireIt << " e" << aEdgeIt << " ori=" << (int)anOri
                   << " prefix=" << (anOri == TopAbs_REVERSED ? "REV" : "FWD")
                   << " nat=" << (aPCurve->IsForward() ? 1 : 0)
-                  << " npc=" << aPCurve->ParametersNb();
+                  << " npc=" << aPCurve->ParametersNb()
+                  << " defl=" << aDEdge->GetDeflection()
+                  << " ang=" << aDEdge->GetAngularDeflection()
+                  << " type=" << (int)aC3.GetType()
+                  << " c3dnull=" << (aC3Null ? 1 : 0) << " c3dspan=" << (aC3L - aC3F)
+                  << " n3d=" << aDEdge->GetCurve()->ParametersNb();
         if (aPCurve->ParametersNb() > 0)
         {
           const gp_Pnt2d aF = aPCurve->GetPoint(0);

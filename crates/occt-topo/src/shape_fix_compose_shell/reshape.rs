@@ -66,11 +66,61 @@ pub struct MapReShape {
     /// `ShapeFix_ComposeShell::ApplyContext`, `cxx:415-442`). Storing the pair
     /// keeps the same lifetime as OCCT.
     map: HashMap<ShapeMapKey, (TopoShape, TopoShape)>,
+    /// `BRepTools_ReShape::Remove(shape)` (`BRepTools_ReShape.cxx:137-142`):
+    /// the shape is bound to a *null* replacement, and `Apply` answers a null
+    /// shape for it, so a rebuild drops it from its parent (`applyImpl`'s
+    /// `if (newsh.IsNull()) continue`, `ShapeBuild_ReShape.cxx:225-229`).
+    /// `BRepBuilderAPI_Sewing::FaceAnalysis` is the caller that needs it
+    /// (`BRepBuilderAPI_Sewing.cxx:2562`).
+    removed: std::collections::HashSet<ShapeMapKey>,
 }
 
 impl MapReShape {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// `BRepTools_ReShape::Remove` (`BRepTools_ReShape.cxx:137-142`).
+    pub fn remove(&mut self, s: &TopoShape) {
+        let mut shape = s.clone();
+        if shape.orientation() == Orientation::Reversed {
+            shape.reverse();
+        } else if matches!(shape.orientation(), Orientation::Internal | Orientation::External) {
+            shape.set_orientation(Orientation::Forward);
+        }
+        self.removed.insert(key(&shape));
+    }
+
+    /// `TopoDS_Shape::IsNull()` of the replacement recorded for `s`.
+    pub fn is_removed(&self, s: &TopoShape) -> bool {
+        self.removed.contains(&key(s))
+    }
+
+    /// `Apply(shape)` answering the null shape as `None` (`ShapeBuild_ReShape.
+    /// cxx:180-186`).
+    pub fn apply_option(&mut self, s: &TopoShape) -> Option<TopoShape> {
+        self.apply_impl(s, &mut Vec::new())
+    }
+
+    /// `BRepTools_ReShape::Replace` (`BRepTools_ReShape.cxx:164-209`), as an
+    /// inherent door so callers do not need the [`ReShape`] trait in scope.
+    pub fn replace(&mut self, old: &TopoShape, new: &TopoShape) {
+        <Self as ReShape>::replace(self, old, new);
+    }
+
+    /// `BRepTools_ReShape::IsRecorded`.
+    pub fn is_recorded(&self, s: &TopoShape) -> bool {
+        <Self as ReShape>::is_recorded(self, s)
+    }
+
+    /// `BRepTools_ReShape::Value`.
+    pub fn value(&self, s: &TopoShape) -> Option<TopoShape> {
+        <Self as ReShape>::value(self, s)
+    }
+
+    /// `ShapeBuild_ReShape::Apply(shape)` for a shape that is not removed.
+    pub fn apply(&mut self, s: &TopoShape) -> TopoShape {
+        <Self as ReShape>::apply(self, s)
     }
 
     /// `BRepTools_ReShape::myShapeToReplacement(shape).Result()`
@@ -122,10 +172,16 @@ impl MapReShape {
     /// `ShapeBuild_ReShape::applyImpl` (`ShapeBuild_ReShape.cxx:200-324`) with
     /// `until = TopAbs_SHAPE`. `in_flight` is OCCT's DFS cycle guard
     /// (`cxx:220-226`): a shape already being descended is returned through its
-    /// direct replacement only.
-    fn apply_impl(&mut self, s: &TopoShape, in_flight: &mut Vec<ShapeMapKey>) -> TopoShape {
+    /// direct replacement only. `None` is OCCT's null shape, i.e. a removed
+    /// shape or a removed component (`cxx:184-187`, `cxx:225-229`).
+    fn apply_impl(&mut self, s: &TopoShape, in_flight: &mut Vec<ShapeMapKey>) -> Option<TopoShape> {
         if s.is_null() {
-            return s.clone(); // `cxx:205-208`.
+            return Some(s.clone()); // `cxx:205-208`.
+        }
+        // `cxx:210-219`: a removed shape (`Value` answers a null replacement)
+        // is returned as null.
+        if self.is_removed(s) {
+            return None;
         }
         // `cxx:210-226`: direct replacement first, `NULL` when removed.
         let new_shape = match self.value(s) {
@@ -133,7 +189,7 @@ impl MapReShape {
             None => s.clone(),
         };
         if in_flight.contains(&key(s)) {
-            return new_shape;
+            return Some(new_shape);
         }
         if !crate::topo_tools::is_same(&new_shape, s) {
             // `cxx:228-237`: the modifications apply to the replacement as well.
@@ -144,26 +200,36 @@ impl MapReShape {
         }
         let st = s.shape_type();
         if matches!(st, ShapeType::Vertex | ShapeType::Shape) {
-            return s.clone(); // `cxx:244-247`.
+            return Some(s.clone()); // `cxx:244-247`.
         }
         let children: Vec<TopoShape> = {
             let ts = s.tshape.read().expect("poisoned TShape lock");
             ts.children.clone()
         };
         if children.is_empty() {
-            return s.clone(); // `cxx:302-305`: nothing was modified.
+            return Some(s.clone()); // `cxx:302-305`: nothing was modified.
         }
         let mut modified = false;
-        let mut new_children: Vec<TopoShape> = Vec::with_capacity(children.len());
+        let mut new_children: Vec<(TopoShape, TopoShape)> = Vec::with_capacity(children.len());
         for c in &children {
-            let nc = self.apply_impl(c, in_flight);
-            if !crate::topo_tools::is_same(&nc, c) {
-                modified = true;
+            match self.apply_impl(c, in_flight) {
+                Some(nc) => {
+                    if !crate::topo_tools::is_same(&nc, c) {
+                        modified = true;
+                    }
+                    // `cxx:222-224`: only a component that came back *same*
+                    // keeps the occurrence; the rest are re-added below.
+                    new_children.push((c.clone(), nc));
+                }
+                None => {
+                    // `cxx:225-229`: the removed component is skipped and the
+                    // parent counts as modified.
+                    modified = true;
+                }
             }
-            new_children.push(nc);
         }
         if !modified {
-            return s.clone(); // `cxx:302-305`.
+            return Some(s.clone()); // `cxx:302-305`.
         }
         // `cxx:249-254`: `EmptyCopied()` (a new empty shape of the same
         // type) put FORWARD while the components are added, so
@@ -188,10 +254,7 @@ impl MapReShape {
             // pcurve projection, meshing) saw a null-surface face.
             copy_face_geom(&copy, s);
         }
-        for (orig, nc) in children.iter().zip(new_children.iter()) {
-            if nc.is_null() {
-                continue; // `cxx:271-276`: removed component (DONE4).
-            }
+        for (orig, nc) in new_children.iter() {
             if st == ShapeType::Compound || nc.shape_type() == orig.shape_type() {
                 builder.add(&mut copy, nc); // `cxx:278-281`.
                 continue;
@@ -226,8 +289,38 @@ impl MapReShape {
         // `cxx:320`: the rebuilt shape is recorded, so every later `Apply` of
         // the same source shape returns this very shape.
         self.replace(s, &result);
-        result
+        Some(result)
     }
+}
+
+/// `TopoDS_Shape::EmptyCopied` (`TopoDS_Shape.hxx:294-302`) for an EDGE: the
+/// copy carries `BRep_TEdge::EmptyCopy`'s state (tolerance, `SameParameter` /
+/// `SameRange` / `Degenerated`, the 3D range and every curve representation,
+/// pcurves included) and no components.
+///
+/// `BRepFill_TrimShellCorner::MakeFacesNonSec` re-cuts a bound edge with
+/// `TopoDS::Edge(aE1.EmptyCopied())` + `B.Begin/Add(E, V)` +
+/// `Range(E, aparam1, aparam2)` (`BRepFill_TrimShellCorner.cxx:660-688`); the
+/// pcurve of the source edge has to survive that copy, which is why this is
+/// the shared `EmptyCopied` helper instead of a rebuild on the 3D curve.
+pub fn empty_copied_edge(src: &TopoShape) -> TopoShape {
+    let mut copy = TopoShape::new(ShapeType::Edge);
+    copy.set_orientation(src.orientation());
+    copy.set_location(src.location());
+    copy_edge_geom(&copy, src);
+    copy
+}
+
+/// `TopoDS_Shape::EmptyCopied` (`TopoDS_Shape.hxx:294-302`) plus
+/// `BRep_TFace::EmptyCopy` (`BRep_TFace.cxx:36-43`) for a face: the surface,
+/// the location and the tolerance are carried over, and the surface is
+/// re-registered so the rebuilt face still answers `BRep_Tool::Surface`.
+pub fn empty_copied_face(src: &TopoShape) -> TopoShape {
+    let mut copy = TopoShape::new(ShapeType::Face);
+    copy.set_orientation(src.orientation());
+    copy.set_location(src.location());
+    copy_face_geom(&copy, src);
+    copy
 }
 
 /// `TopoDS_Shape::EmptyCopied` (`TopoDS_Shape.hxx:294-302`) plus
@@ -244,6 +337,12 @@ fn copy_edge_geom(dst: &TopoShape, src: &TopoShape) {
     if let Some(c) = core {
         let d = ts.edge_core_mut();
         d.curve = c.curve;
+        // `BRep_TEdge::EmptyCopy` (`BRep_TEdge.cxx:104-129`) copies the whole
+        // curve representation list, so a `BRep_Curve3D` holding a *null* curve
+        // (a pcurve-only edge) stays null on the copy. Dropping the flag here
+        // would make `BRep_Tool::Curve` answer the COS adaptor and take the
+        // wrong mesh branch (`discretize_pcurves.rs`).
+        d.curve3d_null = c.curve3d_null;
         d.first = c.first;
         d.last = c.last;
         d.tolerance = c.tolerance;
@@ -346,7 +445,10 @@ fn toggle(set: &mut Vec<ShapeMapKey>, k: ShapeMapKey) {
 
 impl ReShape for MapReShape {
     fn apply(&mut self, s: &TopoShape) -> TopoShape {
-        self.apply_impl(s, &mut Vec::new())
+        // `Apply` answers a null shape for a removed one; `ReShape::apply` is
+        // the non-nullable door, so a removed shape answers itself here (the
+        // nullable door is [`MapReShape::apply_option`]).
+        self.apply_option(s).unwrap_or_else(|| s.clone())
     }
     /// `BRepTools_ReShape::replace` (`BRepTools_ReShape.cxx:164-209`): the
     /// replacement is stored **orientation-normalised** — when the key shape is

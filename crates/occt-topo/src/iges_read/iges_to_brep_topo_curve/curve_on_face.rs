@@ -8,6 +8,7 @@ use super::super::iges_data_iges_model::EntityData;
 use super::super::iges_to_brep_curve_and_surface::Session;
 
 use super::boundary::edges_when_both;
+use super::boundary::trace_edges;
 use super::pcurve_transfer::{curve_sequence, edges_from_2d, edges_of};
 use super::transfer_topo_curve;
 
@@ -75,6 +76,7 @@ pub(in crate::iges_read) fn transfer_curve_on_face(
     let edges = edges_when_both(
         session, face, trans, u_fact, &seq3d, &seq2d, pref3d, pref2d, check_closure,
     )?;
+    trace_edges("curve_on_face", &edges);
     if edges.is_empty() {
         return Err("IGES 142 wire has no edges: IGESToBRep_TopoCurve.cxx:547-551".into());
     }

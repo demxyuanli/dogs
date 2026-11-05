@@ -327,6 +327,96 @@ pub fn common_vertex(e1: &Edge, e2: &Edge) -> Option<TopoShape> {
     None
 }
 
+/// `TopExp::Vertices(W, Vfirst, Vlast)` (`TopExp.cxx:255-318`): the two
+/// boundary vertices of a wire, or the seam vertex twice on a closed wire.
+///
+/// `TopoDS_Iterator it(W)` is not cumulative, so each edge contributes its
+/// *stored* `FORWARD` / `REVERSED` vertices, swapped when the edge itself is
+/// `REVERSED` (`cxx:266-273`); the pair is then re-oriented explicitly
+/// (`cxx:275-276`) and toggled in and out of `vmap`, keyed by
+/// `TopTools_ShapeMapHasher` (`cxx:277-284`).
+///
+/// `(None, None)` is the OCCT pair of null vertices: the empty map of a
+/// 0- or >2-extent map (`cxx:297-318` fills neither). Note that two null
+/// `TopoDS_Shape`s are `IsSame` in OCCT, which is why a wire whose map is
+/// neither empty nor of extent 2 reads as closed to `V1.IsSame(V2)`.
+pub fn wire_vertices(w: &Wire) -> (Option<Vertex>, Option<Vertex>) {
+    let mut vmap: Vec<(Vertex, Orientation)> = Vec::new();
+    let mut last_end: Option<Vertex> = None;
+    for child in cumulated_children(&w.0) {
+        // `TopoDS::Edge(it.Value())` (`cxx:265`): only edges take part.
+        if child.shape_type() != ShapeType::Edge {
+            continue;
+        }
+        let edge = Edge(child);
+        let (stored_first, stored_last) = edge_vertices(&edge);
+        let (v1, v2) = if edge.0.orientation() == Orientation::Reversed {
+            (stored_last, stored_first)
+        } else {
+            (stored_first, stored_last)
+        };
+        // `V1.Orientation(FORWARD); V2.Orientation(REVERSED);` (`cxx:275-276`).
+        let v1 = v1.map(|mut v| {
+            v.0.set_orientation(Orientation::Forward);
+            v
+        });
+        let v2 = v2.map(|mut v| {
+            v.0.set_orientation(Orientation::Reversed);
+            v
+        });
+        // `vmap.Add` returns false for a bound key, which then removes it.
+        if let Some(v) = &v1 {
+            toggle_vertex(&mut vmap, v);
+        }
+        if let Some(v) = &v2 {
+            toggle_vertex(&mut vmap, v);
+        }
+        last_end = v2;
+    }
+    // `if (vmap.IsEmpty())` (`cxx:288-296`): closed, the last `V2` twice.
+    if vmap.is_empty() {
+        return match last_end {
+            Some(v) => {
+                let mut first = v.clone();
+                first.0.set_orientation(Orientation::Forward);
+                let mut last = v;
+                last.0.set_orientation(Orientation::Reversed);
+                (Some(first), Some(last))
+            }
+            None => (None, None),
+        };
+    }
+    // `else if (vmap.Extent() == 2)` (`cxx:297-318`): the FORWARD key is the
+    // first vertex, the REVERSED key the last.
+    if vmap.len() != 2 {
+        return (None, None);
+    }
+    let first = vmap
+        .iter()
+        .find(|(v, _)| v.0.orientation() == Orientation::Forward)
+        .map(|(v, _)| v.clone());
+    let last = vmap
+        .iter()
+        .find(|(v, _)| v.0.orientation() == Orientation::Reversed)
+        .map(|(v, _)| v.clone());
+    (first, last)
+}
+
+/// `NCollection_Map::Add` returning false for a bound key, followed by
+/// `Remove` (`TopExp.cxx:277-284`).
+fn toggle_vertex(vmap: &mut Vec<(Vertex, Orientation)>, v: &Vertex) {
+    let key = shape_map_key(&v.0);
+    match vmap
+        .iter()
+        .position(|(kept, _)| shape_map_key(&kept.0) == key)
+    {
+        Some(i) => {
+            vmap.remove(i);
+        }
+        None => vmap.push((v.clone(), v.0.orientation())),
+    }
+}
+
 /// `TopoDS_Shape::IsSame` (`TopoDS_Shape.hxx:262-267`): same `TShape` and same
 /// `TopLoc_Location`; the orientation is not compared.
 ///

@@ -392,6 +392,18 @@ impl CurveAdaptor {
         self.tolerance
     }
 
+    /// `BRepAdaptor_Curve::Trim(First, Last, Tol)` (`BRepAdaptor_Curve.cxx:464-471`)
+    /// clones the adaptor and calls
+    /// `GeomAdaptor_Curve::Trim(First, Last, Tol)` (`GeomAdaptor_Curve.cxx:302-315`),
+    /// which only overwrites `myFirst` / `myLast`: evaluation keeps the basis
+    /// parameters, so the inner curve is untouched.
+    pub fn trim(&self, first: f64, last: f64) -> CurveAdaptor {
+        let mut trimmed = self.clone();
+        trimmed.first = first;
+        trimmed.last = last;
+        trimmed
+    }
+
     /// `Adaptor3d_Curve::IsClosed()` — `GeomAdaptor_Curve::IsClosed`
     /// (`GeomAdaptor_Curve.cxx:576-585`): an infinite range is never closed,
     /// otherwise the two ends must coincide within `Precision::Confusion()`.

@@ -338,6 +338,49 @@ pub struct EdgeGeomCore {
     /// `.lxx:43-47`). `BRep_Tool::Curve` stays null for such an edge; the
     /// polygon is read through `BRep_Tool::Polygon3D` (`BRep_Tool.cxx:723-741`).
     pub polygon3d: Option<Arc<occt_core::poly::Polygon3D>>,
+    /// The `BRep_PolygonOnTriangulation` / `BRep_PolygonOnClosedTriangulation`
+    /// representations, in `BRep_TEdge::myCurves` append order
+    /// (`BRep_Builder::UpdateEdge(E, P, T, L)`, `BRep_Builder.cxx:790-832`, and
+    /// the two-polygon overload `:837-883`). Read through
+    /// [`crate::brep_tool::BRepTool::polygon_on_triangulation`]
+    /// (`BRep_Tool.cxx:683-712`).
+    ///
+    /// UNPORTED: nothing writes this slot yet — the only producer in OCCT is
+    /// `BRepMesh_ModelPostProcessor::PolygonCommitter::commitPolygons`
+    /// (`BRepMesh_ModelPostProcessor.cxx:90-155`) through
+    /// `BRepMesh_ShapeTool::UpdateEdge(E, P, T, L)`, which needs the pcurve
+    /// node indices `IMeshData_PCurve::Index` that
+    /// `BRepMesh_BaseMeshAlgo::initDataStructure` (`BRepMesh_BaseMeshAlgo.cxx:98-108`)
+    /// assigns. `meshing::mesh_algo::build_data_structure` leaves them at 0, so
+    /// reading this slot answers `None` exactly as OCCT does for an edge that
+    /// was never meshed.
+    pub polygons_on_triangulation: Vec<PolygonOnTriangulationRepr>,
+}
+
+/// `BRep_PolygonOnTriangulation` (`BRep_PolygonOnTriangulation.hxx:24-64`)
+/// together with the `BRep_PolygonOnClosedTriangulation` subclass
+/// (`BRep_PolygonOnClosedTriangulation.hxx:24-50`), which only adds
+/// `myPolygon2`.
+///
+/// OCCT keys the representation by `(Poly_Triangulation, TopLoc_Location)`
+/// (`BRep_PolygonOnTriangulation::IsPolygonOnTriangulation`, `.cxx:36-49`);
+/// this crate's shapes carry no location on the representation, so the
+/// triangulation handle is the whole key. `polygon2` is `Some` for the closed
+/// (seam) form only.
+#[derive(Clone)]
+pub struct PolygonOnTriangulationRepr {
+    pub triangulation: Arc<Triangulation>,
+    pub polygon: Arc<occt_core::poly::PolyPolygonOnTriangulation>,
+    pub polygon2: Option<Arc<occt_core::poly::PolyPolygonOnTriangulation>>,
+}
+
+impl fmt::Debug for PolygonOnTriangulationRepr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PolygonOnTriangulationRepr")
+            .field("nb_nodes", &self.polygon.nb_nodes())
+            .field("closed", &self.polygon2.is_some())
+            .finish()
+    }
 }
 
 impl fmt::Debug for EdgeGeomCore {
@@ -366,6 +409,7 @@ impl Default for EdgeGeomCore {
             degenerated: false,
             vertex_params: Vec::new(),
             polygon3d: None,
+            polygons_on_triangulation: Vec::new(),
         }
     }
 }

@@ -1,5 +1,5 @@
 ﻿// `argv[2]` modes: `--fcls2d`, `--cylall`, `--cylface`, `--cyl` / `--sph`,
-// `--facek`, `--infsolid`.
+// `--facek`, `--infsolid`, `--infprobe`.
 #include "occt_probe_common.h"
 // `--infsolid`: the `ShapeFix_Solid` single-shell gate (`ShapeFix_Solid.cxx:528-541`)
 // and `SolidFromShell`'s infinite-point verdict (`:655-702`).
@@ -7,6 +7,42 @@
 #include <ShapeAnalysis_Shell.hxx>
 #include <BRepBuilderAPI_MakeSolid.hxx>
 #include <BRepClass3d_SolidClassifier.hxx>
+// `--infprobe`: `BRepClass3d_SClassifier::PerformInfinitePoint` (`:82-199`).
+#include <BRepClass3d_SolidExplorer.hxx>
+#include <math_BullardGenerator.hxx>
+#include <IntCurvesFace_Intersector.hxx>
+#include <IntCurveSurface_TransitionOnCurve.hxx>
+#include <BRep_Builder.hxx>
+#include <BRep_Tool.hxx>
+#include <Geom_Surface.hxx>
+#include <gp_Pnt.hxx>
+#include <gp_Vec.hxx>
+
+// `FaceNormal` (`BRepClass3d_SClassifier.cxx:606-627`): D1U x D1V, reversed for a
+// REVERSED face. Duplicated here because the original is file-static.
+static bool faceNormalProbe(const TopoDS_Face& aF, const double U, const double V, gp_Dir& aDN)
+{
+  gp_Pnt                    aPnt;
+  gp_Vec                    aD1U, aD1V, aN;
+  occ::handle<Geom_Surface> aS = BRep_Tool::Surface(aF);
+  if (aS.IsNull())
+  {
+    return false;
+  }
+  aS->D1(U, V, aPnt, aD1U, aD1V);
+  aN = aD1U.Crossed(aD1V);
+  if (aN.Magnitude() <= gp::Resolution())
+  {
+    return false;
+  }
+  aN.Normalize();
+  aDN.SetXYZ(aN.XYZ());
+  if (aF.Orientation() == TopAbs_REVERSED)
+  {
+    aDN.Reverse();
+  }
+  return true;
+}
 
 std::optional<int> runClassifyModes(const ProbeCtx& theCtx)
 {
@@ -205,6 +241,128 @@ std::optional<int> runClassifyModes(const ProbeCtx& theCtx)
                   << " dv=" << Vuv.Y() << "\n";
       }
     }
+    return 0;
+  }
+  if (argc > 2 && std::string(argv[2]) == "--infprobe")
+  {
+    // Line-by-line trace of `BRepClass3d_SClassifier::PerformInfinitePoint`
+    // (`BRepClass3d_SClassifier.cxx:82-199`) on the first shell of the shape,
+    // built into a solid the way `SolidFromShell` (`ShapeFix_Solid.cxx:655-702`)
+    // does. The port prints the same record from `INF3D_TRACE`.
+    TopExp_Explorer exS(aShape, TopAbs_SHELL);
+    if (!exS.More())
+    {
+      return 0;
+    }
+    TopoDS_Shell aSh = TopoDS::Shell(exS.Current());
+    aSh.Free(true);
+    TopoDS_Solid aSolid;
+    BRep_Builder aB;
+    aB.MakeSolid(aSolid);
+    aB.Add(aSolid, aSh);
+    BRepClass3d_SolidExplorer aSE(aSolid);
+    std::cout << "INFP faces=" << (int)aSh.NbChildren() << " ori=" << (int)aSh.Orientation() << "\n";
+    std::vector<TopoDS_Face> aFaces;
+    for (aSE.InitShell(); aSE.MoreShell(); aSE.NextShell())
+    {
+      for (aSE.InitFace(); aSE.MoreFace(); aSE.NextFace())
+      {
+        aFaces.push_back(aSE.CurrentFace());
+      }
+    }
+    math_BullardGenerator aRandomGenerator;
+    std::cout << std::setprecision(17);
+    for (size_t k = 0; k < aFaces.size(); ++k)
+    {
+      BRepAdaptor_Surface aBAS(aFaces[k], false);
+      const char* aName = "Other";
+      switch (aBAS.GetType())
+      {
+        case GeomAbs_Plane: aName = "Plane"; break;
+        case GeomAbs_Cylinder: aName = "Cylinder"; break;
+        case GeomAbs_Cone: aName = "Cone"; break;
+        case GeomAbs_Sphere: aName = "Sphere"; break;
+        case GeomAbs_Torus: aName = "Torus"; break;
+        case GeomAbs_BezierSurface: aName = "Bezier"; break;
+        case GeomAbs_BSplineSurface: aName = "BSpline"; break;
+        case GeomAbs_SurfaceOfRevolution: aName = "Rev"; break;
+        case GeomAbs_SurfaceOfExtrusion: aName = "Extr"; break;
+        case GeomAbs_OffsetSurface: aName = "Offset"; break;
+        default: break;
+      }
+      std::cout << "INFP face k=" << k << " type=" << aName
+                << " ori=" << (int)aFaces[k].Orientation() << "\n";
+    }
+    for (int itry = 0; itry < 10; ++itry)
+    {
+      for (size_t iFace = 0; iFace < aFaces.size(); ++iFace)
+      {
+        const TopoDS_Face aF = aFaces[iFace];
+        TopAbs_State      aState      = TopAbs_OUT;
+        IntCurveSurface_TransitionOnCurve aTransition = IntCurveSurface_Tangent;
+        double aParam   = 0.1 + 0.8 * aRandomGenerator.NextReal();
+        gp_Pnt       aPoint;
+        double       aU = 0., aV = 0.;
+        if (!BRepClass3d_SolidExplorer::FindAPointInTheFace(aF, aPoint, aU, aV, aParam))
+        {
+          continue;
+        }
+        gp_Dir aDN;
+        if (!faceNormalProbe(aF, aU, aV, aDN))
+        {
+          continue;
+        }
+        const gp_Lin aLin(aPoint, -aDN);
+        std::cout << "INFP itry=" << itry << " iface=" << iFace << " param=" << aParam << " pnt="
+                  << aPoint.X() << "," << aPoint.Y() << "," << aPoint.Z() << " dir=" << -aDN.X()
+                  << "," << -aDN.Y() << "," << -aDN.Z() << "\n";
+        double parmin = RealLast();
+        int    k      = 0;
+        for (aSE.InitShell(); aSE.MoreShell(); aSE.NextShell())
+        {
+          for (aSE.InitFace(); aSE.MoreFace(); aSE.NextFace(), ++k)
+          {
+            const TopoDS_Face aCur = TopoDS::Face(aSE.CurrentFace());
+            IntCurvesFace_Intersector& anInter = aSE.Intersector(aCur);
+            anInter.Perform(aLin, -RealLast(), parmin);
+            if (!anInter.IsDone() || anInter.NbPnt() <= 0)
+            {
+              continue;
+            }
+            int imin = 1;
+            for (int i = 2; i <= anInter.NbPnt(); i++)
+            {
+              if (anInter.WParameter(i) < anInter.WParameter(imin))
+              {
+                imin = i;
+              }
+            }
+            parmin      = anInter.WParameter(imin);
+            aState      = anInter.State(imin);
+            aTransition = anInter.Transition(imin);
+            std::cout << "INFP  k=" << k << " np=" << anInter.NbPnt()
+                      << " w=" << parmin << " state=" << (int)aState
+                      << " trans=" << (int)aTransition << "\n";
+          }
+        }
+        std::cout << "INFP  picked state=" << (int)aState << " trans=" << (int)aTransition
+                  << " parmin=" << parmin << "\n";
+        if (aState == TopAbs_IN)
+        {
+          if (aTransition == IntCurveSurface_Out)
+          {
+            std::cout << "INFP DECIDE state=3\n";
+            return 0;
+          }
+          else if (aTransition == IntCurveSurface_In)
+          {
+            std::cout << "INFP DECIDE state=4\n";
+            return 0;
+          }
+        }
+      }
+    }
+    std::cout << "INFP DECIDE state=2\n";
     return 0;
   }
   if (argc > 2 && std::string(argv[2]) == "--infsolid")

@@ -330,6 +330,7 @@ fn perform_face(face: &Face, ctx: &mut SharedReShape, preci: f64, max_tol: f64) 
             perform_wire_first_round(&mut wire, &face, wire_preci, ctx, &first_round);
         }
     }
+    trace_face_wires("face-post-first", &face);
     let mut sff = ShapeFixFace::with_face_and_context(&face, ctx.clone());
     sff.max_tol = max_tol;
     sff.result = Some(face.0.clone());
@@ -340,6 +341,9 @@ fn perform_face(face: &Face, ctx: &mut SharedReShape, preci: f64, max_tol: f64) 
     if seam_ret {
         if let Some(res) = sff.result.clone() {
             let sub_faces = sub_faces_of(&res);
+            for f in &sub_faces {
+                trace_face_wires("face-post-compose", f);
+            }
             if !sub_faces.is_empty() {
                 let mut removed_segment = false;
                 for rf in &sub_faces {
@@ -366,6 +370,9 @@ fn perform_face(face: &Face, ctx: &mut SharedReShape, preci: f64, max_tol: f64) 
                 for rf in &sub_faces {
                     fix_face_second_part(&mut sff, rf);
                 }
+                for rf in &sub_faces {
+                    trace_face_wires("face-post-seam", rf);
+                }
                 return;
             }
         }
@@ -389,6 +396,9 @@ fn perform_face(face: &Face, ctx: &mut SharedReShape, preci: f64, max_tol: f64) 
         split_face_after_removed_segment(&face, ctx);
     }
     let res = fix_face_second_part(&mut sff, &face);
+    for f in sub_faces_of(&res) {
+        trace_face_wires("face-post-second-part", &f);
+    }
     // `ShapeFix_Face::Perform`'s tail (`ShapeFix_Face.cxx:722-736`): one
     // `FixSmallAreaWire` per face of `myResult`.
     if face_modes.need_fix_small_area_wire() {
@@ -398,6 +408,15 @@ fn perform_face(face: &Face, ctx: &mut SharedReShape, preci: f64, max_tol: f64) 
                 sff.status |= 0x0008; // ShapeExtend_DONE4
             }
         }
+    }
+}
+
+fn trace_face_wires(tag: &str, face: &Face) {
+    if !crate::debug_flags::iges_trace_wire() {
+        return;
+    }
+    for wire in wires_stored_on_face(face) {
+        crate::shhealing::trace_wire(tag, &wire);
     }
 }
 

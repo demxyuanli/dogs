@@ -20,11 +20,13 @@
 //! class. The port keeps the parameter (callers pass it) and ignores it, which
 //! is what OCCT does.
 //!
-//! UNPORTED:
-//! - `Perform2d` (`BuilderON2d.cxx:66-119`) and `GFillONParts2dWES2`
-//!   (`BuilderON2d.cxx:121-323`): the `GLOBAL_faces2d` branch. `GLOBAL_faces2d`
-//!   is a debug-only global (`BuilderON2d.cxx:40-46`) that no production code
-//!   sets, so the wrapper always takes the `Perform` branch here.
+//! `Perform2d` (`BuilderON2d.cxx:66-119`) and `GFillONParts2dWES2`
+//! (`BuilderON2d.cxx:121-323`) - the `GLOBAL_faces2d` branch of the wrapper -
+//! live in `perform_2d.rs`, together with `GLOBAL_DS2d` itself. That branch is
+//! reached: `Builder::GMergeFaces` (`GridFF.cxx:409-413`) sets
+//! `GLOBAL_faces2d = true` around its `GFillFacesWESK` double pass, and
+//! `Builder1::SplitEdge` (`Builder1_1.cxx:670-674`) does the same around
+//! `SplitEdge`, so the flag is not a debug switch.
 //!
 //! `GFillONPartsWES2` is complete: every branch of the `yapXX` chain is in
 //! `wes2_yap00.rs` / `wes2_yapc.rs` / `wes2_fcx.rs` / `wes2_yap2.rs` /
@@ -41,7 +43,10 @@
 //! `_tasks.md` T-271 (5)).
 
 mod helpers;
+mod perform_2d;
 mod wes2;
+
+pub(crate) use perform_2d::{init_global_ds2d, with_global_ds2d_mut};
 mod wes2_fcx;
 mod wes2_yap0;
 mod wes2_yap2;
@@ -65,10 +70,10 @@ use super::Builder;
 impl Builder {
     /// `GFillONPartsWES(FOR, G, LSclass, WES)` (`on.cxx:28-49`).
     ///
-    /// `BuilderON BON; BON.Perform(this, ...)` (`cxx:33-45`) becomes the free
-    /// functions of this module; `GLOBAL_faces2d` is never set outside the
-    /// debug block of `BuilderON2d.cxx`, so `Perform2d` is not reached (see the
-    /// module docs).
+    /// `BuilderON BON; if (GLOBAL_faces2d) BON.Perform2d(...); else
+    /// BON.Perform(...)` (`cxx:33-45`): the 2D branch is
+    /// [`Builder::perform_2d`] (`on/perform_2d.rs`), the other one is the walk
+    /// below.
     pub fn g_fill_on_parts_wes(
         &self,
         for_: &TopoShape,
@@ -76,6 +81,11 @@ impl Builder {
         _ls_class: &[TopoShape],
         wes: &mut WireEdgeSet,
     ) {
+        // `on.cxx:34-42`: the `GLOBAL_faces2d` dispatch.
+        if super::grid_ee::global_faces2d() {
+            self.perform_2d(for_, g, wes);
+            return;
+        }
         // `Perform` (`BuilderON.cxx:158-188`).
         let Some(hds) = self.data_structure() else {
             return;

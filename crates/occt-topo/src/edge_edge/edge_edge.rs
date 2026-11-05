@@ -69,6 +69,13 @@ pub struct EdgeEdge {
     // Results.
     pub(super) done: bool,
     pub(super) common_parts: Vec<CommonPrt>,
+    /// The `TopAbs_VERTEX` common parts of `IntTools_EdgeEdge::myCommonParts`
+    /// (`IntTools_EdgeEdge.cxx:780-825` `AddSolution` VERTEX arm and
+    /// `:1050-1055` `ComputeLineLine`). The port keeps the two types in
+    /// separate lists where OCCT keeps one sequence: [`Self::common_parts`]
+    /// holds the `TopAbs_EDGE` entries, this one the `TopAbs_VERTEX` entries.
+    /// Each entry carries `Range1`, `Ranges2(1)` and `VertexParameter1/2`.
+    pub(super) vertex_common_parts: Vec<CommonPrt>,
     pub(super) points: Vec<PntOn2Faces>,
 }
 
@@ -101,6 +108,7 @@ impl EdgeEdge {
             swapped: false,
             done: false,
             common_parts: Vec::new(),
+            vertex_common_parts: Vec::new(),
             points: Vec::new(),
         }
     }
@@ -149,6 +157,7 @@ impl EdgeEdge {
     /// no curve geometry.
     pub fn perform(&mut self) -> Result<(), String> {
         self.common_parts.clear();
+        self.vertex_common_parts.clear();
         self.points.clear();
         self.done = false;
         self.prepare()?;
@@ -194,6 +203,31 @@ impl EdgeEdge {
     /// The common parts found (coincident overlapping ranges).
     pub fn common_parts(&self) -> &[CommonPrt] {
         &self.common_parts
+    }
+
+    /// The `TopAbs_VERTEX` common parts (`IntTools_EdgeEdge::myCommonParts`
+    /// entries whose `Type()` is `TopAbs_VERTEX`), i.e. the ones created by
+    /// `AddSolution` (`cxx:780-825`) and `ComputeLineLine` (`cxx:1050-1055`).
+    ///
+    /// `BOPAlgo_PaveFiller::PerformEE` stores them on the `BOPDS_InterfEE`
+    /// record with `SetCommonPart` (`BOPAlgo_PaveFiller_3.cxx:516`), which is
+    /// where `BRepFill_TrimShellCorner::FindCommonVertex`
+    /// (`BRepFill_TrimShellCorner.cxx:1440-1508`) reads `aCP.Type() ==
+    /// TopAbs_VERTEX` and `IntTools_Tools::VertexParameters`.
+    pub fn vertex_common_parts(&self) -> &[CommonPrt] {
+        &self.vertex_common_parts
+    }
+
+    /// The `TopAbs_VERTEX` common part whose `Range1` contains `u1` and whose
+    /// `Ranges2(1)` contains `u2`.
+    pub fn vertex_common_part_at(&self, u1: f64, u2: f64) -> Option<&CommonPrt> {
+        self.vertex_common_parts.iter().find(|cp| {
+            cp.range.contains(u1)
+                && cp
+                    .ranges2
+                    .first()
+                    .map_or(true, |r| r.contains(u2))
+        })
     }
 
     /// The discrete intersection points found, as `(parameter on edge 1,
@@ -413,7 +447,33 @@ impl EdgeEdge {
     }
 
     pub(super) fn push_hits(&mut self, hits: Vec<EdgeEdgeHit>) {
+        // `IntTools_EdgeEdge.cxx:912` `anAngle = aD1.Angle(aD2)` feeds the
+        // `ComputeIntRange` widening of `cxx:1047-1048`.
+        let ang = match (self.curve1.as_ref(), self.curve2.as_ref()) {
+            (Some(c1), Some(c2)) => {
+                let d1 = c1.d1(self.r1().first).1;
+                let d2 = c2.d1(self.r2().first).1;
+                d1.angle(&d2)
+            }
+            _ => 0.0,
+        };
+        let dt1 = int_tools_curve_box::compute_int_range(self.tol1, self.tol2, ang);
+        let dt2 = int_tools_curve_box::compute_int_range(self.tol2, self.tol1, ang);
         for h in hits {
+            // `IntTools_EdgeEdge.cxx:1050-1054`: the `ComputeLineLine` common
+            // part is `Range1 = [T1 - Dt1, T1 + Dt1]`,
+            // `Ranges2(1) = [T2 - Dt2, T2 + Dt2]`, `Type = TopAbs_VERTEX`,
+            // `VertexParameter1/2 = T1/T2`.
+            let mut cp = CommonPrt::with(
+                CommonPartType::Vertex,
+                IntRange::new_unchecked(h.u1 - dt1, h.u1 + dt1),
+                None,
+                Vec::new(),
+            );
+            cp.append_range2(IntRange::new_unchecked(h.u2 - dt2, h.u2 + dt2));
+            cp.set_vertex_parameter1(h.u1);
+            cp.set_vertex_parameter2(h.u2);
+            self.vertex_common_parts.push(cp);
             self.points.push(PntOn2Faces::new(0, 1, h.point, h.point, (h.u1, 0.0), (h.u2, 0.0)));
         }
     }
@@ -502,15 +562,22 @@ impl EdgeEdge {
     }
 
     /// Store the overlapping range of coincident edges as a [`CommonPrt`].
+    ///
+    /// `IntTools_EdgeEdge.cxx:976-989` (`MergeSolutions`): the merged solution
+    /// is written as `CommonPrt` with `Range1` on the first edge and
+    /// `Ranges2(1)` on the second — the port's [`Self::coincident_ranges`]
+    /// returns exactly `(t11, t12, t21, t22)` in edge-parameter space.
     pub(super) fn push_coincident_common_part(&mut self) {
-        if let Some((a, b, _, _)) = self.coincident_ranges() {
+        if let Some((a, b, c, d)) = self.coincident_ranges() {
             if b - a > self.tol.max(1e-9) {
-                self.common_parts.push(CommonPrt::with(
+                let mut cp = CommonPrt::with(
                     CommonPartType::Edge,
                     IntRange::new_unchecked(a, b),
                     None,
                     Vec::new(),
-                ));
+                );
+                cp.append_range2(IntRange::new_unchecked(c, d));
+                self.common_parts.push(cp);
             }
         }
     }

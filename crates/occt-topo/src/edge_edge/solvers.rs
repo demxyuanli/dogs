@@ -69,6 +69,7 @@ impl EdgeEdge {
         let tol = self.tol.max(1e-9);
 
         self.common_parts.clear();
+        self.vertex_common_parts.clear();
         self.points.clear();
 
         let d1 = GpVec::from_xyz(l1.direction().xyz());

@@ -8,17 +8,25 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use occt_core::gp::GpPnt;
 use occt_core::precision::PCONFUSION;
 use occt_geom::curve::Curve;
 use occt_geom2d::curve::Curve2d;
 
-use crate::abs::ShapeType;
+use crate::abs::{Orientation, ShapeType};
 use crate::bop_occt_util::{explore, iter_children, shape_key};
 use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Vertex, Wire};
 use crate::shell_check::shell_is_closed;
 use crate::tgeometry::{EdgeGeom, GeometryRegistry};
-use crate::topo_tools::{faces_of, wires_of_face, ShapeMapKey};
+use crate::topo_tools::{faces_of, ShapeMapKey};
+
+mod edge_tolerance;
+mod face;
+mod wire_closed;
+pub use edge_tolerance::edge_tolerance;
+pub use wire_closed::wire_closed;
+pub(crate) use face::face_check;
 
 /// `BRepCheck_Status` (`BRepCheck_Status.hxx:20-59`), declaration order kept.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -223,23 +231,6 @@ fn wire_check(w: &Wire) -> Vec<Status> {
     }
     vec![Status::NoError]
 }
-
-fn face_check(f: &Face) -> Vec<Status> {
-    if BRepTool::face_surface(f).is_none() {
-        return vec![Status::NoSurface];
-    }
-    let wires = wires_of_face(f);
-    if wires.is_empty() {
-        return vec![Status::InvalidWire];
-    }
-    for w in &wires {
-        if wire_check(w).iter().any(|s| *s != Status::NoError) {
-            return vec![Status::InvalidWire];
-        }
-    }
-    vec![Status::NoError]
-}
-
 fn shell_check_one(sh: &Shell) -> Vec<Status> {
     let faces = faces_of(&sh.0);
     if faces.is_empty() {

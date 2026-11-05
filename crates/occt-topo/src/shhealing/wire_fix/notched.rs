@@ -637,6 +637,32 @@ pub fn check_pcurves_and_shift(wire: &mut Wire, face: &Face, preci: f64, modes: 
 /// The singularity sub-branch (`ShapeFix_Wire.cxx:673-863`) runs here, after
 /// `FixAddPCurve` reports `DONE2`. The STEP path `check_pcurves_and_shift`
 /// does not call it.
+pub fn trace_wire(tag: &str, wire: &Wire) {
+    let edges = edges_of_wire(wire);
+    eprintln!("TRACEWIRE {tag} n={}", edges.len());
+    for (i, e) in edges.iter().enumerate() {
+        let fmt = |v: &Option<Vertex>| match v {
+            Some(v) => {
+                let p = BRepTool::vertex_point(v);
+                format!(
+                    "({:.9},{:.9},{:.9})@{:#x}",
+                    p.x(),
+                    p.y(),
+                    p.z(),
+                    std::sync::Arc::as_ptr(&v.0.tshape) as usize
+                )
+            }
+            None => "None".to_string(),
+        };
+        eprintln!(
+            "TRACEWIRE   e{} first={} last={}",
+            i + 1,
+            fmt(&first_vertex(e)),
+            fmt(&last_vertex(e))
+        );
+    }
+}
+
 pub fn perform_wire_first_round(
     wire: &mut Wire,
     face: &Face,
@@ -660,7 +686,23 @@ pub fn perform_wire_first_round(
         }
     }
     if need_fix(modes.fix_connected_mode, reorder_ok) {
-        let _ = fix_connected_all(wire, preci, SHAPE_FIX_MAX_TOLERANCE);
+        if crate::debug_flags::iges_trace_wire() {
+            trace_wire("before-connected", wire);
+        }
+        // `ShapeFix_Wire::FixConnected(prec)` (`ShapeFix_Wire.cxx:557-596`)
+        // runs with this tool's `Context()`, which the face round inherited
+        // from `ShapeFix_Shape` (`ShapeFix_Face.cxx:379`).
+        let changed = fix_connected_all_in_context(
+            wire,
+            Some(ctx),
+            preci,
+            SHAPE_FIX_MAX_TOLERANCE,
+            modes.closed_mode,
+        );
+        if crate::debug_flags::iges_trace_wire() {
+            eprintln!("TRACEWIRE connected-changed={changed}");
+            trace_wire("after-connected", wire);
+        }
     }
     let mut cache = crate::pcurve_full::ProjectorCache::new();
     let mut overdegen: Option<usize> = None;
@@ -781,6 +823,9 @@ pub fn perform_wire_first_round(
             fix_vertex_tolerance_edge_on_face(&edge, face);
         }
     }
+    if crate::debug_flags::iges_trace_wire() {
+        trace_wire("end-first", wire);
+    }
 }
 
 /// Post-seam wire round of `ShapeFix_Face::Perform` (`ShapeFix_Face.cxx:508-627`).
@@ -831,6 +876,9 @@ pub fn perform_wire_second_round(
         for edge in edges_of_wire(wire) {
             fix_vertex_tolerance_edge_on_face(&edge, face);
         }
+    }
+    if crate::debug_flags::iges_trace_wire() {
+        trace_wire("end-second", wire);
     }
     inter.removed_segment
 }
@@ -931,5 +979,8 @@ pub fn perform_wire_constructor_defaults(wire: &mut Wire, face: &Face, precision
         for edge in edges_of_wire(wire) {
             fix_vertex_tolerance_edge_on_face(&edge, face);
         }
+    }
+    if crate::debug_flags::iges_trace_wire() {
+        trace_wire("end-ctor", wire);
     }
 }

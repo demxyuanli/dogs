@@ -524,6 +524,11 @@ fn sewing_edge(edge: &Edge, face: &Face) -> bool {
 }
 
 /// `BRepLib::EncodeRegularity(E, F1, F2, TolAng)` (`BRepLib.cxx:2570-2589`).
+pub fn encode_regularity_edge(edge: &Edge, f1: &Face, f2: &Face, tol_ang: f64) {
+    encode_one(edge, f1, f2, tol_ang);
+}
+
+/// `BRepLib::EncodeRegularity(E, F1, F2, TolAng)` (`BRepLib.cxx:2570-2589`).
 fn encode_one(edge: &Edge, f1: &Face, f2: &Face, tol_ang: f64) {
     if stored_continuity(edge, f1, f2) > AbsShape::C0 as u8 {
         return;

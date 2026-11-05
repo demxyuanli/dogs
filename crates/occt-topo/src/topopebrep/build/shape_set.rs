@@ -412,51 +412,51 @@ pub trait ShapeSetSource {
 
     /// `ChangeStartShapes()` (`cxx:259-262`).
     fn change_start_shapes(&mut self) -> &mut Vec<TopoShape> {
-        self.base_mut().change_start_shapes()
+        ShapeSet::change_start_shapes(self.base_mut())
     }
 
     /// `StartElements()` (`cxx:65-70`).
     fn start_elements(&self) -> &[TopoShape] {
-        self.base().start_elements()
+        ShapeSet::start_elements(self.base())
     }
 
     /// `InitStartElements()` (`cxx:108-111`).
     fn init_start_elements(&mut self) {
-        self.base_mut().init_start_elements();
+        ShapeSet::init_start_elements(self.base_mut());
     }
 
     /// `MoreStartElements()` (`cxx:113-116`).
     fn more_start_elements(&mut self) -> bool {
-        self.base_mut().more_start_elements()
+        ShapeSet::more_start_elements(self.base_mut())
     }
 
     /// `NextStartElement()` (`cxx:118-121`).
     fn next_start_element(&mut self) {
-        self.base_mut().next_start_element();
+        ShapeSet::next_start_element(self.base_mut());
     }
 
     /// `StartElement()` (`cxx:123-129`).
     fn start_element(&self) -> Option<&TopoShape> {
-        self.base().start_element()
+        ShapeSet::start_element(self.base())
     }
 
     /// `MaxNumberSubShape(S)` (`cxx:216-219`).
     fn max_number_sub_shape(&mut self, s: &TopoShape) -> usize {
-        self.base_mut().max_number_sub_shape(s)
+        ShapeSet::max_number_sub_shape(self.base_mut(), s) as usize
     }
 
     /// `InitNeighbours(S)` is virtual; the base body is `cxx:222-229`.
 
     /// `MoreNeighbours()` (`cxx:231-233`).
     fn more_neighbours(&self) -> bool {
-        self.base().more_neighbours()
+        ShapeSet::more_neighbours(self.base())
     }
 
     /// `NextNeighbour()` (`cxx:234-247`) with the virtual `FindNeighbours` at
     /// `cxx:243`.
     fn next_neighbour(&mut self) {
         self.base_mut().my_incident_shapes_iter += 1;
-        if !self.base().more_neighbours() && self.base().my_sub_shape_explorer.more() {
+        if !ShapeSet::more_neighbours(self.base()) && self.base().my_sub_shape_explorer.more() {
             self.base_mut().my_sub_shape_explorer.next();
             self.find_neighbours();
         }
@@ -464,27 +464,27 @@ pub trait ShapeSetSource {
 
     /// `Neighbour()` (`cxx:251-255`).
     fn neighbour(&self) -> Option<&TopoShape> {
-        self.base().neighbour()
+        ShapeSet::neighbour(self.base())
     }
 
     /// `InitShapes()` (`cxx:358-362`).
     fn init_shapes(&mut self) {
-        self.base_mut().init_shapes();
+        ShapeSet::init_shapes(self.base_mut());
     }
 
     /// `MoreShapes()` (`cxx:364-367`).
     fn more_shapes(&mut self) -> bool {
-        self.base_mut().more_shapes()
+        ShapeSet::more_shapes(self.base_mut())
     }
 
     /// `NextShape()` (`cxx:369-372`).
     fn next_shape(&mut self) {
-        self.base_mut().next_shape();
+        ShapeSet::next_shape(self.base_mut());
     }
 
     /// `Shape()` (`cxx:374-377`).
     fn shape(&self) -> Option<&TopoShape> {
-        self.base().shape()
+        ShapeSet::shape(self.base())
     }
 }
 

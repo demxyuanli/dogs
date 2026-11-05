@@ -155,13 +155,13 @@ pub fn build_bop(b: &mut BopBuilder) -> Result<(), String> {
         }
     }
 
+    // Remove the faces which has to be avoided
+    // (`BOPAlgo_Builder.cxx:710-717`).
     let res_faces: Vec<TopoShape> = res_ori
         .into_iter()
         .filter(|f| !avoid.contains(&shape_key(f)))
         .collect();
-    if res_faces.is_empty() {
-        return Err("BOPAlgo_AlertBuilderFailed".into());
-    }
+    // Try to build closed solids from the faces (`cxx:722-728`).
     let mut bs = BuilderSolid::new();
     bs.set_shapes(res_faces.clone());
     bs.set_fuzzy(b.fuzzy_value());
@@ -177,17 +177,85 @@ pub fn build_bop(b: &mut BopBuilder) -> Result<(), String> {
         s
     };
     let mut solids: Vec<TopoShape> = Vec::new();
+    // `aMFence` — every sub-shape of the solids already accepted
+    // (`BOPAlgo_Builder.cxx:732`).
+    let mut fence: HashSet<ShapeMapKey> = HashSet::new();
+    // If any, add solids into the resulting compound (`cxx:735-754`).
     for area in bs.areas() {
-        let ok = faces_of(area).iter().any(|f| obj_ori_keys.contains(&ori_key(&f.0)));
-        if ok {
-            solids.push(area.clone());
+        // The solid must contain at least one face from either of the groups
+        // (`cxx:741-749`).
+        let mut used = false;
+        for f in faces_of(area) {
+            if obj_ori_keys.contains(&ori_key(&f.0)) {
+                used = true;
+                break;
+            }
+        }
+        if !used {
+            continue;
+        }
+        solids.push(area.clone());
+        for s in crate::topo_tools::all_subshapes(area) {
+            fence.insert(shape_key(&s));
         }
     }
-    if solids.is_empty() {
-        return Err("BOPAlgo_AlertBuilderFailed".into());
+
+    // Collect unused faces (`cxx:760-771`) and build a solid from each
+    // connexity block of them (`cxx:772-796`).
+    let unused: Vec<TopoShape> = res_faces
+        .iter()
+        .filter(|f| fence.insert(shape_key(f)))
+        .cloned()
+        .collect();
+    let bld = TopoBuilder::new();
+    for block in crate::algo_tools::AlgoTools::make_connexity_blocks(&unused) {
+        let mut shell = TopoShape::new(crate::abs::ShapeType::Shell);
+        for f in block.shapes() {
+            if f.shape_type() != crate::abs::ShapeType::Face {
+                continue;
+            }
+            bld.add(&mut shell, f);
+        }
+        crate::algo_tools::AlgoTools::orient_faces_on_shell(&mut shell);
+        let mut solid = TopoShape::new(crate::abs::ShapeType::Solid);
+        bld.add(&mut solid, &shell);
+        solids.push(solid);
     }
-    let bb = TopoBuilder::new();
-    b.set_result_shape(bb.make_compound_of(&solids).0);
+
+    // Fill solids with the internal parts coming with the solids
+    // (`cxx:797-829`).
+    if !avoid_in {
+        let mut in_parts: Vec<TopoShape> = Vec::new();
+        for group in [&objects, &tools] {
+            for shape in group {
+                for solid in explore(shape, crate::abs::ShapeType::Solid) {
+                    for child in crate::bop_occt_util::iter_children(&solid) {
+                        if child.orientation() == Orientation::Internal {
+                            in_parts.push(child);
+                        } else {
+                            // Shell treatment: a shell whose first child is
+                            // INTERNAL makes the whole shell internal.
+                            let kids = crate::bop_occt_util::iter_children(&child);
+                            if let Some(first) = kids.first() {
+                                if first.orientation() == Orientation::Internal {
+                                    in_parts.push(child);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        crate::bopalgo_tools_class::fill_internals(
+            &mut solids,
+            &in_parts,
+            b.history().images(),
+            &ctx,
+        );
+    }
+
+    // Combine solids into a compound (`cxx:831-839`).
+    b.set_result_shape(bld.make_compound_of(&solids).0);
     Ok(())
 }
 

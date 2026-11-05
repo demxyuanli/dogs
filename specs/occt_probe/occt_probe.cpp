@@ -287,9 +287,50 @@ int main(int argc, char** argv)
     std::cerr << "null shape\n";
     return 4;
   }
+  // Zero-argument mode: dispatched before the `i + 1 < argc` loop below, which
+  // skips a flag that sits at the end of the command line.
+  for (int i = 2; i < argc; ++i)
+  {
+    // Representation census of every edge (`BRepCheck_Edge::Minimum` inputs).
+    if (std::string(argv[i]) == "--edgerep")
+    {
+      return runEdgeRep(aShape);
+    }
+    // Per-subshape `BRepCheck_Analyzer` status lists.
+    if (std::string(argv[i]) == "--statusdump")
+    {
+      return runStatusDump(aShape);
+    }
+    // Vertex identity census (shared junction versus split junction).
+    if (std::string(argv[i]) == "--vertexrep")
+    {
+      return runVertexRep(aShape);
+    }
+  }
   // TEMP T-99: `--boundary <dir>` dumps the real pipeline's Delaunay boundary UV.
   for (int i = 2; i + 1 < argc; ++i)
   {
+    // RECORD v1 (source-level parity): `--record <out.txt> [defl] [angle]` dumps
+    // the shape `main` just read; `--record-rt <iges|step> <mid> <out.txt>
+    // [defl] [angle]` writes it with OCCT's own writer, reads the written file
+    // back with OCCT's own reader and dumps that. See modes_record.cpp.
+    if (std::string(argv[i]) == "--record")
+    {
+      const double aDefl  = (i + 2 < argc) ? std::atof(argv[i + 2]) : 0.1;
+      const double anAng  = (i + 3 < argc) ? std::atof(argv[i + 3]) : 0.5;
+      return runRecord(aShape, argv[1], argv[i + 1], aDefl, anAng);
+    }
+    if (std::string(argv[i]) == "--record-rt" && i + 3 < argc)    {
+      const double aDefl = (i + 4 < argc) ? std::atof(argv[i + 4]) : 0.1;
+      const double anAng = (i + 5 < argc) ? std::atof(argv[i + 5]) : 0.5;
+      return runRecordRoundTrip(aShape, argv[1], argv[i + 1], argv[i + 2], argv[i + 3], aDefl,
+                                anAng);
+    }
+    // Representation census of every edge (`BRepCheck_Edge::Minimum` inputs).
+    if (std::string(argv[i]) == "--edgerep")
+    {
+      return runEdgeRep(aShape);
+    }
     // T-118: `--iges <out.iges>` writes the shape with OCCT's own IGESControl_Writer.
     if (std::string(argv[i]) == "--iges")
     {

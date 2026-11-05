@@ -1,4 +1,14 @@
 use super::*;
+use crate::shape_fix_compose_shell::{ReShape, SharedReShape};
+
+/// `V.Oriented(anOrientation)` (`TopoDS_Shape::Oriented`): the same `TShape`
+/// carried with another orientation, which is what `FixConnected` hands to
+/// `Context()->Replace`.
+fn oriented_like(v: &Vertex, orientation: Orientation) -> TopoShape {
+    let mut s = v.0.clone();
+    s.set_orientation(orientation);
+    s
+}
 
 /// `ShapeFix_Wire::FixReorder` (`cxx:487-534`) then `FixReorder(sawo)`
 /// (`cxx:1351-1399`). `Perform` calls `FixReorder()` with `theModeBoth=false`,
@@ -51,6 +61,18 @@ pub(in crate::shhealing) fn build_wire_order_3d(wire: &Wire) -> Option<(WireOrde
     }
     order.perform();
     Some((order, stored))
+}
+
+/// `ShapeAnalysis_Wire::CheckOrder(sawo, closed)` over the 3D wire
+/// (`ShapeFix_Wire.cxx:316-318`): `ShapeFix_Wire::Perform` reads it as
+/// `ReorderOK = (CheckOrder(...) == 0)`, i.e. `ShapeAnalysis_Same`. The FAIL2
+/// short-circuit (`ShapeAnalysis_Wire.cxx:617-621`, a missing edge vertex)
+/// answers `true`, exactly like `build_wire_order_3d`'s `None`.
+pub fn check_order_3d(wire: &Wire) -> bool {
+    match build_wire_order_3d(wire) {
+        Some((order, _stored)) => order.status() == WireOrderStatus::Same,
+        None => true,
+    }
 }
 
 /// `ShapeFix_Wire::FixReorder()` (`ShapeFix_Wire.cxx:487-534`): reorder the
@@ -224,14 +246,31 @@ pub(in crate::shhealing) fn check_connected(wire: &Wire, precision_par: f64, pre
 
 /// `ShapeFix_Wire::FixConnected(num, prec, theUpdateWire)`
 /// (`ShapeFix_Wire.cxx:1476-1608`), at read time (`theUpdateWire = false`,
-/// `cxx:569`). `Context()` is not modelled: the two `CopyReplaceVertices`
-/// writes to `WireData` (`cxx:1585-1601`) are applied directly to the wire's
-/// child list, the same convention `fix_degenerated` uses.
-pub(in crate::shhealing) fn fix_connected_one(wire: &mut Wire, precision: f64, prec: f64, num: usize) -> bool {
+/// `cxx:569`).
+///
+/// `ctx` is `Context()`: when it is present, every substitution the `.cxx`
+/// records goes through it - `Context()->Replace(V1, V.Oriented(...))` /
+/// `Replace(V2, ...)` (`cxx:1513`, `:1525`, `:1537-1541`) and
+/// `Context()->Replace(E1/E2, tmpE)` (`cxx:1561`, `:1587`, `:1594`). The
+/// substitution is keyed by `TShape` identity (`TopTools_ShapeMapHasher`,
+/// `IsSame`), so `UpdateWire` (`cxx:4293-4310`) later rewrites *every*
+/// occurrence of the old vertex in the wire, not only the junction's two
+/// endpoints; that is what keeps a closed edge closed when it shares its
+/// vertex with a junction. `None` is the null-context tool (the naked
+/// `ShapeFix_Wire` of `IGESControl_IGESBoundary::Transfer`), where the `.cxx`
+/// skips both the `Replace` calls and `UpdateWire`.
+pub(in crate::shhealing) fn fix_connected_one(
+    wire: &mut Wire,
+    ctx: Option<&mut SharedReShape>,
+    precision: f64,
+    prec: f64,
+    num: usize,
+) -> bool {
     let check = check_connected(wire, precision, prec, num);
     if check == ConnectedCheck::None {
         return false;
     }
+    let mut ctx = ctx;
     let nb = wire_edges_nb(wire);
     if nb == 0 {
         return false;
@@ -250,18 +289,31 @@ pub(in crate::shhealing) fn fix_connected_one(wire: &mut Wire, precision: f64, p
     let (Some(v1), Some(v2)) = (v1, v2) else {
         return false;
     };
-    // `cxx:1505-1542`: the merged vertex.
+    // `cxx:1505-1542`: the merged vertex, plus the `Context()->Replace` pair
+    // that makes the substitution global.
     let combined: Vertex = if check == ConnectedCheck::Done1 {
         let v2_is_last = last_vertex(&e2)
             .map(|l| is_same(&v2.0, &l.0))
             .unwrap_or(false);
-        if v2_is_last {
-            v2.clone()
+        let (keep, drop) = if v2_is_last {
+            (v2.clone(), v1.clone())
         } else {
-            v1.clone()
+            (v1.clone(), v2.clone())
+        };
+        if let Some(c) = ctx.as_deref_mut() {
+            let repl = oriented_like(&keep, drop.0.orientation());
+            c.replace(&drop.0, &repl);
         }
+        keep
     } else {
-        combine_vertex(&v1, &v2, 1.0001)
+        let merged = combine_vertex(&v1, &v2, 1.0001);
+        if let Some(c) = ctx.as_deref_mut() {
+            for src in [&v1, &v2] {
+                let repl = oriented_like(&merged, src.0.orientation());
+                c.replace(&src.0, &repl);
+            }
+        }
+        merged
     };
 
     // `cxx:1544-1601`: this port's edges are frozen by `TopoBuilder::add`, so
@@ -272,11 +324,17 @@ pub(in crate::shhealing) fn fix_connected_one(wire: &mut Wire, precision: f64, p
     if nb < 2 {
         // `cxx:1559-1565`: `sbe.CopyReplaceVertices(E2, V, V)` + `Set(tmpE, n2)`.
         let tmp_e = copy_replace_vertices_with(&e2, Some(&combined), Some(&combined));
+        if let Some(c) = ctx.as_deref_mut() {
+            c.replace(&e2.0, &tmp_e.0);
+        }
         wire_set_edge_composed(wire, s2, &tmp_e);
     } else {
         // `cxx:1584-1599`: `CopyReplaceVertices(E2, V, null)` + `Set(tmpE2, n2)`,
         // then the same on E1 unless DONE1 with a non-closed E2.
         let tmp_e2 = copy_replace_vertices_with(&e2, Some(&combined), None);
+        if let Some(c) = ctx.as_deref_mut() {
+            c.replace(&e2.0, &tmp_e2.0);
+        }
         wire_set_edge_composed(wire, s2, &tmp_e2);
         let first_is_last = first_vertex(&e2)
             .zip(last_vertex(&e2))
@@ -284,6 +342,9 @@ pub(in crate::shhealing) fn fix_connected_one(wire: &mut Wire, precision: f64, p
             .unwrap_or(false);
         if check != ConnectedCheck::Done1 || first_is_last {
             let tmp_e1 = copy_replace_vertices_with(&e1, None, Some(&combined));
+            if let Some(c) = ctx.as_deref_mut() {
+                c.replace(&e1.0, &tmp_e1.0);
+            }
             wire_set_edge_composed(wire, s1, &tmp_e1);
         }
     }
@@ -304,13 +365,83 @@ pub(in crate::shhealing) fn fix_connected_one(wire: &mut Wire, precision: f64, p
 /// (`STEPControl_Controller.cxx:204-206`, set from
 /// `STEPControl_ActorRead::myMaxTol` at `cxx:1146`).
 pub fn fix_connected_all(wire: &mut Wire, precision: f64, max_tolerance: f64) -> bool {
+    fix_connected_all_in_context(wire, None, precision, max_tolerance, true)
+}
+
+/// `ShapeFix_Wire::FixConnected(prec)` with `Context()` possibly present
+/// (`ShapeFix_Wire.cxx:557-596`).
+///
+/// With a context the `.cxx` does two things the null-context tool does not:
+/// the per-junction refresh of the edge the next iteration reads as `n1`
+/// (`cxx:570-588`, `Context()->Apply(aEPrev)` + `WireData()->Set`) and the
+/// closing `UpdateWire()` (`cxx:590-593`, `cxx:4293-4310`), which rewrites
+/// every WireData entry through the recorded substitutions.
+pub fn fix_connected_all_in_context(
+    wire: &mut Wire,
+    mut ctx: Option<&mut SharedReShape>,
+    precision: f64,
+    max_tolerance: f64,
+    closed: bool,
+) -> bool {
     let nb = wire_edges_nb(wire);
     if nb == 0 {
         return false;
     }
+    // `cxx:565`: `aStop = myClosedMode ? 0 : 1`, `for (aI = NbEdges(); aI > aStop; aI--)`.
+    let stop = if closed { 0 } else { 1 };
     let mut done = false;
-    for i in (1..=nb).rev() {
-        done |= fix_connected_one(wire, precision, max_tolerance, i);
+    let mut a_i = nb;
+    while a_i > stop {
+        done |= fix_connected_one(wire, ctx.as_deref_mut(), precision, max_tolerance, a_i);
+        // `cxx:570-588`.
+        if ctx.is_some() && a_i - 1 > stop {
+            let n1_next = if a_i - 1 > 1 { a_i - 2 } else { nb };
+            if n1_next != a_i && n1_next != a_i - 1 {
+                let nb_now = wire_edges_nb(wire);
+                let edges = stored_manifold_edges(wire);
+                if n1_next >= 1 && n1_next <= edges.len() && n1_next <= nb_now {
+                    let eprev = edges[n1_next - 1].clone();
+                    let c = ctx.as_deref_mut().expect("context checked above");
+                    let refresh = c.apply(&eprev.0);
+                    if refresh.shape_type() == ShapeType::Edge && !is_same(&refresh, &eprev.0) {
+                        // `cxx:587`: `aWireSBWD->Set(TopoDS::Edge(aRefresh), aN1Next)`.
+                        let slot = wiredata_storage_index(wire, n1_next, nb_now);
+                        wire_set_edge_composed(wire, slot, &Edge(refresh));
+                    }
+                }
+            }
+        }
+        a_i -= 1;
+    }
+    if let Some(c) = ctx.as_deref_mut() {
+        update_wire_from_context(wire, c);
     }
     done
+}
+
+/// `ShapeFix_Wire::UpdateWire()` (`ShapeFix_Wire.cxx:4293-4310`): each
+/// `WireData` entry is replaced by `Context()->Apply` of itself when the
+/// substitution changed it. The `.cxx` unrolls an entry that `Apply` turned
+/// into several edges (`cxx:4303-4306`); `CopyReplaceVertices` never changes
+/// the edge count, so here the replacement is one edge.
+pub(in crate::shhealing) fn update_wire_from_context(wire: &mut Wire, ctx: &mut SharedReShape) {
+    let mut i = 1;
+    loop {
+        let nb = wire_edges_nb(wire);
+        if i > nb {
+            break;
+        }
+        let edges = stored_manifold_edges(wire);
+        if i > edges.len() {
+            break;
+        }
+        let e = edges[i - 1].clone();
+        // `cxx:4299-4302`: `if (S == E) continue;`.
+        let applied = ctx.apply(&e.0);
+        if !is_same(&applied, &e.0) && applied.shape_type() == ShapeType::Edge {
+            let slot = wiredata_storage_index(wire, i, nb);
+            wire_set_edge_composed(wire, slot, &Edge(applied));
+        }
+        i += 1;
+    }
 }

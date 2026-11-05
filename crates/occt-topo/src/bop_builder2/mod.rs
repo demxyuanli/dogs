@@ -52,6 +52,7 @@ pub(crate) use crate::topo_tools::ShapeMapKey;
 mod builder;
 mod arguments;
 mod data_access;
+mod section;
 pub use builder::*;
 
 pub use data_access::*;

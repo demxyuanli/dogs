@@ -151,6 +151,26 @@ impl GeometryRegistry {
         ts.edge_pcurves()?.ranges.get(&key).copied()
     }
 
+    /// `BRep_Builder::Range(edge, face, first, last)` (`BRep_Builder.cxx:1121`)
+    /// addressed by the `Geom_Surface` handle instead of a face TShape: the
+    /// reference call sites that hold only the surface
+    /// (`BRepFill_Sweep.cxx:1642`) cannot form a face key.
+    pub fn set_pcurve_range_on_surface(
+        &self,
+        s: &TopoShape,
+        surface: &Arc<dyn Surface>,
+        first: f64,
+        last: f64,
+    ) {
+        let key = Arc::as_ptr(surface) as *const () as usize;
+        s.tshape
+            .write()
+            .unwrap()
+            .edge_pcurves_mut()
+            .ranges
+            .insert(key, (first, last));
+    }
+
     /// `BRep_Builder::SameRange`.
     pub fn set_same_range(&self, s: &TopoShape, value: bool) {
         s.tshape.write().unwrap().edge_core_mut().same_range = value;
@@ -195,6 +215,61 @@ impl GeometryRegistry {
             }
         }
         out
+    }
+
+    /// `BRep_Builder::UpdateEdge(E, C2, S, L, Tol)` (`BRep_Builder.cxx:655-672`
+    /// through `UpdateCurves` `cxx:104-167` and `cxx:149-164`): the pcurve of
+    /// `edge` on the `Geom_Surface` `surface` is replaced, keeping the 3D
+    /// representation's range; a null `curve` removes that representation
+    /// instead (`cxx:149`: only a non-null `C` is appended). The edge
+    /// tolerance is raised to `tol` without ever being lowered
+    /// (`BRep_TEdge::UpdateTolerance`, `BRep_TEdge.lxx:33-37`).
+    ///
+    /// Unlike [`GeometryRegistry::set_edge_pcurve`] the key is the surface
+    /// pointer itself, so a surface that no face has registered yet still
+    /// anchors the representation.
+    pub fn update_edge_pcurve_on_surface(
+        &self,
+        edge: &TopoShape,
+        surface: &Arc<dyn Surface>,
+        curve: Option<Arc<dyn Curve2d>>,
+        tol: f64,
+    ) {
+        let key = Arc::as_ptr(surface) as *const () as usize;
+        let (first, last) = self.edge_parameters(edge);
+        let mut ts = edge.tshape.write().unwrap();
+        match curve {
+            Some(c) => ts.edge_pcurves_mut().set_pcurve(key, c, first, last),
+            None => {
+                let g = ts.edge_pcurves_mut();
+                g.curves.remove(&key);
+                g.ranges.remove(&key);
+            }
+        }
+        let c = ts.edge_core_mut();
+        if c.tolerance < tol {
+            c.tolerance = tol;
+        }
+    }
+
+    /// The seam overload `BRep_Builder::UpdateEdge(E, C1, C2, S, L, Tol)`
+    /// (`BRep_Builder.cxx:1194-1204`): both pcurves of a seam edge attached to
+    /// the same `Geom_Surface` handle, keyed by that surface's pointer.
+    pub fn set_edge_pcurves_on_surface(
+        &self,
+        edge: &TopoShape,
+        surface: &Arc<dyn Surface>,
+        curves: Vec<Arc<dyn Curve2d>>,
+        tol: f64,
+    ) {
+        let key = Arc::as_ptr(surface) as *const () as usize;
+        let (first, last) = self.edge_parameters(edge);
+        let mut ts = edge.tshape.write().unwrap();
+        ts.edge_pcurves_mut().set_pcurves(key, curves, first, last);
+        let c = ts.edge_core_mut();
+        if c.tolerance < tol {
+            c.tolerance = tol;
+        }
     }
 
     /// `ShapeBuild_Edge::RemovePCurve` — drop every pcurve of `edge` on the

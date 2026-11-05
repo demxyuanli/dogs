@@ -21,7 +21,10 @@ impl<'a> Resolver<'a> {
         // Keep EDGE_LOOP order for seam SelectForwardSeam (`TranslateEdgeLoop`
         // iterates OrientedEdges in list order; last UpdateEdge wins). Reorder
         // for connectivity after pcurve association in `resolve_face`.
-        Ok(self.b.make_wire(&edges).0)
+        let wire = self.b.make_wire(&edges).0;
+        // `StepToTopoDS_TranslateEdgeLoop.cxx:837`: `W.Closed(BRep_Tool::IsClosed(W))`.
+        wire.set_closed(crate::brep_tool::BRepTool::is_closed(&wire));
+        Ok(wire)
     }
 
     /// The `EDGE_CURVE` record an `ORIENTED_EDGE` reaches — following a nested
@@ -150,7 +153,10 @@ impl<'a> Resolver<'a> {
     /// wire containing no edges (the face still references it via FACE_BOUND).
     pub(in crate::step) fn resolve_vertex_loop(&self, rec: &'a Record) -> Result<TopoShape, String> {
         let _ = parse_ref(&rec.args[1]).ok_or("VERTEX_LOOP: bad vertex ref")?;
-        Ok(self.b.make_wire(&[]).0)
+        let wire = self.b.make_wire(&[]).0;
+        // `StepToTopoDS_TranslateVertexLoop.cxx:100`: `W.Closed(true)`.
+        wire.set_closed(true);
+        Ok(wire)
     }
 
     pub(in crate::step) fn resolve_outer_bound(&self, rec: &'a Record) -> Result<TopoShape, String> {

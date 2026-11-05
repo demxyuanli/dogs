@@ -77,8 +77,20 @@ impl BRepToolsSubstitution {
         true
     }
 
-    /// `Build(S)` (`cxx:51-142`): rebuild `S` from its children, recursing.
-    ///
+    /// `Substitute(OS, NS)` for a caller that only holds the
+    /// `TopTools_ShapeMapHasher` key, which is the whole of what `Substitute`
+    /// writes (`cxx:43-47`). `BRepFill_Sweep::Build` iterates
+    /// `myVEdgesModified`, whose keys are exactly those hashes
+    /// (`BRepFill_Sweep.cxx:3377-3384`).
+    pub fn substitute_at_key(&mut self, key: ShapeMapKey, new_shapes: &[TopoShape]) -> bool {
+        if self.map.contains_key(&key) {
+            return false;
+        }
+        self.map.insert(key, new_shapes.to_vec());
+        true
+    }
+
+    /// `Build(S)` (`cxx:51-142`): rebuild `S` from its children, recursing.    ///
     /// A shape that is already copied is left alone (`cxx:53-56`) — that is
     /// how a caller's `Substitute` wins over the automatic rebuild.
     pub fn build(&mut self, s: &TopoShape) {

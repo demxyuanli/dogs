@@ -60,6 +60,22 @@ impl GaussProperties {
         self.inertia.add(&huygens_mat(-self.dim, &d))
     }
 
+    /// `GProp_GProps::PrincipalProperties()` over the accumulated system — what
+    /// `BRepGProp::LinearProperties` hands back through `GProp_GProps` and what
+    /// `BRepFill_CompatibleWires::PlaneOfWire` (`cxx:251`) reads for the
+    /// non-planar branch.
+    pub fn principal_properties(
+        &self,
+    ) -> Result<occt_core::gprop::gprops::PrincipalProps, String> {
+        occt_core::gprop::gprops::GProps::from_accumulated(
+            self.loc,
+            self.g,
+            self.dim,
+            self.inertia,
+        )
+        .principal_properties()
+    }
+
     /// Combine `other` (about its own `loc`) into `self` using the Huygens
     /// (parallel-axis) theorem. Both accumulators may have different reference
     /// points; the combined system is about `self.loc`.

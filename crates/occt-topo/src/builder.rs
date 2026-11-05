@@ -113,6 +113,68 @@ impl TopoBuilder {
         e
     }
 
+    /// `BRep_Builder::UpdateEdge(E, P, T, L)` (`BRep_Builder.cxx:790-832`): drop
+    /// any `BRep_PolygonOnTriangulation` representation on the same
+    /// triangulation (`cxx:808-821`) and append the new one (`cxx:823-828`);
+    /// the TShape is flagged modified only when either step happened
+    /// (`cxx:830-833`).
+    ///
+    /// UNPORTED: the `P.IsNull()` arm (`cxx:823`) that *only* removes the
+    /// representation — `P` is a non-optional argument here, so the
+    /// removal-only call has no equivalent; `TopoDS_LockedShape`
+    /// (`cxx:796-799`) has no counterpart either (this crate's shapes are never
+    /// locked).
+    pub fn update_edge_polygon_on_triangulation(
+        &self,
+        edge: &Edge,
+        polygon: Arc<occt_core::poly::PolyPolygonOnTriangulation>,
+        triangulation: Arc<occt_core::poly::Triangulation>,
+    ) {
+        self.update_edge_polygons_on_triangulation(edge, polygon, None, triangulation);
+    }
+
+    /// `BRep_Builder::UpdateEdge(E, P1, P2, T, L)` (`BRep_Builder.cxx:837-883`):
+    /// the closed-triangulation form, which stores *two* polygons
+    /// (`BRep_PolygonOnClosedTriangulation`). OCCT appends nothing unless both
+    /// handles are non-null (`cxx:871`); the port takes `Option` for the second
+    /// and skips the append for `None`, which is the only reachable case in this
+    /// crate.
+    pub fn update_edge_polygons_on_triangulation(
+        &self,
+        edge: &Edge,
+        polygon1: Arc<occt_core::poly::PolyPolygonOnTriangulation>,
+        polygon2: Option<Arc<occt_core::poly::PolyPolygonOnTriangulation>>,
+        triangulation: Arc<occt_core::poly::Triangulation>,
+    ) {
+        let mut ts = edge.0.tshape.write().unwrap();
+        let modified = {
+            let core = ts.edge_core_mut();
+            let mut modified = false;
+            // `cxx:808-821` / `cxx:855-869`: the representation on the same
+            // triangulation is removed first, then the new one appended
+            // (`cxx:823-828`).
+            if let Some(pos) = core
+                .polygons_on_triangulation
+                .iter()
+                .position(|r| Arc::ptr_eq(&r.triangulation, &triangulation))
+            {
+                core.polygons_on_triangulation.remove(pos);
+                modified = true;
+            }
+            core.polygons_on_triangulation
+                .push(crate::tshape::PolygonOnTriangulationRepr {
+                    triangulation,
+                    polygon: polygon1,
+                    polygon2,
+                });
+            modified
+        };
+        if modified {
+            // `cxx:830-833` / `cxx:878-881`: `TE->Modified(true)`.
+            ts.set_modified(true);
+        }
+    }
+
     /// `BRepPrim_Builder::MakeDegeneratedEdge` (`BRepPrim_OneAxis.cxx:934`,
     /// `:1212`, `:1264`): an edge whose 3D representation is the single point
     /// `p` (a sphere/cone pole, a torus seam point). OCCT stores a `BRep_Curve3D`

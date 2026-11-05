@@ -19,6 +19,7 @@ impl BopBuilder {
             warnings: Vec::new(),
             result_shape: TopoShape::new(ShapeType::Compound),
             in_parts: HashMap::new(),
+            fill_history: true,
         }
     }
 
@@ -132,9 +133,28 @@ impl BopBuilder {
         self.filler.set_fuzzy_value(v);
     }
 
+    /// `BOPAlgo_Options::SetGlue(theGlue)` (`BOPAlgo_Options.lxx`): the gluing
+    /// option the intersection phase reads back through
+    /// [`PaveFiller::glue`](crate::pave_filler::PaveFiller::glue).
+    ///
+    /// Call sites: `BRepFill_Draft.cxx:752` (`BOPAlgo_GlueShift`).
+    pub fn set_glue(&mut self, glue: crate::pave_filler::GlueEnum) {
+        self.filler.set_glue(glue);
+    }
+
     /// True when the PaveFiller runs in non-destructive mode.
     pub fn non_destructive(&self) -> bool {
         self.filler.non_destructive()
+    }
+
+    /// `BOPAlgo_Options::SetNonDestructive` (`BOPAlgo_Options.lxx`).
+    pub fn set_non_destructive(&mut self, b: bool) {
+        self.filler.set_non_destructive(b);
+    }
+
+    /// `BOPAlgo_Options::Glue` (`BOPAlgo_Options.lxx`).
+    pub fn glue(&self) -> crate::pave_filler::GlueEnum {
+        self.filler.glue()
     }
 
     /// Binds `shape` as same-domain with `sd`, mirroring `myShapesSD.Bind`.
@@ -223,6 +243,22 @@ impl BopBuilder {
     }
 
     // -----------------------------------------------------------------------
+    // History flags (`BOPAlgo_BuilderShape`, `BOPAlgo_BuilderShape.hxx:114-141`)
+    // -----------------------------------------------------------------------
+
+    /// Enables/disables the history collection
+    /// (`BOPAlgo_BuilderShape::SetToFillHistory`).
+    pub fn set_to_fill_history(&mut self, flag: bool) {
+        self.fill_history = flag;
+    }
+
+    /// Returns the flag of history availability
+    /// (`BOPAlgo_BuilderShape::HasHistory`).
+    pub fn has_history(&self) -> bool {
+        self.fill_history
+    }
+
+    // -----------------------------------------------------------------------
     // Performing the operation
     // -----------------------------------------------------------------------
 
@@ -235,6 +271,46 @@ impl BopBuilder {
     pub fn perform(&mut self) -> Result<TopoShape, String> {
         let args = self.arguments.clone();
         self.perform_internal(&args, FaceState::Out, &[], FaceState::Out)
+    }
+
+    /// `BOPAlgo_Builder::PerformWithFiller` (`BOPAlgo_Builder.cxx:198-208`):
+    /// runs the building phase on top of the filler the caller already
+    /// performed.
+    ///
+    /// The option copy of the reference (`myNonDestructive` / `myFuzzyValue` /
+    /// `myGlue` / `myUseOBB` taken from the filler) is free here: the port keeps
+    /// those options on the [`PaveFiller`] itself, which is exactly where
+    /// [`Self::non_destructive`] and [`Self::fuzzy_value`] read them.
+    pub fn perform_with_filler(&mut self) -> Result<TopoShape, String> {
+        self.errors.clear();
+        self.warnings.clear();
+        // `CheckData`: no argument means nothing to build.
+        if self.arguments.is_empty() {
+            let msg = "BOPAlgo_Builder: too few arguments".to_string();
+            self.add_error(msg.clone());
+            return Err(msg);
+        }
+        if self.filler.has_errors() {
+            let msgs: Vec<String> = self.filler.errors().to_vec();
+            for m in msgs {
+                self.add_error(m);
+            }
+            return Err(self.errors.first().cloned().unwrap_or_default());
+        }
+        // `PerformInternal1`: FillImages → BuildResult → PrepareHistory →
+        // PostTreat. `myShape` starts as an empty compound (`Prepare`).
+        self.reset_run();
+        self.fill_images()?;
+        self.build_result()?;
+        self.prepare_history();
+        self.post_treat()?;
+        Ok(self.result_shape.clone())
+    }
+
+    /// Installs an already performed filler, so the building phase can run
+    /// without repeating the intersection (`PerformWithFiller`).
+    pub fn set_filler(&mut self, filler: PaveFiller) {
+        self.filler = filler;
     }
 
     /// Shared pipeline of [`BopBuilder::perform`] and `BOPAlgo_BOP`.
@@ -330,12 +406,12 @@ impl BopBuilder {
 
     /// Records object/tool groups and fills GF images.
     ///
-    /// This is **not** `BOPAlgo_Builder::BuildBOP` (open-solid face selection,
-    /// `crate::bop_build_bop`). It is the FillImages sequence from
+    /// This is **not** `BOPAlgo_Builder::BuildBOP` (that is
+    /// [`BopBuilder::build_bop`]) but the FillImages sequence of
     /// `PerformInternal1`. IN/OUT is validated here only so a direct caller
     /// cannot bind an illegal BOP state; FillImages itself does not read the
     /// states. Fuse/Cut/Common filtering is `crate::bop_bop::build_shape`.
-    pub fn build_bop(
+    pub fn fill_images_for_groups(
         &mut self,
         objects: &[TopoShape],
         obj_state: FaceState,
@@ -371,9 +447,111 @@ impl BopBuilder {
         self.fill_images()
     }
 
+    /// Builds the result of the BOP from the faces of the two groups selected
+    /// by their IN/OUT states.
+    ///
+    /// Port of `BOPAlgo_Builder::BuildBOP(theObjects, theObjState, theTools,
+    /// theToolsState, ...)` (`BOPAlgo_Builder.cxx:483-841`): input validation,
+    /// face selection ([`crate::bop_build_bop::build_bop`]), unused-face shell
+    /// assembly, internal parts, result compound and `PrepareHistory`.
+    ///
+    /// UNPORTED: `myShape.IsNull()` (`cxx:496`) — [`TopoShape::is_null`] is
+    /// always false in the port, so the `BOPAlgo_AlertBuilderFailed` arm can
+    /// only be reached through `myArguments.IsEmpty()`. The
+    /// `SetContext(myContext)` / `SetRunParallel` calls on `BOPAlgo_BuilderSolid`
+    /// (`cxx:723-724`) have no counterpart: the port's `BuilderSolid` builds its
+    /// own `IntToolsContext`.
+    pub fn build_bop(
+        &mut self,
+        objects: &[TopoShape],
+        obj_state: FaceState,
+        tools: &[TopoShape],
+        tools_state: FaceState,
+    ) -> Result<(), String> {
+        // `cxx:489-490`: a failed Builder leaves the result untouched.
+        if self.has_errors() {
+            return Err(self.errors.first().cloned().unwrap_or_default());
+        }
+        // `cxx:496-501`.
+        if self.arguments.is_empty() {
+            let msg = "BOPAlgo_AlertBuilderFailed".to_string();
+            self.add_error(msg.clone());
+            return Err(msg);
+        }
+        // `cxx:502-508`.
+        if !matches!(obj_state, FaceState::In | FaceState::Out)
+            || !matches!(tools_state, FaceState::In | FaceState::Out)
+        {
+            let msg = "BOPAlgo_AlertBOPNotSet".to_string();
+            self.add_error(msg.clone());
+            return Err(msg);
+        }
+        // `cxx:510-517`.
+        if objects.is_empty() && tools.is_empty() {
+            let msg = "BOPAlgo_AlertTooFewArguments".to_string();
+            self.add_error(msg.clone());
+            return Err(msg);
+        }
+        // `cxx:518-552`: every given shape must belong to the arguments and be
+        // a SOLID or a compound/comp-solid made of solids only.
+        for group in [objects, tools] {
+            for s in group {
+                if self.filler.ds().index(s).is_none() {
+                    let msg = "BOPAlgo_AlertUnknownShape".to_string();
+                    self.add_error(msg.clone());
+                    return Err(msg);
+                }
+                if s.shape_type() == ShapeType::Solid {
+                    continue;
+                }
+                let mut treated: Vec<TopoShape> = Vec::new();
+                let mut fence: HashSet<ShapeMapKey> = HashSet::new();
+                crate::bop_occt_util::treat_compound(s, &mut treated, &mut fence);
+                for sx in &treated {
+                    if sx.shape_type() != ShapeType::Solid
+                        && sx.shape_type() != ShapeType::CompSolid
+                    {
+                        let msg = "BOPAlgo_AlertUnsupportedType".to_string();
+                        self.add_error(msg.clone());
+                        return Err(msg);
+                    }
+                }
+            }
+        }
+
+        self.objects = objects.to_vec();
+        self.tools = tools.to_vec();
+        self.obj_state = obj_state;
+        self.tools_state = tools_state;
+        crate::bop_build_bop::build_bop(self)?;
+        // `cxx:840`: the result history is rebuilt from the new result shape.
+        self.prepare_history();
+        Ok(())
+    }
+
+    /// Builds the result of the Boolean operation `op` from the two groups.
+    ///
+    /// Port of the inline `BOPAlgo_Builder::BuildBOP(theObjects, theTools,
+    /// theOperation, ...)` overload (`BOPAlgo_Builder.hxx:213-247`): the
+    /// operation type is converted into the object/tool states and forwarded to
+    /// [`BopBuilder::build_bop`].
+    ///
+    /// UNPORTED: the `BOPAlgo_CUT21` (`TopAbs_IN`, `TopAbs_OUT`) and the
+    /// `default` (`TopAbs_UNKNOWN`, `TopAbs_UNKNOWN`) arms — [`BoolOp2`] has no
+    /// `Cut21`/`Unknown` variant (`crates/occt-topo/src/bop_builder2/data_access.rs:105`).
+    pub fn build_bop_operation(
+        &mut self,
+        objects: &[TopoShape],
+        tools: &[TopoShape],
+        op: BoolOp2,
+    ) -> Result<(), String> {
+        let (obj_state, tools_state) = op.states();
+        self.build_bop(objects, obj_state, tools, tools_state)
+    }
+
     /// `FillImagesVertices` ... `FillImagesSolids` (`BOPAlgo_Builder.cxx:336-418`).
     /// No object/tool IN/OUT filter.
-    pub(super) fn fill_images(&mut self) -> Result<(), String> {
+    pub(crate) fn fill_images(&mut self) -> Result<(), String> {
         self.fill_images_vertices()?;
         self.fill_images_edges()?;
         crate::bop_build_common::fill_images_containers(self, ShapeType::Wire)?;
@@ -390,7 +568,7 @@ impl BopBuilder {
     /// vertex pair `(v, v_sd)` of the data structure, records `v_sd` as the
     /// image of `v` in the images table, binds the same-domain map and adds
     /// the origin back-map entry `v_sd → [v]`.
-    pub(super) fn fill_images_vertices(&mut self) -> Result<(), String> {
+    pub(crate) fn fill_images_vertices(&mut self) -> Result<(), String> {
         let sd = self.filler.ds().shapes_sd().clone();
         for (&n_v, &n_vsd) in &sd {
             let Some(v) = self.filler.ds().shape(n_v).cloned() else { continue };
@@ -413,7 +591,7 @@ impl BopBuilder {
     /// back-map gets the source edge. A common-block member uses
     /// `RealPaveBlock` (`BOPDS_DS::RealPaveBlock`) so the image is the shared
     /// split, matching `BOPAlgo_Builder::FillImagesEdges` (`_1.cxx:71-126`).
-    pub(super) fn fill_images_edges(&mut self) -> Result<(), String> {
+    pub(crate) fn fill_images_edges(&mut self) -> Result<(), String> {
         crate::pave_blocks::blocks_make_split_edges(&mut self.filler)?;
         let n = self.filler.ds().nb_source_shapes();
         for i in 0..n {
@@ -456,7 +634,7 @@ impl BopBuilder {
     ///
     /// Delegates to `crate::bop_build_faces::fill_images_faces`
     /// (`BuildSplitFaces` → `FillSameDomainFaces`). GF only; no obj/tool state.
-    pub(super) fn fill_images_faces(&mut self) -> Result<(), String> {
+    pub(crate) fn fill_images_faces(&mut self) -> Result<(), String> {
         crate::bop_build_faces::fill_images_faces(self)
     }
 
@@ -514,7 +692,7 @@ impl BopBuilder {
     /// Port of `BOPAlgo_Builder::PostTreat` (`BOPAlgo_Builder.cxx:450`):
     /// `CorrectTolerances` + `CorrectShapeTolerances` with `aMA` filled from
     /// source VERTEX/EDGE/FACE when `NonDestructive` is set.
-    pub(super) fn post_treat(&mut self) -> Result<(), String> {
+    pub(crate) fn post_treat(&mut self) -> Result<(), String> {
         let mut avoid = HashSet::new();
         if self.non_destructive() {
             let n = self.filler.ds().nb_source_shapes();
@@ -543,7 +721,14 @@ impl BopBuilder {
     ///   become **generated** from it ([`BopBuilder::loc_generated`]);
     /// - a shape with no trace in the result (and no surviving splits) is
     ///   marked **removed**.
-    pub(super) fn prepare_history(&mut self) {
+    pub(crate) fn prepare_history(&mut self) {
+        // `BOPAlgo_Builder_4.cxx:143-148`: nothing to do when the history is
+        // switched off; otherwise the relations are rebuilt from scratch while
+        // the `myImages` naming table is kept as `LocModified`.
+        if !self.fill_history {
+            return;
+        }
+        self.history.clear_relations();
         // All shapes of the result (the root and every sub-shape), keyed by
         // (TShape, orientation) — the OCCT `TopTools_MapOfShape` identity.
         let result_keys: HashSet<(usize, u8)> = all_subshapes(&self.result_shape)

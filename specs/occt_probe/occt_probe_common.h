@@ -267,6 +267,19 @@ int runWireDbg(const TopoDS_Shape& theShape,
                const double        theAngle,
                const double*       theBBox,
                const int           theFaceIdx = -1);
+// RECORD v1 dumps (source-level parity, see modes_record.cpp).
+int runRecord(const TopoDS_Shape& theShape, const char* theInput, const char* theOutPath,
+              double theDeflection, double theAngle);
+// Per-edge representation census behind `BRepCheck_Edge::Minimum`.
+int runEdgeRep(const TopoDS_Shape& theShape);
+// Per-subshape `BRepCheck_Analyzer::Status` dump (the port's `record_dump
+// --statuses` counterpart).
+int runStatusDump(const TopoDS_Shape& theShape);
+// Per-vertex census: identity, point, tolerance and edge endpoint slots.
+int runVertexRep(const TopoDS_Shape& theShape);
+int runRecordRoundTrip(const TopoDS_Shape& theShape, const char* theInput, const char* theFormat,
+                       const char* theMidPath, const char* theOutPath, double theDeflection,
+                       double theAngle);
 int runIges(const TopoDS_Shape& theShape, const char* thePath);
 int runIgesPc(const TopoDS_Shape& theShape, const char* thePath);
 int runOffsetSurf(const TopoDS_Shape& theShape, const double theOffset);

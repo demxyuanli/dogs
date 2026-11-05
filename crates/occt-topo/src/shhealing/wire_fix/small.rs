@@ -128,7 +128,7 @@ pub(in crate::shhealing) fn fix_small_one(
     if check.done2 {
         let nb2 = wire_edges_nb(wire);
         let cnum = if n <= nb2 { n } else { 1 };
-        let _ = fix_connected_one(wire, precision, precsmall, cnum);
+        let _ = fix_connected_one(wire, None, precision, precsmall, cnum);
     }
     true
 }

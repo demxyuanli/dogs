@@ -10,7 +10,7 @@ use crate::brep_surface::SurfaceKind;
 use crate::int_tools_wline::{PatchPoint, TransType, WLine};
 use crate::intpatch::impimp::{ImplicitQuad, PathPoint};
 
-use super::iwalking::{IwLine, WalkStart};
+use super::iwalking::{IwLineOfIWalking, WalkStart};
 
 /// `IntSurf::MakeTransition` — TLine / TArc from mixed product with the surface normal.
 pub(crate) fn make_transition(tg_first: &GpVec, tg_second: &GpVec, normale: &GpDir) -> (TransType, TransType) {
@@ -82,7 +82,7 @@ fn wrap_surface(kind: SurfaceKind, u: &mut f64, v: &mut f64, up: f64, vp: f64) {
 /// Bind first/last vertices (`ImpPrmIntersection.cxx` ~1080–1290).
 pub(crate) fn attach_wline_ends(
     w: &mut WLine,
-    iw: &IwLine,
+    iw: &IwLineOfIWalking,
     seqpdep: &[WalkStart],
     rst: &[PathPoint],
     dest: &[i32],
@@ -104,8 +104,8 @@ pub(crate) fn attach_wline_ends(
     let (vmin, vmax) = quad_surf.v_range();
     const TOL_V: f64 = 1.0e-14;
 
-    if iw.has_first && !iw.tgt_begin {
-        let indfirst = iw.first_index;
+    if iw.has_first_point() && !iw.is_tangent_at_beginning() {
+        let indfirst = iw.first_point_index().unwrap_or(0);
         if indfirst >= 1 {
             let idx = (indfirst as usize).saturating_sub(1);
             if idx < seqpdep.len() {
@@ -130,14 +130,14 @@ pub(crate) fn attach_wline_ends(
                 );
             }
         }
-    } else if iw.tgt_begin {
-        push_sample_vertex(w, 0, 1.0, true, true);
+    } else if iw.is_tangent_at_beginning() {
+        push_sample_vertex(w, 0, 1.0, tol_arc, true, true);
     } else {
-        push_sample_vertex(w, 0, 1.0, false, true);
+        push_sample_vertex(w, 0, 1.0, tol_arc, false, true);
     }
 
-    if iw.has_last && !iw.tgt_end {
-        let indlast = iw.last_index;
+    if iw.has_last_point() && !iw.is_tangent_at_end() {
+        let indlast = iw.last_point_index().unwrap_or(0);
         if indlast >= 1 {
             let idx = (indlast as usize).saturating_sub(1);
             if idx < seqpdep.len() {
@@ -163,17 +163,27 @@ pub(crate) fn attach_wline_ends(
                 );
             }
         }
-    } else if iw.tgt_end {
-        push_sample_vertex(w, nbpts - 1, nbpts as f64, true, false);
+    } else if iw.is_tangent_at_end() {
+        push_sample_vertex(w, nbpts - 1, nbpts as f64, tol_arc, true, false);
     } else {
-        push_sample_vertex(w, nbpts - 1, nbpts as f64, false, false);
+        push_sample_vertex(w, nbpts - 1, nbpts as f64, tol_arc, false, false);
     }
 }
 
-fn push_sample_vertex(w: &mut WLine, i: usize, param: f64, tangent: bool, first: bool) {
+/// `ImpPrmIntersection.cxx:1163-1184` / `:1269-1290`: the sampled end vertex,
+/// with `IntPatch_Point::SetValue(P, Tol, Tangent)` carrying the tangency of
+/// the walking line end.
+fn push_sample_vertex(
+    w: &mut WLine,
+    i: usize,
+    param: f64,
+    tol_arc: f64,
+    tangent: bool,
+    first: bool,
+) {
     let a = w.points[i];
-    let pt = PatchPoint::new(a.p, param, a.u1, a.v1, a.u2, a.v2);
-    let _ = tangent;
+    let mut pt = PatchPoint::new(a.p, param, a.u1, a.v1, a.u2, a.v2);
+    pt.set_value(a.p, tol_arc, tangent);
     w.vertices.push(pt);
     if first {
         w.has_first_point = true;

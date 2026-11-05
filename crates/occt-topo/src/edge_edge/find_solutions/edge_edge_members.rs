@@ -354,20 +354,36 @@ impl EdgeEdge {
     /// `mySwap` is honoured exactly as OCCT does: the stored range and the
     /// vertex parameters are expressed on the **caller's** first/second edge.
     fn add_solution_occt(&mut self, t11: f64, t12: f64, t21: f64, t22: f64, is_edge: bool) {
+        // `cxx:789-802`: `Range1` / `Ranges2(1)` in the caller's edge order.
+        let (range1, range2) = if !self.swapped {
+            (
+                IntRange::new_unchecked(t11, t12),
+                IntRange::new_unchecked(t21, t22),
+            )
+        } else {
+            (
+                IntRange::new_unchecked(t21, t22),
+                IntRange::new_unchecked(t11, t12),
+            )
+        };
         if is_edge {
-            let range = if !self.swapped {
-                IntRange::new_unchecked(t11, t12)
-            } else {
-                IntRange::new_unchecked(t21, t22)
-            };
-            self.common_parts
-                .push(CommonPrt::with(CommonPartType::Edge, range, None, Vec::new()));
+            let mut cp = CommonPrt::with(CommonPartType::Edge, range1, None, Vec::new());
+            cp.append_range2(range2);
+            self.common_parts.push(cp);
             return;
         }
         let (t1, t2) = self.find_best_solution_ranges(t11, t12, t21, t22);
         // `cxx:810-819`: when swapped, `aT1` lives on the caller's *second*
         // edge and the vertex parameters are exchanged.
         let (e1, e2) = if !self.swapped { (t1, t2) } else { (t2, t1) };
+        // `cxx:804-822`: the VERTEX arm also stores the whole common part -
+        // `Type = TopAbs_VERTEX`, `Range1`/`Ranges2(1)` as above and
+        // `VertexParameter1/2` from `FindBestSolution`.
+        let mut cp = CommonPrt::with(CommonPartType::Vertex, range1, None, Vec::new());
+        cp.append_range2(range2);
+        cp.set_vertex_parameter1(e1);
+        cp.set_vertex_parameter2(e2);
+        self.vertex_common_parts.push(cp);
         let Some(c1) = self.curve1.as_ref() else {
             return;
         };

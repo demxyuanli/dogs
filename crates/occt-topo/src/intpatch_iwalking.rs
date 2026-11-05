@@ -6,11 +6,15 @@ use occt_geom::Surface;
 
 use crate::int_tools_wline::{u_resolution, v_resolution, PntOn2S};
 use crate::int_tools_wline::{WLine, WLineWay};
-use crate::intpatch::impimp::ImplicitQuad;
+use crate::intpatch::impimp::{normale, ImplicitQuad};
+use crate::intsurf_transition::IntSurfTypeTrans;
 use crate::geom_int::surface_parameters;
 
 use super::search_inside::InteriorPoint;
 use super::surf_func::{function_set_root, SurfFunction};
+
+#[path = "intpatch_iw_line_of_iwalking.rs"]
+mod iw_line_of_iwalking;
 
 /// Path start after `ComputeTangency` (`IntSurf_PathPoint`).
 #[derive(Clone, Copy)]
@@ -23,31 +27,9 @@ pub(crate) struct WalkStart {
     pub tangent: bool,
 }
 
-/// One walking polyline (`IntWalk_TheIWLine`).
-#[derive(Clone)]
-pub(crate) struct IwLine {
-    pub points: Vec<PntOn2S>,
-    pub first_index: i32,
-    pub last_index: i32,
-    pub has_first: bool,
-    pub has_last: bool,
-    pub tgt_begin: bool,
-    pub tgt_end: bool,
-}
-
-impl IwLine {
-    fn from_points(points: Vec<PntOn2S>) -> Self {
-        Self {
-            points,
-            first_index: 0,
-            last_index: 0,
-            has_first: false,
-            has_last: false,
-            tgt_begin: false,
-            tgt_end: false,
-        }
-    }
-}
+/// `IntPatch_TheIWLineOfTheIWalking` (the `IntWalk_TheIWLine` of this
+/// instantiation, `IntPatch_TheIWLineOfTheIWalking.hxx:248`).
+pub(crate) use self::iw_line_of_iwalking::IwLineOfIWalking;
 
 /// `IntWalk_IWalking::Perform(seqpdep, seqpins, Func, PSurf, reversed)`.
 pub(crate) fn iwalking_perform(
@@ -58,7 +40,7 @@ pub(crate) fn iwalking_perform(
     reversed: bool,
     pas: f64,
     fleche: f64,
-) -> Vec<IwLine> {
+) -> Vec<IwLineOfIWalking> {
     let (mut um, mut umax) = prm.u_range();
     let (mut vm, mut vmax) = prm.v_range();
     if umax < um {
@@ -78,7 +60,7 @@ pub(crate) fn iwalking_perform(
 
     let mut used_path = vec![false; path.len()];
     let mut used_int = vec![false; interior.len()];
-    let mut lines: Vec<IwLine> = Vec::new();
+    let mut lines: Vec<IwLineOfIWalking> = Vec::new();
 
     for (i, st) in path.iter().enumerate() {
         if st.tangent || used_path[i] {
@@ -107,9 +89,8 @@ pub(crate) fn iwalking_perform(
         ) else {
             continue;
         };
-        line.has_first = true;
-        line.first_index = (i + 1) as i32;
-        line.tgt_begin = st.tangent;
+        line.add_status_first_at(false, true, (i + 1) as i32);
+        line.set_tangency_at_beginning(st.tangent);
         used_path[i] = true;
         mark_hits(&line, path, interior, &mut used_path, &mut used_int, reversed);
         bind_last(&mut line, path, Some(i));
@@ -160,12 +141,12 @@ pub(crate) fn iwalking_perform(
 
 /// Fill quadric UV on walking points and wrap as `WLine` (`ImpPrm` post-walk).
 pub(crate) fn lines_to_wlines(
-    raw: &[IwLine],
+    raw: &[IwLineOfIWalking],
     quad: &ImplicitQuad,
     quad_surf: &dyn Surface,
-    _prm: &dyn Surface,
+    prm: &dyn Surface,
     reversed: bool,
-) -> Vec<(WLine, IwLine)> {
+) -> Vec<(WLine, IwLineOfIWalking)> {
     let (vmin, vmax) = quad_surf.v_range();
     let recadre_u = matches!(
         quad,
@@ -177,6 +158,10 @@ pub(crate) fn lines_to_wlines(
         if line.points.len() < 2 {
             continue;
         }
+        // `IntPatch_ImpPrmIntersection.cxx:877-912`: the transitions of the
+        // new `IntPatch_WLine` (`:1073`) come from the walking tangent vector
+        // and the two normals at that point.
+        let (tgline, trans1, trans2) = line_transitions(line, quad, prm, reversed);
         let mut points = Vec::with_capacity(line.points.len());
         let mut an_u1 = 0.0;
         let mut an_u2 = 0.0;
@@ -245,8 +230,9 @@ pub(crate) fn lines_to_wlines(
             points.push(pnt);
         }
         let n = points.len();
+        let _ = tgline;
         let wl = WLine {
-            base: crate::intpatch_line::IntPatchLine::default(),
+            base: crate::intpatch_line::IntPatchLine::with_transitions(false, trans1, trans2),
             points,
             vertices: Vec::new(),
             has_first_point: false,
@@ -269,6 +255,49 @@ pub(crate) fn lines_to_wlines(
     out
 }
 
+/// `IntPatch_ImpPrmIntersection.cxx:877-912`: the walking tangent vector and
+/// the normals at point `k` give the line transitions.
+///
+/// `k` starts as `TangentVector(Index)` (`:877-879`); when the stored index is
+/// outside `1..NbPoints` OCCT falls back to the middle point (`:880-886`)
+/// while keeping the stored vector, so an unset tangent leaves the two
+/// normals to decide (`DotCross` of a null vector is `0.` →
+/// `IntSurf_In` / `IntSurf_Out`).
+fn line_transitions(
+    line: &IwLineOfIWalking,
+    quad: &ImplicitQuad,
+    prm: &dyn Surface,
+    reversed: bool,
+) -> (GpVec, IntSurfTypeTrans, IntSurfTypeTrans) {
+    let (tgline, index) = line.tangent_vector();
+    let nbpts = line.nb_points();
+    let k = if index >= 1 && index <= nbpts {
+        index
+    } else {
+        nbpts >> 1
+    };
+    let Some(p) = line.points.get(k.max(1).saturating_sub(1) as usize) else {
+        return (tgline, IntSurfTypeTrans::In, IntSurfTypeTrans::Out);
+    };
+    let valpt = p.p;
+    let (norm1, norm2) = if !reversed {
+        let (u2, v2) = p.parameters_on_s2();
+        let n1 = normale(quad, &valpt);
+        let (_pt, d1u, d1v) = prm.d1(u2, v2);
+        (n1, d1u.crossed(&d1v))
+    } else {
+        let (u1, v1) = p.parameters_on_s1();
+        let n2 = normale(quad, &valpt);
+        let (_pt, d1u, d1v) = prm.d1(u1, v1);
+        (d1u.crossed(&d1v), n2)
+    };
+    if tgline.dot_cross(&norm2, &norm1) > 0.0 {
+        (tgline, IntSurfTypeTrans::Out, IntSurfTypeTrans::In)
+    } else {
+        (tgline, IntSurfTypeTrans::In, IntSurfTypeTrans::Out)
+    }
+}
+
 fn walk_open(
     u0: f64,
     v0: f64,
@@ -285,7 +314,7 @@ fn walk_open(
     vmax: f64,
     tol_u: f64,
     tol_v: f64,
-) -> Option<IwLine> {
+) -> Option<IwLineOfIWalking> {
     walk_dir(
         u0, v0, d2d, d3d, 1, false, func, _prm, reversed, pas, fleche, um, umax, vm, vmax, tol_u,
         tol_v,
@@ -308,7 +337,7 @@ fn walk_closed(
     vmax: f64,
     tol_u: f64,
     tol_v: f64,
-) -> Option<IwLine> {
+) -> Option<IwLineOfIWalking> {
     let mut fwd = walk_dir(
         u0, v0, d2d, d3d, 1, true, func, _prm, reversed, pas, fleche, um, umax, vm, vmax, tol_u,
         tol_v,
@@ -324,11 +353,15 @@ fn walk_closed(
         u0, v0, d2d, d3d, -1, false, func, _prm, reversed, pas, fleche, um, umax, vm, vmax, tol_u,
         tol_v,
     ) {
-        back.points.reverse();
+        back.reverse();
         if back.points.len() > 1 {
             back.points.pop();
         }
         back.points.extend(fwd.points);
+        // `IntWalk_IWalking::OpenLine` (`gxx:2984-2985`): after reversing the
+        // line the tangent vector is stored reversed at the new last point.
+        let n = back.nb_points();
+        back.set_tangent_vector(d3d.reversed(), n);
         fwd = back;
     }
     if fwd.points.len() >= 2 {
@@ -356,14 +389,20 @@ fn walk_dir(
     vmax: f64,
     tol_u: f64,
     tol_v: f64,
-) -> Option<IwLine> {
+) -> Option<IwLineOfIWalking> {
     let _ = func.values(u0, v0);
     if !func.is_tangent() {
         d2d = func.direction2d();
         d3d = func.direction3d();
     }
     let p0 = func.point();
-    let mut line = IwLine::from_points(vec![make_pnt(p0, u0, v0, reversed)]);
+    let mut line = IwLineOfIWalking::new();
+    line.add_point(make_pnt(p0, u0, v0, reversed));
+    // `IntWalk_IWalking.gxx:1509-1528` (`ComputeOpenLine`) and `:2119`
+    // (`ComputeCloseLine`): the direction that produced the first point is
+    // stored as the tangent of point 1; a negative step walks the reversed
+    // direction.
+    line.set_tangent_vector(if step_sign < 0 { d3d.reversed() } else { d3d }, 1);
     let mut pasc = first_step(d2d, pas, um, umax, vm, vmax, tol_u, tol_v);
     if pasc <= 0.0 {
         return None;
@@ -447,6 +486,17 @@ fn walk_dir(
             }
         }
         if cadre {
+            // `IntWalk_IWalking::TestArretCadre` (`gxx:1290-1314`): when the
+            // walk stops on the natural bound of the surface, the tangent
+            // vector is recorded at the last point, guarded by
+            // `Indextg > NBP` and `j > 3 && j <= NBP + 1` (`gxx:1294-1306`).
+            let nbp = line.nb_points();
+            if line.indextg > nbp {
+                let j = nbp + 1;
+                if j > 3 && j <= nbp + 1 {
+                    line.set_tangent_vector(prev_d3d, j - 1);
+                }
+            }
             break;
         }
         pasc = first_step(d2d, pas, um, umax, vm, vmax, tol_u, tol_v);
@@ -654,7 +704,7 @@ fn prm_uv(p: &PntOn2S, reversed: bool) -> (f64, f64) {
     }
 }
 
-fn bind_first(line: &mut IwLine, path: &[WalkStart]) {
+fn bind_first(line: &mut IwLineOfIWalking, path: &[WalkStart]) {
     if line.has_first {
         return;
     }
@@ -664,15 +714,14 @@ fn bind_first(line: &mut IwLine, path: &[WalkStart]) {
     let eps2 = CONFUSION * CONFUSION * 100.0;
     for (j, st) in path.iter().enumerate() {
         if first.p.square_distance(&st.p) <= eps2 {
-            line.has_first = true;
-            line.first_index = (j + 1) as i32;
-            line.tgt_begin = st.tangent;
+            line.add_status_first_at(false, true, (j + 1) as i32);
+            line.set_tangency_at_beginning(st.tangent);
             return;
         }
     }
 }
 
-fn bind_last(line: &mut IwLine, path: &[WalkStart], skip: Option<usize>) {
+fn bind_last(line: &mut IwLineOfIWalking, path: &[WalkStart], skip: Option<usize>) {
     let Some(last) = line.points.last() else {
         return;
     };
@@ -682,15 +731,14 @@ fn bind_last(line: &mut IwLine, path: &[WalkStart], skip: Option<usize>) {
             continue;
         }
         if last.p.square_distance(&st.p) <= eps2 {
-            line.has_last = true;
-            line.last_index = (j + 1) as i32;
-            line.tgt_end = st.tangent;
+            line.add_status_last_at(true, (j + 1) as i32);
+            line.set_tangency_at_end(st.tangent);
             return;
         }
     }
 }
 
-fn is_on_lines(p: &GpPnt, lines: &[IwLine], _reversed: bool) -> bool {
+fn is_on_lines(p: &GpPnt, lines: &[IwLineOfIWalking], _reversed: bool) -> bool {
     let eps2 = CONFUSION * CONFUSION;
     lines
         .iter()
@@ -698,7 +746,7 @@ fn is_on_lines(p: &GpPnt, lines: &[IwLine], _reversed: bool) -> bool {
 }
 
 fn mark_hits(
-    line: &IwLine,
+    line: &IwLineOfIWalking,
     path: &[WalkStart],
     interior: &[InteriorPoint],
     used_path: &mut [bool],

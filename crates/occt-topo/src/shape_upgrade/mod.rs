@@ -5,6 +5,7 @@
 
 mod c0_bspline_sequence;
 mod divide_continuity;
+mod remove_locations;
 mod split_surface;
 
 pub use c0_bspline_sequence::{
@@ -12,4 +13,5 @@ pub use c0_bspline_sequence::{
     GEOMABS_C1,
 };
 pub use divide_continuity::correct_c0_basis;
+pub use remove_locations::RemoveLocations;
 pub use split_surface::C0Basis;

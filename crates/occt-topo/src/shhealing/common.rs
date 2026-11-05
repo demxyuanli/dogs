@@ -527,7 +527,7 @@ pub fn remove_small_edges(shape: &TopoShape, precsmall: f64) -> (TopoShape, usiz
                         // `cxx:1459-1468`: `FixConnected(cnum, precsmall)`.
                         let nb2 = wire_edges_nb(&tmp);
                         let cnum = if i <= nb2 { i } else { 1 };
-                        let _ = fix_connected_one(&mut tmp, CONFUSION, precsmall, cnum);
+                        let _ = fix_connected_one(&mut tmp, None, CONFUSION, precsmall, cnum);
                     }
                     live = edges_of_wire(&tmp);
                     removed += 1;

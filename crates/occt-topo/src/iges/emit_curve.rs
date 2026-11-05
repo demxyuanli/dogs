@@ -222,22 +222,20 @@ impl IgesWriter {
     /// `BRepToIGES_BRWire::TransferEdge(edge, originMap, false)`
     /// (`BRepToIGES_BRWire.cxx:266-335`): the edge's 3-D curve entity.
     ///
-    /// Returns `None` where OCCT leaves `ICurve` null and the caller skips the
-    /// edge (`TransferWire`, `cxx:715-723`): the edge has no 3-D curve at all
-    /// (a degenerated edge - `BRep_Builder::Degenerated` drops the curve,
-    /// `BRep_Builder.cxx:1073-1085`, so `BRep_Tool::Curve` at `cxx:282` returns
-    /// null; the port's `EdgeGeom::curve` is non-nullable and carries the
-    /// `degenerated` flag instead, see `builder.rs:326-331`).
+    /// `cxx:282` reads `BRep_Tool::Curve(theEdge, L, First, Last)` and
+    /// `cxx:292-318` transfers it only when the handle is non-null, so an edge
+    /// without a 3-D curve yields a null `ICurve` and no entity is written: the
+    /// caller then has nothing for that edge (`TransferWire`, `cxx:715-723`).
+    /// A degenerated edge is exactly that case — `BRep_Builder::Degenerated`
+    /// drops the curve (`BRep_Builder.cxx:1082-1084`) — so the port answers
+    /// `None` both on the `degenerated` flag and on
+    /// `BRep_Tool::Curve` (`GeometryRegistry::edge_curve`, which returns null on
+    /// the `curve3d_null` representation state).
     pub(super) fn emit_edge_curve(&mut self, e: &Edge) -> Option<usize> {
-        let Some(curve) = BRepTool::edge_curve(e) else {
-            let (v1, v2) = edge_vertices(e);
-            let p1 = v1.map(|v| BRepTool::vertex_point(&v)).unwrap_or_default();
-            let p2 = v2.map(|v| BRepTool::vertex_point(&v)).unwrap_or_default();
-            return Some(self.emit_line(&p1, &p2));
-        };
         if BRepTool::is_degenerated(e) {
             return None;
         }
+        let curve = BRepTool::edge_curve(e)?;
         let (first, last) = BRepTool::edge_parameters(e);
         // `BRepToIGES_BRWire::TransferEdge` (`cxx:302-314`): every call from the
         // face path passes `theIsBRepMode = false`, so a REVERSED edge is written

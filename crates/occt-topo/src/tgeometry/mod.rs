@@ -159,6 +159,7 @@ impl EdgeGeom {
 }
 
 /// Face geometry — an underlying surface and a tolerance. (BRep_TFace)
+#[derive(Clone)]
 pub struct FaceGeom {
     pub surface: Arc<dyn Surface>,
     pub tolerance: f64,

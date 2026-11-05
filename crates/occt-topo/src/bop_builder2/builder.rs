@@ -63,6 +63,9 @@ pub struct BopBuilder {
     /// `myInParts`: source solid TShape key → IN + INTERNAL faces from
     /// FillIn3DParts. Consumed by `BOPAlgo_Builder::BuildBOP`.
     pub(super) in_parts: HashMap<ShapeMapKey, Vec<TopoShape>>,
+    /// `myFillHistory` — whether `prepare_history` fills the history
+    /// (`BOPAlgo_BuilderShape.hxx:151`).
+    pub(super) fill_history: bool,
 }
 
 impl Default for BopBuilder {

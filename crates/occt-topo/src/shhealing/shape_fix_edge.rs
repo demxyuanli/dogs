@@ -12,9 +12,9 @@ use occt_geom2d::trimmed::Geom2dTrimmedCurve;
 use crate::brep_lib_same_range::{rep_ranges, set_rep_ranges};
 use crate::brep_tool::BRepTool;
 use crate::shhealing::{geom_lib_same_range, ShapeBuildEdge};
-use crate::shape::{Edge, TopoShape};
+use crate::shape::{Edge, Face, TopoShape};
 use crate::shape_extend::{
-    decode_status, SHAPEEXTEND_DONE1, SHAPEEXTEND_FAIL1, SHAPEEXTEND_OK,
+    decode_status, SHAPEEXTEND_DONE1, SHAPEEXTEND_FAIL1, SHAPEEXTEND_FAIL2, SHAPEEXTEND_OK,
 };
 use crate::tgeometry::GeometryRegistry;
 
@@ -257,6 +257,57 @@ impl ShapeFixEdge {
             reg.set_same_range(&edge.0, false); // cxx:781
             reg.set_same_parameter(&edge.0, false); // cxx:782
         }
+        true
+    }
+
+    /// `FixAddPCurve(edge, face, isSeam = false, prec = 0)`
+    /// (`ShapeFix_Edge.cxx:117-123` -> `:470-615`).
+    ///
+    /// `BRepFill_TrimShellCorner::MakeFacesNonSec` calls it on the new
+    /// vertex-to-vertex edge of a non-planar face
+    /// (`BRepFill_TrimShellCorner.cxx:614-618`).
+    ///
+    /// With `isSeam == false` the reference's own guards fix the control flow:
+    /// `cxx:479-483` returns on an edge that already carries a pcurve, and
+    /// `cxx:519-541` runs the projector only inside `if (!sae.HasPCurve(...))`,
+    /// which is the same test — so the `else` arm (`sae.PCurve`,
+    /// `cxx:542-546`) is unreachable here and the seam block
+    /// (`cxx:550-585`) is skipped, leaving only
+    /// `B.UpdateEdge(edge, c2d, surf, location, 0.)` (`cxx:587`).
+    pub fn fix_add_pcurve(&mut self, edge: &Edge, face: &TopoShape) -> bool {
+        // `cxx:477`: `myStatus = ShapeExtend::EncodeStatus(ShapeExtend_OK)`.
+        self.status = SHAPEEXTEND_OK;
+        let reg = GeometryRegistry::global();
+        let key = GeometryRegistry::shape_key(face);
+        // `cxx:479-483`: `sae.HasPCurve(edge, surf, location)`.
+        if reg.edge_pcurve(&edge.0, key).is_some() {
+            return false;
+        }
+        // `cxx:486-489`: "PCurve on Plane not computed".
+        let Some(surf) = reg.face_surface(face) else {
+            return false;
+        };
+        if surf.gp_pln().is_some() {
+            return false;
+        }
+        // `cxx:499-508`: `c3d = BRep_Tool::Curve(edge, First, Last)`; a null 3D
+        // curve is `FAIL1` and returns `false`.
+        if reg.edge_curve(&edge.0).is_none() {
+            self.status |= SHAPEEXTEND_FAIL1;
+            return false;
+        }
+        // `cxx:519-541`: `myProjector->Init(sas, preci)` +
+        // `Perform(c3d, First, Last, c2d, TolFirst, TolLast)`. A null `c2d`
+        // would be dereferenced by `cxx:587`; the port answers `false` with
+        // `FAIL2`, the status the reference's `catch` arm sets
+        // (`cxx:601-611`).
+        let Ok(c2d) = crate::pcurve_full::make_pcurve_full(edge, &Face(face.clone())) else {
+            self.status |= SHAPEEXTEND_FAIL2;
+            return false;
+        };
+        // `cxx:587`: `B.UpdateEdge(edge, c2d, surf, location, 0.)`.
+        reg.set_edge_pcurve(&edge.0, key, c2d);
+        self.status |= SHAPEEXTEND_DONE1; // cxx:613
         true
     }
 }

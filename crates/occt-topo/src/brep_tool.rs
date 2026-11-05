@@ -137,6 +137,42 @@ impl BRepTool {
         ts.edge_core().and_then(|c| c.polygon3d.clone())
     }
 
+    /// `BRep_Tool::PolygonOnTriangulation(E, T, L)` (`BRep_Tool.cxx:683-712`):
+    /// the polygon of `theEdge` in the parametric space of the face whose
+    /// triangulation is `tri`, i.e. the `BRep_PolygonOnTriangulation`
+    /// representation `BRep_Builder::UpdateEdge(E, P, T, L)` installs.
+    ///
+    /// The OCCT loop matches `cr->IsPolygonOnTriangulation(T, l)` and then, for
+    /// a closed-triangulation representation with a reversed edge, answers
+    /// `PolygonOnTriangulation2()` instead of `PolygonOnTriangulation()`
+    /// (`cxx:698-707`). `reversed` is that `Eisreversed`
+    /// (`cxx:689`, `E.Orientation() == TopAbs_REVERSED`), passed in because
+    /// `HLRBRep_PolyAlgo::InitBiPointsWithConnexity` reverses a *local copy* of
+    /// the edge (`HLRBRep_PolyAlgo.cxx:1076`) before the second lookup
+    /// (`:1079`).
+    ///
+    /// UNPORTED: `TopLoc_Location` — the representation carries no location in
+    /// this crate, so `L.Predivided(E.Location())` has nothing to compare and
+    /// the triangulation handle is the whole key.
+    pub fn polygon_on_triangulation(
+        edge: &Edge,
+        tri: &Arc<occt_core::poly::Triangulation>,
+        reversed: bool,
+    ) -> Option<Arc<occt_core::poly::PolyPolygonOnTriangulation>> {
+        let ts = edge.0.tshape.read().unwrap();
+        let core = ts.edge_core()?;
+        let repr = core
+            .polygons_on_triangulation
+            .iter()
+            .find(|r| Arc::ptr_eq(&r.triangulation, tri))?;
+        if reversed {
+            if let Some(p2) = &repr.polygon2 {
+                return Some(p2.clone());
+            }
+        }
+        Some(repr.polygon.clone())
+    }
+
     /// Version of Tolerance with a minimal value -- a port of
     /// `BRep_Tool::Tolerance(Vertex)` (`BRep_Tool.cxx:1314-1332`):
     ///

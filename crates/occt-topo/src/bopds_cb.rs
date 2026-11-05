@@ -1,5 +1,8 @@
 //! BOPDS common-block, face-info and interference types.
+use std::sync::Arc;
+
 use crate::bopds_pave::BopdsPaveBlock;
+use crate::inttools_data::CommonPrt;
 
 /// Collection of pave blocks that have geometrical coincidence (within a
 /// tolerance) with each other and/or with faces. Source: `BOPDS_CommonBlock`.
@@ -357,7 +360,12 @@ impl BopdsFaceInfo {
 
 /// Information about an interference between two shapes.
 /// Source: `BOPDS_Interf.hxx` (root class).
-#[derive(Debug, Clone, Copy)]
+///
+/// `BOPDS_InterfEE` / `BOPDS_InterfEF` additionally carry the whole
+/// `IntTools_CommonPrt` (`BOPDS_Interf.hxx:424`, `:485` — `SetCommonPart`);
+/// the root class does not. That payload lives in [`Self::common_part`] and is
+/// `None` for the V/V, V/E, V/F records that have no common part.
+#[derive(Debug, Clone)]
 pub struct BopdsInterf {
     /// Index of the first interfered shape.
     pub index1: usize,
@@ -369,6 +377,9 @@ pub struct BopdsInterf {
     pub common_first: f64,
     /// Common-part last parameter on the first shape.
     pub common_last: f64,
+    /// `BOPDS_InterfEE::myCommonPart` / `BOPDS_InterfEF::myCommonPart`.
+    /// `None` on the record types that do not derive from a class owning one.
+    pub common_part: Option<Arc<CommonPrt>>,
 }
 
 impl BopdsInterf {
@@ -380,6 +391,7 @@ impl BopdsInterf {
             index_new: -1,
             common_first: 0.0,
             common_last: 0.0,
+            common_part: None,
         }
     }
 
@@ -463,5 +475,21 @@ impl BopdsInterf {
     /// `IntTools_CommonPrt::Range1` stored with this interference.
     pub fn common_range(&self) -> (f64, f64) {
         (self.common_first, self.common_last)
+    }
+
+    /// `BOPDS_InterfEE::SetCommonPart` / `BOPDS_InterfEF::SetCommonPart`
+    /// (`BOPDS_Interf.hxx:424`, `:485`) — stores the whole common part and, as
+    /// a convenience mirror, its `Range1` in [`Self::common_range`].
+    pub fn set_common_part(&mut self, cp: CommonPrt) {
+        self.common_first = cp.range.first;
+        self.common_last = cp.range.last;
+        self.common_part = Some(Arc::new(cp));
+    }
+
+    /// `BOPDS_InterfEE::CommonPart` / `BOPDS_InterfEF::CommonPart`
+    /// (`BOPDS_Interf.hxx:429`, `:490`). `None` when the record type has no
+    /// common part (V/V, V/E, V/F).
+    pub fn common_part(&self) -> Option<&CommonPrt> {
+        self.common_part.as_deref()
     }
 }

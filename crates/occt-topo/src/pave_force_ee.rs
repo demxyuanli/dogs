@@ -268,7 +268,10 @@ pub fn force_interf_ee(f: &mut PaveFiller) -> Result<(), String> {
                 t.n_e1, t.n_e2
             ));
         }
-        f.ds_mut().add_interf_ee(t.n_e1, t.n_e2, None);
+        // `_3.cxx:1307-1309`: `aEEs.Appended()` + `SetIndices` +
+        // `SetCommonPart(aCP)`.
+        f.ds_mut()
+            .add_interf_ee_with_common_part(t.n_e1, t.n_e2, None, cps[0].clone());
         if f.ds().is_common_block(&t.pb1) {
             if let Some(cb) = f.ds().common_block(&t.pb1).cloned() {
                 for pbx in cb.pave_blocks() {

@@ -143,6 +143,12 @@ pub struct CommonPrt {
     pub vertices: Vec<TopoShape>,
     /// `IntTools_CommonPrt::VertexParameter1`.
     pub vertex_parameter1: Option<f64>,
+    /// `IntTools_CommonPrt::Ranges2` (`NCollection_Sequence<IntTools_Range>`):
+    /// the common-part ranges on the second edge, in sequence order. Index 0 is
+    /// OCCT's `Ranges2()(1)`.
+    pub ranges2: Vec<IntRange>,
+    /// `IntTools_CommonPrt::VertexParameter2`.
+    pub vertex_parameter2: Option<f64>,
     /// `IntTools_CommonPrt::AllNullFlag`.
     pub all_null_flag: bool,
     /// `IntTools_CommonPrt::SetBoundingPoints` / `BoundingPoints`.
@@ -159,6 +165,8 @@ impl CommonPrt {
             face: None,
             vertices: Vec::new(),
             vertex_parameter1: None,
+            ranges2: Vec::new(),
+            vertex_parameter2: None,
             all_null_flag: false,
             bounding_p1: GpPnt::zero(),
             bounding_p2: GpPnt::zero(),
@@ -178,6 +186,8 @@ impl CommonPrt {
             face,
             vertices,
             vertex_parameter1: None,
+            ranges2: Vec::new(),
+            vertex_parameter2: None,
             all_null_flag: false,
             bounding_p1: GpPnt::zero(),
             bounding_p2: GpPnt::zero(),
@@ -236,6 +246,26 @@ impl CommonPrt {
     /// `IntTools_CommonPrt::VertexParameter1`.
     pub fn vertex_parameter1(&self) -> Option<f64> {
         self.vertex_parameter1
+    }
+
+    /// `IntTools_CommonPrt::SetVertexParameter2`.
+    pub fn set_vertex_parameter2(&mut self, t: f64) {
+        self.vertex_parameter2 = Some(t);
+    }
+
+    /// `IntTools_CommonPrt::VertexParameter2`.
+    pub fn vertex_parameter2(&self) -> Option<f64> {
+        self.vertex_parameter2
+    }
+
+    /// `IntTools_CommonPrt::AppendRange2` — adds one range to `Ranges2`.
+    pub fn append_range2(&mut self, r: IntRange) {
+        self.ranges2.push(r);
+    }
+
+    /// `IntTools_CommonPrt::Ranges2` — the ranges on the second edge.
+    pub fn ranges2(&self) -> &[IntRange] {
+        &self.ranges2
     }
 
     /// `IntTools_CommonPrt::SetAllNullFlag`.

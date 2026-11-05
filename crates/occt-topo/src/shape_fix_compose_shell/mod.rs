@@ -20,7 +20,8 @@ mod wire_segment;
 pub use composite_surface::{CompositeSurface, Parametrisation};
 pub use helpers::*;
 pub use load_wires::load_wires;
-pub use reshape::{apply_context, IdentityReShape, MapReShape, ReShape, SharedReShape};
+pub use reshape::{apply_context, empty_copied_edge, empty_copied_face, IdentityReShape, MapReShape, ReShape, SharedReShape};
 pub use shell::ComposeShell;
 pub use wire_data::{reverse_wire_data, reverse_wire_data_on_face};
 pub use wire_segment::WireSegment;
+

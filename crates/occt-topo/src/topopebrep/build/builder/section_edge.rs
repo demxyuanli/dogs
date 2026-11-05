@@ -35,12 +35,11 @@
 //!   `false`; pass 6 reads it only after a `false`. OCCT reads uninitialised
 //!   stack memory there when the 3-D projection itself failed, so the port
 //!   answers `None` and skips the translation (equivalent to a zero offset).
-//! - UNPORTED: `FC2D_translate` (`TopOpeBRepTool_2d.cxx:410-468`), the
-//!   periodic-surface origin shift of the seven-argument
-//!   `FC2D_CurveOnSurface` (`2d.cxx:538-570`). Pass 4 still looks up the `EF`
-//!   argument (`cxx:636-662`) because that lookup is OCCT control flow, but the
-//!   argument reaches nothing else: the port builds the p-curve through
-//!   [`fc2d_curve_on_surface`], i.e. the six-argument overload.
+//! - UNPORTED: `FUN_onboundsper(E, F, uv)`'s 3-D projection out-parameter when
+//!   the projection itself failed — see the previous bullet; every p-curve step
+//!   of pass 4 runs the seven-argument `FC2D_CurveOnSurface`
+//!   (`TopOpeBRepTool_2d.cxx:450-566`) with the `EF` argument OCCT looks up at
+//!   `cxx:636-662`.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -57,10 +56,12 @@ use crate::topopebrep::build::ShapeListOfShape;
 use crate::topopebrep::ds::connex::Connexity;
 use crate::topopebrep::ds::export::{fds_data, fds_has_same_domain2d, fds_has_same_domain3d};
 use crate::topopebrep::ds::kind::Kind;
+use crate::topopebrep::tool::c2d::fc2d_curve_on_surface_with_ef;
 use crate::topopebrep::tool::iso::uv_iso_curve;
 use crate::topopebrep::tool::project_curve::fun_tool_bounds;
 use crate::topopebrep::tool::split_e::{split_e, trsl_uv_modif_e};
 use crate::topopebrep::tool::topology::fun_tool_par_f;
+use crate::topopebrep::build::tools::write_edge_pcurve;
 
 use super::Builder;
 
@@ -451,10 +452,9 @@ impl Builder {
                 let if_ = bds.shape_index(f, true);
                 let rf = bds.ancestor_rank(if_);
 
-                // `cxx:636-662`: the partner edge of the same rank inside `F`.
-                // It only feeds the `EF` argument of the seven-argument
-                // `FC2D_CurveOnSurface`, i.e. `FC2D_translate`, which is
-                // UNPORTED (see the module docs).
+                // `cxx:636-662`: the partner edge of the same rank inside `F`,
+                // i.e. the `EF` argument of the seven-argument
+                // `FC2D_CurveOnSurface`.
                 let mut esd_f: Option<TopoShape> = None;
                 for esd in &lesd {
                     let iesd = bds.shape_index(esd, true);
@@ -471,7 +471,10 @@ impl Builder {
                         break;
                     }
                 }
-                let _ = esd_f;
+
+                // `cxx:624`: `tolE = BRep_Tool::Tolerance(E)`, with `E` the
+                // reference section edge.
+                let tol_e = BRepTool::edge_tolerance(&Edge(e.clone()));
 
                 for eon in &lon {
                     let edge = Edge(eon.clone());
@@ -482,8 +485,14 @@ impl Builder {
                     }
                     // `cxx:684-691`: a null p-curve raises
                     // `Standard_ProgramError("...SSE null PC on F")`.
-                    fc2d_curve_on_surface(eon, f)
+                    let c2df = fc2d_curve_on_surface_with_ef(eon, f, esd_f.as_ref(), true)
                         .expect("TopOpeBRepBuild_Builder::SSE null PC on F");
+                    // `cxx:692-693`: `tol = max(tolE, tolpc)` then
+                    // `BB.UpdateEdge(eon, PC, F, tol)`.
+                    let tol = if tol_e > c2df.tol { tol_e } else { c2df.tol };
+                    if let Some(pc) = c2df.curve {
+                        write_edge_pcurve(&Edge(eon.clone()), pc, &face, tol);
+                    }
                 }
             }
         }

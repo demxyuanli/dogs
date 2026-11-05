@@ -5,6 +5,7 @@ use crate::bopds::BopdsDS;
 use crate::bopds_cb::{cb_contains_pb, pb_same, BopdsCommonBlock, BopdsInterf};
 use crate::bopds_ff::BopdsInterfFf;
 use crate::bopds_pave::BopdsPaveBlock;
+use crate::inttools_data::CommonPrt;
 
 impl BopdsDS {
     /// True if the pave block `pb` is a member of a common block: one of its
@@ -206,6 +207,31 @@ impl BopdsDS {
         self.interferences.contains(&(a, b))
     }
 
+    /// `BOPDS_DS::HasInterfShapeSubShapes(theIndex1, theIndex2,
+    /// theAnyInterference = false)`: true when **every** direct sub-shape of
+    /// `the_index2` interferes with `the_index1` (`BOPDS_DS.cxx`,
+    /// `HasInterfShapeSubShapes`).
+    pub fn has_interf_shape_sub_shapes(&self, the_index1: usize, the_index2: usize) -> bool {
+        let Some(info) = self.shape_infos.get(the_index2) else {
+            return false;
+        };
+        info.sub_indices
+            .iter()
+            .all(|&sub| self.has_interf_pair(the_index1, sub))
+    }
+
+    /// `BOPDS_DS::HasInterfSubShapes(theIndex1, theIndex2)`: true when **any**
+    /// direct sub-shape of `the_index1` interferes with all sub-shapes of
+    /// `the_index2` (`BOPDS_DS.cxx`, `HasInterfSubShapes`).
+    pub fn has_interf_sub_shapes(&self, the_index1: usize, the_index2: usize) -> bool {
+        let Some(info) = self.shape_infos.get(the_index1) else {
+            return false;
+        };
+        info.sub_indices
+            .iter()
+            .any(|&sub| self.has_interf_shape_sub_shapes(sub, the_index2))
+    }
+
     /// Returns the set of interfering pairs.
     pub fn interferences(&self) -> &HashSet<(usize, usize)> {
         &self.interferences
@@ -352,6 +378,49 @@ impl BopdsDS {
             self.add_interf(rec.index1(), rec.index2());
         }
         self.interf_ff.push(rec);
+    }
+
+    /// Appends an E/E interference record carrying its `IntTools_CommonPrt`
+    /// (`BOPAlgo_PaveFiller_3.cxx:513-516`, `:541-545`, `:1307-1309`:
+    /// `aEEs.Appended()` then `aEE.SetIndices` / `aEE.SetCommonPart`).
+    ///
+    /// Returns the index of the appended record.
+    pub fn add_interf_ee_with_common_part(
+        &mut self,
+        i1: usize,
+        i2: usize,
+        index_new: Option<usize>,
+        cp: CommonPrt,
+    ) -> usize {
+        self.add_interf(i1, i2);
+        Self::append_interf(&mut self.interf_ee, i1, i2, index_new);
+        let ix = self.interf_ee.len() - 1;
+        if let Some(it) = self.interf_ee.get_mut(ix) {
+            it.set_common_part(cp);
+        }
+        ix
+    }
+
+    /// Appends an E/F interference record carrying its `IntTools_CommonPrt`
+    /// (`BOPAlgo_PaveFiller_5.cxx:427-432`, `:530-533`, `:547-560`,
+    /// `:1176-1180`: `aEFs.Appended()` then `aEF.SetIndices` /
+    /// `aEF.SetCommonPart`).
+    ///
+    /// Returns the index of the appended record.
+    pub fn add_interf_ef_with_common_part(
+        &mut self,
+        i1: usize,
+        i2: usize,
+        index_new: Option<usize>,
+        cp: CommonPrt,
+    ) -> usize {
+        self.add_interf(i1, i2);
+        Self::append_interf(&mut self.interf_ef, i1, i2, index_new);
+        let ix = self.interf_ef.len() - 1;
+        if let Some(it) = self.interf_ef.get_mut(ix) {
+            it.set_common_part(cp);
+        }
+        ix
     }
 
     fn append_interf(arr: &mut Vec<BopdsInterf>, i1: usize, i2: usize, index_new: Option<usize>) {

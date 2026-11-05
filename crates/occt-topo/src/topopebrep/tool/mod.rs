@@ -28,8 +28,11 @@
 //!   fusion `Builder::End` runs after a boolean operation.
 //! - `TopOpeBRepTool_PurgeInternalEdges` ([`purge_internal_edges`]): drops the
 //!   edges no face carries, rebuilding through `BRepTools_Substitution`.
+//! - `TopOpeBRepTool_AncestorsTool` ([`ancestors_tool`]): the one-line
+//!   `TopExp::MapShapesAndAncestors` forward of `MakeAncestors`.
 
 pub mod adaptor;
+pub mod ancestors_tool;
 pub mod box_sort;
 pub mod c2d;
 pub mod classi;
@@ -73,6 +76,7 @@ pub mod uv_app;
 pub mod wire_to_faces;
 
 pub use adaptor::{CurveAdaptor, SurfaceAdaptor};
+pub use ancestors_tool::make_ancestors;
 pub use box_sort::BoxSort;
 pub use classi::{
     fun_add_owlw, Classi, DIFF, ONE_IN_TWO, SAME, TWO_IN_ONE, UNKNOWN,

@@ -95,11 +95,22 @@ fn dir2d_y() -> GpDir2d {
     GpDir2d::new(0.0, 1.0).expect("unit y")
 }
 
+/// `B.MakeEdge(e, C, tol)` followed by `B.Degenerated(e, D)`
+/// (`BRepLib_MakeFace.cxx:681-695`, `:719-726`, `:745-759`, `:783-790`):
+/// `MakeEdge` attaches the iso curve, then `Degenerated(e, true)` drops the 3D
+/// curve (`BRep_Builder.cxx:1073-1087`, `UpdateCurves(..., null, ...)`), so
+/// `BRep_Tool::Curve` answers null on the degenerate bound while the
+/// representation stays present. Keeping the iso curve there would raise
+/// `BRepCheck_InvalidDegeneratedFlag` (`BRepCheck_Edge.cxx:144-147`): `myCref`
+/// is set from a non-null `Curve3D` representation only.
 fn make_bound_edge(curve: Arc<dyn Curve>, first: f64, last: f64, degen: bool, tol: f64) -> Edge {
     let e = Edge::new();
     let mut g = EdgeGeom::new(curve, first, last);
     g.tolerance = tol;
     g.degenerated = degen;
+    if degen {
+        g.curve3d_null = true;
+    }
     GeometryRegistry::global().set_edge(&e.0, g);
     e
 }
@@ -537,4 +548,32 @@ fn strip_degenerated(wire: &Wire) -> Wire {
     out.0.set_orientation(wire.0.orientation());
     out.0.set_closed(wire.is_closed());
     out
+}
+
+/// `BRepLib_MakeFace(const Handle(Geom_Surface)& S, const TopoDS_Wire& W,
+/// bool Inside = true)` (`BRepLib_MakeFace.cxx:327-338`):
+/// `Init(S, false, Precision::Confusion())` (`cxx:366-385`), `Add(W)`
+/// (`cxx:873-880`) and, when `W` is closed, `CheckInside()` (`cxx:907-924`).
+///
+/// `Init(S, Bound=false, ...)` is `BRep_Builder::MakeFace(F, S, Confusion)`
+/// followed by `NaturalRestriction(F, true)`; `Add(W)` attaches the wire and
+/// flips `NaturalRestriction` back to false, so the result is the plain bounded
+/// face [`TopoBuilder::make_face_with_tolerance`] builds.
+///
+/// `CheckInside` keeps the face's surface, tolerance and children and only
+/// reverses the *children's* orientations, so the port rebuilds over the same
+/// surface with the wire reversed in place of copying-and-reversing.
+pub fn make_face_from_surface_and_wire(surface: Arc<dyn Surface>, wire: &Wire) -> Face {
+    let b = TopoBuilder::new();
+    let face = b.make_face_with_tolerance(surface.clone(), &[wire.clone()], Precision::CONFUSION);
+    // `cxx:333`: `if (Inside && BRep_Tool::IsClosed(W)) CheckInside();`.
+    if !crate::brep_tool::BRepTool::is_closed(&wire.0) {
+        return face;
+    }
+    let classifier = crate::brep_top_adaptor_fclass2d::BrepTopAdaptorFClass2d::new(&face, 0.0);
+    if classifier.perform_infinite_point() != crate::fclass2d::FaceState::In {
+        return face;
+    }
+    let reversed = Wire(wire.0.oriented(Orientation::Reversed));
+    b.make_face_with_tolerance(surface, &[reversed], Precision::CONFUSION)
 }

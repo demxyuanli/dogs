@@ -250,16 +250,62 @@ impl GeometryRegistry {
         }
     }
 
-    /// `BRep_Builder::Degenerated(E, D)` (`BRep_Builder.cxx:1073-1085`): set the
-    /// degenerated flag. OCCT also drops the 3D curve when `D` is true
+    /// `BRep_TVertex::Tolerance(const Standard_Real)` (`BRep_TVertex.hxx:64`):
+    /// a direct write, not the raising `UpdateTolerance`. `BRepFill_Sweep`'s
+    /// `Filling` uses it to pin the last vertex of an extended seam edge to
+    /// `Precision::Confusion()` (`BRepFill_Sweep.cxx:1203`).
+    pub fn set_vertex_tolerance(&self, s: &TopoShape, tol: f64) {
+        let mut ts = s.tshape.write().unwrap();
+        let core = ts.vertex_core_mut();
+        core.tolerance = tol;
+    }
+
+    /// `BRep_Builder::UpdateVertex(V, Par, E, Tol)` (`BRep_Builder.cxx:1220-1311`)
+    /// and its single-parameter write
+    /// `BRep_Builder::UpdateVertex(V, Par, E)` (`BRep_Builder.hxx:392-394` ->
+    /// `BRep_TVertex::UpdateParameter(V, E, Par)`): bind vertex `v` to
+    /// parameter `par` on edge `s`.
+    ///
+    /// The port keeps the `(vertex, parameter)` pairs on the edge's
+    /// `BRep_TEdge` core (`EdgeGeomCore::vertex_params`), which is where
+    /// [`crate::brep_tool::BRepTool::parameter_of_vertex`] reads them back
+    /// from, so a write here is visible to `BRep_Tool::Parameter(V, E)`.
+    pub fn set_vertex_parameter_on_edge(&self, s: &TopoShape, v: &TopoShape, par: f64) {
+        let key = key(v);
+        let mut ts = s.tshape.write().unwrap();
+        let core = ts.edge_core_mut();
+        if let Some(slot) = core.vertex_params.iter_mut().find(|(k, _)| *k == key) {
+            slot.1 = par;
+        } else {
+            core.vertex_params.push((key, par));
+        }
+    }
+
+    /// `BRep_Builder::Degenerated(E, D)` (`BRep_Builder.cxx:1073-1087`): set
+    /// the degenerated flag, and when `D` is true drop the 3D curve
     /// (`UpdateCurves(TE->ChangeCurves(), occ::handle<Geom_Curve>(), ...)`,
-    /// `cxx:1082-1084`). `EdgeGeom::curve` here is a non-nullable
-    /// `Arc<dyn Curve>`, so a caller that needs OCCT's "no 3D curve" state
-    /// stores what `BRepAdaptor_Curve(edge, face)` would build from the pcurve
-    /// instead (`Adaptor3d_CurveOnSurface`).
+    /// `cxx:1082-1084`). `UpdateCurves` nulls an existing `BRep_Curve3D`
+    /// representation in place and, when the edge has none, appends one holding
+    /// the null handle with the range of the last `BRep_GCurve` (`cxx:60-92`);
+    /// either way the representation stays present and `BRep_Tool::Curve`
+    /// answers null. That presence is load-bearing for
+    /// `BRepCheck_Edge::Minimum` (`BRepCheck_Edge.cxx:100-147`): `exist` is set
+    /// by the representation, so the null curve raises no `No3DCurve`, and
+    /// `myCref` stays null, so a degenerated edge raises no
+    /// `InvalidDegeneratedFlag`. `EdgeGeom::curve` is a non-nullable
+    /// `Arc<dyn Curve>`, so the null state is carried by
+    /// `EdgeGeomCore::curve3d_null`, the flag `edge_curve` already answers
+    /// `BRep_Tool::Curve` with; the stored curve keeps whatever a caller that
+    /// needs `BRepAdaptor_Curve(edge, face)` would rebuild from the pcurve.
+    ///
+    /// `D = false` only clears the flag: OCCT restores no curve either.
     pub fn set_degenerated(&self, s: &TopoShape, v: bool) {
         let mut ts = s.tshape.write().unwrap();
-        ts.edge_core_mut().degenerated = v;
+        let c = ts.edge_core_mut();
+        c.degenerated = v;
+        if v {
+            c.curve3d_null = true;
+        }
     }
 
 }

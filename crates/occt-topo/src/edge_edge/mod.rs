@@ -33,6 +33,7 @@ pub(crate) use occt_geom::Curve;
 
 pub(crate) use crate::brep_tool::BRepTool;
 pub(crate) use crate::inttools::{edge_edge_intersections, EdgeEdgeHit};
+pub(crate) use crate::int_tools_curve_box;
 pub(crate) use crate::inttools_data::{CommonPartType, CommonPrt, IntRange, PntOn2Faces};
 pub(crate) use crate::shape::Edge;
 

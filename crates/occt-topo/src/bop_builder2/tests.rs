@@ -228,7 +228,7 @@ use super::*;
     }
 
     #[test]
-    fn build_bop_rejects_unknown_shapes_and_bad_states() {
+    fn fill_images_for_groups_rejects_unknown_shapes_and_bad_states() {
         let a = unit_box();
         let c = unit_box();
         let mut b = BopBuilder::new();
@@ -237,19 +237,19 @@ use super::*;
         b.filler_mut().perform().unwrap();
         // A shape that is not an argument of the operation is rejected.
         let err = b
-            .build_bop(&[c.solid.0.clone()], FaceState::Out, &[], FaceState::Out)
+            .fill_images_for_groups(&[c.solid.0.clone()], FaceState::Out, &[], FaceState::Out)
             .unwrap_err();
         assert!(err.contains("unknown shape"), "err: {err}");
 
         // An invalid state is rejected. Use a fresh builder — the failure above
-        // left the report dirty, and `build_bop` short-circuits on a dirty
-        // report before validating the states.
+        // left the report dirty, and `fill_images_for_groups` short-circuits on
+        // a dirty report before validating the states.
         let mut b2 = BopBuilder::new();
         b2.set_arguments(&[a.solid.0.clone(), c.solid.0.clone()]);
         b2.filler_mut().set_arguments(&[a.solid.0.clone(), c.solid.0.clone()]);
         b2.filler_mut().perform().unwrap();
         let err2 = b2
-            .build_bop(&[a.solid.0.clone()], FaceState::On, &[], FaceState::Out)
+            .fill_images_for_groups(&[a.solid.0.clone()], FaceState::On, &[], FaceState::Out)
             .unwrap_err();
         assert!(err2.contains("invalid state"), "err: {err2}");
     }

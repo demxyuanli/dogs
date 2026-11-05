@@ -16,6 +16,7 @@ use std::sync::Arc;
 
 use occt_core::gp::{GpAx3, GpDir, GpPln, GpPnt};
 use occt_core::precision::{epsilon, Precision, REAL_SMALL, RESOLUTION};
+use occt_core::toploc::TopLocLocation;
 use occt_geom::{Curve, GeomPlane, Surface};
 use occt_geom2d::curve::Curve2d;
 use occt_math::{Jacobi, MathMatrix};
@@ -309,6 +310,18 @@ impl FindSurface {
     /// `Existed()` (`cxx:611-614`).
     pub fn existed(&self) -> bool {
         self.is_existed
+    }
+
+    /// `Location()` (`cxx:618-621`): the location of the `CurveOnSurface`
+    /// representation the answer came from. `myLocation` is reset to the
+    /// identity at `cxx:256` and `cxx:431` and is filled only at `cxx:289`
+    /// (`BRep_Tool::CurveOnSurface`), i.e. with the representation's location.
+    /// The port stores no per-representation locations (the same gap
+    /// [`crate::brep_lib_inner_tolerances`] records), so every surface
+    /// `Surface()` answers is already in that frame and the location is the
+    /// identity.
+    pub fn location(&self) -> TopLocLocation {
+        TopLocLocation::identity()
     }
 
     /// `Init(S, Tol, OnlyPlane, OnlyClosed)` (`cxx:246-578`).

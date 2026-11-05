@@ -16,8 +16,9 @@
 //!
 //! `GLOBAL_DS2d` (`cxx:332`) is a process-wide `TopOpeBRepDS_PDataStructure`
 //! that `GMergeFaces` re-`Init`s and then fills with the 2D interferences of
-//! the merged face pair. It lives only inside that one call, so the port keeps
-//! it as a local `DataStructure` created at the top of `g_merge_faces`.
+//! the merged face pair. `Perform2d` reads it while `GLOBAL_faces2d` is set, so
+//! the port keeps it in the thread-local cell of `builder/on/perform_2d.rs`
+//! rather than in a local (`T-358`).
 //!
 //! `GLOBAL_faces2d` (`cxx:88`) is a plain `bool` that OCCT sets around the
 //! `GFillFacesWESK` pass; the port keeps the same member field.
@@ -39,6 +40,7 @@ use crate::topopebrep::tool::{fun_tool_find_ancestor, fun_tool_par_e};
 
 use super::super::g_topo::GTopo;
 use super::grid_ee::set_global_faces2d;
+use super::on::{init_global_ds2d, with_global_ds2d_mut};
 use super::Builder;
 impl Builder {
     /// `GMergeFaces(LF1, LF2, G1)` (`cxx:335-463`).
@@ -49,37 +51,40 @@ impl Builder {
         }
 
         // `cxx:345-348`: `GLOBAL_DS2d` is created on first use and `Init`ed on
-        // every call; a fresh map is the same thing.
-        let mut ds2d = DataStructure::new();
+        // every call; the port keeps it in the thread-local cell of
+        // `builder/on/perform_2d.rs`, which is where `Perform2d` reads it.
         let (tb1, tb2) = g1.states_on();
 
         let Some(f1) = lf1.first().cloned() else {
             return;
         };
 
-        // `cxx:369-380`
-        for f in lf1 {
-            ds2d.add_shape_with_ancestor(f, 1);
-        }
-        for f in lf2 {
-            ds2d.add_shape_with_ancestor(f, 2);
-        }
+        // `cxx:369-404`: the 2D interferences of both face lists.
+        init_global_ds2d();
+        with_global_ds2d_mut(|ds2d| {
+            // `cxx:369-380`
+            for f in lf1 {
+                ds2d.add_shape_with_ancestor(f, 1);
+            }
+            for f in lf2 {
+                ds2d.add_shape_with_ancestor(f, 2);
+            }
 
-        // `cxx:382-394`
-        for f in lf1 {
-            self.fun_compute_lif_faces2d(f, &mut ds2d);
-        }
-        for f in lf2 {
-            self.fun_compute_lif_faces2d(f, &mut ds2d);
-        }
+            // `cxx:382-394`
+            for f in lf1 {
+                self.fun_compute_lif_faces2d(f, ds2d);
+            }
+            for f in lf2 {
+                self.fun_compute_lif_faces2d(f, ds2d);
+            }
 
-        // `cxx:397-404`
-        for ii in 1..=ds2d.nb_shapes() {
-            let li = ds2d.change_shape_interferences_at(ii).clone();
-            let mut li = li;
-            fun_reducedoublons(&mut li, &ds2d, ii);
-            *ds2d.change_shape_interferences_at(ii) = li;
-        }
+            // `cxx:397-404`
+            for ii in 1..=ds2d.nb_shapes() {
+                let mut li = ds2d.change_shape_interferences_at(ii).clone();
+                fun_reducedoublons(&mut li, ds2d, ii);
+                *ds2d.change_shape_interferences_at(ii) = li;
+            }
+        });
 
         // `cxx:406-407`
         self.my_face_reference = Some(f1.clone());

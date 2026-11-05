@@ -17,8 +17,15 @@ use std::io::Write;
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let path = args.get(1).expect("usage: mesh_uv_feed_probe <file.step> [--sum] [--dump <path>]");
-    let model = read_step_file(path).expect("read step");
-    let shape = model.shapes[0].shape.clone();
+    // `.iges`/`.igs` inputs go through the port's IGES reader, so the same
+    // diagnostic can be pointed at an IGES round-trip shape.
+    let is_iges = (path.len() >= 5 && path[path.len() - 5..].eq_ignore_ascii_case(".iges"))
+        || (path.len() >= 4 && path[path.len() - 4..].eq_ignore_ascii_case(".igs"));
+    let shape = if is_iges {
+        occt_topo::iges_read::read_iges_shape(path).expect("read iges")
+    } else {
+        read_step_file(path).expect("read step").shapes[0].shape.clone()
+    };
     // T-99: `--lin <d>` overrides the port's deflection so the port's mesh can be
     // compared with the OCCT probe at the SAME deflection (`probe --mesh <d> <a>`).
     // The default (`prs3d_get_deflection(shape, 0.1)`) is what the OBJ gates use.

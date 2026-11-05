@@ -145,6 +145,9 @@ impl FaceIntersector {
         if let Some(ph) = &self.polyhedron {
             match lin_box_clip(lin, ph.bounding(), lo, hi) {
                 None => {
+                    if std::env::var("ICF_TRACE").is_ok() {
+                        println!("ICF clip=None");
+                    }
                     self.done = true;
                     return;
                 }
@@ -155,6 +158,9 @@ impl FaceIntersector {
             }
             let poly = ThePolygon::of_line(lin, lo, hi);
             if ph.is_out_polygon(&poly) {
+                if std::env::var("ICF_TRACE").is_ok() {
+                    println!("ICF out_polygon lo={lo:.12} hi={hi:.12}");
+                }
                 self.done = true;
                 return;
             }
@@ -173,6 +179,13 @@ impl FaceIntersector {
         };
         if res.nb_segments() > 0 {
             self.parallel = true;
+        }
+        if std::env::var("ICF_TRACE").is_ok() {
+            println!(
+                "ICF lo={lo:.12} hi={hi:.12} np={} nseg={}",
+                res.points().len(),
+                res.nb_segments()
+            );
         }
         let cl = match FClass2d::new(&self.face, self.tol) {
             Ok(c) => c,

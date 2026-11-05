@@ -305,7 +305,22 @@ pub fn perform_ee(f: &mut PaveFiller) -> Result<(), String> {
             if i_found {
                 continue;
             }
-            f.ds_mut().add_interf_ee(task.n_e1, task.n_e2, None);
+            // `_3.cxx:511-516`: `aEEs.Appended()` + `SetIndices` +
+            // `SetCommonPart(aCPart)` where `aCPart` is the VERTEX-type common
+            // part of the pair.
+            match ee.vertex_common_part_at(t1_val, t2_val) {
+                Some(cp) => {
+                    f.ds_mut().add_interf_ee_with_common_part(
+                        task.n_e1,
+                        task.n_e2,
+                        None,
+                        cp.clone(),
+                    );
+                }
+                None => {
+                    f.ds_mut().add_interf_ee(task.n_e1, task.n_e2, None);
+                }
+            }
             mvcpb.push(NewVertexCpb {
                 shape: vnew,
                 tol: tol_vnew,
@@ -333,7 +348,10 @@ pub fn perform_ee(f: &mut PaveFiller) -> Result<(), String> {
             if !pb1.has_same_bounds(&pb2) {
                 continue;
             }
-            f.ds_mut().add_interf_ee(task.n_e1, task.n_e2, None);
+            // `_3.cxx:541-545`: `aEEs.Appended()` + `SetIndices` +
+            // `SetCommonPart(aCPart)` before `AddInterf`.
+            f.ds_mut()
+                .add_interf_ee_with_common_part(task.n_e1, task.n_e2, None, cp.clone());
             fill_map_pb_pb(&pb1, &pb2, &mut mpblpb);
         }
     }

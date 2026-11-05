@@ -378,6 +378,38 @@ impl BopdsDS {
         &mut self.pave_blocks_pool[r]
     }
 
+    /// `BOPDS_DS::Paves(theEdge, theResultPaves)` — the unique paves of the
+    /// edge with index `the_edge`, collected from the `Pave1`/`Pave2` of every
+    /// pave block and sorted by parameter.
+    ///
+    /// Uniqueness is by `BOPDS_Pave::IsEqual` (index *and* parameter) while the
+    /// order is by `BOPDS_Pave::IsLess` (parameter only), matching the OCCT
+    /// comment in `BOPDS_DS.cxx` that the two operators are not consistent.
+    pub fn paves(&self, the_edge: usize) -> Vec<BopdsPave> {
+        let blocks = self.pave_blocks(the_edge);
+        if blocks.is_empty() {
+            return Vec::new();
+        }
+        let mut visited: Vec<BopdsPave> = Vec::with_capacity(2 * blocks.len());
+        for pb in blocks {
+            for p in [pb.pave1(), pb.pave2()] {
+                if !visited.iter().any(|q| q.is_equal(&p)) {
+                    visited.push(p);
+                }
+            }
+        }
+        visited.sort_by(|a, b| {
+            if a.is_less(b) {
+                std::cmp::Ordering::Less
+            } else if b.is_less(a) {
+                std::cmp::Ordering::Greater
+            } else {
+                std::cmp::Ordering::Equal
+            }
+        });
+        visited
+    }
+
     /// Returns the full pave-block pool.
     pub fn pave_blocks_pool(&self) -> &[Vec<BopdsPaveBlock>] {
         &self.pave_blocks_pool

@@ -146,7 +146,7 @@ pub(super) fn trig_solve(a: f64, b: f64, c: f64, inf: f64, sup: f64, surface_eps
 ///
 /// * `cu_range` — the curve parameter window to search (`(first, last)`); for
 ///   unbounded curves (lines) this must be finite.
-/// * `uv_range` — the surface `(u0, v0, u1, v1)` window to search; unbounded
+/// * `uv_range` — the surface `(u0, u1, v0, v1)` window to search; unbounded
 ///   surface directions are clamped to it.
 ///
 /// Returns discrete intersection points (sorted by curve parameter) and, for
@@ -184,6 +184,11 @@ pub fn perform_curve_surface(
     // polygon-polyhedron interference regardless of the curve type; only
     // plane / cylinder / cone / sphere have the analytic quadric arms.
     let polyhedron_path = matches!(surface_kind, SurfaceKind::Torus | SurfaceKind::Other);
+    if std::env::var("ICF_TRACE").is_ok() {
+        println!(
+            "ICF pcs kind={surface_kind:?} curve={curve_kind:?} win=({t0:.6},{t1:.6}) uv={uv:?}"
+        );
+    }
     if curve_kind != CurveKind::Other {
         if let Some((mut pts, mut segs)) = geom
             .as_ref()
@@ -192,7 +197,7 @@ pub fn perform_curve_surface(
             points.append(&mut pts);
             segments.append(&mut segs);
         } else if polyhedron_path && finite_window {
-            let mut pts = polyhedron_curve_surface(curve, surface, uv);
+            let mut pts = polyhedron_curve_surface(curve, surface, (t0, t1), uv);
             points.append(&mut pts);
         } else if finite_window {
             // `InternalPerformCurveQuadric` (`Inter.pxx:423-439` +
@@ -202,7 +207,7 @@ pub fn perform_curve_surface(
             points.append(&mut pts);
         }
     } else if polyhedron_path && finite_window {
-        let mut pts = polyhedron_curve_surface(curve, surface, uv);
+        let mut pts = polyhedron_curve_surface(curve, surface, (t0, t1), uv);
         points.append(&mut pts);
     } else if finite_window {
         // `InternalPerformCurveQuadric` (`Inter.pxx:423-439` +
@@ -590,20 +595,6 @@ pub(super) fn compute_append_point(
     if (v0 - v) >= tol || (v - v1) >= tol {
         return None;
     }
-    // Validate the point lies on the surface. Analytic points are checked
-    // against the quadric's implicit equation (exact, and independent of the
-    // reported (u, v)). Without a reconstructed quadric there is nothing to
-    // check against: OCCT's `ComputeAppendPoint` (`InterUtils.pxx:1116-1176`)
-    // itself only validates the parameter windows and periodicity, never a
-    // point-on-surface residual, and the `GetType`-based dispatch above never
-    // reaches this with a non-elementary surface.
-    let on_surface = match geom {
-        Some(g) => quadric_on_surface(g, &pnt, tol.max(1e-6)),
-        None => true,
-    };
-    if !on_surface {
-        return None;
-    }
     let state = compute_state(curve, surface, geom, w, u, v);
     Some(IntersectionPoint::new(w, u, v, pnt, state))
 }
@@ -719,10 +710,18 @@ pub(super) fn quadric_on_surface(geom: &SurfaceGeom, p: &GpPnt, tol: f64) -> boo
 
 /// Transition of the curve at the crossing: aligned with the surface normal →
 /// `Out`, opposed → `In`, perpendicular → `On`.
+///
+/// `ComputeTransitions` (`IntCurveSurface_InterUtils.pxx:853-894`) builds the
+/// normal as `D1U.Crossed(D1V)` from `SurfaceTool::D1(surface, u, v)`, i.e. the
+/// adaptor evaluated at the reported `(u, v)` and never an implicit form. An
+/// implicit quadric normal derived from the frame disagrees with it whenever the
+/// parameterisation doubles back (a spindle torus with `minor > major` gives
+/// `R + r*cos(v) < 0`, so the analytic outward normal is the negation of
+/// `D1U x D1V` and the transition flips).
 pub(super) fn compute_state(
     curve: &dyn Curve,
     surface: &dyn Surface,
-    geom: Option<&SurfaceGeom>,
+    _geom: Option<&SurfaceGeom>,
     w: f64,
     su: f64,
     sv: f64,
@@ -732,15 +731,23 @@ pub(super) fn compute_state(
     if dm < 1e-12 {
         return State::Unknown;
     }
-    let n = match geom.and_then(|g| quadric_normal(g, &curve.d0(w))) {
-        Some(n) => n,
-        None => surface_normal(surface, su, sv),
-    };
+    let n = surface_normal(surface, su, sv);
     let nm = n.magnitude();
     if nm < 1e-12 {
         return State::Unknown;
     }
     let cos = d1.dot(&n) / (dm * nm);
+    if std::env::var("ICF_TRACE").is_ok() {
+        println!(
+            "ICF state w={w:.12} su={su:.6} sv={sv:.6} d1={:.6},{:.6},{:.6} n={:.6},{:.6},{:.6} cos={cos:.6}",
+            d1.x(),
+            d1.y(),
+            d1.z(),
+            n.x(),
+            n.y(),
+            n.z()
+        );
+    }
     if -cos > ANG_TOL {
         State::In
     } else if cos > ANG_TOL {
@@ -807,6 +814,7 @@ pub(super) fn quadric_curve_exact(
 pub(super) fn polyhedron_curve_surface(
     curve: &dyn Curve,
     surface: &dyn Surface,
+    cur_range: (f64, f64),
     uv: (f64, f64, f64, f64),
 ) -> Vec<IntersectionPoint> {
     /// `defl` / `NbMin` of `PerformBounds` (`Inter.pxx:155-157`).
@@ -815,6 +823,9 @@ pub(super) fn polyhedron_curve_surface(
 
     let mut intervals = Vec::new();
     decompose_surface_intervals(surface, &mut intervals);
+    if std::env::var("ICF_TRACE").is_ok() {
+        println!("ICF poly intervals={} {:?}", intervals.len(), intervals);
+    }
 
     let mut result: Vec<IntersectionPoint> = Vec::new();
     for iv in &intervals {
@@ -827,8 +838,9 @@ pub(super) fn polyhedron_curve_surface(
         // The port intersects one face's UV box rather than the whole surface,
         // so the caller window is intersected with the C2 interval. Both the
         // polyhedron (inside `InternalPerformPolygonBounds`) and the Newton
-        // domain (`ProcessSortedPoints`) receive this box.
-        let (cu0, cv0, cu1, cv1) = uv;
+        // domain (`ProcessSortedPoints`) receive this box. `uv` is
+        // `(u0, u1, v0, v1)`, the order every caller in the crate passes.
+        let (cu0, cu1, cv0, cv1) = uv;
         let (u1, u2) = (u1.max(cu0), u2.min(cu1));
         let (v1, v2) = (v1.max(cv0), v2.min(cv1));
         if u2 - u1 <= 1e-15 || v2 - v1 <= 1e-15 {
@@ -847,24 +859,32 @@ pub(super) fn polyhedron_curve_surface(
         let polyhedron = ThePolyhedronOfHInter::new(surface, nbsu.max(1), nbsv.max(1), u1, v1, u2, v2);
 
         // `PerformBounds` (`Inter.pxx:139-178`): one polygon per C2 interval.
+        // `IntCurvesFace_Intersector::Perform(Lin, ...)` (`cxx:378-460`) is the
+        // polygon+polyhedron overload: the polygon it hands over spans the
+        // box-clipped segment `[parinf, parsup]`, not the curve's own range,
+        // which for a `Geom_Line` is infinite.
         let nb_intervals = curve.nb_intervals(2);
         let mut pars_list: Vec<Vec<f64>> = Vec::new();
         if nb_intervals > 1 {
             let tab_w = curve.parameter_intervals(2);
             for i in 0..nb_intervals as usize {
-                pars_list.push(sample_pars(curve, tab_w[i], tab_w[i + 1], DEFL, NB_MIN));
+                let a = tab_w[i].max(cur_range.0);
+                let b = tab_w[i + 1].min(cur_range.1);
+                if b > a {
+                    pars_list.push(sample_pars(curve, a, b, DEFL, NB_MIN));
+                }
             }
         } else {
-            pars_list.push(sample_pars(
-                curve,
-                curve.first_parameter(),
-                curve.last_parameter(),
-                DEFL,
-                NB_MIN,
-            ));
+            pars_list.push(sample_pars(curve, cur_range.0, cur_range.1, DEFL, NB_MIN));
         }
 
         for pars in &pars_list {
+            if std::env::var("ICF_TRACE").is_ok() {
+                println!(
+                    "ICF poly nbsu={nbsu} nbsv={nbsv} pars={} uv=[{u1:.6},{u2:.6}]x[{v1:.6},{v2:.6}]",
+                    pars.len()
+                );
+            }
             if pars.len() < 2 {
                 continue;
             }
@@ -880,6 +900,13 @@ pub(super) fn polyhedron_curve_surface(
             let mut rsnld = MathFunctionSetRoot::with_iterations(exact.function(), 100);
 
             let mut pts: Vec<IntersectionPoint> = Vec::new();
+            if std::env::var("ICF_TRACE").is_ok() {
+                println!(
+                    "ICF poly pars={} nstart={} uv=[{u1:.6},{u2:.6}]x[{v1:.6},{v2:.6}]",
+                    pars.len(),
+                    start_points.size()
+                );
+            }
             process_sorted_points(
                 &mut exact,
                 &mut rsnld,

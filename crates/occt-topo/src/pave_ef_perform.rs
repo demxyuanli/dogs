@@ -251,11 +251,13 @@ pub fn perform_ef(f: &mut PaveFiller) -> Result<(), String> {
                         // `_5.cxx:427-438`: Appended InterfEF, type promoted to
                         // EDGE, FillMap. A later VERTEX record of the same pair
                         // must not collapse this EDGE slot.
-                        let ix = f.ds_mut().add_interf_ef(task.n_e, task.n_f, None);
-                        f.ds_mut().set_ef_common_range_at(
-                            ix,
-                            cp.range.first,
-                            cp.range.last,
+                        let mut cp_edge = cp.clone();
+                        cp_edge.set_part_type(CommonPartType::Edge);
+                        f.ds_mut().add_interf_ef_with_common_part(
+                            task.n_e,
+                            task.n_f,
+                            None,
+                            cp_edge,
                         );
                         miefc.insert(task.n_f);
                         fill_map_pb_face(&task.pb, task.n_f, &mut mpbl);
@@ -332,12 +334,13 @@ pub fn perform_ef(f: &mut PaveFiller) -> Result<(), String> {
                     continue;
                 }
                 miefc.insert(task.n_f);
-                // `_5.cxx:530-542`: Appended InterfEF, `SetIndexInterf(iX)`.
-                let ix = f.ds_mut().add_interf_ef(task.n_e, task.n_f, None);
-                f.ds_mut().set_ef_common_range_at(
-                    ix,
-                    cp.range.first,
-                    cp.range.last,
+                // `_5.cxx:530-542`: Appended InterfEF with the VERTEX common
+                // part stored, `SetIndexInterf(iX)`.
+                let ix = f.ds_mut().add_interf_ef_with_common_part(
+                    task.n_e,
+                    task.n_f,
+                    None,
+                    cp.clone(),
                 );
                 mvcpb.push(NewVertexCpb {
                     shape: vnew,
@@ -356,19 +359,20 @@ pub fn perform_ef(f: &mut PaveFiller) -> Result<(), String> {
                 }
                 CommonPartType::Edge => {
                     miefc.insert(task.n_f);
-                    // `_5.cxx:549-564`: always Appended; AddInterf even when a
-                    // bounding vertex is missing; FillMap only when both vertices
-                    // are already On or In.
-                    let ix = f.ds_mut().add_interf_ef(task.n_e, task.n_f, None);
+                    // `_5.cxx:547-564`: always Appended; AddInterf even when a
+                    // bounding vertex is missing; `SetCommonPart` + FillMap only
+                    // when both vertices are already On or In.
                     let b_v0 = check_face_paves_index(n_v.0, &mif_on, &mif_in);
                     let b_v1 = check_face_paves_index(n_v.1, &mif_on, &mif_in);
                     if !b_v0 || !b_v1 {
+                        f.ds_mut().add_interf_ef(task.n_e, task.n_f, None);
                         break;
                     }
-                    f.ds_mut().set_ef_common_range_at(
-                        ix,
-                        cp.range.first,
-                        cp.range.last,
+                    f.ds_mut().add_interf_ef_with_common_part(
+                        task.n_e,
+                        task.n_f,
+                        None,
+                        cp.clone(),
                     );
                     fill_map_pb_face(&task.pb, task.n_f, &mut mpbl);
                 }

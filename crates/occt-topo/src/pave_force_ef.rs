@@ -331,12 +331,13 @@ pub fn force_interf_ef_on(
             continue;
         }
         if add_interf {
-            // `_5.cxx:1177-1181`: always Appended, then AddInterf.
-            let ix = f.ds_mut().add_interf_ef(t.n_e, t.n_f, None);
-            f.ds_mut().set_ef_common_range_at(
-                ix,
-                cps[0].range.first,
-                cps[0].range.last,
+            // `_5.cxx:1177-1181`: always Appended, `SetCommonPart(aCP)`, then
+            // `AddInterf`.
+            f.ds_mut().add_interf_ef_with_common_part(
+                t.n_e,
+                t.n_f,
+                None,
+                cps[0].clone(),
             );
         }
         f.ds_mut().ensure_face_info(t.n_f);
