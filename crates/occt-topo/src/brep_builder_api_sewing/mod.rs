@@ -1,6 +1,11 @@
 //! `BRepBuilderAPI_Sewing` (`BRepBuilderAPI_Sewing.cxx`, 5,946 lines;
 //! `.hxx:68-420`; `.lxx`).
 //!
+//! `BRepOffsetAPI_Sewing`
+//! (`ModelingAlgorithms/TKOffset/BRepOffsetAPI/BRepOffsetAPI_Sewing.hxx:25`)
+//! is `typedef BRepBuilderAPI_Sewing`, i.e. this class is the whole TKOffset
+//! facade - there is no separate `.cxx` to port.
+//!
 //! Line citations are on `D:\source\OCCT-src\src` (OCCT 8.0.0). Function
 //! ranges are re-baselined against that tree; the statement-level ranges
 //! inside a body still carry the older (7.9) offset, so locate a statement by

@@ -23,8 +23,10 @@ use crate::topo_tools::{faces_of, ShapeMapKey};
 
 mod edge_tolerance;
 mod face;
+mod prec;
 mod wire_closed;
 pub use edge_tolerance::edge_tolerance;
+pub use prec::{prec_curve, prec_surface};
 pub use wire_closed::wire_closed;
 pub(crate) use face::face_check;
 

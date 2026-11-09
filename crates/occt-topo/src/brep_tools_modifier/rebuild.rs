@@ -421,61 +421,15 @@ fn origin_line2d() -> Arc<dyn occt_geom2d::curve::Curve2d> {
     ))
 }
 
-/// `BRep_Builder::UpdateVertex(V, Par, E, Tol)` (`BRep_Builder.cxx:1220-1312`).
+/// `BRep_Builder::UpdateVertex(V, Par, E, Tol)` (`BRep_Builder.cxx:1220-1312`)
+/// - the whole control flow lives in
+/// [`crate::brep_builder_update_vertex::update_vertex_on_edge`], including the
+/// `INTERNAL` / `EXTERNAL` arm's `UpdatePoints` walk over the edge's
+/// representations (`cxx:1272-1304`).
 ///
-/// The edge's representation list is walked once (`cxx:1272-1304`) and every
-/// `BRep_GCurve` gets `First(Par)` for a FORWARD vertex and `Last(Par)` for a
-/// REVERSED one; the port's `set_ranges_all` is that whole-list write
-/// (`tgeometry::registry_core`).
-///
-/// UNPORTED: the INTERNAL/EXTERNAL arm's `UpdatePoints` (`cxx:1287-1300`),
-/// which appends a `BRep_PointRepresentation` to the `BRep_TVertex` — the port
-/// keeps a single point plus one parameter per edge
-/// (`set_vertex_parameter_on_edge`) and no representation list, the same
-/// reduction the existing port of this builder makes
-/// (`topopebrep::ds::build_tool` `update_vertex`).
+/// `Standard_DomainError` on an infinite parameter cannot fire here: the `par`
+/// comes from `NewParameter` or from `BRep_Tool::Parameter`, both of which
+/// reject infinity upstream. The `Err` is therefore dropped.
 fn update_vertex(v: &TopoShape, par: f64, e: &TopoShape, tol: f64) {
-    let reg = GeometryRegistry::global();
-    // `cxx:1241-1266`: the vertex's orientation inside the edge.
-    // `TopoDS_Iterator itv(E.Oriented(TopAbs_FORWARD))` is the direct-children
-    // walk, so the stored orientations are the ones compared.
-    let mut ori = Orientation::Internal;
-    let verts = children_keep_orientation(e);
-    let degenerate = e.shape_type() == ShapeType::Edge && BRepTool::is_degenerated(&Edge(e.clone()));
-    if verts.is_empty() && degenerate {
-        ori = v.orientation();
-    }
-    for vcur in &verts {
-        if is_same_occurrence(vcur, v) {
-            ori = vcur.orientation();
-            if ori == v.orientation() {
-                break;
-            }
-        }
-    }
-    let (first, last) = reg.edge_parameters(e);
-    match ori {
-        Orientation::Forward => reg.set_ranges_all(e, par, last),
-        Orientation::Reversed => reg.set_ranges_all(e, first, par),
-        _ => {
-            reg.set_vertex_parameter_on_edge(e, v, par);
-            if let Some(c) = reg.edge_curve(e) {
-                set_vertex_point(v, &c.d0(par));
-            }
-        }
-    }
-    if !matches!(ori, Orientation::Forward | Orientation::Reversed) {
-        v.tshape.write().expect("poisoned TShape lock").set_modified(true);
-    }
-    // `TV->UpdateTolerance(Tol)` (`BRep_TVertex.cxx:29-35`): raise only.
-    reg.raise_vertex_tolerance(v, tol);
-    e.tshape.write().expect("poisoned TShape lock").set_modified(true);
-}
-
-/// The vertex point write of `UpdatePoints` (`BRep_Builder.cxx:1314-1390`):
-/// the vertex keeps its tolerance.
-fn set_vertex_point(v: &TopoShape, p: &occt_core::gp::GpPnt) {
-    let reg = GeometryRegistry::global();
-    let tol = reg.vertex_tolerance(v);
-    reg.set_vertex(v, crate::tgeometry::VertexGeom { point: *p, tolerance: tol });
+    let _ = crate::brep_builder_update_vertex::update_vertex_on_edge(v, par, e, tol);
 }

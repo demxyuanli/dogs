@@ -36,7 +36,7 @@ pub(in crate::shhealing) fn cos_d0(pc: &dyn Curve2d, surf: &dyn Surface, t: f64)
 ///
 /// `face = Some` keeps Cos reps on that face (`cxx:770-777`). `face = None` is
 /// the empty-face overload (`cxx:694-699`, `:874-882`): every Cos representation.
-pub(in crate::shhealing) fn check_same_parameter(edge: &Edge, face: &Face) -> f64 {
+pub(crate) fn check_same_parameter(edge: &Edge, face: &Face) -> f64 {
     check_same_parameter_opt(edge, Some(face))
 }
 

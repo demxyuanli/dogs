@@ -21,12 +21,36 @@ pub(crate) use crate::topo_tools::{edges_of, edges_of_wire, faces_of, vertices_o
 }
 
 
+mod analyse;
 mod brep_offset_surface;
+mod collapse_singularities;
 mod curve_face_offset;
+mod inter2d;
+mod inter3d;
+mod interval;
+mod make_loops;
+mod make_offset;
+mod make_simple_offset;
+mod offset;
+mod offset_enums;
 mod shell_offset;
+mod simple_offset;
+mod tool;
+pub use analyse::*;
 pub use brep_offset_surface::*;
+pub use collapse_singularities::*;
 pub use curve_face_offset::*;
+pub use inter2d::*;
+pub use inter3d::*;
+pub use interval::*;
+pub use make_loops::*;
+pub use make_offset::*;
+pub use make_simple_offset::*;
+pub use offset::*;
+pub use offset_enums::*;
 pub use shell_offset::*;
+pub use simple_offset::*;
+pub use tool::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]

@@ -249,21 +249,9 @@ impl Modifier {
 /// `TopoDS_Iterator(S, false)` (`TopoDS_Iterator.cxx:38-55`): the direct
 /// children with the parent's location moved into them and their own
 /// orientations kept (`theCumOri = false`, `theCumLoc` left at its `true`
-/// default).
-pub(super) fn children_keep_orientation(s: &TopoShape) -> Vec<TopoShape> {
-    let stored = s.tshape.read().expect("poisoned TShape lock").children.clone();
-    if s.location().is_identity() {
-        return stored;
-    }
-    let parent_loc = s.location().clone();
-    stored
-        .into_iter()
-        .map(|mut child| {
-            child.move_location(&parent_loc);
-            child
-        })
-        .collect()
-}
+/// default). Lives in [`crate::topo_tools`] because the `BRep_Builder` port
+/// shares it.
+pub(super) use crate::topo_tools::children_keep_orientation;
 
 /// `TopExp::MapShapesAndAncestors(S, TS, TA, M)` (`TopExp.cxx:80-120`) as an
 /// insertion-ordered list of `(sub-shape, ancestors)` pairs.

@@ -10,6 +10,9 @@
 //! `BndLib_Add3dCurve::Add`. The box is built from the control net / analytic
 //! extrema OCCT uses, not from a sampled envelope.
 //!
+//! Also ports `BRepBndLib::AddClose(S, B)` (`BRepBndLib.cxx:221-249`), the
+//! wireframe-only bound: edges' 3d curves plus the vertices outside them.
+//!
 //! PARK (no `Poly_Triangulation` / `Poly_Polygon3D` in this port's BRep
 //! registry; reported, not fudged):
 //! - the triangulation arm of the face loop (`BRepBndLib.cxx:95-101`) and of
@@ -30,10 +33,12 @@ use occt_core::bnd::BndBox;
 
 use crate::brep_tool::BRepTool;
 use crate::brep_uv_bounds::uv_box_of_face;
+use crate::abs::ShapeType;
 use crate::geom_bnd_lib_curve3d::box_curve;
 use crate::geom_bnd_lib_surface3d::{add_surface, surface_kind, GeomAbsSurfaceType};
+use crate::int_tools_curve_box::add_curve_to_box;
 use crate::shape::{Edge, Face, TopoShape, Vertex};
-use crate::topo_tools::{edges_of, faces_of, vertices_of};
+use crate::topo_tools::{edges_of, explorer_shapes_avoiding, faces_of, vertices_of};
 
 /// `BRepTools::UVBounds(F, UMin, UMax, VMin, VMax)` (`BRepTools.cxx:110-125`):
 /// scalar form of `BRepTools::AddUVBounds`, with the void/whole fallbacks.
@@ -146,4 +151,32 @@ pub fn shape_bnd_box(shape: &TopoShape) -> BndBox {
     let mut b = BndBox::new();
     add(shape, &mut b, false);
     b
+}
+
+/// `BRepBndLib::AddClose(S, B)` (`BRepBndLib.cxx:221-249`): the boundary of the
+/// shape only - every edge's 3d curve and every vertex that is not a sub-shape
+/// of an edge. No face surface, so the box is tight around the wireframe.
+pub fn add_close(shape: &TopoShape, b: &mut BndBox) {
+    // `cxx:231-240`: `TopExp_Explorer(S, TopAbs_EDGE)`; `BRepAdaptor_Curve` +
+    // `BndLib_Add3dCurve::Add(BC, 0., B)` for the geometric edges.
+    for edge in explorer_shapes_avoiding(shape, ShapeType::Edge, ShapeType::Shape) {
+        let Some(e) = Edge::wrap(edge) else {
+            continue;
+        };
+        // `BRep_Tool::IsGeometric`.
+        let Some(curve) = BRepTool::edge_curve_world(&e) else {
+            continue;
+        };
+        let (u1, u2) = BRepTool::edge_parameters(&e);
+        add_curve_to_box(curve.as_ref(), u1, u2, 0.0, b);
+    }
+
+    // `cxx:244-248`: `TopExp_Explorer(S, TopAbs_VERTEX, TopAbs_EDGE)` -
+    // `Bnd_Box::Add(BRep_Tool::Pnt(...))`, with no tolerance.
+    for vertex in explorer_shapes_avoiding(shape, ShapeType::Vertex, ShapeType::Edge) {
+        let Some(v) = Vertex::wrap(vertex) else {
+            continue;
+        };
+        b.add_point(&BRepTool::vertex_point_world(&v));
+    }
 }

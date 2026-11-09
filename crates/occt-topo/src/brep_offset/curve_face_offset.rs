@@ -1,5 +1,6 @@
 use super::prelude::*;
 use super::brep_offset_surface::brep_offset_surface;
+use occt_core::kernel::geomabs::JoinType;
 
 /// 3×3 determinant (Cramer's-rule helper).
 pub(super) fn det3(m: &[[f64; 3]; 3]) -> f64 {
@@ -498,18 +499,16 @@ pub fn offset_wire_3d(wire: &Wire, distance: f64) -> Result<Wire, String> {
 /// translated rigidly and a spherical face's are mapped by the concentric
 /// homothety; every other face keeps its wires as-is.
 ///
-/// The two branches dispatch on the *exact* surface type
+/// The two analytic branches dispatch on the *exact* surface type
 /// (`GeomAdaptor_Surface::GetType()`: `gp_pln()` / `gp_sphere()`), never on a
 /// sampled normal or a solved center (audit `topo-rest.md` finding 14).
 ///
-/// **UNPORTED**: OCCT's general arm rebuilds every wire edge on the offset
-/// surface - it maps each vertex through `TheSurf->D0(pcurve value)`
-/// (`BRepOffset_Offset.cxx:911-958`), writes the source pcurve onto the new face
-/// (`:1076-1078`) and rebuilds the 3D curve with `ComputeCurve3d`
-/// (`:1080-1083`, `:189-384`). That covers a face whose surface has no analytic
-/// offset (e.g. a planar B-spline face, or a cone whose wires must be
-/// re-projected); until it is ported those faces keep the *source* wires, so
-/// their boundary does not lie on the offset surface.
+/// Every other surface goes through `BRepOffset_Offset::Init(Face, Offset,
+/// Created, OffsetOutside, JoinType)` (`BRepOffset_Offset.cxx:466-1094`,
+/// `offset/`), which maps each vertex through `TheSurf->D0(pcurve value)`
+/// (`:911-958`), writes the source pcurve onto the new face (`:1076-1078`)
+/// and rebuilds the 3D curve with `ComputeCurve3d` (`:1080-1083`,
+/// `:189-384`), so the boundary lies on the offset surface.
 pub fn offset_face(face: &Face, distance: f64) -> Result<Face, String> {
     let surf = BRepTool::face_surface(face).ok_or("offset_face: face has no surface")?;
     let (new_surf, _status) = brep_offset_surface(surf.as_ref(), distance, false)?;
@@ -584,9 +583,28 @@ pub fn offset_face(face: &Face, distance: f64) -> Result<Face, String> {
             }
         }
     } else {
-        for w in &wires {
-            new_wires.push(w.clone());
-        }
+        // General arm: `BRepOffset_Offset::Init(Face, Offset, Created,
+        // OffsetOutside, JoinType)` (`BRepOffset_Offset.cxx:466-1094`)
+        // rebuilds every wire edge on the offset surface, writes the source
+        // pcurve onto the new face and recomputes the 3D curve with
+        // `ComputeCurve3d`. `offset_face` offsets a single face, so no
+        // neighbouring face has produced shared images yet: `Created` is
+        // empty. The defaults `BRepOffset_MakeOffset::Initialize` install are
+        // `OffsetOutside = true` and `JoinType = GeomAbs_Arc`
+        // (`BRepOffset_MakeOffset.cxx`).
+        let mut off = super::offset::BRepOffsetOffset::new();
+        off.init_face(
+            face,
+            distance,
+            &super::offset::MapSs::new(),
+            true,
+            JoinType::Arc,
+        )?;
+        let f = off
+            .face()
+            .ok_or("offset_face: BRepOffset_Offset produced no face")?
+            .clone();
+        return Ok(f);
     }
     let face_out = b.make_face(Arc::from(new_surf), &new_wires);
     // `BRepOffset_MakeOffset` runs `BRepLib::SameParameter` / `ShapeFix` on its

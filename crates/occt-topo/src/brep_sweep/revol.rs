@@ -325,4 +325,18 @@ impl Revol {
         }
         self.shape_of(gen)
     }
+
+    /// `FirstShape()` (`BRepSweep_Revol.cxx:66-69`): the delegating overload
+    /// answers `FirstShape(myGenShape)`, the same shape of call as
+    /// `BRepSweep_Prism::FirstShape` (`BRepSweep_Prism.cxx:66-69`).
+    pub fn first_shape(&self) -> Option<TopoShape> {
+        let gen = self.rotation.tables.gen.clone();
+        self.first_shape_of(&gen)
+    }
+
+    /// `LastShape()` (`BRepSweep_Revol.cxx:81-84`).
+    pub fn last_shape(&self) -> Option<TopoShape> {
+        let gen = self.rotation.tables.gen.clone();
+        self.last_shape_of(&gen)
+    }
 }
