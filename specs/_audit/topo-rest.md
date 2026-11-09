@@ -36,6 +36,7 @@ pub(super) fn revolve_profile_about(profile: &[GpPnt2d], steps: usize, axis: &Gp
 ```
 - OCCT：`BRepFeat_MakeRevol.cxx:215 theRevol.Perform` → `LocOpe_Revol` 产出解析旋转面，无三角网格。
 - 影响/建议：`steps`（调用方传 16）决定 groove/neck 几何；`tests.rs:96-109` 的 `<0.5` 容差即网格化后果。按 `TKFeat/LocOpe/LocOpe_Revol.cxx` 移植；不可移植则标未移植。
+- **2026-11-09 订正（尺寸不变，只订"忠实件是否在仓"）**：`LocOpe_Revol` 已逐支落地（`crates/occt-topo/src/locope/revol.rs`，T-496，`hxx:1-395` + `cxx` 全落），`LocOpe_Pipe` / `LocOpe_DPrism` 亦已落（T-502 / T-500）⇒ 本条从"忠实件需移植"变为"忠实件在仓、`brepfeat` 侧未接线"。本行记录的自创件**仍未修**（旁支，不属 S4 移植范围）。
 
 ### 4. `resolution_for` 的 `[16,64]` 夹取
 - 判定：自创 ｜ live：**是**（`brepfeat::boolean_feature:334`、`feature.rs:101`；`feature.rs:197` 为同逻辑副本 —— `feature.rs` 已删 `f1c8d1b6`，两处为删除前读数）

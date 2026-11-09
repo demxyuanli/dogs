@@ -1,0 +1,15 @@
+# MSVC build products of the HLR parity probe
+*.exe
+*.exp
+*.lib
+*.obj
+*.pdb
+*.ilk
+
+# Scratch dumps from ad-hoc probe runs; the reference pairs are
+# poly_cpp_*_xoy.txt (C++ side) and poly_rust_*_xoy.txt (Rust side),
+# plus out_curve_*.txt / out_rust_curve_*.txt for the curve probe.
+_new_*.txt
+rs_cube.txt
+rust_cube.txt
+rust_seg.txt
