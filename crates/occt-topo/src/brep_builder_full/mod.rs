@@ -91,7 +91,7 @@ use prelude::*;
 //   when the points coincide; here the same condition is an `Err(String)`.
 //   Every builder validates its preconditions up front and returns a
 //   descriptive message instead of panicking (except where noted, e.g. the
-//   low-level `BRepPrimBox` dimensions are asserted in `primitives.rs`).
+//   low-level `BRepPrimBox` dimensions are asserted in `primitives/brep_prim_box.rs`).
 //
 // * **Validation is constructive.** `BRepBuilderWire` rejects a chain whose
 //   consecutive edges are disjoint, whereas OCCT's `MakeWire` accepts any

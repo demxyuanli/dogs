@@ -55,20 +55,20 @@
 //! | `MakeOffsetShape(theRange)` | `:837-1080` | `make_offset_shape.rs` |
 //! | `CorrectConicalFaces()` | `:2396-2853` | `conical_faces.rs` (collection `:2415-2466`, rebuild `:2467-2760`, re-assembly `:2762-2851`) |
 //! | `GetEdgePoints(E, F, f, m, l)` | `:515-530` | `conical_faces.rs` |
-//! | `MakeMissingWalls(theRange)` | `:3148-3687` | `missing_walls.rs` (contours `:3151-3160`, per-edge wall `:3167-3685`, arc corner `:3619-3669`) |
+//! | `MakeMissingWalls(theRange)` | `:3148-3687` | `missing_walls/perform.rs` (contours `:3151-3160`, per-edge wall `:3167-3685`, arc corner `:3619-3669`) |
 //! | `MakeThickSolid(theRange)` | `:1083-1177` | `thick_solid.rs` |
 //! | `Generated(theS)` | `:5231-5330` | `history.rs` (vertex `:5237-5266`, edge `:5269-5274`, face `:5276-5299`, solid `:5301-5306`, `myResMap` filter `:5312-5327`) |
 //! | `Modified(theShape)` | `:5334-5365` | `history.rs` |
 //! | `IsDeleted(theS)` | `:5369-5382` | `history.rs` |
 //! | `SelfInter(Modif)` | `:2154-2167` | `self_inter.rs` (throws `Standard_NotImplemented`) |
-//! | file-local `FillContours(...)` | `:536-599` | `missing_walls.rs` |
-//! | file-local `OrientationOfEdgeInFace(E, F)` | `:326-343` | `missing_walls.rs` |
+//! | file-local `FillContours(...)` | `:536-599` | `missing_walls/fill_contours.rs` |
+//! | file-local `OrientationOfEdgeInFace(E, F)` | `:326-343` | `missing_walls/statics.rs` |
 //! | `MakeShells(theRange)` | `:3691-3790` | `shells.rs` |
 //! | `SelectShells()` | `:3896-3927` | `shells.rs` |
 //! | file-local `BuildShellsCompleteInter(...)` | `:5064-5227` | `shells_complete_inter.rs` |
 //! | file-local `UpdateHistory(...)` | `:4649-4670` | `shells_complete_inter.rs` |
 //! | file-local `GetSubShapes(...)` | `:5386-5406` | `shape_prep.rs` |
-//! | `gce_MakeCone(P1, P2, R1, R2)` (`gce_MakeCone.cxx:234-283`) | - | `missing_walls.rs` |
+//! | `gce_MakeCone(P1, P2, R1, R2)` (`gce_MakeCone.cxx:234-283`) | - | `missing_walls/statics.rs` |
 //!
 //! UNPORTED (with the OCCT lines they live in):
 //!

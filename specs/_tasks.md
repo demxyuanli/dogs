@@ -5727,3 +5727,23 @@ Do not grow the dual-pipeline / planar / volume-gate scaffold. Do not invent Fil
 (2) **拆分后仓内**已无超过 1000 行的 `.rs` 文件；最大为 `brep_offset/make_offset/missing_walls.rs` 989。
 
 (3) **旁支问题（未修）**：①审计 `topo-rest.md` 发现 1-5 记录的 `brepfeat` 自创件仍在（`draft` 只转面平面、`groove`/`neck` 走自建工具面），与 `brep_feat` 忠实件仍互不接线；②`shhealing/transfer_params` 的 `CopyNMVertex` 边重载（`Proj.cxx:562-710`）仍按原注释 UNPORTED；③`graphify-out/` 需 `graphify update .` 刷新（本批 4 个目录、30 个新文件）。
+
+## T-510 800 行收敛第一批：四个 ≥970 行文件（2026-11-09）
+
+| 任务卡 | 内容 | 状态 |
+|---|---|---|
+| T-510 A | `brep_fill.rs`（970）→ `brep_fill/`：`mod.rs` 67（模块文档、`prelude`、`mod` 声明与 `pub use`）、`face_shell.rs` 141（`BRepFill::Face` `BRepFill.cxx:211-422`、`Shell` `cxx:426-667`）、`acr.rs` 222（`ComputeACR` `cxx:1027-1063`、`InsertACR` `cxx:1067-1155`、文件静态 `MakeWire` `cxx:81-117` / `CutEdge` `cxx:119-142`）、`search_origin.rs` 211（`SearchOrigin` `cxx:885-1023` 与 `DistSolution` 局部解）、`axe.rs` 227（`BRepFill::Axe` `cxx:672-878`）、`statics.rs` 145（`SharedLocation`/`PrepareCurve`/`IsoEdge`/`BindProfilePCurve`/`UVLine`/`ClearSameFlags`/`EdgeIsClosed`/`ShellIsClosed`/`ToggleSame`）。 | 已完成 |
+| T-510 B | `primitives.rs`（984）→ `primitives/`：`mod.rs` 209（模块文档、`prelude`、`mod` 声明、`pub use` 与内联 `mod tests`）、`brep_prim_box.rs` 91（`BRepPrimAPI_MakeBox`）、`brep_prim_cylinder.rs` 199（`BRepPrimAPI_MakeCylinder`）、`brep_prim_sphere.rs` 126、`brep_prim_cone.rs` 162、`brep_prim_torus.rs` 113、`statics.rs` 130（`BOX_EDGES`/`Dir`/`LineCurve`/`CircleCurve`/`Plane`/`EdgeIndex`/`BoxCorners`/`BuildBox`）。`mod tests` 保持内联，路径 `primitives::tests` 未变，只补 `use super::prelude::*;`（原扁平文件下这些 `use` 绑定就在同一模块可见）。 | 已完成 |
+| T-510 C | `brep_offset/make_offset/missing_walls.rs`（989）→ `missing_walls/`：`mod.rs` 134（模块文档、`prelude`、`mod` 声明）、`perform.rs` 655（`MakeMissingWalls(theRange)` `BRepOffset_MakeOffset.cxx:3148-3687`，即那个 540 行的 C++ 单函数本体，保持单函数不拆）、`fill_contours.rs` 97（文件静态 `FillContours` `cxx:536-599`）、`statics.rs` 79（`IsFreeBound`/`OrientationOfEdgeInFace` `cxx:326-343`/`gce_MakeCone`/`MakeEdgeBetween`/`Line2dAt`/`OrientedBy`）、`rebuild_connecting_edge.rs` 48。`impl BRepOffsetMakeOffset {` 头在切片边界上被留在前一文件尾，按原样移回 `perform.rs` 首位。 | 已完成 |
+| T-510 D | `shhealing/wire_fix/notched.rs`（986）→ `wire_fix/notched/`：`mod.rs` 27（文件头注释、`mod` 声明、`pub use`）、`statics.rs` 405（`GeomCurveIsClosed`/`EdgeIsClosed3d`/`ProjectInside`/`NotchedCheck`/`CheckNotchedEdges`/`CopyReversePcurves`/`FixDummySeam`/`FixNotchedEdges`）、`check_pcurves.rs` 201（`CheckPCurvesAndShift` `ShapeFix_Wire.cxx:953-1005`）、`perform.rs` 375（`TraceWire`、`PerformWireFirstRound`/`SecondRound`/`ConstructorDefaults`）。三层嵌套下 `super::pcurve_ranges` / `super::singularity` 原位改写为 `super::super::...`（原写法相对 `wire_fix`，目录化后相对 `notched`）。 | 已完成 |
+| T-510 E | 门禁（引用既有基线）：`cargo check --manifest-path crates/occt-topo/Cargo.toml --lib --offline` **0 error**，四个新目录只余 3 条拆分前即存在的告警（`notched/check_pcurves.rs:111` 的 `cfp`/`clp` 未用、`brep_fill/axe.rs:109` 的 `par` 赋值未读）；`cargo check --tests` **0 error**；`occt-topo --lib` **1254 passed**；`step_obj_gates` **4 passed**；`export_data_obj` **15/15 ok**，15 条 `v=/f=` 与 T-509 E 逐位一致。 | 已通过 |
+
+**T-510 备注**
+
+(1) **纯结构拆分，逻辑零改动**：四个文件同样按「同一命名空间」切分，函数体逐行搬移；`brep_fill`/`primitives` 用 `mod prelude` 集中原文件的 `use` 清单（`brep_fill` 例外：`search_origin.rs` 另有 `use super::acr::{cut_edge_at, make_wire_from};`）。`brep_fill` 的 `MakeWire`/`CutEdge`、`primitives` 的 `BOX_EDGES` 与构造助手改为 `pub(super)`（原为文件私有，仅同文件内可见）。`missing_walls` 的 `impl BRepOffsetMakeOffset` 仍是同一个 impl 块，只是搬到 `perform.rs`。
+
+(2) **`notched` 的可见度**：原文件的 `pub(in crate::shhealing)` 项（`GeomCurveIsClosed` 等 8 个）拆分后成为 `notched::statics` 的私有项，不再经 `wire_fix::*` 重导出——全仓对它们零引用（`grep` 复核：`check_notched_edges`/`fix_notched_edges`/`NotchedCheck`/`fix_dummy_seam`/`copy_reverse_pcurves`/`project_inside`/`edge_is_closed_3d` 外部引用数均为 0；`shape_analysis_curve.rs:400` 的同名函数是另一份实现），保留重导出只会新增未用告警。
+
+(3) **文档同步**：`brep_offset/make_offset/mod.rs` 的移植映射表 4 处、`make_simple_offset.rs:75`、`shhealing/wire_fix/lacking.rs:530`、`brep_extrema.rs:738`、`brep_builder_full/mod.rs:94` 的源码文件名引用改为真实新路径。`specs/_tasks.md` 中 T-385/T-386/T-387/T-450 等历史回执里的旧文件名**不改写**（它们是当时批次的读数）。
+
+(4) **旁支问题（未修）**：①仓内仍有 **42 个** `.rs` 超过 800 行（最大 `brep_tool.rs` 932、`projection_cache.rs` 948、`delaun_data.rs` 944、`bop_builder2/arguments.rs` 941、`intana/line_torus.rs` 940），属后续批次；②`notched/statics.rs` 405 行内的 8 个 `pub(in crate::shhealing)` 项已无外部调用方，是否降为 `pub(super)` 需另开任务判定；③`graphify-out/` 需 `graphify update .` 刷新（本批 4 个目录、21 个新文件）。

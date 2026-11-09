@@ -527,7 +527,7 @@ pub(in crate::shhealing) fn fix_lacking_one(
 /// (`ShapeAnalysis_Wire.cxx:1767-1790`) has no period normalization, so it
 /// reported DONE1 with `myMax2d = 4*pi` / `myMax3d = 2*pi` and `FixLacking`
 /// selected the degenerated-edge branch (`cxx:3782-3806`). That malformed input
-/// wire is fixed in `primitives.rs` (`BRepPrimCylinder::make_cylinder` now
+/// wire is fixed in `primitives/brep_prim_cylinder.rs` (`BRepPrimCylinder::make_cylinder` now
 /// traverses the two rings oppositely, as OCCT's swept lateral face does), so
 /// every junction of the cylinder's lateral loop is gap-free and this pass is a
 /// no-op there.

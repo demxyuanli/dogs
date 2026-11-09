@@ -49,6 +49,10 @@
 | `occt-topo/src/brep_extrema_distance_ss.rs` | `brep_extrema_distance_ss/{mod,perform,perform_pairs,perform_c0,trim_infinite,statics}`（T-509） |
 | `occt-core/src/adv_approx/approx.rs` | `adv_approx/approx/{mod,prepare_convert,function_3d,function_3d_multi,function_2d,function_1d_pair,function_1d_3d}`（T-509） |
 | `occt-topo/src/shhealing/transfer_params.rs` | `shhealing/transfer_params/{mod,copy_nm_vertex,curve_range,transfer_parameters,transfer_parameters_proj}`（T-509） |
+| `occt-topo/src/brep_fill.rs` | `brep_fill/{mod,face_shell,acr,search_origin,axe,statics}`（T-510） |
+| `occt-topo/src/primitives.rs` | `primitives/{mod,brep_prim_box,brep_prim_cylinder,brep_prim_sphere,brep_prim_cone,brep_prim_torus,statics}`（T-510） |
+| `occt-topo/src/brep_offset/make_offset/missing_walls.rs` | `missing_walls/{mod,perform,fill_contours,statics,rebuild_connecting_edge}`（T-510） |
+| `occt-topo/src/shhealing/wire_fix/notched.rs` | `wire_fix/notched/{mod,statics,check_pcurves,perform}`（T-510） |
 | `occt-topo/examples/model_probe.rs` | `model_probe.rs`（入口 + `Ctx`）+ `model_probe/{diagnostics_faces,diagnostics_topology,diagnostics_census,diagnostics_mesh,report}` |
 
 > **表 A 以外、路径不可追的名字**（都在更早的重构里删除或改名；报告里的对应条目是**历史记录**，要定位现状请按符号回 `crates/**` 现查）：

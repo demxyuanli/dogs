@@ -72,7 +72,7 @@
 //!   which case OCCT would store a null 3D curve and the port keeps the
 //!   previous one; `BRepLib_MakeFace(theSurf, wire)` (`cxx:663`) is
 //!   [`make_face_from_surface_and_wire`]; the `BRep_Builder` writes are
-//!   [`GeometryRegistry`] (see `make_offset/missing_walls.rs`, which maps the
+//!   [`GeometryRegistry`] (see `make_offset/missing_walls/perform.rs`, which maps the
 //!   same family of calls).
 //! * `TopoDS_Shape::Oriented(o)` (`cxx:519`, `:534-535`, `:547-548`,
 //!   `:563`, `:568-569`) *replaces* the orientation

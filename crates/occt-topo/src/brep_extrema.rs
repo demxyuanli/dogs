@@ -735,7 +735,7 @@ pub(crate) mod test_box {
             (GpPnt::new(1.0, 0.0, 0.0), GpDir::new(1.0, 0.0, 0.0).unwrap(), GpDir::new(0.0, 1.0, 0.0).unwrap()),
         ];
         // Outward corner cycle of every face, in the same order as
-        // `BRepPrim_GWedge` / `BRepPrimBox::make_box` (`primitives.rs`). An
+        // `BRepPrim_GWedge` / `BRepPrimBox::make_box` (`primitives/brep_prim_box.rs`). An
         // edge that the face closes against the `edge_idx` chord is stored
         // Reversed, so two faces sharing an edge always see opposite
         // orientations — the invariant `BOPTools_AlgoTools::GetEdgeOff`
