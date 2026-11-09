@@ -56,7 +56,8 @@
 //! the argument naming differs (intervals here, points there).
 //!
 //! `GCPnts_QuasiUniformDeflection` is ported
-//! (`gcpnts/quasi_uniform_deflection.rs`, 3D adaptor only);
+//! (`gcpnts/quasi_uniform_deflection.rs`, both the `Adaptor3d_Curve` and the
+//! `Adaptor2d_Curve2d` arms);
 //! `GCPnts_UniformDeflection` remains **UNPORTED** (see
 //! `occt-core/src/gcpnts.rs` module docs) — this module no longer exposes a
 //! fake "uniform deflection" accessor.

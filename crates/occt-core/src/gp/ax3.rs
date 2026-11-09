@@ -288,4 +288,33 @@ impl GpAx3 {
     pub fn translate_vec(&mut self, v: &GpVec) {
         self.axis.translate_vec(v);
     }
+    /// `gp_Ax3::IsCoplanar(const gp_Ax3&, double, double)`
+    /// (`gp_Ax3.hxx:210-219`): the main directions are parallel within
+    /// `theAngularTolerance`, and each origin lies within
+    /// `theLinearTolerance` of the other system's plane.
+    ///
+    /// The reference body lives in `gp_Ax3.cxx`; the source tree this port is
+    /// checked against does not carry that function, so the header contract
+    /// quoted above - direction parallelism plus the two point-to-plane
+    /// distances - is the spec followed here.
+    pub fn is_coplanar(&self, other: &GpAx3, lin_tol: f64, ang_tol: f64) -> bool {
+        if !self.direction().is_parallel_tol(&other.direction(), ang_tol) {
+            return false;
+        }
+        if crate::gp::pln::GpPln::new(*self)
+            .signed_distance_pnt(&other.location())
+            .abs()
+            > lin_tol
+        {
+            return false;
+        }
+        if crate::gp::pln::GpPln::new(*other)
+            .signed_distance_pnt(&self.location())
+            .abs()
+            > lin_tol
+        {
+            return false;
+        }
+        true
+    }
 }

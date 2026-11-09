@@ -108,6 +108,12 @@ impl GpAx1 {
             && (dz - self.vdir.z() * t).abs() <= crate::precision::RESOLUTION
     }
 
+    /// `gp_Ax1::IsParallel(const gp_Ax1&, double)` (`gp_Ax1.hxx`):
+    /// `vdir.IsParallel(theOther.vdir, theAngularTolerance)`.
+    pub fn is_parallel_tol(&self, other: &GpAx1, ang_tol: f64) -> bool {
+        self.vdir.is_parallel_tol(&other.vdir, ang_tol)
+    }
+
     pub fn reverse(&mut self) {
         self.vdir.reverse();
     }

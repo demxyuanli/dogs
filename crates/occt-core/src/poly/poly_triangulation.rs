@@ -106,19 +106,23 @@ impl PolyTriangulation {
             uv_nodes: b.uv_nodes.clone().map(|v| v.into_iter().map(|(u, vv)| GpPnt2d::new(u, vv)).collect()),
             triangles: b.triangles.clone(),
             normals: b.normals.clone(),
-            deflection: b.deflection,
+            deflection: b.deflection(),
         }
     }
 
     /// Down-converts to the basic `Triangulation` view.
     pub fn to_basic(&self) -> super::triangulation::Triangulation {
-        super::triangulation::Triangulation {
-            nodes: self.nodes.clone(),
-            triangles: self.triangles.clone(),
-            normals: self.normals.clone(),
-            uv_nodes: self.uv_nodes.as_ref().map(|v| v.iter().map(|p| (p.x(), p.y())).collect()),
-            deflection: self.deflection,
-        }
+        let mut basic = super::triangulation::Triangulation::new(
+            self.nodes.clone(),
+            self.triangles.clone(),
+        );
+        basic.normals = self.normals.clone();
+        basic.uv_nodes = self
+            .uv_nodes
+            .as_ref()
+            .map(|v| v.iter().map(|p| (p.x(), p.y())).collect());
+        basic.set_deflection(self.deflection);
+        basic
     }
 
     /// Full deep copy.
@@ -253,8 +257,14 @@ impl PolyTriangulation {
 }
 
 /// A polygon in 3D space based on a triangulation: a sequence of node indices
-/// (0-based) with optional per-node parameters.
+/// with optional per-node parameters.
 /// Source: `Poly_PolygonOnTriangulation`.
+///
+/// `nodes` keeps OCCT's 1-based triangulation node index verbatim: every OCCT
+/// consumer reads them as `Nodes()(i)` against the 1-based `Poly_Triangulation`
+/// node array (`HLRBRep_PolyAlgo::InitBiPointsWithConnexity`,
+/// `HLRBRep_PolyAlgo.cxx:900-910`, indexes `PINod` with them), so a 0-based
+/// value here would silently pick the neighbouring node.
 #[derive(Debug, Clone)]
 pub struct PolyPolygonOnTriangulation {
     pub nodes: Vec<usize>,

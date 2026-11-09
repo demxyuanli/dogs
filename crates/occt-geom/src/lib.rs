@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+pub mod adaptor_surface_of_linear_extrusion;
 pub mod curve;
 pub mod bspline_curve;
 pub mod interp_curve;
@@ -108,6 +109,7 @@ pub mod geom_lib_check_bspline;
 pub mod geom_lib_is_planar_surface;
 pub mod geom_lib_same_range_2d;
 pub mod geom_lprop;
+pub mod gprop_pequation;
 pub mod hermit;
 pub mod geom_convert_concat;
 pub mod geom_fill;

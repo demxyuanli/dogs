@@ -2,6 +2,7 @@ use crate::gp::ax1::GpAx1;
 use crate::gp::ax2::GpAx2;
 use crate::gp::ax3::GpAx3;
 use crate::gp::dir::GpDir;
+use crate::gp::lin::GpLin;
 use crate::gp::pnt::GpPnt;
 use crate::gp::trsf::GpTrsf;
 use crate::gp::vec::GpVec;
@@ -126,6 +127,13 @@ impl GpPln {
         self.signed_distance_pnt(&other.pos.location())
     }
 
+    /// `gp_Pln::SquareDistance(const gp_Pnt&)` (`gp_Pln.hxx:150-155`):
+    /// `Distance(theP)^2` with `Distance = |SignedDistance|`.
+    pub fn square_distance_pnt(&self, p: &GpPnt) -> f64 {
+        let d = self.signed_distance_pnt(p);
+        d * d
+    }
+
     /// `gp_Pln::SquareDistance(const gp_Pln&)` (`gp_Pln.hxx:173-177`):
     /// `Distance(theOther)^2` with `Distance = |SignedDistance|`.
     pub fn square_distance_pln(&self, other: &GpPln) -> f64 {
@@ -133,10 +141,32 @@ impl GpPln {
         d * d
     }
 
+    /// `gp_Pln::Distance(const gp_Pnt&)` (`gp_Pln.hxx:104-110`):
+    /// `|SignedDistance(theP)|`.
+    pub fn distance_pnt(&self, p: &GpPnt) -> f64 {
+        self.signed_distance_pnt(p).abs()
+    }
+
+    /// `gp_Pln::Contains(const gp_Pnt&, double)` (`gp_Pln.hxx:232-238`):
+    /// the point lies within `theLinearTolerance` of the plane.
+    pub fn contains_pnt(&self, p: &GpPnt, lin_tol: f64) -> bool {
+        self.distance_pnt(p) <= lin_tol
+    }
+
+    /// `gp_Pln::Contains(const gp_Lin&, double, double)` (`gp_Pln.hxx:250-259`):
+    /// the line origin is within `theLinearTolerance` of the plane, and the
+    /// line direction is normal to the plane within `theAngularTolerance`.
+    pub fn contains_lin(&self, l: &GpLin, lin_tol: f64, ang_tol: f64) -> bool {
+        self.contains_pnt(&l.location(), lin_tol)
+            && self
+                .pos
+                .direction()
+                .is_normal_tol(&l.direction(), ang_tol)
+    }
+
     pub fn u_reverse(&mut self) {
         self.pos.x_reverse();
     }
-
     pub fn v_reverse(&mut self) {
         self.pos.y_reverse();
     }
