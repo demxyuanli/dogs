@@ -6,7 +6,6 @@
 use occt_core::gp::{GpCirc2d, GpElips2d, GpHypr2d, GpLin2d, GpParab2d, GpPnt2d, GpVec2d};
 
 use crate::curve::Curve2d;
-use super::curve_sampling::{geom2d_nb_samples, nb_samples_range};
 
 /// `GeomAbs_CurveType` (`GeomAbs_CurveType.hxx`), the values
 /// `Geom2dAdaptor_Curve::GetType()` can return.
@@ -132,14 +131,15 @@ pub fn eps_x_with(_c: &dyn Curve2d, _eps_xyz: f64) -> f64 {
     1.0e-10
 }
 
-/// `NbSamples(C)` (`cxx:73-91`).
+/// `NbSamples(C)` (`cxx:73-91`), routed through the curve so an instantiation
+/// whose `TheCurveTool` counts samples differently can override it.
 pub fn nb_samples_curve(c: &dyn Curve2d) -> usize {
-    geom2d_nb_samples(c, c.first_parameter(), c.last_parameter())
+    c.nb_samples_2d_full()
 }
 
-/// `NbSamples(C, U0, U1)` (`cxx:23-70`).
+/// `NbSamples(C, U0, U1)` (`cxx:23-70`), routed like [`nb_samples_curve`].
 pub fn nb_samples_curve_range(c: &dyn Curve2d, u0: f64, u1: f64) -> usize {
-    nb_samples_range(c, u0, u1)
+    c.nb_samples_2d(u0, u1)
 }
 
 /// `NbIntervals` (`lxx:169-178`): `C.NbIntervals(GeomAbs_C1)`

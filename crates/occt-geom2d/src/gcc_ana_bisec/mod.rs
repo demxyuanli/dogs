@@ -7,6 +7,7 @@
 //! | `GccAna_CircLin2dBisec` | `GccAna_CircLin2dBisec.cxx:35-160` |
 //! | `GccAna_CircPnt2dBisec` | `GccAna_CircPnt2dBisec.cxx:36-196` |
 //! | `GccAna_Circ2dBisec` | `GccAna_Circ2dBisec.cxx:36-414` |
+//! | `GccAna_Lin2dBisec` | `GccAna_Lin2dBisec.cxx:39-194` |
 //!
 //! Every class answers `GccInt_Bisec` solutions; OCCT reports failure through
 //! `StdFail_NotDone` / `GccAna_NoSolution` / `Standard_OutOfRange` exceptions,
@@ -14,12 +15,14 @@
 
 mod circ_circ;mod circ_lin;
 mod circ_pnt;
+mod lin_lin;
 mod lin_pnt;
 mod pnt_pnt;
 
 pub use circ_circ::GccAnaCirc2dBisec;
 pub use circ_lin::GccAnaCircLin2dBisec;
 pub use circ_pnt::GccAnaCircPnt2dBisec;
+pub use lin_lin::GccAnaLin2dBisec;
 pub use lin_pnt::GccAnaLinPnt2dBisec;
 pub use pnt_pnt::GccAnaPnt2dBisec;
 

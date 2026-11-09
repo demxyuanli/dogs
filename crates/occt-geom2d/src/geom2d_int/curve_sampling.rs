@@ -18,7 +18,7 @@ use crate::curve::Curve2d;
 
 /// `nbPoints(theCurve)` (`Geom2dAdaptor_Curve.cxx:1351-1389`), i.e.
 /// `Geom2dAdaptor_Curve::NbSamples()` (`Geom2dAdaptor_Curve.cxx:1391-1394`).
-pub fn nb_points(pc: &dyn Curve2d) -> usize {
+pub fn nb_points<T: Curve2d + ?Sized>(pc: &T) -> usize {
     // OCCT tests `IsKind(Geom2d_Line)` first (`cxx:1356-1359`), but
     // `Geom2dTrimmedCurve::is_line()` delegates to its basis, so the trimmed
     // arm must be tested first here; an OCCT `Geom2dAdaptor_Curve` never sees a
@@ -43,7 +43,7 @@ pub fn nb_points(pc: &dyn Curve2d) -> usize {
 
 /// `Geom2dInt_Geom2dCurveTool::NbSamples(const Adaptor2d_Curve2d&)`
 /// (`Geom2dInt_Geom2dCurveTool.cxx:73-91`).
-pub fn geom2d_nb_samples(pc: &dyn Curve2d, first: f64, last: f64) -> usize {
+pub fn geom2d_nb_samples<T: Curve2d + ?Sized>(pc: &T, first: f64, last: f64) -> usize {
     let mut nbs = nb_points(pc);
     if let Some(circ) = pc.gp_circ2d() {
         if circ.radius() > 1.0 {
@@ -57,7 +57,7 @@ pub fn geom2d_nb_samples(pc: &dyn Curve2d, first: f64, last: f64) -> usize {
 
 /// `Geom2dInt_Geom2dCurveTool::NbSamples(C, U0, U1)`
 /// (`Geom2dInt_Geom2dCurveTool.cxx:23-70`).
-pub fn nb_samples_range(pc: &dyn Curve2d, u0: f64, u1: f64) -> usize {
+pub fn nb_samples_range<T: Curve2d + ?Sized>(pc: &T, u0: f64, u1: f64) -> usize {
     let mut nbs = nb_points(pc);
     if let (Some(nb_knots), Some(degree)) = (pc.bspline_nb_knots(), pc.bspline_degree()) {
         let t = pc.last_parameter() - pc.first_parameter();

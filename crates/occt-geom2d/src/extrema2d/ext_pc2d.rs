@@ -93,6 +93,8 @@ struct Pc2dState<'a> {
     pl: GpPnt2d,
     /// `mytolu` = `Extrema_Curve2dTool::Resolution(C, Precision::Confusion())`.
     tol_u: f64,
+    /// `mytolf` (`Extrema_GGExtPC.hxx:645`), the `theTolF` argument.
+    tol_f: f64,
     /// `myuinf` / `myusup`.
     u_inf: f64,
     u_sup: f64,
@@ -104,7 +106,9 @@ struct Pc2dState<'a> {
 }
 
 impl<'a> Pc2dState<'a> {
-    fn new(c: &'a dyn Curve2d, p: &GpPnt2d, u_inf: f64, u_sup: f64) -> Self {
+    /// `Extrema_GGExtPC::Initialize(C, Uinf, Usup, theTolF)`
+    /// (`Extrema_GGExtPC.hxx:114-127`): `mytolf = theTolF`.
+    fn new(c: &'a dyn Curve2d, p: &GpPnt2d, u_inf: f64, u_sup: f64, tol_f: f64) -> Self {
         Self {
             c,
             point: *p,
@@ -117,6 +121,7 @@ impl<'a> Pc2dState<'a> {
             pl: GpPnt2d::zero(),
             // `hxx:123`.
             tol_u: adaptor_resolution2d(c, CONFUSION),
+            tol_f,
             u_inf,
             u_sup,
             sample: SAMPLE_DEFAULT,
@@ -146,8 +151,8 @@ impl<'a> Pc2dState<'a> {
             self.int_u_sup,
             self.sample,
             self.tol_u,
-            TOL_F,
-            TOL_F,
+            self.tol_f,
+            self.tol_f,
             0.0,
         );
         self.done = roots.is_done() && !roots.is_all_null();
@@ -183,7 +188,21 @@ impl<'a> ExtremaExtPC2d<'a> {
     /// `Extrema_ExtPC2d(theP, theC, theUinf, theUsup, theTolF)`
     /// (`Extrema_GGExtPC.hxx:84-93`).
     pub fn new_range(c: &'a dyn Curve2d, p: &GpPnt2d, u_inf: f64, u_sup: f64) -> Self {
-        let mut out = Self { state: Pc2dState::new(c, p, u_inf, u_sup) };
+        Self::new_range_tol(c, p, u_inf, u_sup, TOL_F)
+    }
+
+    /// `Extrema_ExtPC2d(theP, theC, theUinf, theUsup, theTolF)`
+    /// (`Extrema_GGExtPC.hxx:84-93`) with the caller's `theTolF`.
+    pub fn new_range_tol(
+        c: &'a dyn Curve2d,
+        p: &GpPnt2d,
+        u_inf: f64,
+        u_sup: f64,
+        tol_f: f64,
+    ) -> Self {
+        let mut out = Self {
+            state: Pc2dState::new(c, p, u_inf, u_sup, tol_f),
+        };
         out.perform();
         out
     }

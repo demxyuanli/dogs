@@ -34,14 +34,38 @@ use super::int_poly_poly_gen::Geom2dIntIntPolyPolyGen;
 
 /// `Geom2dInt_GInter` (`Geom2dInt_GInter.hxx:43-...`), holding the
 /// `IntRes2d_Intersection` result.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Geom2dIntGInter {
     base: IntRes2dIntersection,
+    /// `intcurvcurv.GetMinNbSamples()` of `IntCurve_IntCurveCurveGen.gxx:1023-1031`:
+    /// `SetMinNbSamples` forwards to the poly-poly intersector, which the port
+    /// creates per `Perform`, so the value is held here and applied to each
+    /// instance. `IntCurve_IntPolyPolyGen()` starts at 20 (`gxx:87`).
+    min_nb_samples: usize,
+}
+
+impl Default for Geom2dIntGInter {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Geom2dIntGInter {
     pub fn new() -> Self {
-        Self { base: IntRes2dIntersection::new() }
+        Self {
+            base: IntRes2dIntersection::new(),
+            min_nb_samples: 20,
+        }
+    }
+
+    /// `GetMinNbSamples()` (`IntCurve_IntCurveCurveGen.gxx:1030-1033`).
+    pub fn min_nb_samples(&self) -> usize {
+        self.min_nb_samples
+    }
+
+    /// `SetMinNbSamples(theMinNbSamples)` (`IntCurve_IntCurveCurveGen.gxx:1023-1026`).
+    pub fn set_min_nb_samples(&mut self, min_nb_samples: usize) {
+        self.min_nb_samples = min_nb_samples;
     }
 
     /// `IntRes2d_Intersection::SetReversedParameters` (inherited).
@@ -153,6 +177,7 @@ impl Geom2dIntGInter {
             _ => {
                 // `gxx:108-113`.
                 let mut intcurvcurv = Geom2dIntIntPolyPolyGen::new();
+                intcurvcurv.set_min_nb_samples(self.min_nb_samples);
                 intcurvcurv.base.set_reversed_parameters(false);
                 intcurvcurv.perform_self(c, d, tol_conf, tol);
                 self.base.set_values(intcurvcurv.result());
@@ -552,6 +577,7 @@ impl Geom2dIntGInter {
                     // polygon-approximation intersector ported as
                     // `Geom2dIntIntPolyPolyGen`.
                     let mut intcurvcurv = Geom2dIntIntPolyPolyGen::new();
+                    intcurvcurv.set_min_nb_samples(self.min_nb_samples);
                     intcurvcurv.base.set_reversed_parameters(false);
                     intcurvcurv.perform(c1, d1, c2, d2, tol_conf, tol);
                     self.base.set_values(intcurvcurv.result());

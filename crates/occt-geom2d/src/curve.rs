@@ -291,6 +291,28 @@ pub trait Curve2d: Send + Sync {
         None
     }
 
+    /// `TheCurveTool::NbSamples(C, U0, U1)` of the `IntCurve` instantiation that
+    /// consumes this curve. `Curve2d` stands in for the `Adaptor2d_Curve2d` +
+    /// `TheCurveTool` pair, so an instantiation whose tool counts samples
+    /// differently overrides this. Default:
+    /// `Geom2dInt_Geom2dCurveTool::NbSamples(C, U0, U1)`
+    /// (`Geom2dInt_Geom2dCurveTool.cxx:23-70`); `HLRBRep_CInter` overrides it
+    /// with `HLRBRep_CurveTool::NbSamples` (`HLRBRep_CurveTool.cxx:53-83`).
+    fn nb_samples_2d(&self, u0: f64, u1: f64) -> usize {
+        crate::geom2d_int::curve_sampling::nb_samples_range(self, u0, u1)
+    }
+
+    /// `TheCurveTool::NbSamples(C)` - the whole-range twin of
+    /// [`Curve2d::nb_samples_2d`]. Default:
+    /// `Geom2dInt_Geom2dCurveTool::NbSamples(C)` (`Geom2dInt_Geom2dCurveTool.cxx:73-91`).
+    fn nb_samples_2d_full(&self) -> usize {
+        crate::geom2d_int::curve_sampling::geom2d_nb_samples(
+            self,
+            self.first_parameter(),
+            self.last_parameter(),
+        )
+    }
+
     fn transformed(&self, t: &GpTrsf2d) -> Box<dyn Curve2d> {
         let mut c = self.clone_dyn();
         c.transform(t);

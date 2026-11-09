@@ -9,7 +9,7 @@
 mod conic_conic;
 mod conic_curve;
 mod curve_locator;
-mod curve_sampling;
+pub(crate) mod curve_sampling;
 mod curve_tool;
 mod dist_between_pcurves;
 mod exact_intersection_point;

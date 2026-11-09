@@ -67,12 +67,12 @@ pub fn type2d(c: &dyn Curve2d) -> CurveType {
 ///   without touching `myFirst` / `myLast`.
 /// - `Curve` (`hxx:136`), `FirstParameter` / `LastParameter` (`hxx:138-140`),
 ///   `Value` (`hxx:172`), `DN` (`hxx:204`), `GetType` (`hxx:209`), `Circle`
-///   (`hxx:213`), `Line` (`hxx:...`).
+///   (`hxx:213`), `Line` (`hxx:...`), `Resolution` (`cxx:1186-1219`).
 ///
 /// UNPORTED (`Geom2dAdaptor_Curve.cxx`): the `EvalRepresentation` / cache
 /// variants (`BezierData` / `BSplineData` / `OffsetData`, `cxx:315-342`), the
-/// `ShallowCopy` (`cxx:89-134`), `Resolution` (`cxx:1186-1219`), `Intervals` /
-/// `NbIntervals` and `Trim` — none of them is reached by `BRepFill_MultiLine`.
+/// `ShallowCopy` (`cxx:89-134`), `Intervals` / `NbIntervals` and `Trim` - none of
+/// them is reached by `BRepFill_MultiLine`.
 ///
 /// A null `Handle(Geom2d_Curve)` is a legitimate state in OCCT (a null curve
 /// still carries `myFirst` / `myLast`); [`Option`] models it here.
@@ -183,5 +183,23 @@ impl Geom2dAdaptorCurve {
     /// `Line()` (`Geom2dAdaptor_Curve::Line`): the `gp_Lin2d` of a loaded line.
     pub fn line(&self) -> Option<occt_core::gp::GpLin2d> {
         self.curve.as_ref().and_then(|c| basis2d(c.as_ref()).gp_lin2d())
+    }
+
+    /// `Resolution(Ruv)` (`Geom2dAdaptor_Curve.cxx:1186-1219`), the parametric
+    /// tolerance of the loaded curve type.
+    ///
+    /// The per-type table lives on [`Curve2d::resolution`], whose default is the
+    /// `default:` arm `Precision::Parametric(Ruv)` and whose overrides are the
+    /// `Line` / `Circle` / `Ellipse` / `BezierCurve` / `BSplineCurve` arms.
+    /// A null adaptor has `myTypeCurve == GeomAbs_OtherCurve`, so it takes the
+    /// `default:` arm as well.
+    pub fn resolution(&self, ruv: f64) -> f64 {
+        match self.curve.as_ref() {
+            Some(c) => c.resolution(ruv),
+            None => occt_core::precision::Precision::parametric(
+                ruv,
+                occt_core::precision::CONFUSION,
+            ),
+        }
     }
 }

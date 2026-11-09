@@ -5,7 +5,10 @@
 //! |---|---|---|
 //! | `GccAna_Circ2d2TanRad.cxx` (circle, circle) | `cxx:43-802` | `circ_circ.rs` |
 //! | `GccAna_Circ2d2TanRad_1.cxx` (circle, line) | `cxx:42-626` | `circ_lin.rs` |
+//! | `GccAna_Circ2d2TanRad_2.cxx` (circle, point) | `cxx:43-291` | `circ_pnt.rs` |
+//! | `GccAna_Circ2d2TanRad_3.cxx` (line, point) | `cxx:46-271` | `lin_pnt.rs` |
 //! | `GccAna_Circ2d2TanRad_4.cxx` (line, line) | `cxx:42-244` | `lin_lin.rs` |
+//! | `GccAna_Circ2d2TanRad_5.cxx` (point, point) | `cxx:35-115` | `pnt_pnt.rs` |
 //! | `IsDone`..`IsTheSame2` | `cxx:804-934` | this file |
 //!
 //! Translation notes:
@@ -16,14 +19,17 @@
 //!   `GccEnt_BadQualifier` raises have no Rust equivalent at the call sites of
 //!   this package, so they panic with the OCCT exception name, which is how the
 //!   port already models `StdFail_NotDone` in `IntAna2d_AnaIntersection`,
-//! - the constructors that take a `gp_Pnt2d` (`GccAna_Circ2d2TanRad_2.cxx`,
-//!   `_3.cxx`, `_5.cxx`) are UNPORTED: nothing in the `ChFi2d` pipeline reaches
-//!   them (see [`super::geom2d_circ2d_2tan_rad`]), and neither
-//!   `Geom2dGcc_Circ2d2TanRad` overload that takes a point is ported either.
+//! - the three `gp_Pnt2d` constructors (`_2.cxx`, `_3.cxx`, `_5.cxx`) declare
+//!   `(1, 4)`, `(1, 2)` and `(1, 2)` upper bounds; the port sizes them at
+//!   [`MAX_SOL`] like the rest and each constructor keeps its own OCCT clamp
+//!   where the source has one (`_3.cxx:217` `NbrSol < 2`).
 
 mod circ_circ;
 mod circ_lin;
+mod circ_pnt;
 mod lin_lin;
+mod lin_pnt;
+mod pnt_pnt;
 
 use occt_core::gp::ax22d::GpAx22d;
 use occt_core::gp::circ2d::GpCirc2d;
@@ -185,6 +191,15 @@ pub(crate) fn dx2d() -> GpDir2d {
 /// `gp_Ax2d(center, dirx)`: the axis every solution circle is built on.
 pub(crate) fn axis_at(center: GpPnt2d) -> GpAx22d {
     GpAx22d::from_xdir(center, dx2d())
+}
+
+/// `gp_Circ2d(C1.XAxis(), r)` (`GccAna_Circ2d2TanRad_2.cxx:113`, `:136`, `:155`,
+/// `:194`, `:200`, `:203`): the auxiliary circle keeps `C1`'s centre and X
+/// direction and only replaces the radius. Distinct from [`axis_at`], which
+/// always uses `gp::DX2d()`.
+pub(crate) fn circ_on_x_axis(c1: &GpCirc2d, radius: f64) -> GpCirc2d {
+    let ax = c1.x_axis();
+    GpCirc2d::new(GpAx22d::from_xdir(ax.loc, ax.vdir), radius)
 }
 
 /// `gp_Pnt2d(center.XY() + k * dir.XY())`.
