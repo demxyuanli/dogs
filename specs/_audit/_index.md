@@ -45,6 +45,10 @@
 | `occt-topo/src/iges_read/iges_to_brep_topo_curve.rs` | `iges_to_brep_topo_curve/{mod,basic_curve,boundary,composite_curve,curve_on_face,pcurve_edge,pcurve_transfer,wire_data_boundary}` |
 | `occt-topo/src/iges_read/iges_data_iges_model.rs` | `iges_data_iges_model/{mod,units,entities,parse,pointers,model}` |
 | `occt-topo/src/edge_edge/find_solutions.rs` | `find_solutions/{mod,curve_kind,resolution,boxes,dist_pc,parameters,edge_edge_members}` |
+| `occt-topo/src/brep_fill_sweep/trim_shell_corner.rs` | `trim_shell_corner/{mod,make_faces,choose_section,split_u_edges,section_walk,from_edges,helpers}`（T-509） |
+| `occt-topo/src/brep_extrema_distance_ss.rs` | `brep_extrema_distance_ss/{mod,perform,perform_pairs,perform_c0,trim_infinite,statics}`（T-509） |
+| `occt-core/src/adv_approx/approx.rs` | `adv_approx/approx/{mod,prepare_convert,function_3d,function_3d_multi,function_2d,function_1d_pair,function_1d_3d}`（T-509） |
+| `occt-topo/src/shhealing/transfer_params.rs` | `shhealing/transfer_params/{mod,copy_nm_vertex,curve_range,transfer_parameters,transfer_parameters_proj}`（T-509） |
 | `occt-topo/examples/model_probe.rs` | `model_probe.rs`（入口 + `Ctx`）+ `model_probe/{diagnostics_faces,diagnostics_topology,diagnostics_census,diagnostics_mesh,report}` |
 
 > **表 A 以外、路径不可追的名字**（都在更早的重构里删除或改名；报告里的对应条目是**历史记录**，要定位现状请按符号回 `crates/**` 现查）：

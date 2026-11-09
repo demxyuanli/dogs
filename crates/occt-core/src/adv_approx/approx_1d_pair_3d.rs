@@ -25,7 +25,7 @@ use crate::bspl::plib_jacobi::{jacobi_parameters, JacobiPolynomial};
 use crate::gp::GpPnt;
 use crate::kernel::geomabs::Shape;
 
-use super::approx::prepare_convert;
+use super::approx::prepare_convert::prepare_convert;
 use super::cutting::Cutting;
 use super::simple::{EvalFn, SimpleApprox};
 
