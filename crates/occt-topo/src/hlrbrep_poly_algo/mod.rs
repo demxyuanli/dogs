@@ -11,36 +11,29 @@
 //!   + `:1888-2978`);
 //! - [`outlines`]: the outline maintenance passes (`cxx:2980-3161`,
 //!   `:3163-3511`, `:3998-4153`);
+//! - [`store_shell`]: `Update` / `StoreShell` / `Normal` (`cxx:149-201`,
+//!   `:289-623`, `:626-715`);
 //! - [`finalize`]: `UpdateEdgesBiPoints` / `UpdatePolyData` (`cxx:4155-4329`).
 //!
-//! Mirrored OCCT members that are only written by `StoreShell` (`TMat`/`TLoc`,
-//! `TTMa`/`TTLo`, `TIMa`/`TILo`) exist here and stay at their OCCT initial value
-//! (identity translation, zero matrix) until that batch lands; the two helpers
-//! that fill them are placed at the same points as the OCCT assignments
-//! (`cxx:302-341` and `cxx:429-446`).
-//!
-//! UNPORTED list: `Update` (`cxx:149-201`), `StoreShell` (`cxx:289-623`),
-//! `Normal` (`cxx:626-715`).
-//!
-//! `StoreShell` / `Normal` need no new geometry primitive: `BRep_Tool::Surface`
-//! is [`GeometryRegistry::face_surface`] (the local surface, exactly what
-//! `BRep_Tool::Surface(theFace, theLoc)` returns), `GeomAdaptor_Surface`'s
-//! `D1`/`D2` are [`occt_geom::Surface::d1`]/[`occt_geom::Surface::d2`] (the five
-//! elementary surfaces carry the analytic `ElSLib` second derivatives) and
-//! `GeomAdaptor_Surface::GetType() == GeomAbs_Plane` is
-//! [`crate::brep_surface::is_plane_type`].
+//! Mirrored OCCT members that `StoreShell` fills (`TMat`/`TLoc`, `TTMa`/`TTLo`,
+//! `TIMa`/`TILo`) keep their OCCT initial values (identity translation, zero
+//! matrix) until `Update` runs; the two helpers that fill them sit at the same
+//! points as the OCCT assignments (`cxx:302-341` and `cxx:429-446`).
 //!
 //! The bi-point cluster reads its polygons through
-//! [`crate::brep_tool::BRepTool::polygon_on_triangulation`]; nothing commits a
-//! `BRep_PolygonOnTriangulation` representation yet (`BRepMesh_ModelPostProcessor`'s
-//! `PolygonCommitter` is not ported), so the connex arms currently answer exactly
-//! what OCCT answers for an edge that was never meshed. See [`bi_points`] for the
-//! per-line deviations.
+//! [`crate::brep_tool::BRepTool::polygon_on_triangulation`]; the producer is
+//! [`crate::meshing::model_post_processor::BRepMeshModelPostProcessor`]
+//! (`BRepMesh_ModelPostProcessor::PolygonCommitter`, `cxx:42-157`), which
+//! `IncrementalMesh::perform` runs after the mesh is built. Polygons keep
+//! OCCT's 1-based `Poly_Triangulation` node numbers, which is exactly what
+//! `InitBiPointsWithConnexity` indexes `PID->PINod()` with. See [`bi_points`]
+//! for the per-line deviations.
 
 mod bi_points;
 mod finalize;
 mod node_adjacency;
 mod outlines;
+mod store_shell;
 
 use std::collections::{HashMap, HashSet};
 

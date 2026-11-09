@@ -67,12 +67,15 @@ impl HlrAlgoEdgeStatus {
     }
 
     /// `VisiblePart` (`cxx:85-98`): `(Start, TolStart, End, TolEnd)` of the
-    /// `index`-th visible part (0-based).
+    /// `index`-th visible part. `index` keeps the OCCT 1-based numbering of
+    /// `HLRAlgo_EdgeStatus::VisiblePart(Index)`.
     pub fn visible_part(&self, index: usize) -> Option<(f64, f32, f64, f32)> {
         if self.all_visible {
             Some(self.bounds())
+        } else if index == 0 {
+            None
         } else {
-            self.visibles.value(index).map(|i| i.bounds())
+            self.visibles.value(index - 1).map(|i| i.bounds())
         }
     }
 

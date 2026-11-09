@@ -41,6 +41,12 @@ impl HlrAlgoWiresBlock {
         self.wires[i - 1].as_ref()
     }
 
+    /// The non-const `Wire(I)` overload (`hxx:49-52`), which returns the
+    /// handle by reference so callers can mutate the block in place.
+    pub fn wire_mut(&mut self, i: usize) -> Option<&mut HlrAlgoEdgesBlock> {
+        self.wires[i - 1].as_mut().map(Arc::make_mut)
+    }
+
     /// `UpdateMinMax(theMinMaxes)` (`hxx:54-57`).
     pub fn update_min_max(&mut self, min_max: &MinMaxIndices) {
         self.min_max = *min_max;

@@ -45,7 +45,7 @@
 //!   and the three `Inc*` / `Dec*` pairs.
 //!
 //! UNPORTED: the `HLRBRep_*` algorithms that consume these types
-//! (`HLRBRep_PolyAlgo`, `HLRBRep_PolyHLRToShape`, `HLRBRep_Data`, ...); this
+//! (`HLRBRep_PolyAlgo`, ...) except for the ones ported in `hlrbrep_data`; this
 //! module is only the shared data of `TKHLR`. `HLRAlgo_PolyInternalData::Dump`
 //! (`cxx:877-919`) is an `OCCT_DEBUG`-only `std::cout` transcript and is left
 //! out.

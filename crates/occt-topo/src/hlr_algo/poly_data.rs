@@ -4,8 +4,9 @@
 //! `HLRAlgo_PolyData.lxx:26-66`, `HLRAlgo_PolyData.cxx:30-1127`).
 //!
 //! Storage convention: the OCCT arrays are `NCollection_Array1` whose usable
-//! range starts at `1`; the port stores plain `Vec`s and keeps every accessor
-//! 1-based, so `nodes()[i]` means `Nodes(i)`.
+//! range starts at `1`; the port stores plain `Vec`s indexed from `0`, so a
+//! record that carries an OCCT 1-based node index (a `HLRAlgo_TriangleData`
+//! node field) is read at `nodes[index - 1]`.
 
 use occt_core::bnd::BndBox;
 use occt_core::gp::{GpPnt, GpXY, GpXyz};
@@ -136,9 +137,9 @@ impl HlrAlgoPolyData {
         for i in 1..=nbt {
             let td = &self.t_data[i - 1];
             if td.flags & poly_mask::FMSK_HIDING != 0 {
-                let p1 = &self.nodes[td.node1 as usize];
-                let p2 = &self.nodes[td.node2 as usize];
-                let p3 = &self.nodes[td.node3 as usize];
+                let p1 = &self.nodes[td.node1 as usize - 1];
+                let p2 = &self.nodes[td.node2 as usize - 1];
+                let p3 = &self.nodes[td.node3 as usize - 1];
                 the_box.add_point(&GpPnt::new(p1.x(), p1.y(), p1.z()));
                 the_box.add_point(&GpPnt::new(p2.x(), p2.y(), p2.z()));
                 the_box.add_point(&GpPnt::new(p3.x(), p3.y(), p3.z()));
@@ -207,9 +208,9 @@ impl HlrAlgoPolyData {
             let a_plane = ph.plane();
             let d1 = a_plane.normal.dot(&the_points.pntp1) - a_plane.d;
             let d2 = a_plane.normal.dot(&the_points.pntp2) - a_plane.d;
-            let p1 = self.nodes[a_triangle.node1 as usize];
-            let p2 = self.nodes[a_triangle.node2 as usize];
-            let p3 = self.nodes[a_triangle.node3 as usize];
+            let p1 = self.nodes[a_triangle.node1 as usize - 1];
+            let p2 = self.nodes[a_triangle.node2 as usize - 1];
+            let p3 = self.nodes[a_triangle.node3 as usize - 1];
             let (is_crossing, hide_before) = if d1 > the_triangle.tolerance {
                 if d2 < -the_triangle.tolerance {
                     the_triangle.param = d1 / (d1 - d2);
@@ -538,8 +539,11 @@ impl HideState {
     /// Returns the `OutSideP` flag the OCCT loop computes.
     fn multiple_cleanup(&mut self) -> bool {
         let mut out_side_p = false;
-        let npi = self.npi;
-        for l in 0..=npi {
+        // `cxx:433` / `:460` / `:700` / `:727` / `:965` / `:992`: the loop
+        // condition re-reads `npi`, which the body decrements, so the bound
+        // shrinks while iterating.
+        let mut l = 0;
+        while l <= self.npi {
             if self.m[l as usize] {
                 out_side_p = true;
                 if self.o[l as usize] != (self.n1 == -1) {
@@ -552,6 +556,7 @@ impl HideState {
                     self.npi_rej += 1;
                 }
             }
+            l += 1;
         }
         out_side_p
     }

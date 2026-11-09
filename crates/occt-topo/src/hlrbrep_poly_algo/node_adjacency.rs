@@ -233,7 +233,7 @@ impl HlrBRepPolyAlgo {
 
     /// `UpdateAroundNode(theINode, ...)` (`cxx:3631-3695`): re-orient both
     /// triangles of every segment that starts at `theINode`.
-    pub fn update_around_node(&mut self, data: &mut HlrAlgoPolyInternalData, inode: i32) {
+    pub fn update_around_node(&self, data: &mut HlrAlgoPolyInternalData, inode: i32) {
         let mut iiii = data.pi_nod()[inode as usize].indices().nd_sg;
         while iiii != 0 {
             let seg: HlrAlgoPolyInternalSegment = data.pi_seg()[iiii as usize];
@@ -332,7 +332,7 @@ impl HlrBRepPolyAlgo {
 /// record of the same owner. `a_s = as3` (`cxx:3761`) is a dead store in OCCT
 /// too; it is kept so the branch matches the source.
 #[allow(unused_assignments)]
-fn orient_triangle_in(
+pub(super) fn orient_triangle_in(
     data: &mut HlrAlgoPolyInternalData,
     itri: i32,
     proj: &crate::hlr_algo::HlrAlgoProjector,

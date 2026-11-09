@@ -217,9 +217,9 @@ impl HlrAlgoPolyAlgo {
                     if td.flags & poly_mask::FMSK_HIDING == 0 {
                         continue;
                     }
-                    let p1 = pd.nodes()[td.node1 as usize];
-                    let p2 = pd.nodes()[td.node2 as usize];
-                    let p3 = pd.nodes()[td.node3 as usize];
+                    let p1 = pd.nodes()[td.node1 as usize - 1];
+                    let p2 = pd.nodes()[td.node2 as usize - 1];
+                    let p3 = pd.nodes()[td.node3 as usize - 1];
                     let (x1, y1, z1) = (p1.x(), p1.y(), p1.z());
                     let (x2, y2, z2) = (p2.x(), p2.y(), p2.z());
                     let (x3, y3, z3) = (p3.x(), p3.y(), p3.z());

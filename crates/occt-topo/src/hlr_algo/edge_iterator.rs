@@ -93,9 +93,12 @@ impl<'a> HlrAlgoEdgeIterator<'a> {
         if self.i_hid >= self.nb_hid + 1 {
             self.i_hid += 1;
         } else {
-            let (s, ts, _, _) = self.visible_part_or_none(self.i_hid);
-            self.hid_start = s;
-            self.hid_tol_start = ts;
+            // `cxx:79`: `VisiblePart(iHid, B1, B2, myHidStart, myHidTolStart)` -
+            // the third and fourth out-parameters are the END of the visible
+            // part, so the hidden interval starts where that part ends.
+            let (_, _, e, te) = self.visible_part_or_none(self.i_hid);
+            self.hid_start = e;
+            self.hid_tol_start = te;
             self.i_hid += 1;
             if self.i_hid == self.nb_hid + 1 {
                 let status = self.e_hid.expect("next_hidden before init_hidden");
