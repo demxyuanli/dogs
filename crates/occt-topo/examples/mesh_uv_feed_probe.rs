@@ -11,7 +11,7 @@
 //! triangle soup of that run to `path`, so the dump and the mesh always come
 //! from the same code path.
 use occt_topo::meshing::incremental_mesh::IncrementalMesh;
-use occt_topo::step::read_step_file;
+use occt_exchange::step::read_step_file;
 use std::io::Write;
 
 fn main() {
@@ -22,7 +22,7 @@ fn main() {
     let is_iges = (path.len() >= 5 && path[path.len() - 5..].eq_ignore_ascii_case(".iges"))
         || (path.len() >= 4 && path[path.len() - 4..].eq_ignore_ascii_case(".igs"));
     let shape = if is_iges {
-        occt_topo::iges_read::read_iges_shape(path).expect("read iges")
+        occt_exchange::iges_read::read_iges_shape(path).expect("read iges")
     } else {
         read_step_file(path).expect("read step").shapes[0].shape.clone()
     };
@@ -34,7 +34,7 @@ fn main() {
         .position(|a| a == "--lin")
         .and_then(|i| args.get(i + 1))
         .and_then(|s| s.parse().ok())
-        .unwrap_or_else(|| occt_topo::brep_exchange::prs3d_get_deflection(&shape, 0.1));
+        .unwrap_or_else(|| occt_exchange::brep_exchange::prs3d_get_deflection(&shape, 0.1));
 
     let mode_ids = args.iter().any(|a| a == "--ids");
     std::env::set_var("OCCT_TOPO_DUMP_UV", "1");

@@ -7,7 +7,7 @@ use occt_topo::brepfeat::draft;
 use occt_topo::fillet_var::{fillet_edge_var, radius_at, RadiusLaw, VarFilletSpec};
 use occt_topo::primitives::BRepPrimBox;
 use occt_topo::shhealing::heal_shape;
-use occt_topo::xmlcaf::{from_xml, to_xml, XmlAttribute, XmlEntry, XmlXcafDoc};
+use occt_exchange::xmlcaf::{from_xml, to_xml, XmlAttribute, XmlEntry, XmlXcafDoc};
 
 fn approx(a: f64, b: f64, tol: f64) -> bool {
     (a - b).abs() < tol

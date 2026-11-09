@@ -1,0 +1,37 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/occt-foundation",
+    "crates/occt-gp",
+    "crates/occt-geombase",
+    "crates/occt-core",
+    "crates/occt-math",
+    "crates/occt-geom2d",
+    "crates/occt-geom",
+    "crates/occt-topo",
+    "crates/occt-topology",
+    "crates/occt-hlr",
+    "crates/occt-exchange",
+    "crates/occt-visual",
+    "crates/occt",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "LGPL-2.1-only"
+
+[workspace.dependencies]
+occt-foundation = { path = "crates/occt-foundation" }
+occt-gp = { path = "crates/occt-gp" }
+occt-geombase = { path = "crates/occt-geombase" }
+occt-core = { path = "crates/occt-core" }
+occt-math = { path = "crates/occt-math" }
+occt-geom2d = { path = "crates/occt-geom2d" }
+occt-geom = { path = "crates/occt-geom" }
+occt-topo = { path = "crates/occt-topo" }
+occt-topology = { path = "crates/occt-topology" }
+occt-hlr = { path = "crates/occt-hlr" }
+occt-exchange = { path = "crates/occt-exchange" }
+occt-visual = { path = "crates/occt-visual" }
+occt = { path = "crates/occt" }

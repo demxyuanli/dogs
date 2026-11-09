@@ -1,8 +1,8 @@
 //! TEMPORARY diagnostic probe (delete after use).
 use occt_topo::meshing::range_splitter::MeshSurfaceType;
-use occt_topo::model::BRepModel;
+use occt_exchange::model::BRepModel;
 use occt_topo::shape::TopoShape;
-use occt_topo::step::read_step_file;
+use occt_exchange::step::read_step_file;
 
 #[path = "model_probe/diagnostics_census.rs"]
 mod diagnostics_census;

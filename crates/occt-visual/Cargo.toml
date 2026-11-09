@@ -1,0 +1,15 @@
+[package]
+name = "occt-visual"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "OCCT visualization — scene assembly, SVG rendering and BRep scene extraction"
+
+[dependencies]
+occt-core = { workspace = true }
+occt-math = { workspace = true }
+occt-geom2d = { workspace = true }
+occt-geom = { workspace = true }
+occt-topo = { workspace = true }
+occt-hlr = { workspace = true }
+occt-exchange = { workspace = true }

@@ -1,5 +1,5 @@
 // TEMPORARY probe: glTF 1.0 keyed maps, multi-scene, skip-empty, accessor stride.
-use occt_topo::rwmesh::{read_gltf_scene, read_gltf_scene_with_options, GltfReadOptions};
+use occt_exchange::rwmesh::{read_gltf_scene, read_gltf_scene_with_options, GltfReadOptions};
 
 fn b64(data: &[u8]) -> String {
     const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -233,7 +233,7 @@ fn main() {
         ),
         None => println!("extras: none"),
     }
-    let model = occt_topo::rwmesh::read_gltf_model(p6).unwrap();
+    let model = occt_exchange::rwmesh::read_gltf_model(p6).unwrap();
     println!(
         "extras model: {}",
         model
@@ -246,7 +246,7 @@ fn main() {
 
     // Document labels (`fillDocument` / `addShapeIntoDoc`): the Product/Instance
     // split, assemblies and sub-shape labels.
-    let dump = |tag: &str, m: &occt_topo::model::BRepModel| {
+    let dump = |tag: &str, m: &occt_exchange::model::BRepModel| {
         println!(
             "{tag}: shapes={} labels={} roots={:?} mats={}",
             m.shapes.len(),
@@ -270,11 +270,11 @@ fn main() {
             );
         }
     };
-    match occt_topo::rwmesh::read_gltf_model_with_options(p2, &all_opts) {
+    match occt_exchange::rwmesh::read_gltf_model_with_options(p2, &all_opts) {
         Ok(m) => dump("doc all scenes", &m),
         Err(e) => println!("doc all scenes ERR {e}"),
     }
-    match occt_topo::rwmesh::read_gltf_model(p6) {
+    match occt_exchange::rwmesh::read_gltf_model(p6) {
         Ok(m) => dump("doc extras", &m),
         Err(e) => println!("doc extras ERR {e}"),
     }
@@ -287,7 +287,7 @@ fn main() {
     );
     let p7 = "_tmp/v1_probe/asm.gltf";
     std::fs::write(p7, asm).unwrap();
-    match occt_topo::rwmesh::read_gltf_model(p7) {
+    match occt_exchange::rwmesh::read_gltf_model(p7) {
         Ok(m) => dump("doc asm", &m),
         Err(e) => println!("doc asm ERR {e}"),
     }
@@ -297,7 +297,7 @@ fn main() {
     let mut cs_opts = GltfReadOptions::occt_defaults();
     cs_opts
         .converter
-        .set_output_coordinate_system(occt_topo::rwmesh::RwMeshCoordinateSystem::ZUP);
+        .set_output_coordinate_system(occt_exchange::rwmesh::RwMeshCoordinateSystem::ZUP);
     match read_gltf_scene_with_options("_tmp/zz_probe_scale/s.gltf", &cs_opts) {
         Ok(s) => {
             let p = &s.nodes[0].vertices[2];
@@ -310,9 +310,9 @@ fn main() {
     // `XCAFPrs_DocumentExplorer`): group names from the label hierarchy,
     // per-face styles from `XCAFPrs::CollectStyleSettings`, triangles/normals
     // read back from the stored `Poly_Triangulation`.
-    if let Ok(m) = occt_topo::rwmesh::read_gltf_model(p7) {
-        if let Some(whole) = occt_topo::brep_exchange::document_shape(&m) {
-            let (obj, mtl) = occt_topo::brep_exchange::model_to_obj_caf(&m, &whole, "asm.obj", 0.1);
+    if let Ok(m) = occt_exchange::rwmesh::read_gltf_model(p7) {
+        if let Some(whole) = occt_exchange::brep_exchange::document_shape(&m) {
+            let (obj, mtl) = occt_exchange::brep_exchange::model_to_obj_caf(&m, &whole, "asm.obj", 0.1);
             println!("doc obj:\n{obj}");
             println!("doc mtl:\n{mtl}");
         }
@@ -322,16 +322,16 @@ fn main() {
     // the same node list, so the vertex/face counts must equal the OCCT OBJ
     // baselines (`data/occ-*.obj`, `v` / `f` records).
     for stem in ["Cube", "Cone"] {
-        let model = match occt_topo::step::read_step_file(&format!("data/{stem}.step")) {
+        let model = match occt_exchange::step::read_step_file(&format!("data/{stem}.step")) {
             Ok(m) => m,
             Err(e) => {
                 println!("ply {stem}: STEP ERR {e}");
                 continue;
             }
         };
-        let Some(whole) = occt_topo::brep_exchange::document_shape(&model) else { continue };
-        let opts = occt_topo::rwmesh::PlyCafWriterOptions::default();
-        let ply = match occt_topo::brep_exchange::model_to_ply_caf(
+        let Some(whole) = occt_exchange::brep_exchange::document_shape(&model) else { continue };
+        let opts = occt_exchange::rwmesh::PlyCafWriterOptions::default();
+        let ply = match occt_exchange::brep_exchange::model_to_ply_caf(
             &model,
             &whole,
             "probe.ply",
@@ -380,17 +380,17 @@ fn main() {
     for stem in &gltf_stems {
         let stem = stem.as_str();
         let lower = stem.to_lowercase();
-        let model = match occt_topo::step::read_step_file(&format!("data/{stem}.step")) {
+        let model = match occt_exchange::step::read_step_file(&format!("data/{stem}.step")) {
             Ok(m) => m,
             Err(e) => {
                 println!("gltf {stem}: STEP ERR {e}");
                 continue;
             }
         };
-        let Some(whole) = occt_topo::brep_exchange::document_shape(&model) else { continue };
+        let Some(whole) = occt_exchange::brep_exchange::document_shape(&model) else { continue };
         let path = format!("data/occ-{lower}.gltf");
-        let opts = occt_topo::rwmesh::GltfCafWriterOptions::default();
-        let out = match occt_topo::brep_exchange::model_to_gltf_caf(&model, &whole, &path, 0.1, &opts)
+        let opts = occt_exchange::rwmesh::GltfCafWriterOptions::default();
+        let out = match occt_exchange::brep_exchange::model_to_gltf_caf(&model, &whole, &path, 0.1, &opts)
         {
             Ok(out) => out,
             Err(e) => {
@@ -464,10 +464,10 @@ fn main() {
         // `-forceUVExport`, dumped next to the reference glTF so the per-node
         // surface parameters can be compared against OCCT's.
         if std::env::var("PROBE_FORCE_UV").map(|v| v == "1").unwrap_or(false) {
-            let mut uv_opts = occt_topo::rwmesh::GltfCafWriterOptions::default();
+            let mut uv_opts = occt_exchange::rwmesh::GltfCafWriterOptions::default();
             uv_opts.is_forced_uv_export = true;
             let uv_path = format!("_tmp/gltf/{lower}_uv.gltf");
-            match occt_topo::brep_exchange::model_to_gltf_caf(&model, &whole, &uv_path, 0.1, &uv_opts)
+            match occt_exchange::brep_exchange::model_to_gltf_caf(&model, &whole, &uv_path, 0.1, &uv_opts)
             {
                 Ok(out) => {
                     std::fs::create_dir_all("_tmp/gltf").unwrap();

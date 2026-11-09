@@ -59,15 +59,15 @@ fn fillet_corner_patch_closes_chain() {
 
 #[test]
 fn draw_repl_basic_commands() {
-    use occt_topo::draw::DrawSession;
+    use occt::draw::DrawSession;
     let mut s = DrawSession::default();
-    occt_topo::draw::execute_line(&mut s, "box a 2 2 2").expect("box");
-    occt_topo::draw::execute_line(&mut s, "sphere s 1").expect("sphere");
-    occt_topo::draw::execute_line(&mut s, "info s").expect("info");
+    occt::draw::execute_line(&mut s, "box a 2 2 2").expect("box");
+    occt::draw::execute_line(&mut s, "sphere s 1").expect("sphere");
+    occt::draw::execute_line(&mut s, "info s").expect("info");
     assert!(s.shapes.contains_key("a"));
     assert!(s.shapes.contains_key("s"));
     assert!(s.log.iter().any(|l| l.contains("faces")), "info logged");
-    assert!(occt_topo::draw::execute_line(&mut s, "bogus").is_err());
+    assert!(occt::draw::execute_line(&mut s, "bogus").is_err());
     assert!(s.last_error.is_some());
 }
 
@@ -102,7 +102,7 @@ fn vrml_read_and_scene() {
           ]\n\
         }\n";
     std::fs::write("p9_test_quad.wrl", vrml).unwrap();
-    let scene = occt_topo::rwmesh::read_vrml_scene("p9_test_quad.wrl").expect("vrml");
+    let scene = occt_exchange::rwmesh::read_vrml_scene("p9_test_quad.wrl").expect("vrml");
     std::fs::remove_file("p9_test_quad.wrl").ok();
     assert_eq!(scene.nodes.len(), 1);
     assert_eq!(scene.nodes[0].triangles.len(), 2);

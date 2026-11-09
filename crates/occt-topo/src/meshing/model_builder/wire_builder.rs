@@ -253,7 +253,7 @@ fn add_wire(
 }
 
 /// `ShapeAnalysis::OuterWire` over an already-oriented wire list.
-pub(crate) fn outer_of_wires(wires: &[Wire], face: &Face) -> Option<Wire> {
+pub fn outer_of_wires(wires: &[Wire], face: &Face) -> Option<Wire> {
     if wires.is_empty() {
         return None;
     }

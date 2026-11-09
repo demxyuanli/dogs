@@ -8,9 +8,9 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use occt_topo::brep_bnd_lib::shape_bnd_box;
-use occt_topo::brep_exchange::{brep_to_obj, prs3d_get_deflection};
+use occt_exchange::brep_exchange::{brep_to_obj, prs3d_get_deflection};
 use occt_topo::brep_tool::BRepTool;
-use occt_topo::iges_read::read_iges_shape;
+use occt_exchange::iges_read::read_iges_shape;
 use occt_topo::meshing::data_model::MeshStatus;
 use occt_topo::meshing::incremental_mesh::IncrementalMesh;
 use occt_topo::meshing::range_splitter::{mesh_surface_type, MeshSurfaceType};

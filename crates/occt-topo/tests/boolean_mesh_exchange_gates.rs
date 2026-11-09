@@ -4,10 +4,10 @@
 use occt_core::gp::{GpPnt, GpVec};
 use occt_core::geom::curve_ops3d::{curve_length3d, curvature3d};
 use occt_topo::bop_builder::{boolean, BoolOp};
-use occt_topo::brep_exchange::brep_to_obj;
-use occt_topo::iges::write_shape_iges;
+use occt_exchange::brep_exchange::brep_to_obj;
+use occt_exchange::iges::write_shape_iges;
 use occt_topo::primitives::BRepPrimBox;
-use occt_topo::render_svg::{render_svg, SvgRenderOptions};
+use occt_visual::render_svg::{render_svg, SvgRenderOptions};
 
 fn approx(a: f64, b: f64) -> bool {
     (a - b).abs() < 0.05 * b.abs().max(1.0)
@@ -81,7 +81,7 @@ fn svg_render_and_obj_export() {
     let svg = render_svg(&b.solid.0, &opts, 0.1);
     assert!(svg.contains("<svg"));
     assert!(svg.contains("</svg>"));
-    assert!(occt_topo::render_svg::svg_polygon_count(&svg) > 0);
+    assert!(occt_visual::render_svg::svg_polygon_count(&svg) > 0);
 
     let obj = brep_to_obj(&b.solid.0, 0.1);
     assert!(obj.contains("v "));

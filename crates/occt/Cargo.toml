@@ -1,0 +1,16 @@
+[package]
+name = "occt"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "OCCT facade — re-exports every layer and hosts the Draw-style command surface"
+
+[dependencies]
+occt-core = { workspace = true }
+occt-math = { workspace = true }
+occt-geom2d = { workspace = true }
+occt-geom = { workspace = true }
+occt-topo = { workspace = true }
+occt-hlr = { workspace = true }
+occt-exchange = { workspace = true }
+occt-visual = { workspace = true }

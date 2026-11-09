@@ -8,7 +8,7 @@
 use occt_core::gp::{GpPnt, GpVec};
 use occt_core::io::obj::ObjMesh;
 use occt_core::poly::Triangulation;
-use occt_topo::brep_exchange::{brep_to_obj, brep_to_ply, brep_to_stl_ascii, brep_to_stl_binary};
+use occt_exchange::brep_exchange::{brep_to_obj, brep_to_ply, brep_to_stl_ascii, brep_to_stl_binary};
 use occt_topo::brep_surface::face_is_plane_type;
 use occt_topo::brep_tool::BRepTool;
 use occt_topo::bbox_from_geometry::shape_bbox;

@@ -17,7 +17,7 @@ use occt_topo::abs::ShapeType;
 use occt_topo::brep_gprop_full::surface_properties;
 use occt_topo::brep_tool::BRepTool;
 use occt_topo::shape::{Face, TopoShape};
-use occt_topo::step::read_step_file;
+use occt_exchange::step::read_step_file;
 use occt_topo::tgeometry::GeometryRegistry;
 use occt_topo::topo_tools::{edges_of_wire, wires_of_face};
 

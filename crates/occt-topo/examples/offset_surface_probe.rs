@@ -18,7 +18,7 @@ use occt_topo::abs::ShapeType;
 use occt_topo::brep_offset::brep_offset_surface;
 use occt_topo::brep_tool::BRepTool;
 use occt_topo::shape::{Face, TopoShape};
-use occt_topo::step::read_step_file;
+use occt_exchange::step::read_step_file;
 
 /// `DynamicType()->Name()` equivalent, for the types `BRepOffset::Surface`
 /// dispatches on.

@@ -19,8 +19,8 @@ use occt_geom2d::curve::Curve2d;
 use occt_topo::abs::ShapeType;
 use occt_topo::brep_tool::BRepTool;
 use occt_topo::shape::{Edge, Face, TopoShape};
-use occt_topo::iges_read::read_iges_shape;
-use occt_topo::step::read_step_file;
+use occt_exchange::iges_read::read_iges_shape;
+use occt_exchange::step::read_step_file;
 use occt_topo::topo_tools::{edges_of_wire, wires_of_face};
 
 fn c3_kind(c: &dyn Curve) -> String {

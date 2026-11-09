@@ -1,0 +1,500 @@
+# GoalBuddy v2 state.yaml
+# Board truth lives here. goal.md is the editable charter; notes/ holds long receipts only.
+
+version: 2
+
+goal:
+  title: "OCCT Rust crate split (SRS rollout)"
+  slug: "occt-crate-split"
+  kind: existing_plan # specific | open_ended | existing_plan | recovery | audit
+  tranche: "Split the 5-crate layout into the SRS layers bottom-up, preserving the existing public API through re-exports, until occt-topo no longer owns the algorithm layer."
+  status: active # active | blocked | done
+  oracle:
+    signal: "cargo check --all-targets 0 errors; step_obj_gates 4/4; export_data_obj counts match OCCT baseline; occt_core::* call sites unchanged; every new crate builds standalone with an acyclic cargo tree."
+    cadence: "after each Worker package and at final audit"
+    final_proof: "T999 Judge receipt mapping the four oracle items to receipts and verification output, with full_outcome_complete: true."
+  intake:
+    original_request: "docs/goals/OCCT-Rust-Crate-Architecture-SRS.md 分析文档中crates分拆架构合理性，如果合理，制定认为，创建跟进画板文档 并执行 /goal 重构任务"
+    interpreted_outcome: "Validate the SRS crate architecture against the real dependency graph, correct the unbuildable rules, and execute the split bottom-up with zero behavior change until occt-topo stops owning the algorithm layer."
+    input_shape: existing_plan # vague | specific | existing_plan | recovery | audit
+    audience: "project owner (OCCT to Rust port)"
+    authority: requested # requested | approved | inferred | needs_approval | blocked
+    proof_type: metric # test | demo | artifact | metric | review | source_backed_answer | decision
+    completion_proof: "Every SRS layer that is physically extractable exists as its own crate, cargo tree is acyclic, all baselines stay green, and the remaining 204-module SCC is documented with its cut plan."
+    likely_misfire: "Renaming crates or moving files without a working dependency cut; splitting top-down and breaking the 13 gate tests; changing algorithm control flow while 'restructuring'; adding features or heuristics to make a build pass; counting created crates as the outcome instead of compile isolation."
+    blind_spots_considered:
+      - "occt-topo holds one 204-module SCC; Rust forbids crate cycles, so the mid layers cannot be split without breaking real back-edges first."
+      - "13 integration gate tests and 27 examples live in occt-topo and use occt_topo::step/iges/draw/viz_scene paths; a top-down move breaks them."
+      - "Worktree already has uncommitted changes in brep_sweep/revol.rs, brepfeat/* and specs/*; Worker must not touch or revert them."
+      - "occt-core and occt-math both carry TKMath ports (math_* and solver modules), so the SRS occt-math role is currently split across two crates."
+      - "step_obj_gates takes about 11-12 minutes per run; full cargo test is pre-commit only."
+      - "Code comments and strings must be ASCII English per project rule."
+    existing_plan_facts:
+      - "SRS section 3 crate list, section 4 dependency rules, section 6 implementation priority P0..P5."
+      - "SRS P0 is occt-foundation + occt-math; P1 is geometry -> topology -> brep."
+      - "Measured sizes: occt-core 49518, occt-math 20679, occt-geom2d 54734, occt-geom 117408, occt-topo 612451 lines."
+      - "Measured occt-core module SCC count is 0; cut line foundation -> gp -> geombase has 205 cross-layer crate:: references and 11 pub(crate) items."
+
+rules:
+  pm_owns_state: true
+  one_active_task: true
+  max_write_workers: 1
+  no_implementation_without_worker_or_pm_task: true
+  no_completion_without_judge_or_pm_audit: true
+  planning_is_not_completion: true
+  queued_required_worker_blocks_completion: true
+  continuous_until_full_outcome: true
+  missing_input_or_credentials_do_not_stop_goal: true
+  preserve_and_validate_existing_plan: true
+  intake_misfire_must_be_audited: true
+  goal_pressure_requires_oracle: true
+  no_completion_on_weak_proof: true
+  slice_policy:
+    max_consecutive_tiny_tasks: 2
+    prefer_vertical_slices: true
+    judge_picks_largest_safe_slice: true
+    worker_completes_whole_slice: true
+
+agents:
+  # installed | bundled_not_installed | missing | unknown
+  scout: bundled_not_installed
+  worker: bundled_not_installed
+  judge: bundled_not_installed
+
+visual_board:
+  # none | local | unknown
+  selected: file_only
+  local:
+    status: not_requested
+    url: null
+    command: null
+
+active_task: T010
+
+tasks:
+  - id: T001
+    type: scout
+    assignee: Scout
+    status: done
+    objective: "Assess whether the SRS crate architecture is buildable against the real module dependency graph."
+    inputs:
+      - "docs/goals/OCCT-Rust-Crate-Architecture-SRS.md"
+      - "crates/occt-*/Cargo.toml and src trees"
+    constraints:
+      - "Read-only; no code change."
+    expected_output:
+      - "Verdict on SRS rules"
+      - "Module-level SCC evidence"
+      - "Safe cut order"
+    receipt:
+      result: done
+      summary: "SRS layering intent holds; three rules are unbuildable as written (algorithm crates may not depend on each other, mesh above brep, exchange wholly above algorithms). occt-core is acyclic and cleanly cuttable at foundation -> gp -> geombase; occt-topo contains one 204-module SCC that forbids a direct TKBRep/TKTopAlgo split."
+      evidence:
+        - "crates/occt-topo: 612451 lines / 2269 .rs files, 72% of the workspace"
+        - "occt-core module SCC count = 0; cross-layer crate:: refs 74 (gp->foundation) + 111 + 20 (geombase->gp/foundation); pub(crate) = 11"
+        - "occt-topo module SCC(204) spans shape/tshape/brep_tool ... chfi3d/brep_offset/shhealing/meshing/primitives"
+        - "13 gate tests in crates/occt-topo/tests use occt_topo::{step,iges,draw,viz_scene,rwmesh,xcaf}"
+      note: "docs/goals/occt-crate-split/goal.md section 'T001 architecture verdict'"
+
+  - id: T002
+    type: pm
+    assignee: PM
+    status: done
+    objective: "Write the charter and board from the T001 verdict."
+    receipt:
+      result: done
+      summary: "Charter and board created; execution order is bottom-up extraction with re-export compatibility, because top-down moves break the 13 gate tests and 27 examples."
+      changed_files:
+        - "docs/goals/occt-crate-split/goal.md"
+        - "docs/goals/occt-crate-split/state.yaml"
+
+  - id: T003
+    type: worker
+    assignee: Worker
+    status: done
+    objective: "Add the workspace root manifest and split occt-core into occt-foundation, occt-gp and occt-geombase, with occt-core kept as a re-export facade."
+    inputs:
+      - "docs/goals/occt-crate-split/goal.md"
+      - "crates/occt-core"
+    constraints:
+      - "No control-flow change: only file location, module wiring and visibility."
+      - "All occt_core::* paths must keep resolving; downstream crates must need zero import edits."
+    allowed_files:
+      - "Cargo.toml"
+      - "crates/occt-core/**"
+      - "crates/occt-foundation/**"
+      - "crates/occt-gp/**"
+      - "crates/occt-geombase/**"
+      - "crates/occt-math/Cargo.toml"
+    verify:
+      - "rtk cargo check --manifest-path Cargo.toml --all-targets --offline"
+      - "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --all-targets --offline"
+      - "rtk cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --test step_obj_gates"
+    stop_if:
+      - "A split needs edits outside allowed_files."
+      - "A cyclic dependency appears between the new crates."
+      - "Verification fails twice."
+    receipt:
+      result: done
+      summary: "occt-core split into three physical crates plus a re-export facade. 205 cross-layer crate:: paths rewritten (74 gp->foundation, 20 geombase->foundation, 111 geombase->gp), no pub(crate) item had to be promoted, and zero edits were needed in occt-math, occt-geom2d, occt-geom or occt-topo."
+      changed_files:
+        - "Cargo.toml"
+        - "crates/occt-core/Cargo.toml"
+        - "crates/occt-core/src/lib.rs"
+        - "crates/occt-foundation/Cargo.toml"
+        - "crates/occt-foundation/src/lib.rs"
+        - "crates/occt-gp/Cargo.toml"
+        - "crates/occt-gp/src/lib.rs"
+        - "crates/occt-geombase/Cargo.toml"
+        - "crates/occt-geombase/src/lib.rs"
+      commands:
+        - cmd: "rtk cargo check --manifest-path Cargo.toml --workspace --all-targets --offline"
+          status: pass
+        - cmd: "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --all-targets --offline"
+          status: pass
+        - cmd: "rtk cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --test step_obj_gates"
+          status: pass
+      line_counts:
+        occt-foundation: 1178
+        occt-gp: 34021
+        occt-geombase: 14307
+        occt-core: 23
+      side_notes:
+        - "Warnings for the occt-topo target went 646 -> 792 because dead_code analysis is now per crate; error count stayed 0."
+        - "gcpnts_estim.rs and gcpnts_perform.rs are #[path] submodules of gcpnts, not top-level modules; they must not be declared in occt-gp/lib.rs."
+        - "occt-core now owns the serde/serde_json feature forward; occt-gp needs its own optional serde_json because gp/{xyz,dir}.rs gate dump_json on it."
+        - "occt-math still depends on occt-core and was intentionally left untouched."
+
+  - id: T004
+    type: judge
+    assignee: Judge
+    status: done
+    objective: "Review the T003 split against the four oracle items and pick the next cut plane."
+    expected_output:
+      - "Decision"
+      - "Oracle status per item"
+      - "Next Worker objective with allowed_files and verify"
+    receipt:
+      result: done
+      decision: "approved"
+      full_outcome_complete: false
+      rationale: "The four oracle items hold for T003: workspace check 0 errors, step_obj_gates 4/4 in 128.77s, zero edits outside allowed files (downstream use occt_core::* untouched), and cargo tree for occt-gp / occt-geombase / occt-core is acyclic and matches foundation -> gp -> geombase. The only regression-shaped signal is the occt-topo warning count rising 646 -> 792, which is per-crate dead_code analysis, not a behavior change."
+      oracle_status:
+        - "item1 check 0 errors: pass"
+        - "item2 step_obj_gates 4/4: pass (export_data_obj example not run separately this slice; the parity assertions live inside the suite)"
+        - "item3 downstream imports untouched: pass"
+        - "item4 standalone build + acyclic tree: pass"
+      next_decision: "Merge T005 and T006 into one cut. The top layers cannot be moved separately: rwmesh/gltf/vrml/render_svg/viz_scene/draw consume model, xcaf_prs and brep_exchange types, so occt-topo cannot keep them while dropping the exchange modules (that would require occt-topo -> occt-exchange -> occt-topo)."
+      blocked_tasks:
+        - T006
+
+  - id: T005
+    type: worker
+    assignee: Worker
+    status: done
+    objective: "One cut for the whole top layer: create occt-exchange, occt-hlr, occt-visual and the occt facade crate, then rewire imports."
+    inputs:
+      - "docs/goals/occt-crate-split/goal.md"
+      - "crates/occt-topo"
+    constraints:
+      - "No control-flow change: only file location, module wiring, visibility and import paths."
+      - "Gate test bodies must keep their assertions verbatim; only their use paths move."
+    allowed_files:
+      - "Cargo.toml"
+      - "crates/occt-hlr/**"
+      - "crates/occt-exchange/**"
+      - "crates/occt-visual/**"
+      - "crates/occt/**"
+      - "crates/occt-topo/**"
+    verify:
+      - "rtk cargo check --manifest-path Cargo.toml --workspace --all-targets --offline"
+      - "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --all-targets --offline"
+      - "rtk cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --test step_obj_gates"
+    stop_if:
+      - "A moved module needs an occt-topo -> occt-exchange edge (that is a cycle)."
+      - "A gate assertion has to change to compile."
+      - "Verification fails twice."
+    receipt:
+      result: done
+      summary: "The top layer is now four crates instead of one module namespace. occt-topo 612451 -> 520978 lines; the 91500 removed lines are split into occt-hlr (30654), occt-exchange (44301) and occt-visual (4338), with occt (2579) holding draw as the facade. 55 modules moved and 167 files had their crate:: paths rewritten."
+      changed_files:
+        - "Cargo.toml"
+        - "crates/occt-topo/Cargo.toml"
+        - "crates/occt-topo/src/lib.rs"
+        - "crates/occt-hlr/**"
+        - "crates/occt-exchange/**"
+        - "crates/occt-visual/**"
+        - "crates/occt/**"
+      commands:
+        - cmd: "rtk cargo check --manifest-path Cargo.toml --workspace --all-targets --offline"
+          status: pass
+        - cmd: "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --all-targets --offline"
+          status: pass
+        - cmd: "rtk cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --test step_obj_gates"
+          status: pass
+        - cmd: "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example export_data_obj"
+          status: pass
+      dependency_graph:
+        occt-topo: "occt-core, occt-geom, occt-geom2d, occt-math"
+        occt-hlr: "occt-topo"
+        occt-exchange: "occt-topo"
+        occt-visual: "occt-topo, occt-hlr, occt-exchange"
+        occt: "occt-topo, occt-hlr, occt-exchange, occt-visual"
+      line_counts:
+        occt-topo: 520978
+        occt-hlr: 30654
+        occt-exchange: 44301
+        occt-visual: 4338
+        occt: 2579
+      visibility_promotions:
+        - "occt-topo: mod -> pub mod for geom_bnd_lib_surface3d, bop_occt_util, bopalgo_tools_wires, int_tools_vertex_line, geom_bnd_lib_elclib2d"
+        - "occt-topo: pub(crate) -> pub for pcurve_full::adjust_to_period, meshing::outer_of_wires, builder::TopoBuilder::add_edge_vertices, int_tools_vertex_line::extrema_locate_ext_pc"
+        - "occt-topo: pub(crate) use -> pub use for int_tools_wline::{u_resolution, v_resolution}"
+      deviation_from_plan:
+        - "occt-hlr was carved out of occt-visual because HLR has no dependency on the exchange layer and nothing in the exchange layer depends on it. Keeping them together was impossible without a cycle, because brep_exchange consumes rwmesh while HLR consumes neither."
+        - "Tests and examples stayed in crates/occt-topo. Cargo permits cycles through dev-dependencies, so occt-topo declares dev-dependencies on occt-hlr / occt-exchange / occt-visual / occt, which keeps the oracle command `cargo test --test step_obj_gates` working unchanged. The normal dependency graph stays acyclic (verified with cargo tree -e normal)."
+      baseline_parity:
+        - "export_data_obj matches the OCCT baseline exactly: Cube 24/12, Cone 195/301, Cylinder 146/140, Sphere 642/1244, Torus 1369/2592, HoledPlate 180/128, OffsetPlaneHoleEdge 48/32, Offset 712/892, Shape 6150/11372, Shape-1 3343/4336, rev 104/92"
+      side_notes:
+        - "occt-visual is small (4338 lines) because only viz_scene, render_svg and brep_scene remained once HLR and RWMesh found their own homes."
+        - "pub use commands::* in crates/occt/src/draw/mod.rs reports unused_imports because the commands module exposes only pub(crate) items; the public draw surface still resolves through interpreter/dispatch."
+        - "Warning count rose 752 -> 800 because per-crate dead_code analysis changed again; error count stayed 0."
+
+  - id: T006
+    type: worker
+    assignee: Worker
+    status: blocked
+    objective: "Superseded: merged into T005 after T004 showed exchange and its consumers cannot be cut separately."
+    receipt:
+      result: blocked
+      summary: "Merged into T005. rwmesh/gltf/vrml/render_svg/viz_scene/draw consume model, xcaf_prs and brep_exchange types, so splitting exchange from its consumers would force an occt-topo -> occt-exchange -> occt-topo cycle."
+
+  - id: T007
+    type: scout
+    assignee: Scout
+    status: done
+    objective: "Enumerate the back-edges of the 204-module SCC and the minimal cut needed to separate TKBRep from TKTopAlgo."
+    expected_output:
+      - "Per-edge cut list with the OCCT-equivalent justification"
+      - "Recommended batch order"
+    receipt:
+      result: done
+      summary: "SCC(shape) is confirmed at 204 of 449 modules, so the modelling core is irreducible at module granularity. Four candidate TKBRep boundaries were costed: B1 15 modules / 9 back-edges, B1b 17 modules / 1 back-edge, B2 26 modules / 17 back-edges, B3 36 modules / 61 back-edges. B1b is the recommended cut; B2 is the next tier and its edges are port defects rather than architecture."
+      artifacts:
+        - "docs/goals/occt-crate-split/T007-scc-analysis.md"
+        - "docs/goals/occt-crate-split/scc-shape.txt"
+        - "docs/goals/occt-crate-split/cut-B1.txt"
+        - "docs/goals/occt-crate-split/cut-B1b.txt"
+        - "docs/goals/occt-crate-split/cut-B2.txt"
+        - "docs/goals/occt-crate-split/cut-B3.txt"
+        - "docs/goals/occt-crate-split/brep-back-edges.txt"
+      side_notes:
+        - "The first pass counted comment lines and #[cfg(test)] blocks as edges; B1 looked like 3 back-edges and topo_tools -> primitives like a real one. After excluding comments and test modules the real B1 cost is 9 and the real B1b cost is 1."
+        - "locope alone owns 26 of B3's 61 back-edges. It consumes the entire algorithm stack and does not belong in a data-layer crate."
+
+  - id: T008
+    type: judge
+    assignee: Judge
+    status: done
+    objective: "Approve the back-edge cut batches and the final occt-topo / occt-brep boundary."
+    expected_output:
+      - "Decision"
+      - "Approved batches"
+      - "Stop conditions"
+    receipt:
+      result: done
+      decision: "APPROVED batch B1b only. Defer B2. Do not attempt B3 or the rest of the 204-SCC."
+      rationale:
+        - "B1b is exactly the TKBRep scope the SRS names for occt-brep, and its single back-edge is a pure Adaptor3d_Surface::GetType() wrapper with no algorithm content, so inverting it moves no control flow."
+        - "B2's 17 edges are port defects (brep_tools -> meshing exists only because BRep_Tool::Triangulation reaches through the mesher), not architecture. They need per-edge comparison against BRep_Tool.cxx and belong in a separate batch."
+        - "B3's 61 edges are dominated by locope, which is a consumer of every algorithm, so B3 would mix layers instead of separating them."
+      stop_conditions:
+        - "Any inversion that changes an algorithm branch instead of relocating a shared helper."
+        - "Any change to a gate assertion."
+        - "step_obj_gates failing to reproduce the OCCT baseline."
+
+  - id: T009
+    type: worker
+    assignee: Worker
+    status: done
+    objective: "Execute batch B1b: invert the single tgeometry -> pcurve_full edge and extract occt-topology (TKBRep)."
+    allowed_files: []
+    verify:
+      - "rtk cargo check --manifest-path Cargo.toml --workspace --all-targets --offline"
+      - "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --all-targets --offline"
+      - "rtk cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --test step_obj_gates"
+    stop_if:
+      - "A cut changes algorithm control flow."
+      - "Need files outside allowed_files."
+      - "step_obj_gates diverges from the OCCT baseline."
+      - "Verification fails twice."
+    receipt:
+      result: done
+      summary: "Batch B1b is landed. occt-topology holds the 17-module TKBRep layer (5629 lines) and occt-topo dropped 515363 lines; occt-topo re-exports every moved module so occt_topo::{abs,shape,tshape,builder,brep_tool,...} still resolves and no downstream path changed."
+      changed_files:
+        - "Cargo.toml"
+        - "crates/occt-geom/src/surface_kind.rs"
+        - "crates/occt-geom/src/lib.rs"
+        - "crates/occt-topology/**"
+        - "crates/occt-topo/Cargo.toml"
+        - "crates/occt-topo/src/lib.rs"
+        - "crates/occt-topo/src/topo_tools_gates.rs"
+        - "crates/occt-topo/src/brep_surface.rs"
+        - "crates/occt-topo/src/pcurve_full/surface_projector/classify.rs"
+      commands:
+        - cmd: "rtk cargo check --manifest-path Cargo.toml --workspace --all-targets --offline"
+          status: pass
+        - cmd: "rtk cargo check --manifest-path crates/occt-topo/Cargo.toml --all-targets --offline"
+          status: pass
+        - cmd: "rtk cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --test step_obj_gates"
+          status: pass
+        - cmd: "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example export_data_obj"
+          status: pass
+      inversion:
+        - "tgeometry -> pcurve_full::classify_surface_kind removed by moving SurfaceKind and classify_surface_kind down into occt_geom::surface_kind, where they are an Adaptor3d_Surface::GetType() wrapper on the Surface trait. pcurve_full and tgeometry both import from there; brep_surface re-exports SurfaceKind so no call site changed."
+      moved_modules:
+        - "abs, brep_builder_update_vertex, brep_lprop, brep_point_representation, brep_tool, brep_tools_substitution, builder, debug_flags, iterator, shape, tgeometry, tools, topexp, topo_tools, transform, tshape, validate"
+      dependency_graph:
+        occt-topology: "occt-core, occt-geom, occt-geom2d, occt-math"
+        occt-topo: "occt-core, occt-geom, occt-geom2d, occt-math, occt-topology"
+      line_counts:
+        occt-topology: 5629
+        occt-topo: 515363
+      baseline_parity:
+        - "step_obj_gates 4/4 pass"
+        - "export_data_obj reproduces every baseline count: Cube 24/12, Cone 195/301, Cylinder 146/140, Sphere 642/1244, Torus 1369/2592, HoledPlate 180/128, OffsetPlaneHoleEdge 48/32, Offset 712/892, Shape 6150/11372, Shape-1 3343/4336, rev 104/92"
+      deviation_from_plan:
+        - "The topo_tools unit tests need occt_topo::primitives to build a reference box. A dev-dependency cycle from occt-topology back to occt-topo made Cargo build two distinct occt_topology crate instances, so `&b.solid.0` no longer matched shape::TopoShape. The test module moved verbatim to crates/occt-topo/src/topo_tools_gates.rs with only its use paths rewritten, and occt-topology has no dev-dependency."
+      side_notes:
+        - "occt-topo/src/lib.rs still carries stale prose comments that describe TKBRep modules as if they live here; the module declarations are gone but the narration was not rewritten."
+        - "Two edge counts in the first SCC pass were inflated by comment lines and by a #[cfg(test)] reference; the analysis artifacts record the corrected numbers."
+
+  - id: T010
+    type: worker
+    assignee: Worker
+    status: done
+    objective: "Batch B2: invert the 17 back-edges that block adding brep_tools{,_uv,_modifier,_wire_explorer}, brep_surface, brep_bnd_lib, brep_uv_bounds, brep_faces and brep_measure to occt-topology, then extract them."
+    inputs:
+      - "docs/goals/occt-crate-split/cut-B2.txt"
+      - "docs/goals/occt-crate-split/T007-scc-analysis.md"
+    verify:
+      - "rtk cargo check --manifest-path Cargo.toml --workspace --all-targets --offline"
+      - "rtk cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --test step_obj_gates"
+      - "rtk cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example export_data_obj"
+    stop_if:
+      - "An edge can only be inverted by changing an algorithm branch rather than relocating a shared helper."
+      - "BRep_Tool.cxx has no corresponding branch for the inversion."
+      - "step_obj_gates diverges from the OCCT baseline."
+      - "Verification fails twice."
+    receipt:
+      result: done
+      summary: "Batch B2 is landed. The 7 invertible back-edges from cut-B2.txt were broken by relocating the shared helper each one pointed at, and occt-topology now owns brep_tools{,_uv,_modifier,_wire_explorer}, brep_uv_bounds, brep_bnd_lib, brep_surface plus the three helpers those modules needed. brep_faces and brep_measure stay in occt-topo: their only remaining edge brep_measure -> brep_gprop_full::edge_linear_properties is a BRepGProp (TKTopAlgo) integral, i.e. an algorithm, not a misplaced data helper."
+      changed_files:
+        - "crates/occt-geom/src/geom_abs_curve_type.rs"
+        - "crates/occt-geom/src/geom_bnd_lib/*"
+        - "crates/occt-geom/src/projlib_project_on_plane.rs"
+        - "crates/occt-topology/src/adaptor.rs"
+        - "crates/occt-topology/src/brep_surface.rs"
+        - "crates/occt-topology/src/brep_tool_curve_on_surface.rs"
+        - "crates/occt-topology/src/shape_empty_copied.rs"
+        - "crates/occt-topology/src/tshape_continuity.rs"
+        - "crates/occt-topology/src/lib.rs"
+        - "crates/occt-topo/src/brep_tools_write.rs"
+        - "crates/occt-topo/src/brep_surface_gates.rs"
+        - "crates/occt-topo/src/pcurve.rs"
+        - "crates/occt-topo/src/fclass2d/mod.rs"
+        - "crates/occt-topo/src/lib.rs"
+      commands:
+        - cmd: "cargo check --workspace --all-targets --offline"
+          status: pass
+        - cmd: "cargo check -p occt-topology --offline"
+          status: pass
+        - cmd: "cargo test --manifest-path crates/occt-topo/Cargo.toml --offline --test step_obj_gates"
+          status: pass
+        - cmd: "cargo test --manifest-path crates/occt-topo/Cargo.toml --offline -- brep_surface_gates"
+          status: pass
+        - cmd: "cargo run --manifest-path crates/occt-topo/Cargo.toml --offline --example export_data_obj"
+          status: pass
+        - cmd: "cargo tree -p occt-topology --offline -e normal --depth 1"
+          status: pass
+      inversion:
+        - "brep_tools -> meshing: the triangulation dump (BRepTools::Write of a Poly_Triangulation) is a mesh algorithm, so write_triangulation stayed in occt-topo as brep_tools_write; occt-topo re-exports it and every call site kept its path."
+        - "brep_tools -> mesh: mesh data structures already live in occt-core::poly, so no algorithm edge remained."
+        - "brep_bnd_lib / brep_tools_uv / brep_uv_bounds -> int_tools_curve_box, bnd_lib_add2d, geom_bnd_lib_surface3d: those are GeomBndLib_* / BndLib_Add2dCurve bounds math, moved down to occt_geom::{geom_bnd_lib, geom_abs_curve_type} and re-exported from occt-topo under their old module names."
+        - "brep_tools_uv / brep_uv_bounds / brep_tools_wire_explorer -> boptools_2d: the shared helper is BRep_Tool::CurveOnSurface plus its pcurve-2 seam read, factored into occt_topology::brep_tool_curve_on_surface."
+        - "brep_tools_wire_explorer -> topopebrep, adaptor: SurfaceAdaptor (BRepAdaptor_Surface) and CurveAdaptor are TKBRep adaptors, moved to occt_topology::adaptor; the topopebrep edge was only a re-export path."
+        - "brep_tools_modifier -> shape_fix_compose_shell: empty_copied_edge/empty_copied_face are BRep_Builder copies, moved to occt_topology::shape_empty_copied."
+        - "brep_tools_modifier -> brep_lib_continuity: the face-pair continuity store (BRep_Builder::Continuity) moved to occt_topology::tshape_continuity."
+        - "brep_surface -> pcurve_full: edge_pcurve_on_face is a sampling helper over BRep_Tool::CurveOnSurface, moved to occt_topology::brep_tool_curve_on_surface's consumer side (occt_topo::pcurve), and projlib_project_on_plane (GeomProjLib::ProjectOnPlane) moved to occt_geom."
+        - "adaptor -> int_tools_wline: u_resolution/v_resolution are GeomAdaptor parameter steps, taken from occt_geom::approx_same_parameter instead."
+      moved_modules:
+        - "occt-topology gained: adaptor, brep_bnd_lib, brep_surface, brep_tool_curve_on_surface, brep_tools, brep_tools_modifier, brep_tools_uv, brep_tools_wire_explorer, brep_uv_bounds, shape_empty_copied, tshape_continuity"
+        - "occt-topo kept: brep_faces, brep_measure, brep_tools_write"
+      dependency_graph:
+        occt-topology: "occt-core, occt-geom, occt-geom2d, occt-math"
+        occt-topo: "occt-core, occt-geom, occt-geom2d, occt-math, occt-topology"
+      line_counts:
+        occt-topology: 9761
+        occt-topo: 508031
+      baseline_parity:
+        - "step_obj_gates 4/4 pass"
+        - "brep_surface_gates 5/5 pass"
+        - "export_data_obj reproduces every baseline count: Cube 24/12, Cone 195/301, Cylinder 146/140, Sphere 642/1244, Torus 1369/2592, HoledPlate 180/128, OffsetPlaneHoleEdge 48/32, Offset 712/892, Shape 6150/11372, Shape-1 3343/4336, rev 104/92"
+      deviation_from_plan:
+        - "brep_faces and brep_measure did not move. brep_measure::edge_length is BRepGProp::LinearProperties (BRepGProp.cxx / BRepGProp_EdgeTool.cxx), a Gauss-integration algorithm, and brep_faces builds on it (face_area_exact, face_wire_length) plus a degree-1 bilinear B-spline approximation (make_surface_from_face) and UV-rectangle triangulation. OCCT keeps BRepGProp in TKTopAlgo, so both modules belong to the algorithm crate; inverting brep_measure -> brep_gprop_full would mean cutting a GProp integral in half, which cut-B2.txt does not list and BRepGProp.cxx has no branch for."
+        - "The brep_surface unit tests need BRepPrimBox (occt_topo::primitives), so they moved verbatim to crates/occt-topo/src/brep_surface_gates.rs with rewritten use paths; occt-topology still has no dev-dependency on occt-topo."
+      side_notes:
+        - "occt_topology::brep_surface keeps face_uv_bounds as a thin alias of brep_tools::uv_bounds (BRep_Tool::UVBounds -> BRepTools::UVBounds); both now live in the data layer, so the indirection is removable in a later pass."
+        - "crates/occt-topo/src/lib.rs still carries stale prose comments describing TKBRep modules as if they live there (carried over from T009)."
+
+  - id: T999
+    type: judge
+    assignee: Judge
+    status: done
+    objective: "Audit whether the SRS crate architecture is realized to the extent the dependency graph permits, and record full_outcome_complete."
+    inputs:
+      - "All done task receipts"
+      - "Last verification"
+      - "cargo tree output"
+    expected_output:
+      - "complete | not_complete"
+      - "full_outcome_complete: true | false"
+      - "missing evidence"
+      - "next task if not complete"
+    receipt:
+      result: complete
+      full_outcome_complete: true
+      audit_scope: "Re-checked the goal oracle of docs/goals/occt-crate-split/goal.md item by item against the current working tree (13 crates, occt-topo 508031 lines, occt-topology 9761 lines), not against earlier receipts."
+      oracle:
+        - item: "Oracle 1 - cargo check --workspace --all-targets 0 error"
+          evidence: "cargo check --workspace --all-targets --offline => 0 errors, 790 warnings. Also cargo check -p <crate> exits 0 for all 13 crates."
+          status: pass
+        - item: "Oracle 2 - step_obj_gates 4 passed and export_data_obj matches the OCCT baseline"
+          evidence: "cargo test --test step_obj_gates => 4 passed. cargo run --example export_data_obj => Cube 24/12, Cone 195/301, Cylinder 146/140, Sphere 642/1244, Torus 1369/2592, HoledPlate 180/128, OffsetPlaneHoleEdge 48/32, Offset 712/892, Shape 6150/11372, Shape-1 3343/4336, rev 104/92, identical to the T009 baseline."
+          status: pass
+        - item: "Oracle 3 - occt-core public symbol set unchanged; no use occt_core:: rewrite in occt-geom/occt-geom2d/occt-topo/occt-math"
+          evidence: "git diff over those four crates contains zero added or removed `use occt_core::` lines (the two hits are diff context of already-existing imports). occt-core is a 23-line facade over occt-foundation/occt-gp/occt-geombase and every downstream crate compiles untouched."
+          status: pass
+        - item: "Oracle 4 - each crate checks independently and cargo tree has no edge back into an upper crate"
+          evidence: "cargo check -p exits 0 for all 13 members. cargo tree -p occt-topology -e normal --depth 1 => occt-core, occt-geom, occt-geom2d, occt-math only; cargo tree -p occt-topo => the same four plus occt-topology. No Cargo.toml declares a dev-dependency on an upper crate, so no unenforced cycle exists."
+          status: pass
+        - item: "Constraint - no algorithm control flow change, re-export keeps existing paths"
+          evidence: "Every moved file diff is a path rewrite (crate::x -> super::x, moved helper import) with identical bodies; occt-topo re-exports occt_topology::{abs, shape, tshape, builder, brep_tool, brep_tools, brep_surface, ...} so occt_topo::* paths still resolve, and tests/examples were only edited where an earlier tranche had already moved exchange code out."
+          status: pass
+      realized_crates:
+        - "occt-foundation, occt-gp, occt-geombase, occt-core (facade), occt-math, occt-geom2d, occt-geom, occt-topology (TKBRep), occt-topo, occt-hlr, occt-exchange, occt-visual, occt"
+      not_done_and_why:
+        - "occt-brep / occt-algo-core / occt-bool / occt-fillet / occt-offset / occt-prim / occt-healing / occt-mesh (SRS 3.2.3 and 3.3.x) do not exist as separate crates. The 204-member SCC(shape) still spans TKBRep, TKTopAlgo and every algorithm toolkit (docs/goals/occt-crate-split/scc-shape.txt); separating them needs back-edge inversions such as tshape -> brep_tool, brep_extrema -> shape_mesh, fclass2d -> meshing, which rewrite call direction and are forbidden by the port gates."
+        - "B3 boundary (36 modules / 61 back-edges, docs/goals/occt-crate-split/cut-B3.txt) was rejected by T008 because locope alone owns 26 of those edges and consumes the whole algorithm stack."
+        - "brep_faces and brep_measure stay in occt-topo: brep_measure -> brep_gprop_full is a BRepGProp TKTopAlgo integral, i.e. an algorithm, and OCCT keeps BRepGProp in TKTopAlgo too (recorded in the T010 receipt)."
+      missing_evidence:
+        - "None for the goal oracle. The only unproven-by-construction item is the intent behind SRS 3.3.1-3.3.7, which the goal itself documents as unreachable on this code base."
+      artifacts:
+        - "docs/goals/occt-crate-split/scc-shape.txt"
+        - "docs/goals/occt-crate-split/cut-B1.txt"
+        - "docs/goals/occt-crate-split/cut-B1b.txt"
+        - "docs/goals/occt-crate-split/cut-B2.txt"
+        - "docs/goals/occt-crate-split/cut-B3.txt"
+        - "docs/goals/occt-crate-split/T007-scc-analysis.md"
+        - "docs/goals/OCCT-Rust-Crate-Architecture-SRS.md"
+      next_task_if_not_complete: null

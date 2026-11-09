@@ -10,7 +10,7 @@ use occt_core::gp::{GpAx1, GpAx3, GpCirc, GpDir, GpLin, GpPnt, GpTrsf, GpVec};
 use occt_geom::extrema::{curve_surface_extrema_with_samples, point_curve_extrema, surface_surface_extrema};
 use occt_geom::{GeomCircle, GeomLine, GeomSphere};
 use occt_topo::brep_offset::{offset_shell, polygon_offset_3d};
-use occt_topo::gltf::{build_gltf_bin, GltfOptions};
+use occt_exchange::gltf::{build_gltf_bin, GltfOptions};
 use occt_topo::primitives::BRepPrimBox;
 
 fn make_line(p: GpPnt, d: GpDir) -> GeomLine {
@@ -91,7 +91,7 @@ fn offset_polygon_and_shell() {
 
 #[test]
 fn bincaf_roundtrip_preserves_tree() {
-    use occt_topo::bincaf::{deserialize_bincaf, serialize_bincaf, BinXcaf, BinXcafEntry, XcafAttribute};
+    use occt_exchange::bincaf::{deserialize_bincaf, serialize_bincaf, BinXcaf, BinXcafEntry, XcafAttribute};
     let mut doc = BinXcaf::default();
     doc.root.attributes.push(XcafAttribute { kind: "name".into(), value: "root-part".into() });
     let b = BRepPrimBox::make_box(1.0, 2.0, 3.0);

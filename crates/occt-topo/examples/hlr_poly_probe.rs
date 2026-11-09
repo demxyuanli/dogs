@@ -13,12 +13,12 @@
 use std::path::PathBuf;
 
 use occt_core::gp::{GpAx2, GpDir, GpPnt};
-use occt_topo::hlr_algo::HlrAlgoProjector;
-use occt_topo::hlrbrep_poly_algo::HlrBRepPolyAlgo;
-use occt_topo::hlrbrep_poly_hlr_to_shape::HlrBRepPolyHlrToShape;
+use occt_hlr::hlr_algo::HlrAlgoProjector;
+use occt_hlr::hlrbrep_poly_algo::HlrBRepPolyAlgo;
+use occt_hlr::hlrbrep_poly_hlr_to_shape::HlrBRepPolyHlrToShape;
 use occt_topo::meshing::incremental_mesh::IncrementalMesh;
 use occt_topo::shape::TopoShape;
-use occt_topo::step::read_step_file;
+use occt_exchange::step::read_step_file;
 
 fn main() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
@@ -75,7 +75,7 @@ fn run(path: PathBuf, deflection: f64, view: String) {
     println!("PROBE {file_name} lin={deflection} view={view}");
 
     let model = read_step_file(&path.to_string_lossy()).expect("read_step_file");
-    let shape: TopoShape = occt_topo::brep_exchange::document_shape(&model).expect("document shape");
+    let shape: TopoShape = occt_exchange::brep_exchange::document_shape(&model).expect("document shape");
 
     let inc = IncrementalMesh::from_deflection(&shape, deflection, false, 0.3490658503988659);
     let tris = inc.face_triangulations();

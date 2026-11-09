@@ -12,7 +12,6 @@
 //! `Extrema_GFuncExtPC` derivative at `Extrema_GFuncExtPC.hxx:344`).
 
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
 
 use occt_core::cslib::normal::{normal_d1_mag, CSLibNormalStatus};
 use occt_core::gp::{GpDir, GpPnt, GpPnt2d, GpTrsf, GpVec, GpVec2d};
@@ -28,6 +27,9 @@ use crate::brep_tool::BRepTool;
 use crate::meshing::edge_discret::CurveOnSurface;
 use crate::shape::{Edge, Face, TopoShape, Wire};
 use crate::tgeometry::GeometryRegistry;
+
+pub use crate::tshape_continuity::{has_continuity, set_stored_continuity, stored_continuity};
+use crate::tshape_continuity::write_continuity as write_continuity_u8;
 use crate::topo_tools::{edges_of_wire, faces_of, is_equal, is_same, wires_of_face};
 
 /// `GeomAbs_Shape` (`GeomAbs_Shape.hxx`). Order matches the comparisons in
@@ -46,63 +48,9 @@ enum AbsShape {
     Cn = 6,
 }
 
-/// `(edge, face_a, face_b)` with `face_a <= face_b`. `BRep_Tool::Continuity`
-/// matches either face order (`BRep_Tool.cxx` continuity query).
-fn pair_key(edge: &Edge, f1: &Face, f2: &Face) -> (usize, usize, usize) {
-    let e = GeometryRegistry::shape_key(&edge.0);
-    let mut a = GeometryRegistry::shape_key(&f1.0);
-    let mut b = GeometryRegistry::shape_key(&f2.0);
-    if a > b {
-        std::mem::swap(&mut a, &mut b);
-    }
-    (e, a, b)
-}
-
-fn continuity_store() -> &'static Mutex<HashMap<(usize, usize, usize), u8>> {
-    static STORE: OnceLock<Mutex<HashMap<(usize, usize, usize), u8>>> = OnceLock::new();
-    STORE.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-/// Stored face-pair continuity, or `GeomAbs_C0` when the edge was never encoded.
-pub fn stored_continuity(edge: &Edge, f1: &Face, f2: &Face) -> u8 {
-    let guard = continuity_store()
-        .lock()
-        .unwrap_or_else(|err| err.into_inner());
-    guard.get(&pair_key(edge, f1, f2)).copied().unwrap_or(0)
-}
-
-/// `BRep_Tool::HasContinuity(E)` (`BRep_Tool.cxx:155-160`):
-/// `E.TShape()->HasContinuity()`, i.e. whether `BRep_Builder::Continuity` ever
-/// stored a pair for this edge. The port's store is keyed by
-/// `(edge, face_a, face_b)`, so the flag is "any pair bound to this edge".
-pub fn has_continuity(edge: &Edge) -> bool {
-    let e = GeometryRegistry::shape_key(&edge.0);
-    let guard = continuity_store()
-        .lock()
-        .unwrap_or_else(|err| err.into_inner());
-    guard.keys().any(|k| k.0 == e)
-}
-
-/// `BRep_Builder::Continuity(E, F1, F2, C)` (`BRep_Builder.cxx:1012-1021`).
-/// `TShape::Locked` (`cxx:1034-1036`) is not stored.
-pub fn set_stored_continuity(edge: &Edge, f1: &Face, f2: &Face, cont: u8) {
-    let shape = match cont {
-        1 => AbsShape::G1,
-        2 => AbsShape::C1,
-        3 => AbsShape::G2,
-        4 => AbsShape::C2,
-        5 => AbsShape::C3,
-        6 => AbsShape::Cn,
-        _ => AbsShape::C0,
-    };
-    write_continuity(edge, f1, f2, shape);
-}
-
+/// `BRep_Builder::Continuity` with the local `GeomAbs_Shape` code.
 fn write_continuity(edge: &Edge, f1: &Face, f2: &Face, cont: AbsShape) {
-    let mut guard = continuity_store()
-        .lock()
-        .unwrap_or_else(|err| err.into_inner());
-    guard.insert(pair_key(edge, f1, f2), cont as u8);
+    write_continuity_u8(edge, f1, f2, cont as u8);
 }
 
 fn unwrap_trimmed(surf: std::sync::Arc<dyn Surface>) -> std::sync::Arc<dyn Surface> {

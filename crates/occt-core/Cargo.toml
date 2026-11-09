@@ -1,13 +1,17 @@
 [package]
 name = "occt-core"
-version = "0.1.0"
-edition = "2021"
-description = "OCCT foundation geometry — pure Rust port of Open CASCADE Technology FoundationClasses"
-license = "LGPL-2.1-only"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "OCCT foundation facade — re-exports occt-foundation, occt-gp and occt-geombase under the historical occt_core paths"
 
 [dependencies]
+occt-foundation = { workspace = true }
+occt-gp = { workspace = true }
+occt-geombase = { workspace = true }
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 
 [features]
 default = ["serde", "serde_json"]
+serde = ["dep:serde", "occt-gp/serde", "occt-geombase/serde"]

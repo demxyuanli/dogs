@@ -160,7 +160,7 @@ fn step_to_obj_exports_valid_obj() {
 /// (133.9 vs 150.8).
 #[test]
 fn cylinder_step_mesh_covers_full_u_period() {
-    let model = occt_topo::step::read_step_file(
+    let model = occt_exchange::step::read_step_file(
         &data_dir().join("Cylinder.step").to_string_lossy(),
     )
     .unwrap_or_else(|e| panic!("read Cylinder.step: {e}"));

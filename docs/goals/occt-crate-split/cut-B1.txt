@@ -1,0 +1,9 @@
+brep_builder_update_vertex -> tgeometry
+brep_builder_update_vertex -> topo_tools
+brep_tool -> tgeometry
+brep_tool -> topo_tools
+brep_tools_substitution -> tgeometry
+brep_tools_substitution -> topo_tools
+builder -> tgeometry
+tools -> tgeometry
+tshape -> tgeometry

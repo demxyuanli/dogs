@@ -88,7 +88,7 @@ fn curved_face_fillet_sphere_plane() {
 
 #[test]
 fn texture_font_render() {
-    use occt_topo::viz_scene::{
+    use occt_visual::viz_scene::{
         checkerboard_texture, render_textured_ppm, text_to_pixels, BitmapFont, Camera, SceneShape, VizScene,
     };
     let tex = checkerboard_texture(8, 8, 2, (255, 0, 0), (0, 0, 255));
@@ -106,7 +106,7 @@ fn texture_font_render() {
     assert!(red && blue, "checkerboard has red+blue");
 
     let font = BitmapFont::default();
-    let (w, h) = occt_topo::viz_scene::text_raster_size("AB", &font, 1);
+    let (w, h) = occt_visual::viz_scene::text_raster_size("AB", &font, 1);
     assert_eq!((w, h), (10, 7));
     let px = text_to_pixels("A", &font, 2);
     assert_eq!(px.len(), 5 * 2 * 7 * 2);
@@ -114,13 +114,13 @@ fn texture_font_render() {
 
 #[test]
 fn draw_tcl_vars_and_transform() {
-    use occt_topo::draw::DrawSession;
+    use occt::draw::DrawSession;
     let mut s = DrawSession::default();
-    occt_topo::draw::execute_line(&mut s, "set x 3").expect("set");
-    occt_topo::draw::execute_line(&mut s, "box b $x 2 2").expect("box");
+    occt::draw::execute_line(&mut s, "set x 3").expect("set");
+    occt::draw::execute_line(&mut s, "box b $x 2 2").expect("box");
     // Copy FIRST (the original), then translate in place.
-    occt_topo::draw::execute_line(&mut s, "copy b b2").expect("copy");
-    occt_topo::draw::execute_line(&mut s, "translate b 1 0 0").expect("translate");
+    occt::draw::execute_line(&mut s, "copy b b2").expect("copy");
+    occt::draw::execute_line(&mut s, "translate b 1 0 0").expect("translate");
     assert!(s.shapes.contains_key("b"));
     assert!(s.shapes.contains_key("b2"));
     // b translated +1 in x → some vertex at x≈4 (box spans [0,3]×[0,2]×[0,2]).
@@ -146,7 +146,7 @@ fn inertia_tensor_box() {
 
 #[test]
 fn xcaf_doc_roundtrip() {
-    use occt_topo::xcaf::{attrs_to_strings, strings_to_attrs, XcafAttrs};
+    use occt_exchange::xcaf::{attrs_to_strings, strings_to_attrs, XcafAttrs};
     let attrs = XcafAttrs {
         name: Some("part1".into()),
         color: Some((1.0, 0.0, 0.0)),

@@ -1,0 +1,12 @@
+[package]
+name = "occt-topology"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "OCCT boundary representation data — TopoDS_Shape/TShape, TopExp, TopLoc, BRep_Builder and BRep_Tool"
+
+[dependencies]
+occt-core = { workspace = true }
+occt-geom = { workspace = true }
+occt-geom2d = { workspace = true }
+occt-math = { workspace = true }

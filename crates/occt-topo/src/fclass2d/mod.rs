@@ -17,7 +17,7 @@
 //!
 //! Source: `IntTools_FClass2d.hxx/.cxx` (TKBO). The UV rings are built by
 //! sampling each edge pcurve (via [`crate::pcurve_full::make_pcurve_full`],
-//! falling back to [`crate::brep_surface::edge_pcurve_on_face`]); edge
+//! falling back to [`crate::pcurve::edge_pcurve_on_face`]); edge
 //! orientation within a wire is recovered by UV-continuity chaining, since this
 //! port's flat `TShape` child tree drops the per-edge `TopAbs_Orientation`.
 mod prelude {
@@ -33,7 +33,8 @@ pub(crate) use occt_core::precision::SQUARE_CONFUSION;
 pub(crate) use occt_geom2d::curve::Curve2d;
 
 pub(crate) use crate::abs::Orientation;
-pub(crate) use crate::brep_surface::{edge_pcurve_on_face, face_uv_bounds};
+pub(crate) use crate::brep_surface::face_uv_bounds;
+pub(crate) use crate::pcurve::edge_pcurve_on_face;
 pub(crate) use crate::curve_sampling_2d::geom2d_nb_samples;
 pub(crate) use crate::pcurve_full::make_pcurve_full;
 pub(crate) use crate::shape::{Edge, Face};

@@ -28,7 +28,7 @@ use occt_core::gp::{GpPnt, GpVec};
 use occt_core::io::obj::ObjMesh;
 use occt_topo::brep_builder_api::{make_face_from_polygon, make_prism};
 use occt_topo::brep_check::Analyzer;
-use occt_topo::brep_exchange::brep_to_obj;
+use occt_exchange::brep_exchange::brep_to_obj;
 use occt_topo::brep_gprop_full::{surface_properties, volume_properties};
 
 /// Volume / area relative tolerance. OCCT and the port both integrate the same

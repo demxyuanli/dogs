@@ -1,0 +1,14 @@
+[package]
+name = "occt-gp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "OCCT elementary geometry layer — TKMath: gp primitives, Bnd, ElCLib/ElSLib, BSpl, Poly, GProp, maths helpers"
+
+[dependencies]
+occt-foundation = { workspace = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+
+[features]
+default = ["serde", "serde_json"]

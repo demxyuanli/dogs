@@ -130,7 +130,7 @@ fn finite_range(curve: &dyn Curve) -> Option<(f64, f64)> {
 /// Returns `(t, point_on_curve)` when the ported `LocateExtPC::IsDone()` is
 /// true. OCCT treats `!IsDone` as a miss and falls through to `Extrema_ExtPC`
 /// (`IntTools_Context.cxx:842-871`, `ShapeAnalysis_Curve.cxx:423-437`).
-pub(crate) fn extrema_locate_ext_pc(
+pub fn extrema_locate_ext_pc(
     curve: &dyn Curve,
     p: &GpPnt,
     t_seed: f64,

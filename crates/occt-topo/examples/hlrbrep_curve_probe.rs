@@ -12,10 +12,10 @@ use std::sync::Arc;
 
 use occt_core::gp::{GpAx2, GpDir, GpPnt};
 use occt_topo::geom_abs_curve_type::GeomAbsCurveType;
-use occt_topo::hlr_algo::HlrAlgoProjector;
-use occt_topo::hlrbrep_curve::HlrBRepCurve;
+use occt_hlr::hlr_algo::HlrAlgoProjector;
+use occt_hlr::hlrbrep_curve::HlrBRepCurve;
 use occt_topo::shape::{Edge, TopoShape};
-use occt_topo::step::read_step_file;
+use occt_exchange::step::read_step_file;
 
 fn projector_for(view: &str) -> HlrAlgoProjector {
     let (z, x) = match view {
@@ -84,7 +84,7 @@ fn run(path: PathBuf, view: String) {
 
     let model = read_step_file(&path.to_string_lossy()).expect("read_step_file");
     let shape: TopoShape =
-        occt_topo::brep_exchange::document_shape(&model).expect("document shape");
+        occt_exchange::brep_exchange::document_shape(&model).expect("document shape");
 
     // Deduplicate the way `TopExp::MapShapes` does, so the `EDGE` ids match
     // the C++ probe's `TopTools_IndexedMapOfShape` numbering.

@@ -1,0 +1,255 @@
+use crate::gp::ax1::GpAx1;
+use crate::gp::ax2::GpAx2;
+use crate::gp::ax3::GpAx3;
+use crate::gp::dir::GpDir;
+use crate::gp::lin::GpLin;
+use crate::gp::pnt::GpPnt;
+use crate::gp::trsf::GpTrsf;
+use crate::gp::vec::GpVec;
+
+#[derive(Debug, Clone)]
+pub struct GpPln {
+    pub pos: GpAx3,
+}
+
+impl Default for GpPln {
+    fn default() -> Self {
+        GpPln {
+            pos: GpAx3::default(),
+        }
+    }
+}
+
+impl GpPln {
+    pub fn new(pos: GpAx3) -> Self {
+        GpPln { pos }
+    }
+
+    /// `gp_Pln(A, B, C, D)` (`gp_Pln.cxx:86-128`).
+    ///
+    /// The axis is `gp_Ax3(P, N, Vx)` (`gp_Ax3.hxx:84-91`): `X = N × (Vx × N)`
+    /// and `Y = N × X`. For `gp_Pln(0, 0, 1, 0)` that leaves `Location.Z` and
+    /// `XDirection.Z` as `-0`, which `ElSLib::Value` (`ElSLib` plane arm) then
+    /// copies into a lifted pole whose V coordinate is not strictly positive.
+    pub fn from_coefficients(a: f64, b: f64, c: f64, d: f64) -> Result<Self, &'static str> {
+        let aa = a.abs();
+        let ab = b.abs();
+        let ac = c.abs();
+        let (origin, vx) = if ab <= aa && ab <= ac {
+            if aa > ac {
+                (GpPnt::new(-d / a, 0.0, 0.0), GpDir::new(-c, 0.0, a)?)
+            } else {
+                (GpPnt::new(0.0, 0.0, -d / c), GpDir::new(c, 0.0, -a)?)
+            }
+        } else if aa <= ab && aa <= ac {
+            if ab > ac {
+                (GpPnt::new(0.0, -d / b, 0.0), GpDir::new(0.0, -c, b)?)
+            } else {
+                (GpPnt::new(0.0, 0.0, -d / c), GpDir::new(0.0, c, -b)?)
+            }
+        } else if aa > ab {
+            (GpPnt::new(-d / a, 0.0, 0.0), GpDir::new(-b, a, 0.0)?)
+        } else {
+            (GpPnt::new(0.0, -d / b, 0.0), GpDir::new(b, -a, 0.0)?)
+        };
+        let normal = GpDir::new(a, b, c)?;
+        // `gp_XYZ::CrossCross` (`gp_XYZ.hxx:551-565`): `this × (V1 × V2)`.
+        let x_xyz = normal.xyz().crossed(&vx.xyz().crossed(normal.xyz()));
+        let x_dir = GpDir::new(x_xyz.x(), x_xyz.y(), x_xyz.z())?;
+        let pos = GpAx3::new(origin, normal, &x_dir)?;
+        Ok(GpPln { pos })
+    }
+
+    pub fn location(&self) -> GpPnt {
+        self.pos.location()
+    }
+
+    pub fn position(&self) -> GpAx3 {
+        self.pos.clone()
+    }
+
+    pub fn set_location(&mut self, p: &GpPnt) {
+        self.pos.set_location(*p);
+    }
+
+    pub fn set_position(&mut self, ax3: &GpAx3) {
+        self.pos = ax3.clone();
+    }
+
+    pub fn axis(&self) -> GpAx1 {
+        *self.pos.axis()
+    }
+
+    pub fn x_axis(&self) -> GpAx1 {
+        self.pos.x_axis()
+    }
+
+    pub fn y_axis(&self) -> GpAx1 {
+        self.pos.y_axis()
+    }
+
+    pub fn is_direct(&self) -> bool {
+        self.pos.is_direct()
+    }
+
+    /// `gp_Pln::Coefficients` — Ax + By + Cz + D = 0.
+    pub fn coefficients(&self) -> (f64, f64, f64, f64) {
+        let d = self.pos.direction();
+        let (a, b, c) = if self.pos.is_direct() {
+            (d.x(), d.y(), d.z())
+        } else {
+            (-d.x(), -d.y(), -d.z())
+        };
+        let p = self.pos.location();
+        let cte = -(a * p.x() + b * p.y() + c * p.z());
+        (a, b, c, cte)
+    }
+
+    /// `gp_Pln::SignedDistance(const gp_Pnt&)` (`gp_Pln.hxx:345-352`):
+    /// `N · (P - Location)`.
+    pub fn signed_distance_pnt(&self, p: &GpPnt) -> f64 {
+        let loc = self.pos.location();
+        let d = self.pos.direction();
+        d.x() * (p.x() - loc.x()) + d.y() * (p.y() - loc.y()) + d.z() * (p.z() - loc.z())
+    }
+
+    /// `gp_Pln::SignedDistance(const gp_Pln&)` (`gp_Pln.hxx:367-375`): 0 unless
+    /// the normals are parallel within `gp::Resolution()` (`REAL_SMALL`), else
+    /// the signed distance of the other plane's location.
+    pub fn signed_distance_pln(&self, other: &GpPln) -> f64 {
+        if !self
+            .pos
+            .direction()
+            .is_parallel_tol(&other.pos.direction(), occt_foundation::precision::REAL_SMALL)
+        {
+            return 0.0;
+        }
+        self.signed_distance_pnt(&other.pos.location())
+    }
+
+    /// `gp_Pln::SquareDistance(const gp_Pnt&)` (`gp_Pln.hxx:150-155`):
+    /// `Distance(theP)^2` with `Distance = |SignedDistance|`.
+    pub fn square_distance_pnt(&self, p: &GpPnt) -> f64 {
+        let d = self.signed_distance_pnt(p);
+        d * d
+    }
+
+    /// `gp_Pln::SquareDistance(const gp_Pln&)` (`gp_Pln.hxx:173-177`):
+    /// `Distance(theOther)^2` with `Distance = |SignedDistance|`.
+    pub fn square_distance_pln(&self, other: &GpPln) -> f64 {
+        let d = self.signed_distance_pln(other).abs();
+        d * d
+    }
+
+    /// `gp_Pln::Distance(const gp_Pnt&)` (`gp_Pln.hxx:104-110`):
+    /// `|SignedDistance(theP)|`.
+    pub fn distance_pnt(&self, p: &GpPnt) -> f64 {
+        self.signed_distance_pnt(p).abs()
+    }
+
+    /// `gp_Pln::Contains(const gp_Pnt&, double)` (`gp_Pln.hxx:232-238`):
+    /// the point lies within `theLinearTolerance` of the plane.
+    pub fn contains_pnt(&self, p: &GpPnt, lin_tol: f64) -> bool {
+        self.distance_pnt(p) <= lin_tol
+    }
+
+    /// `gp_Pln::Contains(const gp_Lin&, double, double)` (`gp_Pln.hxx:250-259`):
+    /// the line origin is within `theLinearTolerance` of the plane, and the
+    /// line direction is normal to the plane within `theAngularTolerance`.
+    pub fn contains_lin(&self, l: &GpLin, lin_tol: f64, ang_tol: f64) -> bool {
+        self.contains_pnt(&l.location(), lin_tol)
+            && self
+                .pos
+                .direction()
+                .is_normal_tol(&l.direction(), ang_tol)
+    }
+
+    pub fn u_reverse(&mut self) {
+        self.pos.x_reverse();
+    }
+    pub fn v_reverse(&mut self) {
+        self.pos.y_reverse();
+    }
+
+    pub fn mirror_pnt(&mut self, p: &GpPnt) {
+        self.pos.mirror_pnt(p);
+    }
+
+    pub fn mirrored_pnt(&self, p: &GpPnt) -> GpPln {
+        let mut result = self.clone();
+        result.mirror_pnt(p);
+        result
+    }
+
+    pub fn mirror_ax1(&mut self, ax1: &GpAx1) {
+        self.pos.mirror_ax1(ax1);
+    }
+
+    pub fn mirrored_ax1(&self, ax1: &GpAx1) -> GpPln {
+        let mut result = self.clone();
+        result.mirror_ax1(ax1);
+        result
+    }
+
+    pub fn mirror_ax2(&mut self, ax2: &GpAx2) {
+        self.pos.mirror_ax2(ax2);
+    }
+
+    pub fn mirrored_ax2(&self, ax2: &GpAx2) -> GpPln {
+        let mut result = self.clone();
+        result.mirror_ax2(ax2);
+        result
+    }
+
+    pub fn rotate(&mut self, ax1: &GpAx1, angle: f64) {
+        self.pos.rotate(ax1, angle);
+    }
+
+    pub fn rotated(&self, ax1: &GpAx1, angle: f64) -> GpPln {
+        let mut result = self.clone();
+        result.rotate(ax1, angle);
+        result
+    }
+
+    pub fn scale(&mut self, p: &GpPnt, s: f64) {
+        self.pos.scale(p, s);
+    }
+
+    pub fn scaled(&self, p: &GpPnt, s: f64) -> GpPln {
+        let mut result = self.clone();
+        result.scale(p, s);
+        result
+    }
+
+    /// `gp_Pln::Transform` (`gp_Pln.hxx`): `pos.Transform(theT)`.
+    pub fn transform(&mut self, t: &GpTrsf) {
+        self.pos.transform(t);
+    }
+
+    pub fn transformed(&self, t: &GpTrsf) -> GpPln {
+        let mut result = self.clone();
+        result.transform(t);
+        result
+    }
+
+    pub fn translate_vec(&mut self, v: &GpVec) {
+        self.pos.translate_vec(v);
+    }
+
+    pub fn translated_vec(&self, v: &GpVec) -> GpPln {
+        let mut result = self.clone();
+        result.translate_vec(v);
+        result
+    }
+
+    pub fn translate_pnts(&mut self, p1: &GpPnt, p2: &GpPnt) {
+        let v = GpVec::from_pnts(p1, p2);
+        self.translate_vec(&v);
+    }
+
+    pub fn translated_pnts(&self, p1: &GpPnt, p2: &GpPnt) -> GpPln {
+        let mut result = self.clone();
+        result.translate_pnts(p1, p2);
+        result
+    }
+}

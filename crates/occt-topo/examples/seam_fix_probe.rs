@@ -17,7 +17,7 @@ use occt_topo::meshing::parameters::MeshParameters;
 use occt_topo::meshing::range_splitter::create_range_splitter;
 use occt_topo::shhealing::ShapeFixFace;
 use occt_topo::shape::Face;
-use occt_topo::step::read_step_file;
+use occt_exchange::step::read_step_file;
 use occt_topo::topo_tools::{edges_of_wire, faces_of, wires_of_face};
 
 /// First / last vertex of a wire, in wire order (orientation-aware).

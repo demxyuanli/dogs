@@ -13,7 +13,7 @@ use occt_topo::brep_mat2d_explorer::BRepMat2dExplorer;
 use occt_topo::builder::TopoBuilder;
 use occt_topo::mat::MatSide;
 use occt_topo::shape::{Face, TopoShape, Wire};
-use occt_topo::step::read_step_file;
+use occt_exchange::step::read_step_file;
 use occt_topo::topo_tools::{explorer_shapes, wires_of, wires_of_face};
 
 fn collect_faces(shape: &TopoShape, out: &mut Vec<TopoShape>) {
@@ -88,7 +88,7 @@ fn main() {
         root.join(&arg)
     };
     let shape = read_step_file(&path.to_string_lossy()).expect("read_step_file");
-    let Some(shape) = occt_topo::brep_exchange::document_shape(&shape) else {
+    let Some(shape) = occt_exchange::brep_exchange::document_shape(&shape) else {
         println!("no document shape");
         return;
     };

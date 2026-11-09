@@ -1,0 +1,13 @@
+[package]
+name = "occt-exchange"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "OCCT data exchange — STEP/IGES/XCAF/RWMesh document and format layer"
+
+[dependencies]
+occt-core = { workspace = true }
+occt-math = { workspace = true }
+occt-geom2d = { workspace = true }
+occt-geom = { workspace = true }
+occt-topo = { workspace = true }

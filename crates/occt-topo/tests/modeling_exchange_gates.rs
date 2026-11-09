@@ -6,7 +6,7 @@ use occt_core::gp::{GpPnt, GpVec};
 use occt_core::gp::quaternion_ext::{from_axis_angle, rotate_point};
 use occt_geom::geom_api::project_point_on_curve;
 use occt_geom2d::geom2d_api::intersect_circle_line;
-use occt_topo::brep_exchange::{brep_to_obj, brep_to_stl_ascii};
+use occt_exchange::brep_exchange::{brep_to_obj, brep_to_stl_ascii};
 use occt_topo::brep_tool::BRepTool;
 use occt_topo::brep_builder_api::{make_cylinder_full, make_edge_arc, make_face_from_polygon};
 use occt_topo::fillet::{fillet_corner, tangent_points};
@@ -14,7 +14,7 @@ use occt_topo::primitives::BRepPrimBox;
 use occt_topo::shape_naming::{find_vertex_at, geometric_hash};
 use occt_topo::shape_ops::translated_copy;
 use occt_topo::sweep_revolve::revolve_rectangle;
-use occt_topo::step::{read_step, write_step, write_shape_step};
+use occt_exchange::step::{read_step, write_step, write_shape_step};
 
 fn approx(a: f64, b: f64) -> bool {
     (a - b).abs() < 1e-3 * b.abs().max(1.0)

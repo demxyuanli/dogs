@@ -12,9 +12,9 @@ pub mod modeling;
 use std::path::PathBuf;
 
 use occt_core::io::obj::ObjMesh;
-use occt_topo::brep_exchange::{document_shape, model_to_obj_caf};
-use occt_topo::rwmesh::material_file_path;
-use occt_topo::step::read_step_file;
+use occt_exchange::brep_exchange::{document_shape, model_to_obj_caf};
+use occt_exchange::rwmesh::material_file_path;
+use occt_exchange::step::read_step_file;
 
 /// data/ directory (tests run with CWD = the occt-topo crate root).
 pub fn data_dir() -> PathBuf {

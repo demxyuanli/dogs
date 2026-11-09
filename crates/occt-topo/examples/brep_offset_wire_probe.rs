@@ -16,7 +16,7 @@ use occt_topo::brep_surface::{face_is_plane_type, face_plane};
 use occt_topo::brep_tool::BRepTool;
 use occt_topo::brep_tools_wire_explorer::WireExplorer;
 use occt_topo::shape::{Face, TopoShape};
-use occt_topo::step::read_step_file;
+use occt_exchange::step::read_step_file;
 use occt_topo::topo_tools::{wires_of, wires_of_face};
 
 fn collect_faces(shape: &TopoShape, out: &mut Vec<TopoShape>) {
@@ -74,7 +74,7 @@ fn run(path: PathBuf) {
     println!("PROBE {}", path.display());
 
     let shape = read_step_file(&path.to_string_lossy()).expect("read_step_file");
-    let Some(shape) = occt_topo::brep_exchange::document_shape(&shape) else {
+    let Some(shape) = occt_exchange::brep_exchange::document_shape(&shape) else {
         println!("no document shape");
         return;
     };

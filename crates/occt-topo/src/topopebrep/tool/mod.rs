@@ -31,7 +31,7 @@
 //! - `TopOpeBRepTool_AncestorsTool` ([`ancestors_tool`]): the one-line
 //!   `TopExp::MapShapesAndAncestors` forward of `MakeAncestors`.
 
-pub mod adaptor;
+pub use occt_topology::adaptor;
 pub mod ancestors_tool;
 pub mod box_sort;
 pub mod c2d;

@@ -31,9 +31,8 @@ pub(crate) use occt_geom::{Curve, Surface};
 pub(crate) use occt_geom2d::curve::Curve2d;
 pub(crate) use occt_geom2d::{Geom2dBSplineCurve, Geom2dLine};
 
-pub(crate) use crate::brep_surface::{
-    classify_surface, edge_pcurve_on_face, face_uv_bounds, sphere_center, SurfaceKind,
-};
+pub(crate) use crate::brep_surface::{classify_surface, face_uv_bounds, sphere_center, SurfaceKind};
+pub(crate) use crate::pcurve::edge_pcurve_on_face;
 pub(crate) use crate::shape::{Edge, Face};
 pub(crate) use crate::tgeometry::GeometryRegistry;
 

@@ -6,8 +6,8 @@ use occt_core::bvh::bvh_query::{ray_cast_mesh, segment_query_mesh};
 use occt_core::gp::{GpPnt, GpVec};
 use occt_topo::brep_builder_full::BRepBuilderSolid;
 use occt_topo::primitives::BRepPrimBox;
-use occt_topo::rwmesh::{mesh_from_shape, scene_bounds, scene_to_compound};
-use occt_topo::viz_scene::{camera_view_matrix, project_point, Camera, CameraProjection, SceneShape, VizScene};
+use occt_exchange::rwmesh::{mesh_from_shape, scene_bounds, scene_to_compound};
+use occt_visual::viz_scene::{camera_view_matrix, project_point, Camera, CameraProjection, SceneShape, VizScene};
 
 fn box_mesh() -> (Vec<GpPnt>, Vec<(usize, usize, usize)>) {
     let b = BRepPrimBox::make_box(2.0, 2.0, 2.0);
@@ -88,6 +88,6 @@ fn viz_scene_add_and_render() {
     scene.add(SceneShape::new(b.solid.0));
     assert_eq!(scene.len(), 1);
     let cam = Camera::default();
-    let svg = occt_topo::viz_scene::render_scene_svg(&scene, &cam, 128, 128, 0.15);
+    let svg = occt_visual::viz_scene::render_scene_svg(&scene, &cam, 128, 128, 0.15);
     assert!(svg.contains("<polygon") || svg.contains("polygon"), "svg has polygons");
 }

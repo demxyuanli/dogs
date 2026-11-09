@@ -13,11 +13,11 @@ use std::sync::Arc;
 
 use occt_core::gp::{GpAx2, GpDir, GpPnt};
 use occt_topo::abs::ShapeType;
-use occt_topo::hlr_algo::HlrAlgoProjector;
-use occt_topo::hlrbrep_algo::HlrBRepAlgo;
-use occt_topo::hlrbrep_hlr_to_shape::HlrBRepHlrToShape;
+use occt_hlr::hlr_algo::HlrAlgoProjector;
+use occt_hlr::hlrbrep_algo::HlrBRepAlgo;
+use occt_hlr::hlrbrep_hlr_to_shape::HlrBRepHlrToShape;
 use occt_topo::shape::TopoShape;
-use occt_topo::step::read_step_file;
+use occt_exchange::step::read_step_file;
 use occt_topo::topo_tools::explorer_shapes;
 
 fn projector_for(view: &str) -> HlrAlgoProjector {
@@ -84,7 +84,7 @@ fn run(path: PathBuf, nb_iso: i32, view: String) {
 
     let model = read_step_file(&path.to_string_lossy()).expect("read_step_file");
     let shape: TopoShape =
-        occt_topo::brep_exchange::document_shape(&model).expect("document shape");
+        occt_exchange::brep_exchange::document_shape(&model).expect("document shape");
 
     let mut algo = HlrBRepAlgo::new();
     algo.base_mut()

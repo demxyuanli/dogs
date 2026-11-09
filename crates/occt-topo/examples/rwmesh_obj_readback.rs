@@ -31,7 +31,7 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use occt_topo::rwmesh::{material_from_name, read_obj_scene, Material, MeshScene};
+use occt_exchange::rwmesh::{material_from_name, read_obj_scene, Material, MeshScene};
 
 /// `data/output/gates` under the repository root.
 fn default_dir() -> PathBuf {
@@ -374,7 +374,7 @@ fn print_node(name: &str, nv: usize, nf: usize, mat: Option<&Material>, uv: bool
 /// `RWObj_Material` default (`RWObj_Material.hxx:45-46`), and `Tr` missing means
 /// opaque. `Ns` is normalised by the reader (`Shininess = min(Ns/1000, 1)`,
 /// `RWObj_MtlReader.cxx:200-211`), so 1000.000000 comes back as 1.0.
-fn check_material(m: &Material, w: &Written, node: &occt_topo::rwmesh::MeshNode, c: &mut Checks) {
+fn check_material(m: &Material, w: &Written, node: &occt_exchange::rwmesh::MeshNode, c: &mut Checks) {
     let Some((_, block)) = w.mats.iter().find(|(n, _)| *n == m.name) else {
         c.failures += 1;
         eprintln!("   node {}: material {} has no newmtl in the written library", node.name, m.name);

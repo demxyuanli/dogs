@@ -39,6 +39,13 @@ use crate::pcurve_full::classify_surface_kind;
 use crate::shape::{Edge, Face};
 use crate::tgeometry::GeometryRegistry;
 
+// `BRep_Tool::CurveOnSurface` / `CurveOnPlane` are TKBRep calls; the port keeps
+// them in `occt-topology` and re-exports them here for the
+// `BOPTools_AlgoTools2D` call sites that import them from this module.
+pub use crate::brep_tool_curve_on_surface::{
+    curve_on_surface, curve_on_surface_range, seam_reads_pcurve2,
+};
+
 /// OCCT `BOPTools_AlgoTools2D::IntermediatePoint` division constant:
 /// `10·e^(−π) = 0.43213918`. Deliberately *not* the geometric midpoint — the
 /// asymmetry keeps sample/intersection parameters away from symmetric
@@ -61,72 +68,6 @@ pub fn make_2d(edge: &Edge, face: &Face) -> Result<Arc<dyn Curve2d>, String> {
     crate::pcurve_full::make_pcurve_full(edge, face)
 }
 
-/// The stored p-curve of `edge` on `face`, if one has been attached to the
-/// edge for that face (`BRep_Tool::CurveOnSurface`).
-///
-/// Unlike OCCT's `CurveOnSurface` this never builds — it is a pure read of the
-/// [`GeometryRegistry`] side-table. Use [`make_2d`] or
-/// [`build_pcurve_for_edge_on_face`] to obtain a p-curve when none is stored.
-pub fn curve_on_surface(edge: &Edge, face: &Face) -> Option<Arc<dyn Curve2d>> {
-    let reg = GeometryRegistry::global();
-    let face_key = GeometryRegistry::shape_key(&face.0);
-    let pcs = reg.edge_pcurves(&edge.0, face_key);
-    // `BRep_Tool::CurveOnSurface(E, F)` (`BRep_Tool.cxx:310-314`) reverses a
-    // copy of the edge when the face is REVERSED, then the closed-surface arm
-    // (`cxx:354-357`) returns `PCurve2` for that copy and `PCurve` otherwise.
-    if seam_reads_pcurve2(edge, face) {
-        if let Some(second) = pcs.get(1) {
-            return Some(second.clone());
-        }
-    }
-    pcs.into_iter().next()
-}
-
-/// `BRep_Tool::CurveOnSurface(E, F)` (`BRep_Tool.cxx:310-314`, `:354-357`):
-/// PCurve2 is selected when exactly one of the edge and the face is REVERSED.
-fn seam_reads_pcurve2(edge: &Edge, face: &Face) -> bool {
-    let edge_rev = edge.0.orientation() == crate::abs::Orientation::Reversed;
-    let face_rev = face.0.orientation() == crate::abs::Orientation::Reversed;
-    edge_rev != face_rev
-}
-
-/// `BRep_Tool::CurveOnSurface(edge, face, first, last)`: stored p-curve plus
-/// the CurveOnSurface representation range (`BRep_GCurve::First/Last`).
-/// Falls back to the 3D edge range, then the 2d curve domain.
-///
-/// When no COS is stored, `BRep_Tool.cxx:367-372` projects onto a plane via
-/// `CurveOnPlane` and sets `First/Last` to the 3D edge `f,l` (`cxx:418-419`).
-pub fn curve_on_surface_range(edge: &Edge, face: &Face) -> Option<(Arc<dyn Curve2d>, f64, f64)> {
-    if let Some(pc) = curve_on_surface(edge, face) {
-        let face_key = GeometryRegistry::shape_key(&face.0);
-        let reg = GeometryRegistry::global();
-        if let Some((t1, t2)) = reg.pcurve_range(&edge.0, face_key) {
-            if t1.is_finite() && t2.is_finite() {
-                return Some((pc, t1, t2));
-            }
-        }
-        let (t1, t2) = reg.edge_parameters(&edge.0);
-        if t1.is_finite() && t2.is_finite() {
-            return Some((pc, t1, t2));
-        }
-        let (a, b) = (pc.first_parameter(), pc.last_parameter());
-        if a.is_finite() && b.is_finite() {
-            return Some((pc, a, b));
-        }
-        return None;
-    }
-    let surf = GeometryRegistry::global().face_surface(&face.0)?;
-    if classify_surface_kind(surf.as_ref()) != SurfaceKind::Plane {
-        return None;
-    }
-    let pc = crate::pcurve::make_pcurve_on_face(edge, face).ok()?;
-    let (t1, t2) = GeometryRegistry::global().edge_parameters(&edge.0);
-    if t1.is_finite() && t2.is_finite() {
-        Some((pc, t1, t2))
-    } else {
-        None
-    }
-}
 
 /// `BRep_Tool::CurveOnSurface(edge, surface)`: a seam on a closed surface
 /// returns `PCurve2` when the edge is `REVERSED` (`BRep_Tool.cxx:354-361`),

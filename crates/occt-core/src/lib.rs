@@ -1,50 +1,27 @@
-//! OCCT foundation — pure Rust port of Open CASCADE Technology FoundationClasses.
+//! OCCT foundation facade - compatibility surface over the physical layers.
 //!
-//! # Architecture
+//! The old monolithic `occt-core` crate is now three physical crates:
 //! ```text
-//! kernel/            (error types, handle protocol, container aliases)
-//! precision          (tolerance constants)
-//! gp/                (geometric primitives — 3D + 2D)
+//! occt-foundation   TKernel   kernel, precision, message, quantity
+//! occt-gp           TKMath    gp, bnd, elib, cslib, bspl, poly, gprop, ...
+//! occt-geombase     TKGeomBase geom, intcurve, intf, intimpargen, adv_approx, bvh, io
 //! ```
+//! Every path that used to live at `occt_core::<module>` keeps resolving here.
 
-pub mod kernel;
-pub mod precision;
-pub mod gp;
-pub mod bnd;
-pub mod elib;
-pub mod poly;
-pub mod toploc;
-pub mod geom;
-pub mod numeric;
-pub mod hull;
-pub mod int;
-pub mod intres2d;
-pub mod intf;
-pub mod io;
-pub mod bspl;
-pub mod bvh;
-pub mod convert;
-pub mod cslib;
-pub mod gprop;
-pub mod quantity;
-pub mod message;
+pub use occt_foundation::{kernel, message, precision, quantity};
+
+pub use occt_gp::{
+    approx, bnd, bspl, convert, cslib, elib, gcpnts, gp, gprop, hull,
+    int, intana2d, intres2d, math_bracketed_root, math_bullard, math_direct_poly_roots, math_fn,
+    math_function_all_roots, math_function_roots, math_function_sample, math_newton_function_root,
+    math_trig_roots, numeric, poly, toploc,
+};
+
+pub use occt_geombase::{adv_approx, bvh, geom, intcurve, intf, intimpargen, io};
 
 pub use gp::*;
 pub use kernel::*;
 pub use bnd::*;
-pub use precision::{Precision, ANGULAR, CONFUSION, RESOLUTION, INTERSECTION, APPROXIMATION, INFINITE};
-pub mod gcpnts;
-pub mod math_bullard;
-pub mod math_fn;
-pub mod math_bracketed_root;
-pub mod math_function_sample;
-pub mod math_function_all_roots;
-pub mod math_function_roots;
-pub mod math_direct_poly_roots;
-pub mod math_newton_function_root;
-pub mod math_trig_roots;
-pub mod intana2d;
-pub mod intcurve;
-pub mod intimpargen;
-pub mod adv_approx;
-pub mod approx;
+pub use precision::{
+    Precision, ANGULAR, APPROXIMATION, CONFUSION, INFINITE, INTERSECTION, RESOLUTION,
+};

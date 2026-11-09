@@ -245,6 +245,77 @@ occt-foundation
                             └── occt（facade）
 ```
 
+### 4.3 修订（基于实测依赖图的修正）
+
+本节记录对 §4.1 与 §3.3 的三处修正，依据是对现有代码的模块级依赖统计
+（`crates/occt-topo` 的模块级 SCC 计算结果与 `crates/*/Cargo.toml` 实测）。修订前的规则在该仓库的现有代码上不可实现。
+
+1. **§4.1 第 3 条修正为：算法 crate 之间允许有向无环依赖，禁止环。**
+   实测 `brep_offset`（TKOffset）依赖 `chfi3d`（TKFillet）、`bop_builder2`/`topopebrep`（TKBool）、`brep_fill_sweep`、`meshing`；
+   `chfi3d`（TKFillet）依赖 `topopebrep`、`blend`/`brep_blend`、`intpatch`。这与 OCCT 自身 toolkit 的依赖方向一致，
+   因此可实现的顺序是 `brep -> algo-core -> 经典布尔(TopOpeBRep) -> prim -> fillet -> offset`。
+2. **§3.3.7 的 `occt-mesh` 位置修正为两层：** 三角化**数据结构**下沉到 brep 层（`Poly_Triangulation` 已在 `occt-core::poly`），
+   只有 `BRepMesh_IncrementalMesh` 这类**算法**留在上层。依据是 `fclass2d`、`brep_extrema`、`brep_lib_build_curves3d`、
+   `brep_lib_continuity`、`brep_lib_same_parameter`、`brep_offset`、`brep_tools`、`shhealing` 均直接依赖 `meshing`。
+3. **§3.4.1 的 `occt-exchange` 只包含文件格式读写，不包含 BRep 交换对象。**
+   `step`、`iges`、`iges_read`、`xmlcaf`、`bincaf`、`rwmesh`、`xcaf*`、`model`、`brep_exchange` 位于所有建模算法之上，
+   建模层不反向依赖它们；但 `BRepTools_ShapeSet` 一类 BRep 交换对象属于 TKBRep，不得随格式读写一起上移。
+   依据是 `step` 依赖 `shhealing`、`iges_read` 依赖 `brep_fill`、`brep_offset_api_make_pipe` 依赖 `brep_fill_pipe`。
+
+另外记录两条实测约束，用于排期：
+
+- `occt-topo` 当前存在一个 **204 个模块的强连通分量**，同时跨越 TKBRep、TKTopAlgo 与全部算法层。
+  Rust 的 crate 依赖必须无环，所以在打断 `tshape -> brep_tool`、`brep_extrema -> shape_mesh`、
+  `fclass2d -> meshing`、`brep_tools -> meshing` 这类回边之前，同一个 SCC 内的分层无法拆开。
+  实测的候选边界与回边代价见 `docs/goals/occt-crate-split/T007-scc-analysis.md`。
+- 拆分必须**自底向上**：被拆出的下层 crate 由原 crate 用 `pub use` 重新导出，既有 `occt_core::gp::...` 一类路径才能保持不变。
+  反向操作（把上层先搬走）会让原 crate 无法再导出依赖自己的 crate，导致 13 个门禁测试与 27 个 example 的路径全部失效。
+
+### 4.4 当前落地状态（2026-11-10）
+
+| crate | 来源 | 行数 | 状态 |
+|-------|------|------|------|
+| `occt-foundation` | `occt-core` 的 kernel / precision / message / quantity | 1,178 | 已拆出 |
+| `occt-gp` | `occt-core` 的 gp / bnd / elib / cslib / bspl / poly / gprop / toploc / convert / approx / int* / math_* | 34,021 | 已拆出 |
+| `occt-geombase` | `occt-core` 的 geom / intcurve / intf / intimpargen / adv_approx / bvh / io | 14,307 | 已拆出 |
+| `occt-core` | 上述三个 crate 的 `pub use` 门面 | 23 | 已退化为门面 |
+| `occt-math` | 原有 TKMath 求解器端口 | 20,646 | 未动（与 `occt-gp` 职责重叠，待合并） |
+| `occt-geom2d` / `occt-geom` | 原有 | 54,672 / 117,428 | 未动 |
+| `occt-topology` | `occt-topo` 的 TKBRep 数据层（abs / shape / tshape / iterator / transform / topexp / tools / validate / debug_flags / builder / brep_tool / brep_point_representation / brep_builder_update_vertex / brep_lprop / brep_tools_substitution / tgeometry / topo_tools / adaptor / brep_tools{,_uv,_modifier,_wire_explorer} / brep_uv_bounds / brep_bnd_lib / brep_surface） | 9,761 | 已拆出（批 B1b + B2） |
+| `occt-topo` | 剩余的 TKTopAlgo / TKBO / TKBool / TKFillet / TKOffset / TKPrim / TKShHealing / TKMesh | 508,031 | 已缩减，仍含 204 模块 SCC |
+| `occt-hlr` | `occt-topo` 的 HLR / Contap | 30,654 | 已拆出 |
+| `occt-exchange` | `occt-topo` 的 STEP / IGES / XCAF / RWMesh / BRepExchange / 装配 | 44,301 | 已拆出 |
+| `occt-visual` | `occt-topo` 的 viz_scene / render_svg / brep_scene | 4,338 | 已拆出 |
+| `occt` | `draw` 门面 | 2,579 | 已拆出 |
+
+当前正常依赖链（`cargo tree -e normal` 实测，无环）：
+
+```text
+occt-base  occt-core / occt-math / occt-geom2d / occt-geom
+occt-topology  -> occt-core, occt-geom, occt-geom2d, occt-math
+occt-topo       -> occt-topology
+occt-hlr        -> occt-topo
+occt-exchange   -> occt-topo
+occt-visual     -> occt-hlr, occt-exchange, occt-topo
+occt            -> occt-topo, occt-hlr, occt-exchange, occt-visual
+```
+
+`occt-topo` 用 `pub use occt_topology::{abs, shape, tshape, builder, brep_tool, ...}` 保持既有
+`occt_topo::*` 路径不变，因此 13 个门禁测试、`examples/*` 与所有下游 crate 无需改路径。
+
+B2 批次已落地（`docs/goals/occt-crate-split/state.yaml` T010）：`cut-B2.txt` 的 17 条回边中 7 条可逆的
+已按“下沉共用 helper”打断——`write_triangulation` 留在 `occt-topo`、`GeomBndLib_*` 下沉到 `occt-geom`、
+`BRep_Tool::CurveOnSurface` 下沉到 `occt_topology::brep_tool_curve_on_surface`、`SurfaceAdaptor` 下沉到
+`occt_topology::adaptor`、`empty_copied_*` 与面-边连续性存储下沉到 `occt_topology::{shape_empty_copied, tshape_continuity}`。
+`brep_faces` / `brep_measure` **没有**下沉：`brep_measure::edge_length` 是 `BRepGProp::LinearProperties`
+（`BRepGProp.cxx`）的高斯积分，属 TKTopAlgo 算法，OCCT 本身也把 `BRepGProp` 放在 TKTopAlgo，
+把它切开不是移动 helper 而是改控制流。
+`brep_tools -> mesh`、`brep_tools -> meshing` 属端口缺陷（OCCT 的 `BRep_Tool::Triangulation`
+只碰 `Poly_Triangulation`），已按此拆分。
+
+`occt-math` 与本文 §3.1.2 定义的 `occt-math` 语义不一致：现 `occt-math` 只承载求解器（SVD、Gauss、BFGS 等），
+TKMath 的 `gp` / `bspl` 部分已归入 `occt-gp`。两者是否合并需单独评审。
+
 ---
 
 ## 5. 非功能性需求
@@ -356,6 +427,7 @@ license = "LGPL-2.1"          # 需根据实际许可策略调整
 | 版本 | 日期 | 说明 |
 |------|------|------|
 | 0.1.0 | 2026-11-09 | 初始草案，基于 OCCT 官方分层与 Rust 编译特性整理 |
+| 0.2.0 | 2026-11-10 | 依据实测模块依赖图修正 §4.1 第 3 条、§3.3.7 与 §3.4.1，新增 §4.3 修订与 §4.4 落地状态 |
 
 ---
 

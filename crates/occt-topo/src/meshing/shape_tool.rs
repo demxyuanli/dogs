@@ -24,7 +24,7 @@ use occt_geom::Curve;
 
 use crate::abs::Orientation;
 use crate::boptools_2d::curve_on_surface_range;
-use crate::brep_surface::edge_pcurve_on_face;
+use crate::pcurve::edge_pcurve_on_face;
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::shape::{Edge, Face, TopoShape, Vertex, Wire};

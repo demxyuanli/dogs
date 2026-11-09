@@ -12,7 +12,7 @@ pub(crate) fn run(ctx: &Ctx) -> bool {
     let shape = ctx.shape.clone();
     if std::env::args().any(|a| a == "--bndinf") {
         // TEMP: which faces drive the document box open, and with what UV window.
-        let doc = occt_topo::brep_exchange::document_shape(&model).expect("document shape");
+        let doc = occt_exchange::brep_exchange::document_shape(&model).expect("document shape");
         let mut nodes_open = 0usize;
         for (ni, s) in model.shapes.iter().enumerate() {
             let nb = brep_bnd_lib::shape_bnd_box(&s.shape);

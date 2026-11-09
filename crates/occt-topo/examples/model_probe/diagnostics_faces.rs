@@ -150,7 +150,7 @@ pub(crate) fn run(ctx: &Ctx) -> bool {
             .nth(pos + 1)
             .and_then(|s| s.parse().ok())
             .expect("--uvdbg <faceIdx>");
-        let doc = occt_topo::brep_exchange::document_shape(&model).expect("document shape");
+        let doc = occt_exchange::brep_exchange::document_shape(&model).expect("document shape");
         let f = faces_of(&doc)[want].clone();
         let (u0, u1, v0, v1) = occt_topo::brep_tools::uv_bounds(&f);
         println!("UVDBG face={want} u=[{u0:.6},{u1:.6}] v=[{v0:.6},{v1:.6}] ftol={:.12}",

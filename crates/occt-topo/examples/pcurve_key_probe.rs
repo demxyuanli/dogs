@@ -13,7 +13,7 @@
 //!
 //! Usage: `cargo run --example pcurve_key_probe -- <file.step>`
 use occt_topo::shape::Face;
-use occt_topo::step::read_step_file;
+use occt_exchange::step::read_step_file;
 use occt_topo::tgeometry::GeometryRegistry;
 use occt_topo::topo_tools::{edges_of_wire, faces_of, wires_of_face};
 

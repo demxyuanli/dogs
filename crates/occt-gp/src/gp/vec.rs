@@ -1,0 +1,385 @@
+use crate::gp::mat::GpMat;
+use crate::gp::pnt::GpPnt;
+use crate::gp::xyz::GpXyz;
+// `RESOLUTION` is kept for the port-only no-tolerance helpers (`is_equal`,
+// `is_normal`, `is_parallel`, `is_opposite`); the `gp_Vec` counterparts of all
+// four take an explicit tolerance, so they have no `gp::Resolution()` branch.
+use occt_foundation::precision::{REAL_SMALL, RESOLUTION};
+
+/// 3D vector newtype over GpXyz.
+#[derive(Debug, Clone, Copy)]
+pub struct GpVec {
+    pub coord: GpXyz,
+}
+
+impl Default for GpVec {
+    fn default() -> Self {
+        Self::zero()
+    }
+}
+
+impl GpVec {
+    /// Zero vector (0,0,0).
+    pub fn zero() -> Self {
+        Self {
+            coord: GpXyz::new(0.0, 0.0, 0.0),
+        }
+    }
+
+    pub fn new(x: f64, y: f64, z: f64) -> Self {
+        Self {
+            coord: GpXyz::new(x, y, z),
+        }
+    }
+
+    pub fn from_xyz(xyz: &GpXyz) -> Self {
+        Self { coord: *xyz }
+    }
+
+    pub fn from_pnts(p1: &GpPnt, p2: &GpPnt) -> Self {
+        Self {
+            coord: GpXyz::new(p2.x() - p1.x(), p2.y() - p1.y(), p2.z() - p1.z()),
+        }
+    }
+
+    pub fn x(&self) -> f64 {
+        self.coord.x()
+    }
+
+    pub fn y(&self) -> f64 {
+        self.coord.y()
+    }
+
+    pub fn z(&self) -> f64 {
+        self.coord.z()
+    }
+
+    pub fn xyz(&self) -> &GpXyz {
+        &self.coord
+    }
+
+    pub fn magnitude(&self) -> f64 {
+        self.coord.modulus()
+    }
+
+    pub fn square_magnitude(&self) -> f64 {
+        self.coord.square_modulus()
+    }
+
+    pub fn is_equal(&self, other: &GpVec) -> bool {
+        let diff = self.subtracted(other);
+        diff.square_magnitude() <= RESOLUTION * RESOLUTION
+    }
+
+    /// `gp_Vec::IsEqual(theOther, theLinearTolerance, theAngularTolerance)`
+    /// (`gp_Vec.cxx:32-48`): the 2-argument [`GpVec::is_equal`] is the
+    /// `gp::Resolution()` special case, this is the tolerance overload.
+    pub fn is_equal_tol(&self, other: &GpVec, lin_tol: f64, ang_tol: f64) -> bool {
+        let a_magnitude = self.magnitude();
+        let an_other_magnitude = other.magnitude();
+        let diff = (a_magnitude - an_other_magnitude).abs();
+        if a_magnitude <= lin_tol || an_other_magnitude <= lin_tol {
+            // `gp_Vec.cxx:38-42`: the angle is not consulted.
+            diff <= lin_tol
+        } else {
+            // `gp_Vec.cxx:43-47`.
+            diff <= lin_tol && self.angle(other) <= ang_tol
+        }
+    }
+
+    /// self + other (consuming self)
+    pub fn add(mut self, other: &GpVec) -> Self {
+        self.coord = self.coord.added(&other.coord);
+        self
+    }
+
+    /// self + other (returns new)
+    pub fn added(&self, other: &GpVec) -> Self {
+        Self {
+            coord: self.coord.added(&other.coord),
+        }
+    }
+
+    /// self - other (consuming self)
+    pub fn subtract(mut self, other: &GpVec) -> Self {
+        self.coord = self.coord.subtracted(&other.coord);
+        self
+    }
+
+    /// self - other (returns new)
+    pub fn subtracted(&self, other: &GpVec) -> Self {
+        Self {
+            coord: self.coord.subtracted(&other.coord),
+        }
+    }
+
+    /// self *= scalar (consuming self)
+    pub fn multiply_scalar(mut self, scalar: f64) -> Self {
+        self.coord = self.coord.multiplied(scalar);
+        self
+    }
+
+    /// self * scalar (returns new)
+    pub fn multiplied_scalar(&self, scalar: f64) -> Self {
+        Self {
+            coord: self.coord.multiplied(scalar),
+        }
+    }
+
+    /// self /= scalar (consuming self)
+    pub fn divide(mut self, scalar: f64) -> Self {
+        self.coord = self.coord.divided(scalar);
+        self
+    }
+
+    /// self / scalar (returns new)
+    pub fn divided(&self, scalar: f64) -> Self {
+        Self {
+            coord: self.coord.divided(scalar),
+        }
+    }
+
+    pub fn dot(&self, other: &GpVec) -> f64 {
+        self.coord.dot(&other.coord)
+    }
+
+    /// self = self ^ other (consuming self)
+    pub fn cross(mut self, other: &GpVec) -> Self {
+        self.coord = self.coord.crossed(&other.coord);
+        self
+    }
+
+    /// self ^ other (returns new)
+    pub fn crossed(&self, other: &GpVec) -> Self {
+        Self {
+            coord: self.coord.crossed(&other.coord),
+        }
+    }
+
+    pub fn cross_magnitude(&self, other: &GpVec) -> f64 {
+        let c = self.crossed(other);
+        c.magnitude()
+    }
+
+    pub fn cross_square_magnitude(&self, other: &GpVec) -> f64 {
+        let c = self.crossed(other);
+        c.square_magnitude()
+    }
+
+    /// (self ^ other) ^ self (consuming self)
+    pub fn cross_cross(mut self, other: &GpVec) -> Self {
+        let crossed = self.coord.crossed(&other.coord);
+        self.coord = crossed.crossed(&self.coord);
+        self
+    }
+
+    /// (self ^ other) ^ self (returns new)
+    pub fn cross_crossed(&self, other: &GpVec) -> Self {
+        let crossed = self.coord.crossed(&other.coord);
+        Self {
+            coord: crossed.crossed(&self.coord),
+        }
+    }
+
+    pub fn dot_cross(&self, v1: &GpVec, v2: &GpVec) -> f64 {
+        let c = v1.crossed(v2);
+        self.dot(&c)
+    }
+
+    /// `gp_Vec::Normalize()` (`gp_Vec.hxx:314-321`): raise iff
+    /// `coord.Modulus() <= gp::Resolution()`. The port reports the magnitude
+    /// (0 on the raise path) instead of throwing.
+    pub fn normalize(&mut self) -> f64 {
+        let m = self.magnitude();
+        if m > REAL_SMALL {
+            self.coord = self.coord.divided(m);
+        }
+        m
+    }
+
+    /// `gp_Vec::Normalized()` (`gp_Vec.hxx:507-515`).
+    pub fn normalized(&self) -> Self {
+        let m = self.magnitude();
+        if m > REAL_SMALL {
+            Self {
+                coord: self.coord.divided(m),
+            }
+        } else {
+            *self
+        }
+    }
+
+    /// Reverse in-place.
+    pub fn reverse(&mut self) {
+        self.coord = self.coord.multiplied(-1.0);
+    }
+
+    pub fn reversed(&self) -> Self {
+        Self {
+            coord: self.coord.multiplied(-1.0),
+        }
+    }
+
+    /// `gp_Vec::Rotated(const gp_Ax1&, Ang)` (`gp_Vec.cxx:91-96`): the vector
+    /// turned by `angle` around `axis`, about the axis *line* (the axis
+    /// location does not matter for a vector).
+    ///
+    /// Implemented through `gp_Trsf::SetRotation(gp_Ax1, Ang)` +
+    /// `Transformed`, which is the same rotation operator `gp_Vec::Rotate`
+    /// (`gp_Vec.cxx:83-89`) applies in place.
+    pub fn rotated(&self, axis: &crate::gp::GpAx1, angle: f64) -> Self {
+        let mut t = crate::gp::GpTrsf::identity();
+        if t.set_rotation_ax1(axis, angle).is_err() {
+            return *self;
+        }
+        self.transformed(&t)
+    }
+
+    /// `gp_Vec::Angle()` (`gp_Vec.hxx:488-495`): raise iff either
+    /// `coord.Modulus() <= gp::Resolution()`, then delegate to
+    /// `gp_Dir::Angle`. The port's zero-magnitude path returns `0.0` instead of
+    /// the OCCT `gp_VectorWithNullMagnitude` throw.
+    pub fn angle(&self, other: &GpVec) -> f64 {
+        let m1 = self.magnitude();
+        let m2 = other.magnitude();
+        if m1 <= REAL_SMALL || m2 <= REAL_SMALL {
+            return 0.0;
+        }
+        let cos = self.dot(other) / (m1 * m2);
+        // clamp for numerical stability
+        let cos = cos.clamp(-1.0, 1.0);
+        cos.acos()
+    }
+
+    /// `gp_Vec::AngleWithRef(theOther, theVRef)` (`gp_Vec.hxx:498-505`), which
+    /// normalises both vectors and delegates to `gp_Dir::AngleWithRef`
+    /// (`gp_Dir.cxx:55-84`). The port's zero-magnitude path returns `0.0`
+    /// instead of the OCCT `gp_VectorWithNullMagnitude` throw.
+    pub fn angle_with_ref(&self, other: &GpVec, v_ref: &GpVec) -> f64 {
+        let m1 = self.magnitude();
+        let m2 = other.magnitude();
+        let m3 = v_ref.magnitude();
+        if m1 <= REAL_SMALL || m2 <= REAL_SMALL || m3 <= REAL_SMALL {
+            return 0.0;
+        }
+        let a = self.coord.multiply(1.0 / m1);
+        let b = other.coord.multiply(1.0 / m2);
+        let xyz = a.crossed(&b);
+        let cosinus = a.dot(&b);
+        let sinus = xyz.modulus();
+        let ang = if cosinus > -0.70710678118655 && cosinus < 0.70710678118655 {
+            cosinus.clamp(-1.0, 1.0).acos()
+        } else if cosinus < 0.0 {
+            std::f64::consts::PI - sinus.asin()
+        } else {
+            sinus.asin()
+        };
+        if xyz.dot(&v_ref.coord) >= 0.0 {
+            ang
+        } else {
+            -ang
+        }
+    }
+
+    pub fn is_normal(&self, other: &GpVec) -> bool {
+        self.dot(other).abs() <= RESOLUTION
+    }
+
+    pub fn is_parallel(&self, other: &GpVec) -> bool {
+        let m = self.cross_magnitude(other);
+        m <= RESOLUTION
+    }
+
+    pub fn is_opposite(&self, other: &GpVec) -> bool {
+        let m = self.cross_magnitude(other);
+        if m > RESOLUTION {
+            return false;
+        }
+        self.dot(other) < 0.0
+    }
+
+    /// `gp_Vec::IsParallel(Other, AngularTolerance)`.
+    pub fn is_parallel_ang(&self, other: &GpVec, angular_tolerance: f64) -> bool {
+        let ang = self.angle(other);
+        ang <= angular_tolerance || std::f64::consts::PI - ang <= angular_tolerance
+    }
+
+    /// `gp_Vec::IsOpposite(Other, AngularTolerance)`.
+    pub fn is_opposite_ang(&self, other: &GpVec, angular_tolerance: f64) -> bool {
+        let ang = self.angle(other);
+        std::f64::consts::PI - ang <= angular_tolerance
+    }
+
+    pub fn multiply_mat(mut self, mat: &GpMat) -> Self {
+        self.coord = self.coord.multiplied_mat(mat);
+        self
+    }
+
+    pub fn multiplied_mat(&self, mat: &GpMat) -> Self {
+        Self {
+            coord: self.coord.multiplied_mat(mat),
+        }
+    }
+
+    /// `gp_Vec::Transform(const gp_Trsf&)` (`gp_Vec.cxx:120-136`): a vector
+    /// picks up the linear part only, never the translation. The `Scale` arm is
+    /// separate in OCCT because `ScaleFactor()` is not folded into the matrix
+    /// there; the `_` arm uses `VectorialPart()` (scale folded in).
+    pub fn transform(&mut self, t: &crate::gp::trsf::GpTrsf) {
+        use crate::gp::trsf_form::TrsfForm;
+        match t.form() {
+            TrsfForm::Identity | TrsfForm::Translation => {}
+            TrsfForm::PntMirror => self.coord.reverse(),
+            TrsfForm::Scale => self.coord = self.coord.multiply(t.scale_factor()),
+            _ => self.coord.multiply_mat(&t.vectorial_part()),
+        }
+    }
+
+    /// `gp_Vec::Transformed(const gp_Trsf&)`.
+    pub fn transformed(&self, t: &crate::gp::trsf::GpTrsf) -> Self {
+        let mut r = *self;
+        r.transform(t);
+        r
+    }
+
+    /// `self = a1*v1 + a2*v2 (consuming self)
+    pub fn set_linear_form_2(mut self, a1: f64, v1: &GpVec, a2: f64, v2: &GpVec) -> Self {
+        self.coord = v1.coord.multiplied(a1).added(&v2.coord.multiplied(a2));
+        self
+    }
+
+    /// self = a1*v1 + a2*v2 + a3*v3 (consuming self)
+    pub fn set_linear_form_3(
+        mut self,
+        a1: f64,
+        v1: &GpVec,
+        a2: f64,
+        v2: &GpVec,
+        a3: f64,
+        v3: &GpVec,
+    ) -> Self {
+        self.coord = v1
+            .coord
+            .multiplied(a1)
+            .added(&v2.coord.multiplied(a2))
+            .added(&v3.coord.multiplied(a3));
+        self
+    }
+
+    /// self = a1*v1 + a2*v2 + v3 (consuming self)
+    pub fn set_linear_form_2plus(
+        mut self,
+        a1: f64,
+        v1: &GpVec,
+        a2: f64,
+        v2: &GpVec,
+        v3: &GpVec,
+    ) -> Self {
+        self.coord = v1
+            .coord
+            .multiplied(a1)
+            .added(&v2.coord.multiplied(a2))
+            .added(&v3.coord);
+        self
+    }
+}

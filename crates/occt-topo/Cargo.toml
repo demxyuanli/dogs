@@ -1,15 +1,25 @@
 [package]
 name = "occt-topo"
-version = "0.1.0"
-edition = "2021"
-description = "OCCT topology — boundary representation data structures (TKBRep)"
-license = "LGPL-2.1-only"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "OCCT topology and modelling algorithms — TKBRep, TKTopAlgo, TKBO, TKBool, TKFillet, TKOffset, TKPrim, TKShHealing, TKMesh"
 
 [dependencies]
-occt-core = { path = "../occt-core" }
-occt-geom = { path = "../occt-geom" }
-occt-geom2d = { path = "../occt-geom2d" }
-occt-math = { path = "../occt-math" }
+occt-core = { workspace = true }
+occt-geom = { workspace = true }
+occt-geom2d = { workspace = true }
+occt-math = { workspace = true }
+occt-topology = { workspace = true }
+
+# The integration gates and probes exercise the whole stack, including the
+# layers built on top of this crate. Those edges are dev-only, so the normal
+# dependency graph stays acyclic; Cargo permits cycles through dev-dependencies.
+[dev-dependencies]
+occt-hlr = { workspace = true }
+occt-exchange = { workspace = true }
+occt-visual = { workspace = true }
+occt = { workspace = true }
 
 [[example]]
 name = "mesh_diagnostics"

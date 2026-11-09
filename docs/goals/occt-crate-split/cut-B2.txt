@@ -1,0 +1,17 @@
+brep_bnd_lib -> geom_bnd_lib_curve3d
+brep_bnd_lib -> geom_bnd_lib_surface3d
+brep_bnd_lib -> int_tools_curve_box
+brep_measure -> brep_gprop_full
+brep_surface -> pcurve_full
+brep_tools -> mesh
+brep_tools -> meshing
+brep_tools_modifier -> brep_lib_continuity
+brep_tools_modifier -> shape_fix_compose_shell
+brep_tools_uv -> bnd_lib_add2d
+brep_tools_uv -> boptools_2d
+brep_tools_wire_explorer -> boptools_2d
+brep_tools_wire_explorer -> geom_bnd_lib_surface3d
+brep_tools_wire_explorer -> topopebrep
+brep_uv_bounds -> bnd_lib_add2d
+brep_uv_bounds -> boptools_2d
+tgeometry -> pcurve_full

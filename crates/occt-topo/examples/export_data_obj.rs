@@ -22,9 +22,9 @@
 use std::fs;
 use std::path::PathBuf;
 
-use occt_topo::brep_exchange::{document_shape, model_to_obj_caf};
-use occt_topo::rwmesh::material_file_path;
-use occt_topo::step::read_step_file;
+use occt_exchange::brep_exchange::{document_shape, model_to_obj_caf};
+use occt_exchange::rwmesh::material_file_path;
+use occt_exchange::step::read_step_file;
 
 fn main() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..");

@@ -2,7 +2,7 @@
 use super::tname;
 use super::Ctx;
 use occt_topo::brep_bnd_lib;
-use occt_topo::brep_exchange::prs3d_get_deflection;
+use occt_exchange::brep_exchange::prs3d_get_deflection;
 use occt_topo::brep_tool::BRepTool;
 use occt_topo::meshing::incremental_mesh::IncrementalMesh;
 use occt_topo::meshing::range_splitter::mesh_surface_type;

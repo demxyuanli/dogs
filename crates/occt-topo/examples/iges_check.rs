@@ -21,9 +21,9 @@
 use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 
-use occt_topo::brep_exchange::document_shape;
-use occt_topo::iges::write_shape_iges;
-use occt_topo::step::read_step_file;
+use occt_exchange::brep_exchange::document_shape;
+use occt_exchange::iges::write_shape_iges;
+use occt_exchange::step::read_step_file;
 
 fn col(l: &str, a: usize, b: usize) -> String {
     l.get(a..b).unwrap_or("").trim().to_string()

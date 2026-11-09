@@ -24,6 +24,7 @@ pub mod cylinder;
 pub mod cone;
 pub mod sphere;
 pub mod torus;
+pub mod surface_kind;
 
 pub use curve::Curve;
 pub use bspline_curve::GeomBSplineCurve;
@@ -64,6 +65,8 @@ pub use offset_surface::GeomOffsetSurface;
 pub mod rectangular_trimmed;
 pub use rectangular_trimmed::GeomRectangularTrimmedSurface;
 pub mod geom_adaptor_local;
+pub mod geom_abs_curve_type;
+pub mod projlib_project_on_plane;
 pub mod geom_bnd_lib;
 pub mod extrema;
 pub mod extrema_pc;

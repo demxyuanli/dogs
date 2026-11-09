@@ -2,7 +2,7 @@ use occt_core::gp::GpPnt2d;
 use occt_core::precision::{CONFUSION, PCONFUSION};
 use occt_topo::brep_tools;
 use occt_topo::boptools_2d::curve_on_surface;
-use occt_topo::brep_exchange::brep_to_obj;
+use occt_exchange::brep_exchange::brep_to_obj;
 use occt_topo::brep_tool::BRepTool;
 use occt_topo::meshing::data_model::MeshFace;
 use occt_topo::meshing::face_discret::Classifier;
@@ -12,7 +12,7 @@ use occt_topo::meshing::range_splitter::{
     mesh_surface_type, create_range_splitter, RangeSplitter, MeshSurfaceType,
 };
 use occt_topo::shhealing::{edge_proj_aux_params, fix_shifted_wire};
-use occt_topo::step::read_step_file;
+use occt_exchange::step::read_step_file;
 use occt_topo::abs::Orientation;
 use occt_topo::topo_tools::{edge_vertices, edges_of, edges_of_wire, faces_of, wires_of_face};
 
@@ -46,7 +46,7 @@ fn type_name(t: MeshSurfaceType) -> &'static str {
 }
 
 fn prs3d_lin(shape: &occt_topo::shape::TopoShape, maximal_chordial: f64) -> f64 {
-    occt_topo::brep_exchange::prs3d_get_deflection(shape, maximal_chordial)
+    occt_exchange::brep_exchange::prs3d_get_deflection(shape, maximal_chordial)
 }
 
 fn dump_grid(shape: &occt_topo::shape::TopoShape, stem: &str) {

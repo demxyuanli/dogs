@@ -18,17 +18,7 @@ use super::*;
 /// cone / torus (a `Geom_BSplineSurface` patch) must stay `Other` and be
 /// projected by the general path; treating it as analytic would feed the
 /// sampled analytic frame a parameterization it does not have.
-pub fn classify_surface_kind(s: &dyn Surface) -> SurfaceKind {
-    use crate::geom_bnd_lib_surface3d::GeomAbsSurfaceType as TypeKind;
-    match crate::geom_bnd_lib_surface3d::surface_kind(s) {
-        TypeKind::Plane => SurfaceKind::Plane,
-        TypeKind::Sphere => SurfaceKind::Sphere,
-        TypeKind::Cylinder => SurfaceKind::Cylinder,
-        TypeKind::Cone => SurfaceKind::Cone,
-        TypeKind::Torus => SurfaceKind::Torus,
-        _ => SurfaceKind::Other,
-    }
-}
+pub use occt_geom::surface_kind::{classify_surface_kind, SurfaceKind};
 
 /// Cylinder parameters `(center, unit axis, radius)` from sampled invariants:
 /// the axis is along `∂S/∂v` and two opposite points of a `u`-ring give the

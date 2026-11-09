@@ -1,46 +1,59 @@
-//! OCCT topology (TKBRep) — boundary representation data structures.
+//! OCCT topology and modelling algorithms.
 //!
-//! Maps OCCT's TopoDS shape hierarchy to Rust:
+//! The boundary representation data layer (`TKBRep`) lives in the
+//! `occt-topology` crate; it is re-exported here so that
+//! `occt_topo::{shape, tshape, abs, builder, brep_tool, ...}` keeps working.
+//! Everything declared below this header is an algorithm.
+//!
 //! ```text
-//! Shape (enum: Vertex/Edge/Wire/Face/Shell/Solid/Compound)
-//!   ├── TShape: geometric + topological data
-//!   ├── Location: optional transform
-//!   └── Orientation: FORWARD/REVERSED/INTERNAL/EXTERNAL
+//! occt-topology   Shape (Vertex/Edge/Wire/Face/Shell/Solid/Compound), TShape,
+//!                 Location, Orientation, BRep_Builder, BRep_Tool, TopExp
+//! occt-topo       TKTopAlgo / TKBO / TKBool / TKFillet / TKOffset / TKPrim /
+//!                 TKShHealing / TKMesh
 //! ```
 
-pub mod abs;
-pub mod tshape;
-pub mod shape;
-pub mod debug_flags;
-pub mod builder;
-pub mod iterator;
-pub mod tools;
-pub mod mesh;
-pub mod transform;
-pub mod validate;
-pub mod primitives;
-pub mod tgeometry;
-pub mod chfi2d;
-pub mod chfi_ds;
-pub mod chfi3d;
-pub mod chfi_k_part;
-pub mod local_analysis;
+// GeomBndLib / BndLib geometry bounds and the GeomAbs_CurveType dispatch are
+// pure geometry (TKGeomBase `GeomBndLib_*.cxx`, TKG3d `GeomAdaptor_Curve.cxx`)
+// and live in `occt-geom`. Re-exported so `occt_topo::geom_bnd_lib_*` keeps
+// resolving.
+pub use occt_geom::geom_abs_curve_type;
+pub use occt_geom::geom_bnd_lib::{
+    add2d as bnd_lib_add2d, analytic3d as geom_bnd_lib_analytic3d,
+    bezier2d as geom_bnd_lib_bezier2d, bspline2d as geom_bnd_lib_bspline2d,
+    circle2d as geom_bnd_lib_circle2d, circle3d as geom_bnd_lib_circle3d,
+    curve2d as geom_bnd_lib_curve2d, curve3d as geom_bnd_lib_curve3d,
+    elclib2d as geom_bnd_lib_elclib2d, elclib_to3d as geom_bnd_lib_elclib_to3d,
+    ellipse2d as geom_bnd_lib_ellipse2d, hyperbola2d as geom_bnd_lib_hyperbola2d,
+    inf2d as geom_bnd_lib_inf2d, inf3d as geom_bnd_lib_inf3d, line2d as geom_bnd_lib_line2d,
+    offset2d as geom_bnd_lib_offset2d, other_curve2d as geom_bnd_lib_other_curve2d,
+    parabola2d as geom_bnd_lib_parabola2d, sample2d as geom_bnd_lib_sample2d,
+    spline_helpers as geom_bnd_lib_spline_helpers, surface3d as geom_bnd_lib_surface3d,
+};
+
+
+pub use occt_topology::{
+    abs, brep_builder_update_vertex, brep_lprop, brep_point_representation, brep_tool,
+    brep_bnd_lib, brep_tool_curve_on_surface, brep_tools, brep_tools_modifier, brep_tools_uv,
+    brep_tools_wire_explorer, brep_uv_bounds, brep_surface, shape_empty_copied, tshape_continuity,
+    brep_tools_substitution, builder, debug_flags, iterator, shape, tgeometry, tools, topo_tools,
+    topexp, transform, tshape, validate,
+};
 
 pub use abs::{ShapeType, Orientation};
 pub use tshape::{TShape, VertexShape, EdgeShape, WireShape, FaceShape, ShellShape, SolidShape, CompoundShape};
 pub use shape::{TopoShape, Vertex, Edge, Wire, Face, Shell, Solid, Compound};
 pub use builder::TopoBuilder;
 pub use iterator::{ShapeIterator, cumulated_children};
-pub mod model;
-pub mod topexp;
-pub mod brep_builder_update_vertex;
-pub mod brep_point_representation;
-pub mod brep_tool;
-pub mod brep_tools;
-pub mod brep_tools_modifier;
-pub mod brep_tools_substitution;
-pub mod brep_tools_uv;
-pub mod brep_tools_wire_explorer;
+
+pub mod mesh;
+pub mod primitives;
+pub mod chfi2d;
+pub mod chfi_ds;
+pub mod chfi3d;
+pub mod chfi_k_part;
+pub mod local_analysis;
+
+pub mod brep_tools_write;
 pub mod brep_check;
 pub mod brep_adaptor_curve2d;
 pub mod brep_top_adaptor_hvertex;
@@ -57,8 +70,6 @@ pub mod edge_split;
 pub mod shell_check;
 pub mod solid_union;
 pub mod mesh_to_brep;
-pub mod brep_exchange;
-pub mod brep_scene;
 pub mod brep_extrema;
 pub mod brep_extrema_pf;
 pub mod brep_extrema_solution_elem;
@@ -79,8 +90,6 @@ pub mod shape_analysis_edge;
 pub mod brep_gprop;
 pub mod sweep;
 pub mod brep_sweep;
-pub mod brep_surface;
-pub mod topo_tools;
 pub mod boolean_ops;
 pub mod brep_measure;
 // Phase 4 modules.
@@ -89,42 +98,6 @@ pub mod brep_fillet_api;
 pub mod fillet_surf;
 pub mod fillet;
 pub mod loft;
-pub mod step;
-pub mod hlr;
-pub mod contap;
-pub mod hlr_algo;
-pub mod hlrbrep;
-pub mod hlrbrep_algo;
-pub mod hlrbrep_c_inter;
-pub mod hlrbrep_curve;
-pub mod hlrbrep_curve_2d;
-pub mod hlrbrep_curve_tool;
-pub mod hlrbrep_data;
-pub mod hlrbrep_area_limit;
-pub mod hlrbrep_edge_builder;
-pub mod hlrbrep_edge_data;
-pub mod hlrbrep_edge_i_list;
-pub mod hlrbrep_edge_face_tool;
-pub mod hlrbrep_edge_interference_tool;
-pub mod hlrbrep_face_data;
-pub mod hlrbrep_face_iterator;
-pub mod hlrbrep_hider;
-pub mod hlrbrep_hlr_to_shape;
-pub mod hlrbrep_inter_csurf;
-pub mod hlrbrep_internal_algo;
-pub mod hlrbrep_intersector;
-pub mod hlrbrep_line_tool;
-pub mod hlrbrep_poly_algo;
-pub mod hlrbrep_poly_hlr_to_shape;
-pub mod hlrbrep_shape_bounds;
-pub mod hlrbrep_shape_to_hlr;
-pub mod hlrbrep_sl_props;
-pub mod hlrbrep_surface;
-pub mod hlrbrep_surface_tool;
-pub mod hlrbrep_type_of_resulting_edge;
-pub mod hlrbrep_vertex_list;
-pub mod hlrtopobrep;
-pub mod vrml;
 pub mod sweep_revolve;
 pub mod shape_ops;
 pub mod shape_naming;
@@ -132,12 +105,6 @@ pub mod brep_pipe;
 pub mod brep_faces;
 pub mod brep_sketch;
 pub mod brep_compare;
-pub mod brep_assembly;
-pub mod xcaf;
-pub mod xcaf_doc_vis_material;
-pub mod xcaf_prs;
-pub mod xcaf_prs_document_explorer;
-pub mod tdata_std_named_data;
 pub mod shape_checks;
 pub mod geometry_query;
 pub mod brep_shell;
@@ -146,9 +113,6 @@ pub mod brep_projection;
 pub mod normal_projection;
 pub mod brep_pattern;
 pub mod shape_metrics;
-pub mod render_svg;
-pub mod iges;
-pub mod iges_read;
 mod bop_builder_core;
 mod bop_builder_planar_geom;
 mod bop_builder_planar_trace;
@@ -189,8 +153,6 @@ pub mod geom2d_hatch;
 pub mod intwalk;
 pub mod fillet_edge;
 pub mod brep_offset;
-pub mod bincaf;
-pub mod gltf;
 pub mod brepfeat;
 pub mod brep_feat;
 pub mod fillet_var;
@@ -198,9 +160,6 @@ pub mod fillet_curved;
 pub mod shhealing;
 pub mod shape_process;
 pub mod shape_extend;
-pub mod xmlcaf;
-pub mod image_texture;
-pub mod rwmesh;
 pub mod brep_builder_full;
 pub mod brep_lib_find_surface;
 pub mod brep_lib_make_face;
@@ -215,7 +174,6 @@ pub mod brep_lib_update_deflection;
 pub mod brep_lib_sort_faces;
 pub mod brep_lib_build_curves3d;
 pub mod brep_lib_tool_triangulated_shape;
-pub mod brep_lprop;
 pub mod brep_lib_same_range;
 pub mod brep_fill;
 pub mod brep_fill_compatible_wires;
@@ -257,8 +215,6 @@ pub mod brep_builder_api_sewing;
 pub mod mat;
 pub mod mat2d;
 pub mod brep_adaptor_comp_curve;
-pub mod viz_scene;
-pub mod draw;
 pub mod gprop_analytic;
 pub mod brep_gprop_full;
 pub mod meshing;
@@ -340,7 +296,7 @@ mod pave_ff_update;
 mod pave_ff_paves;
 mod pave_self;
 pub mod bopalgo_tools;
-mod bopalgo_tools_wires;
+pub mod bopalgo_tools_wires;
 mod bopalgo_tools_class;
 mod algo_tools3d;
 mod algo_tools_face;
@@ -353,43 +309,19 @@ mod pave_ff_make_blocks_helpers;
 mod pave_new;
 mod pave_split;
 mod bop_builder_face_perform;
-pub(crate) mod geom_bnd_lib_elclib2d;
 // The former `geom_bnd_lib_elclib2d_{d2,dn,param}` submodules were deleted:
 // they were a *second* port of the 2D `ElCLib` derivative/parameter surface
 // (`ElCLib::D1/D2/D3/DN/Parameter` for `gp_Lin2d`/`Circ2d`/`Elips2d`/`Hypr2d`/
 // `Parab2d`) that nothing called, while `occt_core::elib::clib2d` already
 // carries the faithful implementation the rest of the crate uses
 // (`clib2d.rs:126-531`). They accounted for 45 `never used` warnings.
-mod geom_bnd_lib_elclib_to3d;
-mod geom_bnd_lib_inf2d;
-mod geom_bnd_lib_line2d;
-mod geom_bnd_lib_circle2d;
-mod geom_bnd_lib_ellipse2d;
-mod geom_bnd_lib_hyperbola2d;
-mod geom_bnd_lib_parabola2d;
-mod geom_bnd_lib_other_curve2d;
-mod geom_bnd_lib_sample2d;
-mod geom_bnd_lib_bezier2d;
-mod geom_bnd_lib_bspline2d;
-mod geom_bnd_lib_offset2d;
-mod geom_bnd_lib_curve2d;
-mod geom_bnd_lib_spline_helpers;
-mod geom_bnd_lib_inf3d;
-mod geom_bnd_lib_circle3d;
-mod geom_bnd_lib_curve3d;
-mod geom_bnd_lib_analytic3d;
 mod brep_class_intersector;
 pub use brep_class_intersector::{BRepClassEdge, BRepClassIntersector};
-mod geom_bnd_lib_surface3d;
 /// `Adaptor3d_TopolTool` sampling. `sample_pnts` / `is_uniform_sampling` are
 /// consumed by the pending `IntPatch_PrmPrmIntersection::Perform(..., ClearFlag)`
 /// port (`IntPatch_PrmPrmIntersection.cxx:2488-3491`).
 #[allow(dead_code)]
 mod adaptor3d_topol_tool_sample;
-pub mod geom_abs_curve_type;
-pub mod brep_bnd_lib;
-mod bnd_lib_add2d;
-mod brep_uv_bounds;
 mod bop_box2d_tree;
 mod bvh_box2d;
 mod bvh_traverse2d;
@@ -407,7 +339,7 @@ mod pave_shrunk;
 mod pave_split_blocks;
 mod pave_ff_se;
 mod pave_update_sd;
-mod int_tools_vertex_line;
+pub mod int_tools_vertex_line;
 mod int_tools_curve_box;
 mod int_tools_segpln;
 mod pave_ff_perform;
@@ -452,7 +384,7 @@ pub mod bop_build_faces;
 pub mod bop_build_common;
 pub mod bop_build_solids;
 pub mod builder_solid;
-mod bop_occt_util;
+pub mod bop_occt_util;
 mod bop_split_seam;
 mod bop_split_to_reverse;
 mod bop_draft_face;
@@ -475,3 +407,9 @@ mod bop_fill_internal_verts;
 pub mod topopebrep;
 // Wave S2b — `TKGeomAlgo/IntPolyh` polygonal surface intersection.
 pub mod intpolyh;
+
+#[cfg(test)]
+mod topo_tools_gates;
+
+#[cfg(test)]
+mod brep_surface_gates;

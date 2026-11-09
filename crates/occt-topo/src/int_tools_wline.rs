@@ -529,7 +529,7 @@ fn is_degenerated_zone(p2d: &GpPnt2d, s: &dyn Surface, i_dir: i32) -> bool {
     !b_flag
 }
 
-pub(crate) use occt_geom::approx_same_parameter::{u_resolution, v_resolution};
+pub use occt_geom::approx_same_parameter::{u_resolution, v_resolution};
 
 /// `GeomAdaptor_Surface::UResolution` (`GeomAdaptor_Surface.cxx:1818-1895`).
 /// OCCT call site: `IntTools_WLineTool.cxx:153`

@@ -1,0 +1,6 @@
+[package]
+name = "occt-foundation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "OCCT foundation layer — TKernel: error model, handles, containers, units (no dependencies)"
