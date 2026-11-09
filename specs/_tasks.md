@@ -5747,3 +5747,21 @@ Do not grow the dual-pipeline / planar / volume-gate scaffold. Do not invent Fil
 (3) **文档同步**：`brep_offset/make_offset/mod.rs` 的移植映射表 4 处、`make_simple_offset.rs:75`、`shhealing/wire_fix/lacking.rs:530`、`brep_extrema.rs:738`、`brep_builder_full/mod.rs:94` 的源码文件名引用改为真实新路径。`specs/_tasks.md` 中 T-385/T-386/T-387/T-450 等历史回执里的旧文件名**不改写**（它们是当时批次的读数）。
 
 (4) **旁支问题（未修）**：①仓内仍有 **42 个** `.rs` 超过 800 行（最大 `brep_tool.rs` 932、`projection_cache.rs` 948、`delaun_data.rs` 944、`bop_builder2/arguments.rs` 941、`intana/line_torus.rs` 940），属后续批次；②`notched/statics.rs` 405 行内的 8 个 `pub(in crate::shhealing)` 项已无外部调用方，是否降为 `pub(super)` 需另开任务判定；③`graphify-out/` 需 `graphify update .` 刷新（本批 4 个目录、21 个新文件）。
+
+## T-511 `BRepSweep_Revol::FirstShape` 订正 + `brepfeat` 回转特征接 `MakeRevol`（2026-11-10）
+
+| 任务卡 | 内容 | 状态 |
+|---|---|---|
+| T-511 A | `brep_sweep::Revol::first_shape_of` / `last_shape_of`（`brep_sweep/revol.rs:311-341`）原实现只过 `HasFirstVertex()` 门禁就答 `shape_of(gen)`，即 `Shape(gen)`（整条扫掠壁）；OCCT 是 `BRepSweep_NumLinearRegularSweep::FirstShape(aGenS)`（`cxx:503-513`）/ `LastShape(aGenS)`（`cxx:522-533`）＝ `HasFirstVertex()` + `HasShape(gen, myDirShapeTool.FirstVertex())` + `Shape(gen, thatVertex)`。改为按 `BRepSweep_Prism`（`brep_sweep/prism.rs:142-155`）同形的 `directed_shape(gen, first)` 共享体。 | 已完成 |
+| T-511 B | `brepfeat::groove` / `neck`（`brepfeat/features.rs`）从「手接 `brep_sweep::make_revol` + `BOPAlgo_BOP`」改为走忠实件 `BRepFeat_MakeRevol::Perform(2*M_PI)`（`brep_feat/revol`，`BRepFeat_MakeRevol.cxx:200-336`）：新 `revolve_feature`（`myPbase`＝`profile_face_on`，`LocOpe_Revol``cxx:241-242`、`MajMap``cxx:245-246`、`myGShape``cxx:248`）；删除已无调用方的 `revolve_profile_about`（P042/T-171 的判据注释移到 `profile_face_on` 头上保留）。 | 已完成 |
+| T-511 C | 偏差（`revolve_feature` 头注明）：①`Skface` 在全周支是写空槽——`Perform(Angle)` 对整圈 `mySkface.Nullify()`（`cxx:236-238`），`cxx:258-301` 遍历与 `VerifGluedFaces`（`cxx:303-307`）均跳过，无 `Add(E,F)` ⇒ `myGluedF` 空 ⇒ 走 `cxx:308-327` 纯 Boolean；本仓 `TopoShape::is_null` 恒 `false`（`shape.rs:69-73`），故该槽填 `myPbase` 本身，不另造面。②`groove`/`neck` 的 `tol` 参数不再传入 Boolean（OCCT 该支是默认 `BRepAlgoAPI_Cut|Fuse`，无 fuzzy）。③`Modify` 传 `Standard_False`（只影响 `GlobalPerform`，该支不走）。 | 已标注 |
+| T-511 D | 门禁（引用既有基线）：`cargo check --manifest-path crates/occt-topo/Cargo.toml --lib --offline` **0 error**，`brepfeat/` 与 `brep_sweep/revol.rs` **0 warning**；`occt-topo --lib` **1254 passed / 0 failed**；`export_data_obj` **15/15** 逐项等于基线（Offset 712/892、OffsetPlaneHoleEdge 48/32、Sphere 642/1244、Cone 195/301、Torus 1369/2592、Cylinder 146/140、rev 104/92、screw 600/790）；`step_obj_gates` **4 passed**；`features_healing_math_gates` **5 passed**。 | 已通过 |
+
+**T-511 备注**
+
+(1) **为什么这条 bug 直到现在才暴露**：`BRepFeat_MakeRevol`（T-505 B）落仓后**一直无调用者**，`Perform(Angle)` 的 `cxx:249-257` 断言（`FirstShape()` 只允许一个面，否则 `myStatusError = BRepFeat_InvFirstShape`）从未被执行。本轮接线第一次跑真实几何就命中：`groove`/`neck` 全数答 `StdFail_NotDone`（`base_faces.len()` = 4，正是 `Shape(gen)` 的 4 面扫掠壁）。修 A 后同一批 17 条 `brepfeat` 测试由 12 passed / 5 failed 变为 **17 passed**。
+
+(2) **`brepfeat` 其余自创件不动**：审计 `topo-rest.md` 发现 1–4（体积覆盖、`mesh_cylinder`、`revolve_profile_about` 的 lathe 网格、`resolution_for` clamp）复核已不存在；发现 5 的 `draft`（`features.rs:31-42`）**保持现状**：OCCT 无「原地改面平面」的分支，语义最近的 `LocOpe_SplitDrafts::Perform(F, W, Extr, NPl, Angle)`（`LocOpe_SplitDrafts.cxx:95-1436`）全仓（含 OCCT 自身 `src/`）**没有任何调用方**，无法取其 `Extr`/`NPl` 的既有约定，硬接即等于自造参数（门禁 2 禁止）。`rib`（`MakeLinearForm`）与 `boss_thru_all`（`MakeCylindricalHole`）的接线同属需要先定 sketch 面/滑动面参数的另开任务。
+
+(3) **S4 收口口径**：S4 余 75 行只剩 `BRepFeat_trace`，与 `draft` 的处置一并按「不移植（`OCCT_DEBUG` 诊断流 / 无同等分支）」登记，不新增死代码。
+

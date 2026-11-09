@@ -22,6 +22,7 @@ use crate::shape::{Edge, TopoShape};
 use crate::topexp::Explorer;
 use crate::topo_tools::is_same;
 
+use super::grid::SweepOps;
 use super::num_shape::NumShape;
 use super::rotation::Rotation;
 
@@ -308,22 +309,36 @@ impl Revol {
         super::grid::shape_of(&self.rotation, gen, self.dir)
     }
 
-    /// `FirstShape(gen)` (`cxx:73-76`).
+    /// `FirstShape(gen)` (`cxx:73-76`): `BRepSweep_NumLinearRegularSweep::FirstShape(aGenS)`
+    /// (`cxx:503-513`) -- the `HasFirstVertex()` gate, then `HasShape(aGenS,
+    /// myDirShapeTool.FirstVertex())` and `Shape(aGenS, thatVertex)`. Passing
+    /// the whole directing shape instead of its first vertex answered the swept
+    /// wall of the generator, not the section at the start of the sweep.
     pub fn first_shape_of(&self, gen: &TopoShape) -> Option<TopoShape> {
-        let tool = super::num_shape::NumShapeTool::new(self.dir);
-        if !tool.has_first_vertex() {
-            return None;
-        }
-        self.shape_of(gen)
+        self.directed_shape(gen, true)
     }
 
-    /// `LastShape(gen)` (`cxx:85-88`).
+    /// `LastShape(gen)` (`cxx:85-88`): `BRepSweep_NumLinearRegularSweep::LastShape(aGenS)`
+    /// (`cxx:522-533`), the mirror of `FirstShape`.
     pub fn last_shape_of(&self, gen: &TopoShape) -> Option<TopoShape> {
+        self.directed_shape(gen, false)
+    }
+
+    /// The shared body of `FirstShape(gen)` / `LastShape(gen)`
+    /// (`BRepSweep_NumLinearRegularSweep.cxx:503-533`): `HasFirstVertex()` /
+    /// `HasLastVertex()` gate, then `HasShape` + `Shape(gen, vertex)`. Same
+    /// shape of call as [`super::prism::Prism::first_shape_of`].
+    fn directed_shape(&self, gen: &TopoShape, first: bool) -> Option<TopoShape> {
         let tool = super::num_shape::NumShapeTool::new(self.dir);
-        if !tool.has_last_vertex() {
+        let (has, dir) = if first {
+            (tool.has_first_vertex(), tool.first_vertex())
+        } else {
+            (tool.has_last_vertex(), tool.last_vertex())
+        };
+        if !has || !self.rotation.has_shape(gen, dir) {
             return None;
         }
-        self.shape_of(gen)
+        super::grid::shape_of(&self.rotation, gen, dir)
     }
 
     /// `FirstShape()` (`BRepSweep_Revol.cxx:66-69`): the delegating overload

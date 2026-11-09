@@ -33,8 +33,8 @@ use super::*;
     /// note that used to sit here claimed the analytic `BRepPrimCylinder` was
     /// unusable as a *Cut target* because it mis-integrated the faceted lathe
     /// tool (`groove` removed the whole r<=1 disc: 6.911504 vs 7.816283); that
-    /// tool no longer exists (P042 deleted the lathe-mesh fixture and routed
-    /// `revolve_profile_about` through `brep_sweep::make_revol`), and the
+    /// tool no longer exists (P042 deleted the lathe-mesh fixture; T-511 routed
+    /// `groove`/`neck` through `BRepFeat_MakeRevol::Perform(2*M_PI)`), and the
     /// analytic target was re-measured at HEAD on 2026-10-16 (P044):
     /// `BRepPrimCylinder(1, 3)` (3 faces, vol 9.424777960769333 = 3*pi) Cut the
     /// analytic annular ring (4 faces, vol 3.342654583419527 = pi(1.3^2-0.6^2)*0.8)

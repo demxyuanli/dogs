@@ -42,20 +42,24 @@ pub fn draft(solid: &Solid, face_pts: &[GpPnt], angle_deg: f64, pivot: &GpPln, t
     Ok(FeatResult { shape: copy, volume })
 }
 
-/// Groove: revolve the 2D `profile` (x = radius ≥ 0, y = height along the
-/// axis) around `axis` into an annular tool and SUBTRACT it from `solid`.
-pub fn groove(solid: &Solid, profile: &[GpPnt2d], axis: &GpAx1, tol: f64) -> Result<FeatResult, String> {
+/// Groove: `BRepFeat_MakeRevol::Perform(2*M_PI)` in `Mode == 0` (cut) over the
+/// 2D `profile` (`x` = radius >= 0, `y` = height along the axis) revolved
+/// around `axis` (`BRepFeat_MakeRevol.cxx:200-336`).
+///
+/// `tol` is kept for the caller's signature only: the reference's Boolean arm
+/// is a plain `BRepAlgoAPI_Cut` with no fuzzy value (`cxx:308-327`), so the
+/// port passes none either. See [`revolve_feature`].
+pub fn groove(solid: &Solid, profile: &[GpPnt2d], axis: &GpAx1, _tol: f64) -> Result<FeatResult, String> {
     require_min_profile(profile, "groove")?;
-    let tool = revolve_profile_about(profile, axis)?;
-    boolean_feature(solid, &tool, BoolOp::Cut, tol)
+    revolve_feature(solid, profile, axis, false, "groove")
 }
 
-/// Neck: revolve the 2D `profile` around `axis` into a solid tool and FUSE it
-/// onto `solid`.
-pub fn neck(solid: &Solid, profile: &[GpPnt2d], axis: &GpAx1, tol: f64) -> Result<FeatResult, String> {
+/// Neck: `BRepFeat_MakeRevol::Perform(2*M_PI)` in `Mode == 1` (fuse) over the
+/// same profile (`BRepFeat_MakeRevol.cxx:200-336`); `tol` is unused, see
+/// [`groove`].
+pub fn neck(solid: &Solid, profile: &[GpPnt2d], axis: &GpAx1, _tol: f64) -> Result<FeatResult, String> {
     require_min_profile(profile, "neck")?;
-    let tool = revolve_profile_about(profile, axis)?;
-    boolean_feature(solid, &tool, BoolOp::Fuse, tol)
+    revolve_feature(solid, profile, axis, true, "neck")
 }
 
 /// The planar profile face of a `groove`/`neck` cross-section `profile`
@@ -352,21 +356,17 @@ pub(super) fn boolean_feature(solid: &Solid, tool: &TopoShape, op: BoolOp, tol: 
     Ok(FeatResult { shape, volume })
 }
 
-/// Revolve `profile` about `axis` into the feature's tool solid.
+/// The generating face `myPbase` of a [`revolve_feature`] call, placed on
+/// `axis`: [`profile_face`] builds it in the XZ half-plane (revolution about
+/// `+Z` through the origin), and [`align_z_to_axis`] carries that frame onto
+/// the feature axis.
 ///
-/// `BRepFeat_MakeRevol` has no tessellation step: it builds the generating face
-/// `myPbase` once and hands it to `BRepSweep_Revol::Perform(myPbase, myAxis, Angle)`
-/// (`BRepFeat_MakeRevol.cxx:235` for the `Perform(Angle)` overload, `:537` and
-/// `:707` for the `2*M_PI` forms), then combines the tool by `BOPAlgo_BOP`
-/// (`BRepFeat_Form::GlobalPerform`). This mirrors that: the cross-section
-/// [`profile_face`] is swept a full turn about `+Z` (`make_revol`),
-/// and the resulting solid is moved so its axis is `axis` (`align_z_to_axis`).
-///
-/// History (P042/T-171): the analytic solid used to be rejected here -- the
-/// `box + neck` fuse dropped the tool (4.000000, expected 4.489835) and the
-/// `cylinder - groove` cut *added* material. P039/T-169 aligned the sweep's
-/// wire/seam/pcurve conventions (`BRepPrim_OneAxis.cxx:388-439`, `:666-679`;
-/// `BRepPrim_Builder.cxx:129-132`) and P041/T-170 aligned `map_vertex_edges` to
+/// History (P042/T-171), still load-bearing for the generating face: the
+/// analytic solid used to be rejected -- the `box + neck` fuse dropped the tool
+/// (4.000000, expected 4.489835) and the `cylinder - groove` cut *added*
+/// material. P039/T-169 aligned the sweep's wire/seam/pcurve conventions
+/// (`BRepPrim_OneAxis.cxx:388-439`, `:666-679`; `BRepPrim_Builder.cxx:129-132`)
+/// and P041/T-170 aligned `map_vertex_edges` to
 /// `TopExp::MapShapesAndAncestors` occurrence counting (`TopExp.cxx:80-120`;
 /// `BOPAlgo_BuilderFace.cxx:211-225`); both were necessary but not sufficient.
 /// The remaining difference was the generating face itself: a profile whose
@@ -377,12 +377,59 @@ pub(super) fn boolean_feature(solid: &Solid, tool: &TopoShape, op: BoolOp, tol: 
 /// twice. With `profile_face` sharing the vertices, the tool of a `neck` is the
 /// 3-edge/2-face topology `BRepPrimCylinder` has (occurrences=6, unique=3) and
 /// every `brepfeat` baseline is exact (`box + neck` = 4.502654825 = 4 + pi*0.4^2).
-pub(super) fn revolve_profile_about(profile: &[GpPnt2d], axis: &GpAx1) -> Result<TopoShape, String> {
+fn profile_face_on(profile: &[GpPnt2d], axis: &GpAx1) -> Result<TopoShape, String> {
     let face = profile_face(profile)?;
-    let z = GpAx1::new(GpPnt::zero(), GpDir::new(0.0, 0.0, 1.0).map_err(|e| e.to_string())?);
-    let tool = crate::brep_sweep::make_revol(&face, &z, 2.0 * std::f64::consts::PI)?;
     let t = align_z_to_axis(axis)?;
-    crate::shape_ops::transformed_copy(&tool, &t)
+    crate::shape_ops::transformed_copy(&face, &t)
+}
+
+/// [`groove`] / [`neck`]: `BRepFeat_MakeRevol::Perform(2*M_PI)`
+/// (`BRepFeat_MakeRevol.cxx:537` / `:707` for the `2*M_PI` overload, the body
+/// of `Perform(Angle)` at `cxx:200-336`).
+///
+/// `profile_face_on` is the generating face `myPbase` (`cxx:239-243`), swept by
+/// `LocOpe_Revol` (`cxx:241-242`), recorded in `myMap` by `MajMap`
+/// (`cxx:245-246`) and stored as `myGShape` (`cxx:248`).
+///
+/// `Skface` is a write-only slot on this path, so it is filled with `myPbase`
+/// rather than a fabricated face: `Perform(Angle)` nullifies `mySkface` for a
+/// complete turn (`cxx:236-238`), which skips both the `cxx:258-301` traversal
+/// and `VerifGluedFaces` (`cxx:303-307`); with no `Add(E, F)` call `myGluedF`
+/// stays empty, so the answer is the plain `BRepAlgoAPI_Fuse|Cut` of
+/// `cxx:308-327`. (`TopoDS_Face()` would be the reference's value; this tree's
+/// `TopoShape::is_null` is constantly `false` — `shape.rs:69-73` — so an
+/// `Option` would be the equivalent and the class signature takes `&Face`.)
+///
+/// `Modify` (`cxx:109-117`) only reaches `GlobalPerform`, which this path does
+/// not run, so the reference's `Standard_False` default is passed.
+fn revolve_feature(
+    solid: &Solid,
+    profile: &[GpPnt2d],
+    axis: &GpAx1,
+    fuse: bool,
+    feature: &str,
+) -> Result<FeatResult, String> {
+    let pbase = profile_face_on(profile, axis).map_err(|e| format!("{feature}: {e}"))?;
+    let skface = crate::shape::Face::wrap(pbase.clone())
+        .ok_or_else(|| format!("{feature}: the generating face is not a face"))?;
+    let mut feat = crate::brep_feat::MakeRevol::with_shapes(
+        &solid.0,
+        &pbase,
+        &skface,
+        axis,
+        if fuse { 1 } else { 0 },
+        false,
+    );
+    feat.perform_angle(2.0 * std::f64::consts::PI)
+        .map_err(|e| format!("{feature}: {e}"))?;
+    let shape = feat
+        .form
+        .shape()
+        .cloned()
+        .ok_or_else(|| format!("{feature}: NotDone (no myShape)"))?;
+    // `BRepGProp::VolumeProperties` over the feature's own faces.
+    let volume = solid_volume(&shape);
+    Ok(FeatResult { shape, volume })
 }
 
 /// Analytic cylinder of `radius` × `height` (axis +Z) translated so its base

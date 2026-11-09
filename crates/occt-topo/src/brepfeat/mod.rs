@@ -27,9 +27,9 @@
 //!
 //! `BRepFeat_*` takes the tool `TopoDS_Shape` as given and hands it to
 //! `BOPAlgo_BOP`. The through-boss/neck cylinder tool is the analytic
-//! `BRepPrimAPI_MakeCylinder` (`translated_cylinder`); the revolved tool is the
-//! analytic `BRepSweep_Revol` sweep of the cross-section face
-//! ([`revolve_profile_about`] / [`profile_face`]).
+//! `BRepPrimAPI_MakeCylinder` (`translated_cylinder`); the revolved tool is
+//! `BRepFeat_MakeRevol::Perform(2*M_PI)` over the cross-section face
+//! ([`revolve_feature`] / [`profile_face`]).
 //! Audit A12 / T-125.
 //!
 //! # Booleans
