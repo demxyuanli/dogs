@@ -19,7 +19,7 @@ use occt_math::MathFunctionSetRoot;
 /// Returns `None` for a surface outside the five elementary types. OCCT never
 /// selects this arm for such a surface (`Adaptor3d_Surface::GetType` routes it
 /// to the polygon/polyhedron path), so the caller must not invent parameters.
-pub(super) fn surface_params(surface: &dyn Surface, p: &GpPnt) -> Option<(f64, f64)> {
+pub fn surface_params(surface: &dyn Surface, p: &GpPnt) -> Option<(f64, f64)> {
     if let Some(pln) = surface.gp_pln() {
         return Some(slib::plane_parameters(&pln.pos, p));
     }

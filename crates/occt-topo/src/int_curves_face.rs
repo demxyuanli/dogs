@@ -16,7 +16,7 @@
 use occt_core::bnd::BndBox;
 use occt_core::gp::{GpLin, GpPnt, GpPnt2d};
 use occt_core::precision::{CONFUSION, PCONFUSION};
-use occt_geom::GeomLine;
+use occt_geom::{Curve, GeomLine};
 
 use crate::abs::Orientation;
 use crate::bbox_from_geometry::shape_bbox;
@@ -177,15 +177,66 @@ impl FaceIntersector {
             self.done = true;
             return;
         };
-        if res.nb_segments() > 0 {
-            self.parallel = true;
+        self.commit(&res, lo, hi);
+    }
+
+    /// `Perform(Handle(Adaptor3d_Curve), ParMin, ParMax)`
+    /// (`IntCurvesFace_Intersector.cxx:467-528`).
+    ///
+    /// With a polyhedron (non-quadric face) the search range is the adaptor's
+    /// own `FirstParameter`/`LastParameter` clipped to `[ParMin, ParMax]`
+    /// (`cxx:494-502`); without one the passed range is used as is
+    /// (`cxx:486-493`). The hits then go through the same `InternalCall`
+    /// classification as the line arm.
+    pub fn perform_curve(&mut self, curve: &dyn Curve, parmin: f64, parmax: f64) {
+        self.done = false;
+        self.parallel = false;
+        self.pnts.clear();
+        let mut parinf = parmin;
+        let mut parsup = parmax;
+        if self.polyhedron.is_some() {
+            parinf = curve.first_parameter();
+            parsup = curve.last_parameter();
+            if parinf < parmin {
+                parinf = parmin;
+            }
+            if parsup > parmax {
+                parsup = parmax;
+            }
+            if parinf > (parsup - 1e-9) {
+                self.done = true;
+                return;
+            }
         }
+        let Some(surf) = BRepTool::face_surface(&self.face) else {
+            self.done = true;
+            return;
+        };
+        let (u0, u1, v0, v1) = self.domain;
+        let Ok(res) = intcurvesurface::perform_curve_surface(
+            curve,
+            surf.as_ref(),
+            (parinf, parsup),
+            (u0, u1, v0, v1),
+        ) else {
+            self.done = true;
+            return;
+        };
         if std::env::var("ICF_TRACE").is_ok() {
             println!(
-                "ICF lo={lo:.12} hi={hi:.12} np={} nseg={}",
+                "ICF curve lo={parinf:.12} hi={parsup:.12} np={} nseg={}",
                 res.points().len(),
                 res.nb_segments()
             );
+        }
+        self.commit(&res, parinf, parsup);
+    }
+
+    /// The `InternalCall` tail shared by both `Perform` overloads
+    /// (`IntCurvesFace_Intersector.cxx:228-363`).
+    fn commit(&mut self, res: &intcurvesurface::HInterResult, lo: f64, hi: f64) {
+        if res.nb_segments() > 0 {
+            self.parallel = true;
         }
         let cl = match FClass2d::new(&self.face, self.tol) {
             Ok(c) => c,

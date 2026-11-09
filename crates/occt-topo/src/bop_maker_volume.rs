@@ -21,7 +21,7 @@
 //! - `NCollection_List::Remove(iterator)` (`cxx:324`) only deletes the first
 //!   element that matches, which is what [`Self::remove_box`] does.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use occt_core::bnd::BndBox;
 use occt_core::gp::GpPnt;
@@ -166,6 +166,26 @@ impl BopMakerVolume {
             .modified(shape)
             .map(|s| s.to_vec())
             .unwrap_or_default()
+    }
+
+    /// `BOPAlgo_BuilderShape::Images()` - `myHistory->Images()`.
+    pub fn images(&self) -> &HashMap<ShapeMapKey, Vec<TopoShape>> {
+        self.builder.history().images()
+    }
+
+    /// `BOPAlgo_BuilderShape::Origins()` - `myHistory->Origins()`.
+    pub fn origins(&self) -> &HashMap<ShapeMapKey, Vec<TopoShape>> {
+        self.builder.origins()
+    }
+
+    /// `BOPAlgo_BuilderShape::HasDeleted()` - `myHistory->HasDeleted()`.
+    pub fn has_deleted(&self) -> bool {
+        self.builder.history().has_any_deleted()
+    }
+
+    /// `BOPAlgo_BuilderShape::IsDeleted(theS)` - `myHistory->IsDeleted`.
+    pub fn is_deleted(&self, shape: &TopoShape) -> bool {
+        self.builder.history().is_deleted(shape)
     }
 
     /// The data structure of the last run (through the filler).

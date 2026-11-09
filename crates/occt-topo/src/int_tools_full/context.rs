@@ -374,35 +374,65 @@ impl IntToolsContext {
     }
 
     /// Classify the vertex `vertex` against the face `face`
-    /// (`IntTools_Context::ComputeVF`).
+    /// (`IntTools_Context::ComputeVF`, `IntTools_Context.cxx:545-592`).
     ///
     /// Returns `0` when the vertex projects onto the surface within
     /// `vertex tol + face tol + max(tol, Confusion)` and the projection lies
     /// strictly inside the face; `-1` projection failed, `-2` distance too
     /// large, `-3` projection is out of or on the face boundary.
     pub fn compute_vf(&mut self, vertex: &Vertex, face: &Face, tol: f64) -> i32 {
+        self.compute_vf_uv(vertex, face, tol).0
+    }
+
+    /// `IntTools_Context::ComputeVF(theVertex, theFace, theU, theV, theTol,
+    /// theFuzz)` (`IntTools_Context.cxx:545-592`) with its `theU` / `theV` /
+    /// `theTol` outputs: the status, the projection parameters and
+    /// `theTol = aDist + aTolF` (`cxx:574`).
+    pub fn compute_vf_uv(
+        &mut self,
+        vertex: &Vertex,
+        face: &Face,
+        tol: f64,
+    ) -> (i32, f64, f64, f64) {
         let p = BRepTool::vertex_point(vertex);
+        // `cxx:561-564`: the point is not projectable on the surface.
         let Some(surf) = BRepTool::face_surface(face) else {
-            return -1;
+            return (-1, 0.0, 0.0, 0.0);
         };
+        // `cxx:558-559`: `ProjPS(theFace).Perform(aP)`.
         let Ok((u, v)) = self.project_point_on_face(face, &p) else {
-            return -1;
+            return (-1, 0.0, 0.0, 0.0);
         };
+        // `cxx:568-575`: `aDist`, the tolerance sum and the outputs.
         let dist = surf.d0(u, v).distance(&p);
-        let tol_sum = BRepTool::vertex_tolerance(vertex)
-            + BRepTool::face_tolerance(face)
-            + tol.max(CONFUSION);
+        let tol_face = BRepTool::face_tolerance(face);
+        let tol_sum =
+            BRepTool::vertex_tolerance(vertex) + tol_face + tol.max(CONFUSION);
+        let tol_out = dist + tol_face;
+        // `cxx:577-581`.
         if dist > tol_sum {
-            return -2;
+            return (-2, u, v, tol_out);
         }
+        // `cxx:583-587`: `IsPointInFace` answers `state != OUT && state != ON`.
         let state = match self.state_point_face(face, (u, v), tol) {
             Ok(s) => s,
-            Err(_) => return -1,
+            Err(_) => return (-1, u, v, tol_out),
         };
         if state != FaceState::In {
-            return -3;
+            return (-3, u, v, tol_out);
         }
-        0
+        (0, u, v, tol_out)
+    }
+
+    /// `IntTools_Context::IsPointInOnFace(const TopoDS_Face&, const gp_Pnt2d&)`
+    /// (`IntTools_Context.cxx:590-608`): `StatePointFace(...) != TopAbs_Out`,
+    /// i.e. `IN` or `ON` both count. The classifier is the one `FClass2d`
+    /// builds, with `Precision::Confusion()` as its tolerance.
+    pub fn is_point_in_on_face_2d(&mut self, face: &Face, uv: (f64, f64)) -> bool {
+        match self.state_point_face(face, uv, CONFUSION) {
+            Ok(s) => s != FaceState::Out,
+            Err(_) => false,
+        }
     }
 
     /// Whether the vertex `vertex` lies on the curve `curve` within tolerance

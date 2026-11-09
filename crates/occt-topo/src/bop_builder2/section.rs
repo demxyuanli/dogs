@@ -211,7 +211,10 @@ impl BopBuilder {
     /// `BOPAlgo_Builder::Prepare` (`BOPAlgo_Builder.cxx:155-163`): `myShape`
     /// restarts as an empty compound that the following `BuildResult` calls
     /// append into.
-    pub(super) fn prepare(&mut self) {
+    ///
+    /// `protected` in OCCT; public here for the subclasses that re-run the
+    /// building stages (`BRepFeat_Builder::Prepare`, `BRepFeat_Builder.cxx:145`).
+    pub fn prepare(&mut self) {
         self.result_shape = TopoBuilder::new().make_shape(ShapeType::Compound);
     }
 
@@ -219,7 +222,10 @@ impl BopBuilder {
     /// appends the images of every argument of `t` — or the argument itself when
     /// it has no image — to `myShape`. The fence is local to the call, so the
     /// two calls of `PerformInternal1` do not share it.
-    pub(super) fn build_result_of_type(&mut self, t: ShapeType) -> Result<(), String> {
+    ///
+    /// `protected` in OCCT; public here because `BRepFeat_Builder::PerformResult`
+    /// calls it per type (`BRepFeat_Builder.cxx:249` and `:262`).
+    pub fn build_result_of_type(&mut self, t: ShapeType) -> Result<(), String> {
         let b = TopoBuilder::new();
         let args = self.arguments.clone();
         let mut fence: Vec<ShapeMapKey> = Vec::new();

@@ -28,9 +28,12 @@
 //!   `BRepFill_TrimShellCorner::MakeFacesNonSec` (`BRepFill_TrimShellCorner.cxx:528`,
 //!   `:542`) to close the corner between two edges.
 //!
-//! UNPORTED: the `Init(C, P1, P2, p1, p2)` overload (`cxx:575-595`) and the 2D
-//! vertex-taking pair (`cxx:821-843` `Init(C2d, S, V1, V2)` with its
-//! `Project(C2d, S, V, p)` at `cxx:115-176`, `cxx:845-876`
+//! * `BRepLib_MakeEdge(const gp_Pnt& P1, const gp_Pnt& P2)` (`cxx:202-215`) and
+//!   the `Init(C, P1, P2, p1, p2)` overload it calls (`cxx:575-594`) ->
+//!   [`init_points`] / [`init_curve_points_params`].
+//!
+//! UNPORTED: the 2D vertex-taking pair (`cxx:821-843` `Init(C2d, S, V1, V2)`
+//! with its `Project(C2d, S, V, p)` at `cxx:115-176`, `cxx:845-876`
 //! `Init(C2d, S, P1, P2)`), plus the `gp_Lin`/`gp_Circ`/... `BRepLib_MakeEdge`
 //! constructors (`cxx:217-386`). The 3D `Init(C, P1, P2)` (`cxx:522-541`) is
 //! [`init_curve_points`].
@@ -363,6 +366,44 @@ pub fn init_curve_points(
         b.make_vertex(*p2, preci)
     };
     init_3d_projecting(curve, Some(&v1), Some(&v2))
+}
+
+/// `BRepLib_MakeEdge::Init(C, P1, P2, p1, p2)` (`cxx:575-594`): the same
+/// vertices as [`init_curve_points`], but the parameters are given instead of
+/// projected, so the constructor cannot fail on `BRepLib_PointProjectionFailed`.
+pub fn init_curve_points_params(
+    curve: &Arc<dyn Curve>,
+    p1: &GpPnt,
+    p2: &GpPnt,
+    first: f64,
+    last: f64,
+) -> Option<EdgeBuild> {
+    // `double Tol = BRepLib::Precision();` (`cxx:581`).
+    let b = TopoBuilder::new();
+    let preci = CONFUSION;
+    let v1 = b.make_vertex(*p1, preci);
+    // `if (P1.Distance(P2) < Tol) V2 = V1;` (`cxx:585-589`).
+    let v2 = if p1.distance(p2) < preci {
+        v1.clone()
+    } else {
+        b.make_vertex(*p2, preci)
+    };
+    init_3d_vertices(curve, Some(&v1), Some(&v2), first, last)
+}
+
+/// `BRepLib_MakeEdge(const gp_Pnt& P1, const gp_Pnt& P2)` (`cxx:202-215`).
+///
+/// Answers the line and its `Init` state; `None` is
+/// `BRepLib_LineThroughIdenticPoints` (`cxx:205-209`) and a null direction.
+pub fn init_points(p1: &GpPnt, p2: &GpPnt) -> Option<(Arc<dyn Curve>, EdgeBuild)> {
+    let l = p1.distance(p2);
+    if l <= REAL_SMALL {
+        return None;
+    }
+    let dir = GpDir::from_vec(&GpVec::from_pnts(p1, p2)).ok()?;
+    let line: Arc<dyn Curve> = Arc::new(GeomLine::new(GpLin::from_pnt_dir(*p1, dir)));
+    let build = init_curve_points_params(&line, p1, p2, 0.0, l)?;
+    Some((line, build))
 }
 
 /// `BRepLib_MakeEdge::Init(C2d, S, V1=null, V2=null, p1, p2)` (`cxx:905-1094`).

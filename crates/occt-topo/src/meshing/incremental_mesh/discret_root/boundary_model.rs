@@ -153,6 +153,11 @@ impl IncrementalMesh {
                     .face_mut(p.index)
                     .map_err(|e| format!("IncrementalMesh::triangulate_model_faces: {e}"))?
                     .unset_status(MeshStatus::OUTDATED);
+                // `BRepMesh_BaseMeshAlgo::commitSurfaceTriangulation`
+                // (`BRepMesh_BaseMeshAlgo.cxx:229-241`): the triangulation of
+                // each successfully meshed face is installed on the face right
+                // after `generateMesh`, before the post-processor runs.
+                Self::commit_surface_triangulation(model, &tri)?;
                 out.push(tri);
             } else {
                 model

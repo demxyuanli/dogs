@@ -47,6 +47,7 @@ use crate::topexp::Explorer;
 
 /// `class BRepTopAdaptor_TopolTool : public Adaptor3d_TopolTool`
 /// (`hxx:36-137`).
+#[derive(Clone)]
 pub struct TopolTool {
     /// `myS` (`Adaptor3d_TopolTool`): the surface the arcs belong to.
     surface: Option<Arc<dyn Surface>>,

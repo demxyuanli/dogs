@@ -119,6 +119,13 @@ pub fn treat_empty_shape(
             }
             valid_obj
         }
+        BoolOp2::Cut21 => {
+            // `:292-302`: the tools must be split before adding.
+            if valid_tool.len() > 1 {
+                return None;
+            }
+            valid_tool
+        }
         // `:305-307`: a Common with an empty group is always empty.
         BoolOp2::Common => Vec::new(),
     })
@@ -196,6 +203,10 @@ pub fn check_data(objects: &[TopoShape], tools: &[TopoShape], op: BoolOp2) -> Re
             BoolOp2::Fuse => omax != tmax,
             BoolOp2::Cut => omax > tmin,
             BoolOp2::Common => false,
+            // `CUT21`: the MINIMAL dimension of the arguments must be greater
+            // than or equal to the MAXIMAL dimension of the tools
+            // (`BOPAlgo_BOP.cxx:196`).
+            BoolOp2::Cut21 => omin < tmax,
         };
         if bad {
             return Err("BOPAlgo_AlertBOPNotAllowed".into());
@@ -295,25 +306,23 @@ pub fn build_rc(b: &BopBuilder, op: BoolOp2, dim0: i32, dim1: i32) -> TopoShape 
 
     let obj_src = collect_building(b.objects(), dim0);
     let tool_src = collect_building(b.tools(), dim1);
-    let (obj_im, _obj_sets) = map_splits(b, &obj_src);
+    let (_obj_im, obj_sets) = map_splits(b, &obj_src);
     let (_tool_im, tool_sets) = map_splits(b, &tool_src);
 
-    let dim_min = dim0.min(dim1);
+    // `BOPAlgo_BOP.cxx:712-720`: `bCut21` swaps which group is iterated
+    // (`aMIt`) and which is checked (`aMCheck`); everything else is shared.
+    let cut21 = op == BoolOp2::Cut21;
     let common = op == BoolOp2::Common;
-    let it_keys: Vec<ShapeMapKey> = obj_im.iter().cloned().collect();
-    let it_shapes: Vec<TopoShape> = obj_src
-        .iter()
-        .flat_map(|s| splits_of(b, s))
-        .collect();
+    let (it_src, check_src) = if cut21 { (&tool_src, &obj_src) } else { (&obj_src, &tool_src) };
+    let check_sets = if cut21 { &obj_sets } else { &tool_sets };
+
+    let dim_min = dim0.min(dim1);
+    let it_shapes: Vec<TopoShape> = it_src.iter().flat_map(|s| splits_of(b, s)).collect();
     let check_keys = expand_lower(
-        &tool_src.iter().flat_map(|s| splits_of(b, s)).collect::<Vec<_>>(),
+        &check_src.iter().flat_map(|s| splits_of(b, s)).collect::<Vec<_>>(),
         dim_min,
     );
-    let it_exp = if common {
-        expand_lower(&it_shapes, dim_min)
-    } else {
-        it_keys.into_iter().collect()
-    };
+    let it_exp = if common { expand_lower(&it_shapes, dim_min) } else { HashSet::new() };
 
     let mut kept: Vec<TopoShape> = Vec::new();
     let mut fence: HashSet<ShapeMapKey> = HashSet::new();
@@ -325,7 +334,7 @@ pub fn build_rc(b: &BopBuilder, op: BoolOp2, dim0: i32, dim1: i32) -> TopoShape 
         let mut contains = check_keys.contains(&k);
         if !contains && s.shape_type() == ShapeType::Solid {
             let st = BopToolsSet::from_shape(s, ShapeType::Face);
-            contains = tool_sets.contains_key(&st);
+            contains = check_sets.contains_key(&st);
         }
         let take = if common { contains } else { !contains };
         if take && fence.insert(k) {
@@ -667,14 +676,11 @@ fn check_args_for_open_solid(b: &BopBuilder) -> bool {
 /// `BOPAlgo_BOP::BuildShape` — the only Fuse/Cut/Common filter after GF
 /// FillImages + BuildResult (`BOP.cxx:871`).
 pub fn build_shape(b: &mut BopBuilder) -> Result<(), String> {
-    let op = match (b.obj_state(), b.tools_state()) {
-        (FaceState::Out, FaceState::Out) => BoolOp2::Fuse,
-        (FaceState::Out, FaceState::In) => BoolOp2::Cut,
-        (FaceState::In, FaceState::In) => BoolOp2::Common,
-        _ => BoolOp2::Cut,
-    };
+    // `BOPAlgo_BOP::BuildRC` dispatches on `myOperation`; the port carries it as
+    // the object/tool IN/OUT states (`BOPAlgo_Builder.hxx:219-246`).
+    let op = BoolOp2::from_states(b.obj_state(), b.tools_state()).unwrap_or(BoolOp2::Cut);
     let (dim0, dim1) = check_data(b.objects(), b.tools(), op)?;
-    let open = dim0 == 3 && dim1 == 3 && check_args_for_open_solid(b);
+    let open = dim0 == 3 && dim1 == 3 && b.check_args_for_open_solid() && check_args_for_open_solid(b);
     if open {
         if crate::bop_build_bop::build_bop(b).is_ok() {
             return Ok(());

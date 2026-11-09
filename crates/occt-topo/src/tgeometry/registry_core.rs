@@ -29,7 +29,7 @@ impl GeometryRegistry {
         // T-25 batch 3: read off the vertex's own `TShape`; the side table is
         // only a fallback for shapes registered before this batch.
         // T-25 end phase: the vertex geometry comes off its own `TShape`.
-        let c = s.tshape.read().unwrap().vertex_core().copied()?;
+        let c = s.tshape.read().unwrap().vertex_core().cloned()?;
         Some(VertexGeom { point: c.point, tolerance: c.tolerance })
     }
 

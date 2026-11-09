@@ -49,8 +49,7 @@ use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::shape::{Edge, Face, TopoShape, Vertex};
 use crate::tgeometry::{FaceGeom, GeometryRegistry};
-use crate::topo_tools::{explorer_shapes, is_same};
-use crate::topopebrep::tool::geom_tool::GeomTool;
+use crate::topo_tools::{children_keep_orientation, explorer_shapes, is_same};use crate::topopebrep::tool::geom_tool::GeomTool;
 use crate::topopebrep::tool::out_curve_type::OutCurveType;
 use crate::topopebrep::tool::shape_tool::adjust_on_periodic;
 
@@ -369,10 +368,16 @@ impl BuildTool {
 
     /// `PCurve(F, E, PC)` (`cxx:1188-1239`).
     ///
-    /// UNPORTED: the INTERNAL-vertex reparametrisation (`cxx:1223-1238`) calls
-    /// `BRep_Builder::UpdateVertex(V, Par, E, F, Tol)`, which writes a
-    /// `BRep_PointOnSurface` representation of the vertex; the port's
-    /// `VertexGeom` carries a single point and no per-face representations.
+    /// The trailing INTERNAL-vertex reparametrisation (`cxx:1222-1237`) walks
+    /// the edge's vertices, keeps the `TopAbs_INTERNAL` ones, reads
+    /// `BRep_Tool::Parameter(vi, EE)` and calls
+    /// `BRep_Builder::UpdateVertex(vi, newpar, EE, FF, tolvi)`
+    /// ([`crate::brep_builder_update_vertex::update_vertex_on_edge_on_surface`]).
+    /// `TopOpeBRepTool_ShapeTool::Tolerance(V)` (`TOPOLOGY.cxx:377-383`) is
+    /// `BRep_Tool::Tolerance(V)` when the vertex is a `TopoDS_Vertex`.
+    ///
+    /// The `UPDATEVERTEX_1` / `UPDATEVERTEX_2` path counters and the
+    /// `OCCT_DEBUG` print are unported (`cxx:1226-1234`).
     pub fn p_curve(&self, f: &TopoShape, e: &TopoShape, pc: &Arc<dyn Curve2d>) {
         let ff = Face::wrap(f.clone()).expect("TopOpeBRepDS_BuildTool::PCurve: not a face");
         let ee = Edge::wrap(e.clone()).expect("TopOpeBRepDS_BuildTool::PCurve: not an edge");
@@ -397,6 +402,25 @@ impl BuildTool {
         } else {
             // cxx:1217-1220
             self.set_the_pcurve(&ee, &ff, ee.0.orientation(), &pct);
+        }
+
+        // cxx:1222-1237: reparametrise every INTERNAL vertex on the new pcurve.
+        let Some(face_surface) = BRepTool::face_surface(&ff) else {
+            return;
+        };
+        for vi in children_keep_orientation(e) {
+            if vi.shape_type() != ShapeType::Vertex || vi.orientation() != Orientation::Internal {
+                continue;
+            }
+            let tolvi = GeometryRegistry::global().vertex_tolerance(&vi);
+            let newpar = BRepTool::parameter_of_vertex(e, &vi);
+            let _ = crate::brep_builder_update_vertex::update_vertex_on_edge_on_surface(
+                &vi,
+                newpar,
+                e,
+                &face_surface,
+                tolvi,
+            );
         }
     }
 
@@ -438,43 +462,11 @@ impl BuildTool {
     ///
     /// `Tol` is 0 at the only call site (`BuildTool.cxx:992`), and
     /// `BRep_TVertex::UpdateTolerance(T)` (`BRep_TVertex.cxx:29-35`) only raises
-    /// the tolerance, so the tolerance call has no effect and is left out.
+    /// the tolerance, so the tolerance call has no effect; the shared port
+    /// ([`crate::brep_builder_update_vertex::update_vertex_on_edge`]) runs it
+    /// anyway, because a raise to 0 is a no-op.
     fn update_vertex(&self, v: &Vertex, par: f64, e: &Edge) {
-        // cxx:1242-1266: find the vertex in the edge.
-        let mut ori = Orientation::Internal;
-        let mut it_v = explorer_shapes(&e.0, ShapeType::Vertex).into_iter();
-        let first = it_v.next();
-        // cxx:1248-1252: an edge without vertices but degenerated uses the
-        // orientation of the vertex itself.
-        if first.is_none() && BRepTool::is_degenerated(e) {
-            ori = v.0.orientation();
-        }
-        if let Some(first) = first {
-            let mut cur = Some(first);
-            while let Some(vcur) = cur {
-                if is_same(&vcur, &v.0) {
-                    ori = vcur.orientation();
-                    if ori == v.0.orientation() {
-                        break;
-                    }
-                }
-                cur = it_v.next();
-            }
-        }
-
-        // cxx:1268-1305: one `BRep_CurveRepresentation` per iteration; every
-        // representation receives the parameter, hence the all-representation
-        // range write.
-        let (first_par, last_par) = BRepTool::edge_parameters(e);
-        if ori == Orientation::Forward {
-            GeometryRegistry::global().set_ranges_all(&e.0, par, last_par);
-        } else if ori == Orientation::Reversed {
-            GeometryRegistry::global().set_ranges_all(&e.0, first_par, par);
-        } else if let Some(c) = BRepTool::edge_curve(e) {
-            // `UpdatePoints(lpr, Par, GC3d, LGCloc)`: the vertex point becomes
-            // the curve value at `Par`.
-            v.set_point(c.d0(par));
-        }
+        let _ = crate::brep_builder_update_vertex::update_vertex_on_edge(&v.0, par, &e.0, 0.0);
     }
 }
 

@@ -299,6 +299,11 @@ impl WLine {
         self.points.push(p);
     }
 
+    /// `IntSurf_LineOn2S::Clear()` (`LineOn2S.lxx:49-52`): `mySeq.Clear()`.
+    pub fn clear(&mut self) {
+        self.points.clear();
+    }
+
     /// 1-based `IntSurf_LineOn2S::InsertBefore`.
     pub fn insert_before(&mut self, i1: i32, p: PntOn2S) {
         let i = (i1 as usize).saturating_sub(1).min(self.points.len());

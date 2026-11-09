@@ -20,11 +20,15 @@
 //! raise it on a failed `Add`) and a `BRepLib_MakeEdge` that is not done (OCCT
 //! adds the resulting null edge to the wire) are the `Err` here, because a null
 //! edge cannot be stored.
+//!
+//! `BRepAlgo_AsDes` (`BRepAlgo_AsDes.cxx`, class `AsDes`) lives in [`as_des`].
 
+mod as_des;
 mod concatenate_wire;
 mod concatenate_wire_c0;
 mod convert_wire;
 
+pub use as_des::AsDes;
 pub use concatenate_wire::*;
 pub use concatenate_wire_c0::*;
 pub use convert_wire::*;

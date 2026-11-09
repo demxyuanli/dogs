@@ -319,6 +319,70 @@ impl AlgoTools {
         out
     }
 
+    /// `BOPTools_AlgoTools::MakeConnexityBlocks(theS, theConnectionType,
+    /// theElementType, theLCB)` (`BOPTools_AlgoTools.cxx:158-183`): walks the
+    /// `theElementType` sub-shapes of `shape` through
+    /// `MapShapesAndAncestors(shape, theConnectionType, theElementType)` and
+    /// answers one **compound** per connected block, in the explorer order of
+    /// the block's first element (`cxx:118-152`).
+    ///
+    /// This is the 4-argument overload - the one whose result is a list of
+    /// compounds. The already-ported [`AlgoTools::make_connexity_blocks`] takes
+    /// the element list directly and shares the edge as the connection key, so
+    /// it cannot express the `(VERTEX, EDGE)` pair
+    /// `BRepOffset_BuildOffsetFaces::MakeInvertedEdgesInvalid` needs.
+    pub fn make_connexity_blocks_in(
+        shape: &TopoShape,
+        connection_type: ShapeType,
+        element_type: ShapeType,
+    ) -> Vec<TopoShape> {
+        // `cxx:113`: the connection map, accumulated over every element.
+        let mut connection_map: HashMap<crate::topo_tools::ShapeMapKey, Vec<TopoShape>> =
+            HashMap::new();
+        crate::topo_tools::map_shapes_and_ancestors_into(
+            shape,
+            connection_type,
+            element_type,
+            &mut connection_map,
+        );
+
+        // `cxx:115-152`: grow one block per still-unused element.
+        let mut a_m_fence = crate::brep_offset::ShapeIndexedMap::new();
+        let mut out: Vec<TopoShape> = Vec::new();
+        for a_s in crate::topo_tools::explorer_shapes(shape, element_type) {
+            if a_m_fence.add(&a_s) != a_m_fence.extent() {
+                continue;
+            }
+            let mut a_l_block: Vec<TopoShape> = vec![a_s.clone()];
+            let mut i = 0usize;
+            while i < a_l_block.len() {
+                let a_s1 = a_l_block[i].clone();
+                i += 1;
+                for a_subs in crate::topo_tools::explorer_shapes(&a_s1, connection_type) {
+                    let Some(a_ls) =
+                        connection_map.get(&crate::topo_tools::shape_map_key(&a_subs))
+                    else {
+                        continue;
+                    };
+                    for a_s2 in a_ls.clone() {
+                        if a_m_fence.add(&a_s2) == a_m_fence.extent() {
+                            a_l_block.push(a_s2);
+                        }
+                    }
+                }
+            }
+
+            // `cxx:170-181`: one compound per block.
+            let a_bb = TopoBuilder::new();
+            let mut a_block = crate::shape::Compound::new();
+            for a_s in &a_l_block {
+                a_bb.add(&mut a_block.0, a_s);
+            }
+            out.push(a_block.0);
+        }
+        out
+    }
+
     /// Splits the keys of the `adjacency` map into connected blocks.
     ///
     /// Port of `BOPAlgo_Tools::MakeBlocks` (BOPAlgo_Tools.hxx): each key of

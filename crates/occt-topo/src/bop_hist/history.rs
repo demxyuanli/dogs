@@ -259,6 +259,22 @@ impl BopHistory {
         self.images.get_mut(&key_of(old))
     }
 
+    /// Binds `list` as the image list of `old` (`myImages.Bind` /
+    /// `myImages.ChangeFind(...).Assign(list)`).
+    pub fn set_images(&mut self, old: &TopoShape, list: Vec<TopoShape>) {
+        self.images.insert(key_of(old), list);
+    }
+
+    /// Unbinds the image list of `old` (`NCollection_DataMap::UnBind`).
+    ///
+    /// `BRepFeat_Builder` drops the images of a face that no longer produces a
+    /// region (`RebuildFaces`, `BRepFeat_Builder.cxx:553-556`) and of every
+    /// solid of the object that the retained tool parts cut away
+    /// (`FillRemoved`, `BRepFeat_Builder.cxx:170`).
+    pub fn unbind_image(&mut self, old: &TopoShape) -> bool {
+        self.images.remove(&key_of(old)).is_some()
+    }
+
     /// BuilderShape-style: true if `old` has modified shapes.
     pub fn has_modified(&self, old: &TopoShape) -> bool {
         self.modified.contains_key(&key_of(old))

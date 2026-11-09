@@ -285,17 +285,87 @@ impl fmt::Debug for FaceGeomCore {
 
 /// The geometry of a vertex (T-25 batch 3: lifted from `VertexGeom`,
 /// `tgeometry/mod.rs`).
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct VertexGeomCore {
     pub point: occt_core::gp::GpPnt,
     pub tolerance: f64,
+    /// `BRep_TVertex::myPoints` (`BRep_TVertex.hxx:96`): the vertex's point
+    /// representations, in `NCollection_List` append order. Read by
+    /// `BRep_Tool::Parameter(V, E)` (`BRep_Tool.cxx:1401-1492`),
+    /// `BRep_Tool::Parameter(V, E, S, L)` (`cxx:1615-1628`) and
+    /// `BRep_Tool::Parameters(V, F)` (`cxx:1663-1677`); written by
+    /// `BRep_Builder::UpdateVertex` for an `INTERNAL` / `EXTERNAL` vertex
+    /// (`BRep_Builder.cxx:1287-1300`) and rebuilt by
+    /// `ShapeAnalysis_TransferParametersProj::CopyNMVertex`
+    /// (`ShapeAnalysis_TransferParametersProj.cxx:734-781`).
+    pub points: Vec<crate::brep_point_representation::PointRepresentation>,
 }
 
 impl Default for VertexGeomCore {
     fn default() -> Self {
         // `BRep_TVertex::BRep_TVertex()` (`BRep_TVertex.cxx:27`): tolerance
-        // `RealEpsilon()`.
-        Self { point: occt_core::gp::GpPnt::zero(), tolerance: occt_core::precision::REAL_EPSILON }
+        // `RealEpsilon()`, empty point representation list.
+        Self {
+            point: occt_core::gp::GpPnt::zero(),
+            tolerance: occt_core::precision::REAL_EPSILON,
+            points: Vec::new(),
+        }
+    }
+}
+
+impl VertexGeomCore {
+    /// `UpdatePoints(lpr, p, C, L)` (`BRep_Builder.cxx:407-433`): rewrite the
+    /// `Parameter` of the first representation that is a point on `c`, or
+    /// append a fresh `BRep_PointOnCurve`.
+    pub fn update_point_on_curve(&mut self, p: f64, c: &Arc<dyn Curve>) {
+        use crate::brep_point_representation::PointRepresentation;
+        for pr in self.points.iter_mut() {
+            if pr.is_point_on_curve_of(c) {
+                pr.set_parameter(p);
+                return;
+            }
+        }
+        self.points.push(PointRepresentation::OnCurve { curve: Arc::clone(c), parameter: p });
+    }
+
+    /// `UpdatePoints(lpr, p, PC, S, L)` (`BRep_Builder.cxx:436-463`).
+    pub fn update_point_on_curve_on_surface(
+        &mut self,
+        p: f64,
+        pc: &Arc<dyn occt_geom2d::curve::Curve2d>,
+        s: &Arc<dyn Surface>,
+    ) {
+        use crate::brep_point_representation::PointRepresentation;
+        for pr in self.points.iter_mut() {
+            if pr.is_point_on_curve_on_surface_of(pc, s) {
+                pr.set_parameter(p);
+                return;
+            }
+        }
+        self.points.push(PointRepresentation::OnCurveOnSurface {
+            pcurve: Arc::clone(pc),
+            surface: Arc::clone(s),
+            parameter: p,
+        });
+    }
+
+    /// `UpdatePoints(lpr, p1, p2, S, L)` (`BRep_Builder.cxx:466-497`): the
+    /// first parameter is written back to the matched representation and the
+    /// second through `Parameter2`.
+    pub fn update_point_on_surface(&mut self, p1: f64, p2: f64, s: &Arc<dyn Surface>) {
+        use crate::brep_point_representation::PointRepresentation;
+        for pr in self.points.iter_mut() {
+            if pr.is_point_on_surface_of(s) {
+                pr.set_parameter(p1);
+                pr.set_parameter2(p2);
+                return;
+            }
+        }
+        self.points.push(PointRepresentation::OnSurface {
+            surface: Arc::clone(s),
+            parameter: p1,
+            parameter2: p2,
+        });
     }
 }
 

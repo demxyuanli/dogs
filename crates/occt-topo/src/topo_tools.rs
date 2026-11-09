@@ -132,11 +132,112 @@ pub fn shape_map_key(s: &TopoShape) -> ShapeMapKey {
     (GeometryRegistry::shape_key(s), s.location().key())
 }
 
+/// `NCollection_IndexedDataMap<TopoDS_Shape, NCollection_List<TopoDS_Shape>>`
+/// keyed the way `TopTools_ShapeMapHasher` keys it (orientation ignored): the
+/// result of `TopExp::MapShapesAndAncestors` (`TopExp.cxx:80-121`).
+///
+/// Every sub-shape of type `TS` is visited first; each of its `TS` sub-shapes
+/// gets the ancestor appended to its list, *once per occurrence* (a seam edge
+/// under one face appears twice). Sub-shapes of type `TS` that live under no
+/// `TA` are added afterwards with an empty ancestor list
+/// (`TopExp.cxx:109-119`). Indices here are 0-based; the reference's are
+/// 1-based.
+#[derive(Default)]
+pub struct AncestorMap {
+    items: Vec<(TopoShape, Vec<TopoShape>)>,
+    index: HashMap<ShapeMapKey, usize>,
+}
+
+impl AncestorMap {
+    /// `TopExp::MapShapesAndAncestors(S, TS, TA, M)` (`TopExp.cxx:80-121`).
+    pub fn map_shapes_and_ancestors(shape: &TopoShape, ts: ShapeType, ta: ShapeType) -> Self {
+        let mut m = Self::default();
+        // `cxx:89-107`: ancestors first, in explorer order.
+        for anc in explorer_shapes(shape, ta) {
+            for s in explorer_shapes(&anc, ts) {
+                let i = Self::intern(&mut m, &s);
+                m.items[i].1.push(anc.clone());
+            }
+        }
+        // `cxx:109-119`: `TopExp_Explorer(S, TS, TA)`.
+        for s in explorer_shapes_avoiding(shape, ts, ta) {
+            Self::intern(&mut m, &s);
+        }
+        m
+    }
+
+    /// `M.Add(key, empty)` when the key is not bound yet, answering its index.
+    fn intern(m: &mut Self, s: &TopoShape) -> usize {
+        let key = shape_map_key(s);
+        match m.index.get(&key) {
+            Some(&i) => i,
+            None => {
+                m.items.push((s.clone(), Vec::new()));
+                let i = m.items.len() - 1;
+                m.index.insert(key, i);
+                i
+            }
+        }
+    }
+
+    /// `M.Extent()`.
+    pub fn length(&self) -> usize {
+        self.items.len()
+    }
+
+    /// `M.FindKey(theIdx)`.
+    pub fn find_key(&self, idx: usize) -> &TopoShape {
+        &self.items[idx].0
+    }
+
+    /// `M(theIdx)`: the ancestor list, in insertion order.
+    pub fn ancestors(&self, idx: usize) -> &[TopoShape] {
+        &self.items[idx].1
+    }
+
+    /// `M.FindFromKey(theKey, theList)` (`false` when the key is unbound).
+    pub fn find_from_key(&self, s: &TopoShape) -> Option<&[TopoShape]> {
+        self.index.get(&shape_map_key(s)).map(|&i| &self.items[i].1[..])
+    }
+
+    /// `M.FindIndex(theKey)`: the 0-based index, or `None` for OCCT's `0`.
+    pub fn find_index(&self, s: &TopoShape) -> Option<usize> {
+        self.index.get(&shape_map_key(s)).copied()
+    }
+
+    /// `M(theIdx)`: the ancestor list as a mutable reference
+    /// (`NCollection_IndexedDataMap::operator()`, used by
+    /// `LocOpe_BuildWires::Perform` to drop consumed edges,
+    /// `LocOpe_BuildWires.cxx:206-222`).
+    pub fn change_ancestors(&mut self, idx: usize) -> &mut Vec<TopoShape> {
+        &mut self.items[idx].1
+    }
+}
+
 /// `TopoDS_Shape::IsSame` (`TopoDS_Shape.hxx:262-267`): same `TShape`, same
 /// location; the orientation is ignored. OCCT's `MyShape` comparison inside
 /// `NCollection_*Map<TopoDS_Shape, TopTools_ShapeMapHasher>` reducers.
 pub fn is_same_occurrence(a: &TopoShape, b: &TopoShape) -> bool {
     a.same_tshape(b) && a.location().is_equal(b.location())
+}
+
+/// `TopoDS_Iterator(S, false)` (`TopoDS_Iterator.cxx:38-55`): the direct
+/// children with the parent's location moved into them and their own
+/// orientations kept (`theCumOri = false`, `theCumLoc` left at its `true`
+/// default).
+pub fn children_keep_orientation(s: &TopoShape) -> Vec<TopoShape> {
+    let stored = s.tshape.read().expect("poisoned TShape lock").children.clone();
+    if s.location().is_identity() {
+        return stored;
+    }
+    let parent_loc = s.location().clone();
+    stored
+        .into_iter()
+        .map(|mut child| {
+            child.move_location(&parent_loc);
+            child
+        })
+        .collect()
 }
 
 /// `TopExp::MapShapesAndAncestors` (`TopExp.cxx:80-120`): every `TS` occurrence

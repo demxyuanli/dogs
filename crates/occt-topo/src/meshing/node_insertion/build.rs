@@ -329,7 +329,7 @@ u=[{:.17e},{:.17e}] v=[{:.17e},{:.17e}]",
     /// via `NodeInsertionMeshAlgo::initDataStructure` returning `BaseAlgo::initDataStructure()`.
     pub(super) fn init_data_structure(
         &mut self,
-        model: &MeshModel,
+        model: &mut MeshModel,
         face_index: usize,
     ) -> Result<(), String> {
         let wire_indices: Vec<usize> = model.face(face_index)?.wires().to_vec();
@@ -368,6 +368,7 @@ u=[{:.17e},{:.17e}] v=[{:.17e},{:.17e}]",
                 // (a seam edge contributes two) only churned memory.
                 let edge = model.edge(edge_index)?;
                 let pts3d = edge.discretization().points();
+                let mut pc_registrations: Vec<(usize, Vec<i32>)> = Vec::new();
                 for pc_index in edge.pcurves_for(face_index) {
                     let pc = edge.pcurve(pc_index)?;
                     let ori = Self::fix_seam_edge_orientation(&edge, pc_index, face_index)?;
@@ -394,9 +395,11 @@ u=[{:.17e},{:.17e}] v=[{:.17e},{:.17e}]",
                         );
                     }
                     let mut prev = -1i32;
+                    let mut pc_nodes: Vec<i32> = Vec::with_capacity(pts.len());
                     for (i, &uv) in pts.iter().enumerate() {
                         let p3d = pts3d.get(i).copied().unwrap_or_else(GpPnt::zero);
                         let node = self.register_node(p3d, uv, VertexState::Frontier, false);
+                        pc_nodes.push(node);
                         if prev != -1 && prev != node {
                             let links_nb = self.structure.nb_links() as i32;
                             let link_index = self.add_link_to_mesh(prev, node, ori);
@@ -406,6 +409,20 @@ u=[{:.17e},{:.17e}] v=[{:.17e},{:.17e}]",
                             }
                         }
                         prev = node;
+                    }
+                    pc_registrations.push((pc_index, pc_nodes));
+                }
+                // `BRepMesh_BaseMeshAlgo::initDataStructure`
+                // (`BRepMesh_BaseMeshAlgo.cxx:108`):
+                // `aPCurve->GetIndex(aPointIndex) = aNodeIndex`, written after
+                // the walk so the pcurve stays borrowed while its points are
+                // read. `registerNode` pre-binds frontier nodes with the identity
+                // mapping (`cxx:144-153`), so these stay valid as
+                // `Poly_Triangulation` indices.
+                for (pc_index, pc_nodes) in pc_registrations {
+                    let pcurve = model.edge_mut(edge_index)?.pcurve_mut(pc_index)?;
+                    for (i, &node) in pc_nodes.iter().enumerate() {
+                        *pcurve.index_mut(i)? = node;
                     }
                 }
             }

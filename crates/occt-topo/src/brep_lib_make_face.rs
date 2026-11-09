@@ -7,9 +7,11 @@
 use std::sync::Arc;
 
 use occt_core::elib::slib;
-use occt_core::gp::{GpDir2d, GpPnt, GpPnt2d};
+use occt_core::gp::{GpDir2d, GpPln, GpPnt, GpPnt2d};
 use occt_core::precision::Precision;
-use occt_geom::{surface_ops, Curve, GeomCircle, GeomRectangularTrimmedSurface, Surface};
+use occt_geom::{
+    surface_ops, Curve, GeomCircle, GeomPlane, GeomRectangularTrimmedSurface, Surface,
+};
 use occt_geom2d::curve::Curve2d;
 use occt_geom2d::Geom2dLine;
 
@@ -564,10 +566,21 @@ fn strip_degenerated(wire: &Wire) -> Wire {
 /// reverses the *children's* orientations, so the port rebuilds over the same
 /// surface with the wire reversed in place of copying-and-reversing.
 pub fn make_face_from_surface_and_wire(surface: Arc<dyn Surface>, wire: &Wire) -> Face {
+    make_face_from_surface_and_wire_inside(surface, wire, true)
+}
+
+/// [`make_face_from_surface_and_wire`] with the explicit `Inside` argument of
+/// the reference's `CheckInside()` guard (`cxx:267`, `cxx:333`).
+pub fn make_face_from_surface_and_wire_inside(
+    surface: Arc<dyn Surface>,
+    wire: &Wire,
+    inside: bool,
+) -> Face {
     let b = TopoBuilder::new();
     let face = b.make_face_with_tolerance(surface.clone(), &[wire.clone()], Precision::CONFUSION);
-    // `cxx:333`: `if (Inside && BRep_Tool::IsClosed(W)) CheckInside();`.
-    if !crate::brep_tool::BRepTool::is_closed(&wire.0) {
+    // `cxx:267-270` / `cxx:333`: `if (Inside && BRep_Tool::IsClosed(W))
+    // CheckInside();`.
+    if !inside || !crate::brep_tool::BRepTool::is_closed(&wire.0) {
         return face;
     }
     let classifier = crate::brep_top_adaptor_fclass2d::BrepTopAdaptorFClass2d::new(&face, 0.0);
@@ -576,4 +589,11 @@ pub fn make_face_from_surface_and_wire(surface: Arc<dyn Surface>, wire: &Wire) -
     }
     let reversed = Wire(wire.0.oriented(Orientation::Reversed));
     b.make_face_with_tolerance(surface, &[reversed], Precision::CONFUSION)
+}
+
+/// `BRepLib_MakeFace(const gp_Pln& P, const TopoDS_Wire& W, const bool Inside)`
+/// (`BRepLib_MakeFace.cxx:262-272`): the surface-fixed overload over
+/// `Geom_Plane(P)` with `Bound = false` and `TolDegen = Precision::Confusion()`.
+pub fn make_face_from_plane_and_wire(pln: &GpPln, wire: &Wire, inside: bool) -> Face {
+    make_face_from_surface_and_wire_inside(Arc::new(GeomPlane::new(pln.clone())), wire, inside)
 }

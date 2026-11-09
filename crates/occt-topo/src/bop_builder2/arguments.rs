@@ -20,6 +20,7 @@ impl BopBuilder {
             result_shape: TopoShape::new(ShapeType::Compound),
             in_parts: HashMap::new(),
             fill_history: true,
+            check_open_solid: true,
         }
     }
 
@@ -44,6 +45,23 @@ impl BopBuilder {
         let flat = flatten_location(s);
         if !self.arguments.iter().any(|a| is_same(a, &flat)) {
             self.arguments.push(flat);
+        }
+    }
+
+    /// `BOPAlgo_ToolsProvider::AddTool` (`BOPAlgo_ToolsProvider.cxx:47-53`):
+    /// appends to the tool group when the shape is not already there.
+    pub fn add_tool(&mut self, s: &TopoShape) {
+        let flat = flatten_location(s);
+        if !self.tools.iter().any(|t| is_same(t, &flat)) {
+            self.tools.push(flat);
+        }
+    }
+
+    /// `BOPAlgo_ToolsProvider::SetTools` (`BOPAlgo_ToolsProvider.cxx:57-65`).
+    pub fn set_tools(&mut self, shapes: &[TopoShape]) {
+        self.tools.clear();
+        for s in shapes {
+            self.add_tool(s);
         }
     }
 
@@ -232,6 +250,15 @@ impl BopBuilder {
         &self.in_parts
     }
 
+    /// Mutable `myInParts`.
+    ///
+    /// `BRepFeat_Builder::FillIn3DParts` (`BRepFeat_Builder.cxx:801-826`)
+    /// overrides the virtual stage only to drop the removed faces from the IN
+    /// parts before `BuildSplitSolids` consumes them.
+    pub fn in_parts_mut(&mut self) -> &mut HashMap<ShapeMapKey, Vec<TopoShape>> {
+        &mut self.in_parts
+    }
+
     /// Returns the PaveFiller of the algorithm.
     pub fn filler(&self) -> &PaveFiller {
         &self.filler
@@ -271,6 +298,45 @@ impl BopBuilder {
     pub fn perform(&mut self) -> Result<TopoShape, String> {
         let args = self.arguments.clone();
         self.perform_internal(&args, FaceState::Out, &[], FaceState::Out)
+    }
+
+    /// `BOPAlgo_BOP::Perform` (`BOPAlgo_BOP.cxx:364-409`): the intersection
+    /// phase receives `objects ∪ tools`, then `PerformInternal1` runs the
+    /// Boolean building phase with the given IN/OUT states.
+    ///
+    /// The Rust [`Self::perform`] is `BOPAlgo_Builder::Perform` (General Fuse,
+    /// no tool group); this is the `BOPAlgo_BOP` override that
+    /// `BRepFeat_Builder::Perform` inherits.
+    pub fn perform_bop(
+        &mut self,
+        objects: &[TopoShape],
+        obj_state: FaceState,
+        tools: &[TopoShape],
+        tools_state: FaceState,
+    ) -> Result<TopoShape, String> {
+        self.perform_internal(objects, obj_state, tools, tools_state)
+    }
+
+    /// Stores the operation's IN/OUT states without running anything.
+    ///
+    /// `BOPAlgo_BOP::SetOperation` keeps `myOperation`; the port carries it as
+    /// the state pair `BOPAlgo_BOP::BuildShape` / `BuildRC` read, so a subclass
+    /// that re-runs the building stages (`BRepFeat_Builder::PerformResult`,
+    /// `BRepFeat_Builder.cxx:194`) must be able to set it.
+    pub fn set_bop_states(&mut self, obj_state: FaceState, tools_state: FaceState) {
+        self.obj_state = obj_state;
+        self.tools_state = tools_state;
+    }
+
+    /// `CheckArgsForOpenSolid` (`BOPAlgo_BOP::BuildShape`, `cxx:886`): false
+    /// when the subclass suppresses the alternative `BuildBOP` path.
+    pub fn check_args_for_open_solid(&self) -> bool {
+        self.check_open_solid
+    }
+
+    /// Sets the `CheckArgsForOpenSolid` override (`BRepFeat_Builder.hxx:119-121`).
+    pub fn set_check_args_for_open_solid(&mut self, flag: bool) {
+        self.check_open_solid = flag;
     }
 
     /// `BOPAlgo_Builder::PerformWithFiller` (`BOPAlgo_Builder.cxx:198-208`):
@@ -642,7 +708,12 @@ impl BopBuilder {
     ///
     /// FillIn3DParts → BuildSplitSolids → FillInternalShapes
     /// (`BOPAlgo_Builder_3.cxx:70`). GF only; no obj/tool state.
-    pub(super) fn fill_images_solids(&mut self) -> Result<(), String> {
+    ///
+    /// Public because `BOPAlgo_Builder::FillImagesSolids` is `protected` and
+    /// subclasses call it directly: `BRepFeat_Builder::PerformResult`
+    /// (`BRepFeat_Builder.cxx:240`) runs the stage a second time on the
+    /// retained tool parts.
+    pub fn fill_images_solids(&mut self) -> Result<(), String> {
         if !crate::bop_images_solids::has_source_solids(self) {
             self.in_parts.clear();
             return Ok(());

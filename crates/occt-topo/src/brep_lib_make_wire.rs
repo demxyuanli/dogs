@@ -157,6 +157,21 @@ impl MakeWire {
         self.add_checked(e, true)
     }
 
+    /// `BRepLib_MakeWire::Add(const TopoDS_Wire& W)` (`cxx:96-106`): every edge
+    /// of `W` in `TopoDS_Iterator` order with the orientation composed in,
+    /// stopping at the first `Add` that does not end in `WireDone`.
+    pub fn add_wire(&mut self, w: &Wire) {
+        for child in crate::iterator::cumulated_children(&w.0) {
+            let Some(e) = Edge::wrap(child) else {
+                continue;
+            };
+            let _ = self.add(&e);
+            if self.error != WireError::WireDone {
+                break;
+            }
+        }
+    }
+
     /// `BRepLib_MakeWire::Add(const TopoDS_Edge&, bool IsCheckGeometryProximity)`
     /// (`cxx:123-453`).
     ///

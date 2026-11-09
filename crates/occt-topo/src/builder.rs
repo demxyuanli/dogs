@@ -113,6 +113,31 @@ impl TopoBuilder {
         e
     }
 
+    /// `BRep_Builder::UpdateEdge(E, P, L)` (`BRep_Builder.cxx:751-786`): the
+    /// first `BRep_Polygon3D` representation is replaced in place (`cxx:763-779`)
+    /// or a new one appended with `L.Predivided(E.Location())` (`cxx:781-783`);
+    /// the TShape is flagged modified either way (`cxx:775`, `:785`).
+    ///
+    /// The port stores the polygon directly on `EdgeGeom` (one slot, no
+    /// representation list), so "replace the first" and "append" both map to
+    /// setting the slot; a `None` polygon is the `P.IsNull()` arm of
+    /// `cxx:767-770`, which OCCT answers by removing the representation.
+    ///
+    /// UNPORTED: the per-representation location (`BRep_Polygon3D(P, l)`,
+    /// `cxx:782`) - the slot carries no location, and this crate's meshing
+    /// produces world-space polygons on identity-location edges;
+    /// `TopoDS_LockedShape` (`cxx:756-759`) has no counterpart either.
+    pub fn update_edge_polygon3d(
+        &self,
+        edge: &Edge,
+        polygon: Option<Arc<occt_core::poly::Polygon3D>>,
+    ) {
+        let mut ts = edge.0.tshape.write().unwrap();
+        ts.edge_core_mut().polygon3d = polygon;
+        // `cxx:775` / `cxx:785`: `TE->Modified(true)`.
+        ts.set_modified(true);
+    }
+
     /// `BRep_Builder::UpdateEdge(E, P, T, L)` (`BRep_Builder.cxx:790-832`): drop
     /// any `BRep_PolygonOnTriangulation` representation on the same
     /// triangulation (`cxx:808-821`) and append the new one (`cxx:823-828`);

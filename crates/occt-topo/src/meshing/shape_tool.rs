@@ -17,6 +17,7 @@ use std::sync::Arc;
 
 use occt_core::bnd::BndBox;
 use occt_core::gp::{GpPnt, GpPnt2d};
+use occt_core::poly::Triangulation;
 use occt_core::precision::PCONFUSION;
 use occt_core::toploc::TopLocLocation;
 use occt_geom::Curve;
@@ -25,6 +26,7 @@ use crate::abs::Orientation;
 use crate::boptools_2d::curve_on_surface_range;
 use crate::brep_surface::edge_pcurve_on_face;
 use crate::brep_tool::BRepTool;
+use crate::builder::TopoBuilder;
 use crate::shape::{Edge, Face, TopoShape, Vertex, Wire};
 use crate::topo_tools::{edge_vertices, edges_of_wire, is_same, wires_of_face};
 
@@ -125,6 +127,28 @@ impl ShapeTool {
             return *p;
         }
         p.transformed(&loc.transformation())
+    }
+
+    /// `BRepMesh_ShapeTool::AddInFace` (`cxx:191-209`): the triangulation is
+    /// stored *on the face*, so its node coordinates are taken back to the
+    /// face's own (pre-location) frame (`cxx:194-205`) and then installed with
+    /// `BRep_Builder::UpdateFace(theFace, theTriangulation)` (`cxx:207-208`),
+    /// whose `theToReset` defaults to TRUE (`BRep_Builder.hxx:103-105`).
+    ///
+    /// The port takes the triangulation by value because `Poly_Triangulation`
+    /// nodes are an immutable `Vec` behind the face's `Arc`; the node rewrite is
+    /// the same in-place transform OCCT performs.
+    pub fn add_in_face(face: &Face, triangulation: Triangulation) {
+        let mut triangulation = triangulation;
+        let loc = face.0.location();
+        if !loc.is_identity() {
+            if let Ok(trsf) = loc.transformation().inverted() {
+                for node in &mut triangulation.nodes {
+                    *node = node.transformed(&trsf);
+                }
+            }
+        }
+        TopoBuilder::new().update_face_triangulation(face, Some(Arc::new(triangulation)), true);
     }
 
     /// `BRepMesh_ShapeTool::CheckAndUpdateFlags` (`cxx:98-187`).

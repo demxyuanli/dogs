@@ -3,6 +3,21 @@
 use super::super::prelude::*;
 use super::*;
 
+/// `read.encoderegularity.angle` (`Interface_StaticStandards.cxx:51`, the
+/// `XSTEP` default `0.01`).
+const ENCODE_REGULARITY_ANGLE: f64 = 0.01;
+
+/// `XSControl_Reader::Shape(num)` -> `XSControl_TransferReader::ShapeResult`
+/// (`XSControl_TransferReader.cxx:447-452`): `ShapeFix::EncodeRegularity(sh,
+/// read.encoderegularity.angle)` on the transferred root, which
+/// `ShapeFix.cxx:280-283` forwards to `BRepLib::EncodeRegularity`.
+fn shape_result(shape: TopoShape) -> TopoShape {
+    if ENCODE_REGULARITY_ANGLE > 0.0 {
+        crate::brep_lib_continuity::encode_regularity(&shape, ENCODE_REGULARITY_ANGLE);
+    }
+    shape
+}
+
 pub(in crate::step) fn read_step_impl(content: &str) -> Result<(BRepModel, Vec<String>), String> {
     let data = data_section(content)?;
     let records = parse_records(data)?;
@@ -98,7 +113,7 @@ pub(in crate::step) fn read_step_impl(content: &str) -> Result<(BRepModel, Vec<S
                             node.pd, node.rep
                         );
                     }
-                    let index = model.add(&name, node.shape);
+                    let index = model.add(&name, shape_result(node.shape));
                     rep_index.insert(node.rep, index);
                     rep_index.insert(node.pd, index);
                 }
@@ -125,7 +140,7 @@ pub(in crate::step) fn read_step_impl(content: &str) -> Result<(BRepModel, Vec<S
                 .filter(|n| !n.is_empty())
                 .cloned()
                 .unwrap_or_else(|| composer.name(rep));
-            let index = model.add(&name, shape);
+            let index = model.add(&name, shape_result(shape));
             rep_index.insert(rep, index);
             rep_index.insert(pd, index);
         }
@@ -140,7 +155,7 @@ pub(in crate::step) fn read_step_impl(content: &str) -> Result<(BRepModel, Vec<S
                     .filter(|n| !n.is_empty())
                     .cloned()
                     .unwrap_or_else(|| composer.name(*id));
-                rep_index.insert(*id, model.add(&name, shape));
+                rep_index.insert(*id, model.add(&name, shape_result(shape)));
             }
         }
     } else {
@@ -155,7 +170,7 @@ pub(in crate::step) fn read_step_impl(content: &str) -> Result<(BRepModel, Vec<S
         for id in roots {
             match resolver.resolve_shape(id) {
                 Ok(s) => {
-                    rep_index.insert(id, model.add("", s));
+                    rep_index.insert(id, model.add("", shape_result(s)));
                 }
                 Err(e) => resolver.warn(format!("shape #{id}: {e}")),
             }

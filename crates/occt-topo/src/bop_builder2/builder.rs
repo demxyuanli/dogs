@@ -66,6 +66,12 @@ pub struct BopBuilder {
     /// `myFillHistory` — whether `prepare_history` fills the history
     /// (`BOPAlgo_BuilderShape.hxx:151`).
     pub(super) fill_history: bool,
+    /// `CheckArgsForOpenSolid()` — the virtual that `BRepFeat_Builder`
+    /// overrides to always return false (`BRepFeat_Builder.hxx:119-121`), so
+    /// `BOPAlgo_BOP::BuildShape` never takes the alternative `BuildBOP` path
+    /// and always rebuilds from the splits of the arguments
+    /// (`BOPAlgo_BOP.cxx:886-896`).
+    pub(super) check_open_solid: bool,
 }
 
 impl Default for BopBuilder {

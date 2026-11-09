@@ -18,7 +18,8 @@
 use std::sync::Arc;
 
 use occt_core::gp::{
-    GpCirc, GpCone, GpCylinder, GpElips, GpHypr, GpLin, GpParab, GpPln, GpPnt, GpTrsf, GpVec,
+    GpCirc, GpCone, GpCylinder, GpElips, GpHypr, GpLin, GpParab, GpPln, GpPnt, GpSphere, GpTorus,
+    GpTrsf, GpVec,
 };
 use occt_geom::curve::Curve;
 use occt_geom::surface::Surface;
@@ -253,6 +254,35 @@ impl SurfaceAdaptor {
         self.surface.as_ref().and_then(|s| s.gp_cone())
     }
 
+    /// `Adaptor3d_Surface::Sphere()` (`GeomAdaptor_Surface::Sphere`): the
+    /// `gp_Sphere` of a loaded `Geom_SphericalSurface`; `None` otherwise.
+    pub fn sphere(&self) -> Option<GpSphere> {
+        self.surface.as_ref().and_then(|s| s.gp_sphere())
+    }
+
+    /// `Adaptor3d_Surface::Torus()` (`GeomAdaptor_Surface::Torus`): the
+    /// `gp_Torus` of a loaded `Geom_ToroidalSurface`; `None` otherwise.
+    pub fn torus(&self) -> Option<GpTorus> {
+        self.surface.as_ref().and_then(|s| s.gp_torus())
+    }
+
+    /// `Adaptor3d_Surface::UResolution(Ruv)` (`GeomAdaptor_Surface.cxx:1818-1895`),
+    /// the same helper `IntTools_WLineTool` uses.
+    pub fn u_resolution(&self, ruv: f64) -> f64 {
+        match self.surface.as_ref() {
+            Some(s) => crate::int_tools_wline::u_resolution(s.as_ref(), ruv),
+            None => occt_core::precision::CONFUSION,
+        }
+    }
+
+    /// `Adaptor3d_Surface::VResolution(Ruv)` (`GeomAdaptor_Surface.cxx:1900-1957`).
+    pub fn v_resolution(&self, ruv: f64) -> f64 {
+        match self.surface.as_ref() {
+            Some(s) => crate::int_tools_wline::v_resolution(s.as_ref(), ruv),
+            None => occt_core::precision::CONFUSION,
+        }
+    }
+
     /// `Adaptor3d_Surface::D1(U, V, P, D1U, D1V)`.
     pub fn d1(&self, u: f64, v: f64) -> Option<(GpPnt, GpVec, GpVec)> {
         self.surface.as_ref().map(|s| s.d1(u, v))
@@ -271,12 +301,131 @@ impl SurfaceAdaptor {
         self.surface.as_ref().map(|s| s.d2(u, v))
     }
 
+    /// `Adaptor3d_Surface::UDegree()` (`GeomAdaptor_Surface.cxx:2015-2032`):
+    /// BSpline / Bezier take the surface degree, a surface of extrusion takes
+    /// its basis curve's degree, everything else throws
+    /// `Standard_NoSuchObject` -> `None`.
+    pub fn u_degree(&self) -> Option<i32> {
+        let s = self.surface.as_ref()?;
+        match self.kind {
+            GeomAbsSurfaceType::BSplineSurface | GeomAbsSurfaceType::BezierSurface => {
+                Some(s.u_degree())
+            }
+            GeomAbsSurfaceType::SurfaceOfExtrusion => {
+                s.extrusion_basis_curve().and_then(|c| curve_degree(c.as_ref()))
+            }
+            _ => None,
+        }
+    }
+
+    /// `Adaptor3d_Surface::VDegree()` (`GeomAdaptor_Surface.cxx:2055-2070`).
+    pub fn v_degree(&self) -> Option<i32> {
+        let s = self.surface.as_ref()?;
+        match self.kind {
+            GeomAbsSurfaceType::BSplineSurface | GeomAbsSurfaceType::BezierSurface => {
+                Some(s.v_degree())
+            }
+            GeomAbsSurfaceType::SurfaceOfRevolution => {
+                s.revolution_basis_curve().and_then(|c| curve_degree(c.as_ref()))
+            }
+            _ => None,
+        }
+    }
+
+    /// `Adaptor3d_Surface::NbUPoles()` (`GeomAdaptor_Surface.cxx:2036-2051`).
+    pub fn nb_u_poles(&self) -> Option<i32> {
+        let s = self.surface.as_ref()?;
+        match self.kind {
+            GeomAbsSurfaceType::BSplineSurface | GeomAbsSurfaceType::BezierSurface => {
+                Some(s.nb_u_poles())
+            }
+            GeomAbsSurfaceType::SurfaceOfExtrusion => {
+                s.extrusion_basis_curve().and_then(|c| curve_nb_poles(c.as_ref()))
+            }
+            _ => None,
+        }
+    }
+
+    /// `Adaptor3d_Surface::NbVPoles()` (`GeomAdaptor_Surface.cxx:2076-2091`).
+    pub fn nb_v_poles(&self) -> Option<i32> {
+        let s = self.surface.as_ref()?;
+        match self.kind {
+            GeomAbsSurfaceType::BSplineSurface | GeomAbsSurfaceType::BezierSurface => {
+                Some(s.nb_v_poles())
+            }
+            GeomAbsSurfaceType::SurfaceOfRevolution => {
+                s.revolution_basis_curve().and_then(|c| curve_nb_poles(c.as_ref()))
+            }
+            _ => None,
+        }
+    }
+
+    /// `Adaptor3d_Surface::NbUKnots()` (`GeomAdaptor_Surface.cxx:2095-2105`).
+    pub fn nb_u_knots(&self) -> Option<i32> {
+        let s = self.surface.as_ref()?;
+        match self.kind {
+            GeomAbsSurfaceType::BSplineSurface => {
+                distinct_knot_count(s.bspline_surface_uknots()?)
+            }
+            GeomAbsSurfaceType::SurfaceOfExtrusion => {
+                s.extrusion_basis_curve().and_then(|c| curve_nb_knots(c.as_ref()))
+            }
+            _ => None,
+        }
+    }
+
+    /// `Adaptor3d_Surface::NbVKnots()` (`GeomAdaptor_Surface.cxx:2111-2118`).
+    pub fn nb_v_knots(&self) -> Option<i32> {
+        let s = self.surface.as_ref()?;
+        match self.kind {
+            GeomAbsSurfaceType::BSplineSurface => {
+                distinct_knot_count(s.bspline_surface_vknots()?)
+            }
+            _ => None,
+        }
+    }
+
     /// `BRepAdaptor_Surface::Initialize(F)` (`BRepAdaptor_Surface.cxx:56-82`):
     /// `Load(BRep_Tool::Surface(F, L), L.Transformation())`, keeping the new
     /// face. `of_face` is the constructor form of the same state.
     pub fn initialize(&mut self, f: &Face) {
         *self = Self::of_face(f);
     }
+}
+
+/// `GeomAdaptor_Curve::Degree()` (`GeomAdaptor_Curve.cxx:1203-1218`).
+fn curve_degree(c: &dyn Curve) -> Option<i32> {
+    match c.bezier_poles() {
+        Some(poles) => Some(poles.len() as i32 - 1),
+        None => c.nurbs_degree().map(|d| d as i32),
+    }
+}
+
+/// `GeomAdaptor_Curve::NbPoles()` (`GeomAdaptor_Curve.cxx:1236-1251`).
+fn curve_nb_poles(c: &dyn Curve) -> Option<i32> {
+    match c.bezier_poles() {
+        Some(poles) => Some(poles.len() as i32),
+        None => c.bspline_poles().map(|poles| poles.len() as i32),
+    }
+}
+
+/// `GeomAdaptor_Curve::NbKnots()` (`GeomAdaptor_Curve.cxx:1254-1261`): only a
+/// BSpline curve answers.
+fn curve_nb_knots(c: &dyn Curve) -> Option<i32> {
+    distinct_knot_count(c.bspline_knots()?)
+}
+
+/// `Geom_BSplineSurface::NbUKnots()` / a flat knot vector's distinct values.
+fn distinct_knot_count(knots: &[f64]) -> Option<i32> {
+    let mut n = 0i32;
+    let mut previous: Option<f64> = None;
+    for k in knots {
+        if previous != Some(*k) {
+            n += 1;
+            previous = Some(*k);
+        }
+    }
+    Some(n)
 }
 
 /// `BRepAdaptor_Curve(E)` (`BRepAdaptor_Curve.hxx:36-98`).

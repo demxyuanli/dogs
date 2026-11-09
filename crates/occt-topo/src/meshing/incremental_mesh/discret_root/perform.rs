@@ -3,6 +3,9 @@
 //! orientation helpers and the model boundary preparation step.
 
 use super::*;
+use occt_core::poly::Triangulation;
+use crate::meshing::model_post_processor::BRepMeshModelPostProcessor;
+use crate::meshing::context::ModelAlgo;
 
 impl IncrementalMesh {
     /// Performs meshing of the shape.
@@ -37,6 +40,12 @@ impl IncrementalMesh {
         //    alternative tessellator: OCCT has none (`BRepMesh_BaseMeshAlgo.cxx`
         //    marks the face `IMeshData_Failure` and returns).
         let mesh = self.build_shape_mesh(&mut model)?;
+
+        // 3. PostProcessModel (`IMeshTools_MeshBuilder.cxx:63`): commit the edge
+        //    polygons and recompute the face deflections now that both the
+        //    triangulations and the pcurve indices exist
+        //    (`BRepMesh_ModelPostProcessor::performInternal`, `cxx:215-235`).
+        BRepMeshModelPostProcessor::new().perform(&mut model, &self.parameters)?;
 
         // 4. Accumulate status flags from faces and their wires
         //    (`BRepMesh_IncrementalMesh::Perform`).
@@ -115,6 +124,25 @@ impl IncrementalMesh {
         } else {
             *t
         }
+    }
+
+    /// `BRepMesh_BaseMeshAlgo::commitSurfaceTriangulation` (`cxx:229-241`).
+    ///
+    /// The port's `collectTriangles` (`cxx:245-278`) and `collectNodes`
+    /// (`cxx:282-295`) already run inside [`Self::map_triangulation`], whose
+    /// [`FaceTriangulation`] is exactly the node / UV-node / triangle content
+    /// they write into the `Poly_Triangulation`, so this step re-wraps that
+    /// content and installs it with `BRepMesh_ShapeTool::AddInFace`
+    /// (`BRepMesh_ShapeTool.cxx:191-209`).
+    pub(super) fn commit_surface_triangulation(
+        model: &MeshModel,
+        tri: &FaceTriangulation,
+    ) -> Result<(), String> {
+        let face = model.face(tri.face_index)?;
+        let mut triangulation = Triangulation::new(tri.vertices.clone(), tri.triangles.clone());
+        triangulation.uv_nodes = Some(tri.uv.iter().map(|p| (p.x(), p.y())).collect());
+        ShapeTool::add_in_face(face.face(), triangulation);
+        Ok(())
     }
 
     /// Per-face occurrence orientation of `shape`, in `faces_of` order.
