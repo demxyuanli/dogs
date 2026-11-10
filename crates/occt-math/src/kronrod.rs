@@ -14,7 +14,7 @@ pub fn integrate_adaptive<F: Fn(f64) -> f64>(f: &F, a: f64, b: f64, tol: f64, ma
 fn integrate_recursive<F: Fn(f64) -> f64>(f: &F, a: f64, b: f64, tol: f64, max_depth: usize, depth: usize) -> Result<(f64, f64), MathStatus> {
     if depth > max_depth { return Err(MathStatus::TooManyIterations); }
     let xm = 0.5*(b+a); let xl = 0.5*(b-a);
-    let mut g7 = 0.0f64; let mut k15 = 0.0f64;
+    let mut g7: f64; let mut k15 = 0.0f64;
     for i in 0..15 {
         let x = xm + xl * GK15_NODES[i];
         let fx = f(x);

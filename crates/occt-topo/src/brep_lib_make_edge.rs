@@ -252,7 +252,7 @@ pub fn init_3d_vertices(
         _ => false,
     };
     if closed {
-        let (qa, qb) = (q1.unwrap(), q2.unwrap());
+        let (qa, _qb) = (q1.unwrap(), q2.unwrap());
         if v1.is_none() && v2.is_none() {
             let v = TopoBuilder::new().make_vertex(qa, preci);
             v1 = Some(v.clone());

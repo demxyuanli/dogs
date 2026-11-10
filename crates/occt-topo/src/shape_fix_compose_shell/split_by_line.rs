@@ -606,8 +606,8 @@ impl ComposeShell {
                     r2.0.set_orientation(v2.0.orientation());
                     self.context_mut().replace(&v1.0, &r1.0);
                     self.context_mut().replace(&v2.0, &r2.0);
-                    v1 = v.clone();
-                    v2 = v;
+                    // cxx:1850 -- `V1 = V2 = V;` is dead: both are reloaded from
+                    // SplitLineVertex at cxx:1820-1821 on the next iteration.
                 }
                 continue;
             }

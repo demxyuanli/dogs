@@ -94,6 +94,6 @@ pub fn update_blocks_with_shared_vertices(f: &mut PaveFiller) -> Result<(), Stri
             }
         }
     }
-    update_common_blocks_with_sd_vertices(f);
+    let _ = update_common_blocks_with_sd_vertices(f);
     Ok(())
 }

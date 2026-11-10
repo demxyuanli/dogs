@@ -288,9 +288,9 @@ impl BisectorBisecCC {
         let mut p_ref = super::super::point_on_bis::BisectorPointOnBis::new();
         let mut p = GpPnt2d::zero();
         let mut p1 = GpPnt2d::zero();
-        let mut p2;
-        let mut p_bis;
-        let mut t1;
+        let p2;
+        let p_bis;
+        let t1;
         let mut tang = GpVec2d::zero();
         let mut d_u = 0.0;
         let mut extension_tangent = false;

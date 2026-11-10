@@ -133,7 +133,8 @@ impl Mat2dCircuit {
                     let u2 = c2.first_parameter() + nb_test as f64 * du;
                     let dir1 = GpDir2d::from_vec2d(&c1.eval_dn(u1, 1)).expect("gp_Dir2d: null tangent");
                     let dir2 = GpDir2d::from_vec2d(&c2.eval_dn(u2, 1)).expect("gp_Dir2d: null tangent");
-                    dot_prod = dir1.dot(&dir2);
+                    // cxx:331 -- DotProd is recomputed here but never read again in
+                    // this loop (only ProVec decides), so the store is dead in OCCT too.
                     pro_vec = dir1.crossed(&dir2);
                     if pro_vec * direction < -tol_ang {
                         return true;

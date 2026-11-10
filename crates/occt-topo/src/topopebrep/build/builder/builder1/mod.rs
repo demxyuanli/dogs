@@ -55,11 +55,10 @@ use std::cell::{Cell, RefCell};
 
 use crate::abs::State;
 use crate::shape::TopoShape;
-use crate::topo_tools::{shape_map_key, ShapeMapKey};
+use crate::topo_tools::ShapeMapKey;
 use crate::topopebrep::ds::build_tool::BuildTool;
 use crate::topopebrep::ds::data_structure::IndexedShapeSet;
 use crate::topopebrep::ds::h_data_structure::HDataStructure;
-use crate::topopebrep::ds::list_of_shape_on1_state::ListOfShapeOn1State;
 use crate::topopebrep::ds::tool::DShapeOn1StateMap;
 
 use super::k_part::{KP_ISAFA, KP_ISDISJ, KP_ISKOLE, KP_ISSOSO, KP_ISKOLETGE};
@@ -204,16 +203,6 @@ impl Builder1 {
         b.my_base.b1.my_processed_parts_out_2d.clear();
         b.my_base.b1.my_processed_parts_on_2d.clear();
         b
-    }
-
-    /// The `Builder1` state block (`hxx:192-203`).
-    pub(crate) fn state(&self) -> &Builder1State {
-        &self.my_base.b1
-    }
-
-    /// The `Builder1` state block (`hxx:192-203`), mutable.
-    pub(crate) fn state_mut(&mut self) -> &mut Builder1State {
-        &mut self.my_base.b1
     }
 
     /// The `TopOpeBRepBuild_Builder` sub-object.
@@ -440,13 +429,5 @@ impl Builder1 {
     /// `End()` (base, `End.cxx:45-...`).
     pub fn end(&mut self) {
         self.my_base.end();
-    }
-
-    /// `ChangeMSplit(s)` (base), kept so the ported `status_edges` code can
-    /// bind `mySplitON` without exposing the map itself.
-    fn bind_split_on(&mut self, s: &TopoShape, losos: ListOfShapeOn1State) {
-        self.my_base
-            .my_split_on
-            .insert(shape_map_key(s), losos);
     }
 }

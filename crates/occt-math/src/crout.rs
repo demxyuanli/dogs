@@ -3,12 +3,14 @@
 use crate::{MathMatrix, MathVector, MathStatus};
 
 /// LU decomposition via Crout's method with implicit scaling.
+///
+/// `math_Crout::IsDone()` is implicit here: `new` returns `Err` on a singular
+/// matrix instead of storing a `Done` flag that nothing reads.
 #[derive(Debug, Clone)]
 pub struct Crout {
     lu: MathMatrix,
     indx: Vec<usize>,
     det_sign: f64,
-    is_done: bool,
 }
 
 impl Crout {
@@ -60,7 +62,7 @@ impl Crout {
                 for i in (j + 1)..=n { lu.set_value(i, j, lu.value(i, j) * pivot); }
             }
         }
-        Ok(Self { lu, indx, det_sign, is_done: true })
+        Ok(Self { lu, indx, det_sign })
     }
 
     /// Solve Ax = b using the stored LU decomposition.

@@ -125,7 +125,9 @@ impl ContapContour {
     ) -> Result<Self, &'static str> {
         let mut c = Self::new();
         c.init_direction(direction)?;
-        c.perform(surf, domain);
+        // `Contap_Contour::Perform` returns void in OCCT, so the status is
+        // recorded on the contour; the Rust result is discarded on purpose.
+        let _ = c.perform(surf, domain);
         Ok(c)
     }
 
@@ -138,7 +140,7 @@ impl ContapContour {
     ) -> Result<Self, &'static str> {
         let mut c = Self::new();
         c.init_direction_angle(direction, angle)?;
-        c.perform(surf, domain);
+        let _ = c.perform(surf, domain);
         Ok(c)
     }
 
@@ -146,7 +148,7 @@ impl ContapContour {
     pub fn with_surface_eye(surf: SurfaceAdaptor, domain: &mut TopolTool, eye: &GpPnt) -> Self {
         let mut c = Self::new();
         c.init_eye(eye);
-        c.perform(surf, domain);
+        let _ = c.perform(surf, domain);
         c
     }
 
@@ -283,10 +285,5 @@ impl ContapContour {
     /// The lines in insertion order (`slin` access for the parity harness).
     pub fn lines(&self) -> &[ContapLine] {
         &self.slin
-    }
-
-    /// The segments of the search, as `ProcessSegments` sees them.
-    pub(crate) fn solrst(&self) -> &ContapTheSearch {
-        &self.solrst
     }
 }

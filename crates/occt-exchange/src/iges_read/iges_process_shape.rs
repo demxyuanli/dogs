@@ -14,13 +14,12 @@ use occt_topo::abs::{Orientation, ShapeType};
 use occt_topo::shape::{Face, TopoShape, Wire};
 use occt_topo::shape_fix_compose_shell::{ReShape, SharedReShape};
 use occt_topo::shhealing::{
-    align_shell_closed_to_free_bounds, clear_shell_closed_if_analysis_free,
-    fix_connected_at, fix_connected_closed, fix_reorder_wire_3d, fix_shell_face_orientation,
+    align_shell_closed_to_free_bounds, clear_shell_closed_if_analysis_free, fix_connected_closed, fix_reorder_wire_3d, fix_shell_face_orientation,
     fix_small_all, fix_add_curve3d_or_drop,
     fix_vertex_tolerance_edge, fix_vertex_tolerances_after_same_parameter,
     grown_vertex_tolerances_on_face, perform_wire_first_round, perform_wire_second_round,
     shape_fix_same_parameter, split_face_after_removed_segment,
-    split_loop_wires, least_edge_size, ShapeFixEdge, ShapeFixFace, ShapeFixFaceModes,
+    split_loop_wires, least_edge_size, ShapeFixFace, ShapeFixFaceModes,
     ShapeFixShapeModes, ShapeFixShellModes, ShapeFixSolidModes, WireFixModes,
 };
 use occt_topo::tgeometry::GeometryRegistry;

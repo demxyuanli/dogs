@@ -48,8 +48,8 @@ impl MathFunctionSetRoot {
         let progres = 0.005; // Progres
 
         let mut change_direction = false;
-        let mut sort = false;
-        let mut is_new_sol = false;
+        let mut sort;
+        let mut is_new_sol;
 
         // InvLengthMax / aConstraints (math_FunctionSetRoot.cxx:817-824).
         let mut inv_length_max = MathVector::new(1, ninc);
@@ -220,7 +220,7 @@ impl MathFunctionSetRoot {
                 dy = self.gh.dot(&self.dh);
                 let mut old_f = previous_minimum;
                 let mut stop = false;
-                let mut good = false;
+                let mut good;
                 let mut descente_iter = 0;
                 let mut sort_bis;
 
@@ -312,7 +312,8 @@ impl MathFunctionSetRoot {
                                         &mut constraints,
                                         &mut self.delta,
                                     );
-                                    sort = br.0;
+                                    // math_FunctionSetRoot.cxx:997 assigns Bounds() to Sort,
+                                    // but line 1006 overwrites it unconditionally.
                                     is_new_sol = br.1;
                                 }
                                 sort = false; // On a rejete le point sur la frontiere
@@ -391,7 +392,8 @@ impl MathFunctionSetRoot {
                                 }
                             } else {
                                 ambda = 1.0;
-                                ambda2 = 0.5 * ambda / self.dh.norm();
+                                // math_FunctionSetRoot.cxx:1077 computes Ambda2 here,
+                                // but line 1111 overwrites it before any read.
                             }
                             for i in 1..=ninc {
                                 self.sol.set_value(
@@ -510,7 +512,8 @@ impl MathFunctionSetRoot {
                         || (f2 >= previous_minimum)
                     {
                         // On minimise par Brent.
-                        descente_iter += 1;
+                        // math_FunctionSetRoot.cxx:1169 increments DescenteIter, but the
+                        // counter is never read again before line 1055 resets it.
                         good = minimize_direction_2pt(
                             &self.sol_save,
                             &mut self.delta,
@@ -524,7 +527,8 @@ impl MathFunctionSetRoot {
                         );
                         if !good {
                             self.sol = self.sol_save.clone();
-                            sort = false;
+                            // math_FunctionSetRoot.cxx:1174 sets Sort, but Sort is
+                            // re-assigned at the top of the next iteration (line 883).
                         } else {
                             self.sol = self.sol_save.added(&self.delta);
                             for i in 1..=ninc {
@@ -544,7 +548,8 @@ impl MathFunctionSetRoot {
                                 &mut constraints,
                                 &mut self.delta,
                             );
-                            sort = br.0;
+                            // math_FunctionSetRoot.cxx:1189 assigns Bounds() to Sort,
+                            // which is never read before the next iteration re-assigns it.
                             is_new_sol = br.1;
                             if is_new_sol {
                                 match dir.value_full(

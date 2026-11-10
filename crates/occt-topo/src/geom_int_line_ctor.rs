@@ -80,14 +80,6 @@ impl LineConstructor {
         self.done = d;
     }
 
-    pub(crate) fn surfaces(&self) -> Option<(&dyn Surface, &dyn Surface)> {
-        Some((self.hs1.as_ref()?.as_ref(), self.hs2.as_ref()?.as_ref()))
-    }
-
-    pub(crate) fn domains(&self) -> Option<(&TopolTool, &TopolTool)> {
-        Some((self.dom1.as_ref()?, self.dom2.as_ref()?))
-    }
-
     pub(crate) fn surface_arcs(&self) -> Option<(Arc<dyn Surface>, Arc<dyn Surface>)> {
         Some((self.hs1.clone()?, self.hs2.clone()?))
     }

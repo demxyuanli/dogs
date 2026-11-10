@@ -257,7 +257,7 @@ fn cylinder_plane_arm(
     let mut c1line = false;
     let mut udeb;
     let mut ufin;
-    let mut vint = GpVec::default();
+    let vint;
     let c3d: Arc<dyn Curve> = match &inter {
         QuadricIntersection::Line(_) | QuadricIntersection::TwoLines(..) => {
             c1line = true;
@@ -459,7 +459,7 @@ fn int_ss_arm(
     pfin1: &GpPnt,
     pfin2: &GpPnt,
     pardeb: [f64; 4],
-    parfin: [f64; 4],
+    _parfin: [f64; 4],
     distref: f64,
     distrefdeb: f64,
     distreffin: f64,

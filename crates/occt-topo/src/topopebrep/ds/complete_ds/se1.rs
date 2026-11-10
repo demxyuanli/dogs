@@ -50,7 +50,7 @@ pub fn fun_ds_complete_for_se1(hds: &mut HDataStructure, connex: &Connexity) {
                 };
 
                 // `cxx:896-903` : `ISE = (INTERNAL(FACE), G, EDGE)`
-                let mut loicopy = loi.clone();
+                let loicopy = loi.clone();
                 let mut li1: InterferenceList = Vec::new();
                 if !fun_select_train_tinterference(&loicopy, &mut li1) {
                     break 'item;

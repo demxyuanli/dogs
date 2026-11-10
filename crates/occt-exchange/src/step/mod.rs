@@ -94,9 +94,8 @@ mod rendering_properties;
 pub use format::*;
 pub use write_context::*;
 pub use transfer::*;
-pub use read_topology::*;
 pub use read_geometry::*;
-pub use construct_styles::*;
+use construct_styles::*;
 pub use rendering_properties::*;
 
 #[cfg(test)]

@@ -1,6 +1,5 @@
 //! Wire and face helper queries: the wire edge order, finite UV bounds and the per-edge reversal data. Source: `ShapeExtend_WireData`, `ShapeAnalysis_Edge`, `ShapeFix_Wire` and `BRepToIGES_BRWire`.
 use super::prelude::*;
-use super::*;
 
 /// The `ShapeExtend_WireData` edge list of a wire (`ShapeExtend_WireData.cxx:72-148`
 /// with the default `chained = true`, `theManifold = true`): `TopoDS_Iterator`'s

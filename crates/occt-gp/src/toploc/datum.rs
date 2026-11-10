@@ -71,7 +71,7 @@ mod tests {
 
     #[test]
     fn chain_translation() {
-        let mut v = GpVec::new(1., 0., 0.);
+        let v = GpVec::new(1., 0., 0.);
         let mut t = GpTrsf::identity();
         t.set_translation_vec(&v);
         let loc = TopLocLocationChain::from_trsf(&t);

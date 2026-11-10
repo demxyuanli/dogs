@@ -70,14 +70,15 @@ use crate::algo_tools::AlgoTools;
 
 use crate::bop_build_common::{build_draft_solid, BopBuildOps};
 use crate::bop_occt_util::shape_key;
-use crate::brep_extrema::{closest_point_on_face, is_inside};
 use crate::brep_surface::surface_normal;
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::fclass2d::FaceState;
 use crate::shape::{Edge, Face, Shell, TopoShape};
 use crate::shell_splitter::{EKey};
-use crate::topo_tools::{edges_of_wire, faces_of, vertices_of, wires_of_face, ShapeMapKey};
+use crate::topo_tools::{edges_of_wire, faces_of, vertices_of, wires_of_face};
+#[cfg(test)]
+use crate::topo_tools::ShapeMapKey;
 
 // ---------------------------------------------------------------------------
 // FillImagesSolids — draft pass

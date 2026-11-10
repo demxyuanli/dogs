@@ -18,40 +18,7 @@ use super::*;
 /// cone / torus (a `Geom_BSplineSurface` patch) must stay `Other` and be
 /// projected by the general path; treating it as analytic would feed the
 /// sampled analytic frame a parameterization it does not have.
-pub use occt_geom::surface_kind::{classify_surface_kind, SurfaceKind};
-
-/// Cylinder parameters `(center, unit axis, radius)` from sampled invariants:
-/// the axis is along `∂S/∂v` and two opposite points of a `u`-ring give the
-/// radius (their midpoint lies on the axis).
-pub(crate) fn projector_cylinder_params(s: &dyn Surface) -> Option<(GpPnt, GpVec, f64)> {
-    let p0 = s.d0(0.0, 0.0);
-    let p1 = s.d0(0.0, 1.0);
-    let axis = GpVec::from_pnts(&p0, &p1);
-    let m = axis.magnitude();
-    if m < 1e-9 {
-        return None;
-    }
-    let ax = axis.divided(m);
-    let q0 = s.d0(0.0, 0.0);
-    let q1 = s.d0(PI, 0.0);
-    let r = q0.distance(&q1) / 2.0;
-    if r <= 1e-9 {
-        return None;
-    }
-    let center = sampled_mid(&q0, &q1);
-    let (nu, nv) = (8, 6);
-    for i in 0..=nu {
-        for j in 0..=nv {
-            let u = 2.0 * PI * i as f64 / nu as f64;
-            let v = (j as f64 - nv as f64 / 2.0) / 2.0;
-            let p = s.d0(u, v);
-            if (dist_to_axis(&p, &center, &ax) - r).abs() > 1e-3 * r.max(1.0) {
-                return None;
-            }
-        }
-    }
-    Some((center, ax, r))
-}
+pub use occt_geom::surface_kind::classify_surface_kind;
 
 /// Cone parameters `(apex, unit axis, semi-angle)`: two fixed-`u` generatrices
 /// intersect at the apex; every sampled point makes the same angle with the axis.
@@ -158,11 +125,6 @@ pub(crate) fn torus_params(s: &dyn Surface) -> Option<(GpPnt, GpVec, f64, f64)> 
 
 pub(crate) fn sampled_mid(a: &GpPnt, b: &GpPnt) -> GpPnt {
     GpPnt::new(0.5 * (a.x() + b.x()), 0.5 * (a.y() + b.y()), 0.5 * (a.z() + b.z()))
-}
-
-pub(crate) fn dist_to_axis(p: &GpPnt, c: &GpPnt, ax: &GpVec) -> f64 {
-    let rel = GpVec::from_pnts(c, p);
-    rel.subtracted(&ax.multiplied_scalar(rel.dot(ax))).magnitude()
 }
 
 pub(crate) fn pnt_add_vec(p: GpPnt, v: &GpVec) -> GpPnt {

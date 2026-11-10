@@ -1,4 +1,4 @@
-pub use super::prelude::*;
+pub(crate) use super::prelude::*;
 pub use super::*;
 
 #[cfg(test)]

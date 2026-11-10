@@ -43,20 +43,20 @@ impl GccAnaCirc2d2TanRad {
         // `gp_Circ2d C1 = Qualified1.Qualified(); gp_Circ2d C2 = ...`
         // (`cxx:72-73`). `C2` is reassigned in one branch of the enclosed /
         // enclosed arm (`cxx:128`), so both stay mutable.
-        let mut c1 = qualified1.qualified();
+        let c1 = qualified1.qualified();
         let mut c2 = qualified2.qualified();
         let mut r1 = c1.radius();
         let mut r2 = c2.radius();
-        let mut rbid;
-        let mut signe: i32 = 0;
-        let mut dist;
+        let rbid;
+        let signe: i32;
+        let dist;
         // `NCollection_Array1<gp_Circ2d> C(1, 8)` (`cxx:80`).
         let mut c = [c1; MAX_SOL];
         c[1] = c2;
         let mut nbsol = 0usize;
         let mut center1 = c1.location();
         let mut center2 = c2.location();
-        let mut center3;
+        let center3;
 
         if radius < 0.0 {
             panic!("Standard_NegativeValue in GccAna_Circ2d2TanRad");
@@ -512,12 +512,12 @@ impl GccAnaCirc2d2TanRad {
                 {
                     s.well_done = true;
                 } else {
-                    let p3 = r1.max(r2) - r1.min(r2) - dist - radius * 2.0;
+                    // cxx:666-672 -- OCCT computes `p3` and assigns `dist` in that
+                    // branch, but neither is read afterwards: only R1/R2 feed the
+                    // solutions below, so both are omitted here.
                     let p4 = dist - r1 - r2;
                     let p5 = radius * 2.0 - dist + r1 + r2;
-                    if p3 > 0.0 {
-                        dist = r1.max(r2) - r1.min(r2) - radius * 2.0;
-                    } else if p4 > 0.0 && p5 < 0.0 {
+                    if p4 > 0.0 && p5 < 0.0 {
                         r1 = dist - r2 - radius * 2.0;
                     }
                     c[0] = GpCirc2d::new(axis_at(center1), (radius - r1).abs());

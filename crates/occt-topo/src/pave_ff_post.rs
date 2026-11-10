@@ -115,14 +115,6 @@ fn register_one_edge(f: &mut PaveFiller, shape: &TopoShape, cpb: &CoupleOfPaveBl
     Ok(())
 }
 
-fn register_one(f: &mut PaveFiller, shape: &TopoShape, cpb: &CoupleOfPaveBlocks) -> Result<(), String> {
-    match shape.shape_type() {
-        ShapeType::Vertex => register_one_vertex(f, shape, cpb),
-        ShapeType::Edge => register_one_edge(f, shape, cpb),
-        _ => Ok(()),
-    }
-}
-
 fn fast_path_one(
     f: &mut PaveFiller,
     shape: &TopoShape,

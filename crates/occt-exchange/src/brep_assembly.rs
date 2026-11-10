@@ -9,7 +9,9 @@
 
 use std::collections::HashMap;
 
-use occt_core::gp::{GpPnt, GpTrsf, GpVec};
+use occt_core::gp::{GpPnt, GpTrsf};
+#[cfg(test)]
+use occt_core::gp::GpVec;
 
 use occt_topo::brep_tool::BRepTool;
 use occt_topo::shape::TopoShape;

@@ -174,7 +174,7 @@ impl TrigonometricFunctionRoots {
         inf_bound: f64,
         sup_bound: f64,
     ) {
-        let mut nzer: usize = 0;
+        let mut nzer: usize;
         let nit = 10;
         // `NCollection_Array1<double> ko(1, 5), Zer(1, 4);` (`cxx:88-89`).
         let mut ko = [0.0f64; N];

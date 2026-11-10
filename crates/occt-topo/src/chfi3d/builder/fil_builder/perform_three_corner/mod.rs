@@ -53,7 +53,7 @@ use crate::geom_bnd_lib_surface3d::GeomAbsSurfaceType;
 use crate::shape::{Face, TopoShape};
 use crate::topopebrep::tool::adaptor::SurfaceAdaptor;
 
-use super::super::corner_sd::{sd, sd_len, with_sd};
+use super::super::corner_sd::{sd, sd_len};
 use super::super::ChFi3dBuilder;
 
 /// `ToricCorner(F, rd, rf, v)` (`cxx:219-234`): the corner is a torus, or a

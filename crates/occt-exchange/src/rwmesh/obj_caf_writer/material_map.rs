@@ -40,8 +40,8 @@ pub struct MeshMaterialMap {
     tex_folder: String,
     /// `myTexFolderShort` (`hxx:81`) — the same folder relative to the model.
     tex_folder_short: String,
-    /// `myFileName` (`hxx:85`).
-    file_name: String,
+    // `myFileName` (`hxx:87`) is only assigned in the constructor
+    // (`cxx:32`) and never read in OCCT, so the port does not keep it.
     /// `myShortFileNameBase` (`hxx:82`) — model file name without extension.
     short_file_name_base: String,
     /// `myKeyPrefix` — `"mat_"` (`RWMesh_MaterialMap.cxx:31`).
@@ -77,7 +77,6 @@ impl MeshMaterialMap {
             folder,
             tex_folder: String::new(),
             tex_folder_short: String::new(),
-            file_name: file_name.to_string(),
             short_file_name_base,
             key_prefix: "mat_".to_string(),
             nb_materials: 0,
@@ -222,7 +221,7 @@ impl MeshMaterialMap {
     pub fn copy_texture(&mut self, texture: &ImageTexture, key: &str) -> (String, bool) {
         self.create_texture_folder();
 
-        let mut tex_file_name;
+        let tex_file_name;
         let texture_src = texture.file_path();
         if !texture_src.is_empty() && texture.file_offset() <= 0 && texture.file_length() <= 0 {
             // `OSD_Path::FolderAndFileFromPath(aTextureSrc, aSrcTexFolder,

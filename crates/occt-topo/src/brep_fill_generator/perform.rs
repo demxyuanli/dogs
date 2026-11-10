@@ -140,7 +140,7 @@ fn rule_pair(
         let degen2 = BRepTool::is_degenerated(&an_or_edge2);
 
         // `cxx:682-700`.
-        let mut edge1 = if degen1 {
+        let edge1 = if degen1 {
             let mut e = empty_copied_edge_with_geometry(&an_or_edge1);
             let (v1f, v1l) = edge_vertices(&an_or_edge1);
             let (Some(v1f), Some(v1l)) = (v1f, v1l) else {
@@ -156,7 +156,7 @@ fn rule_pair(
         };
 
         // `cxx:702-718`.
-        let mut edge2 = if degen2 {
+        let edge2 = if degen2 {
             let mut e = empty_copied_edge_with_geometry(&an_or_edge2);
             let (v2f, v2l) = edge_vertices(&an_or_edge2);
             let (Some(v2f), Some(v2l)) = (v2f, v2l) else {

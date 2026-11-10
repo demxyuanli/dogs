@@ -29,7 +29,7 @@ use crate::shape::{Edge, Face, TopoShape};
 
 use super::adaptor::{CurveAdaptor, SurfaceAdaptor};
 use super::closed::basis_surface;
-use super::geometry::{fun_quad_ct, fun_tool_ng_s};
+use super::geometry::fun_quad_ct;
 use super::lprop::CLProps;
 use super::project::fun_tool_proj_pon_f;
 use super::project_curve::fun_tool_bounds;
@@ -234,7 +234,7 @@ pub fn curv_f(f: &TopoShape, uv: &GpPnt2d, tg0: &GpDir) -> Option<(f64, bool)> {
     if !slp.is_curvature_defined(s.as_ref()) {
         return None;
     }
-    let mut curdef = false;
+    let curdef;
     let (max_d, min_d) = slp.curvature_directions(s.as_ref()).ok()?;
     let min_curv = slp.min_curvature(s.as_ref()).ok()?;
     let max_curv = slp.max_curvature(s.as_ref()).ok()?;

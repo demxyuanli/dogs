@@ -432,7 +432,7 @@ pub fn make_wire_from_edges(edges: &[Edge]) -> Wire {
             break;
         }
     }
-    let mut wire = mw.wire();
+    let wire = mw.wire();
     wire.set_closed(true);
     wire
 }

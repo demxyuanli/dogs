@@ -225,7 +225,7 @@ fn same_circle(
     {
         return false;
     }
-    let (mut p1, tgf) = clib::circle_d1(&cif, ff);
+    let (p1, tgf) = clib::circle_d1(&cif, ff);
     let p2 = clib::circle_value(&cif, lf);
 
     let mut prm1 = clib::circle_parameter(&cit.position(), &p1);

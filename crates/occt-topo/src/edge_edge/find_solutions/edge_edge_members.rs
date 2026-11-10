@@ -5,7 +5,6 @@ use occt_core::bnd::BndBox;
 use occt_core::precision::{INFINITE, SQUARE_CONFUSION};
 
 use super::boxes::{bnd_build_box, split_range_on_segments};
-use super::curve_kind::GeomCurveKind;
 use super::dist_pc::{dist_pc, find_dist_pc, DistState, ProjPc};
 use super::parameters::find_parameters;
 use super::resolution::{is_closed, resolution_of};

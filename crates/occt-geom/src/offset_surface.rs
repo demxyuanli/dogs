@@ -27,7 +27,7 @@
 use std::sync::Arc;
 
 use occt_core::gp::{GpCone, GpCylinder, GpPnt, GpSphere, GpTorus, GpTrsf, GpVec};
-use occt_core::precision::{Precision, APPROXIMATION, CONFUSION, RESOLUTION};
+use occt_core::precision::{Precision, APPROXIMATION, RESOLUTION};
 
 use crate::adv_approx::ApproxAFunction3d;
 use crate::bspline_curve::GeomBSplineCurve;

@@ -633,7 +633,9 @@ pub fn fix_self_intersect_wire(
                                 if p02.distance(&pv22) < tol_v2 {
                                     tol_v2 += p02.distance(&pv22);
                                     update_vertex_tolerance(&nv2, tol_v2);
-                                    v22 = replace_vertex_keep_orientation(ctx, &v22, &nv2);
+                                    // The returned vertex is not read afterwards: only the
+                                    // ctx.replace side effect of the helper matters here.
+                                    replace_vertex_keep_orientation(ctx, &v22, &nv2);
                                     nb_replaced += 1;
                                     let new_e = copy_replace_vertices_with(&cur_edge2, Some(&v12), Some(&nv2));
                                     ctx.replace(&cur_edge2.0, &new_e.0);
@@ -690,7 +692,8 @@ pub fn fix_self_intersect_wire(
                                                 ) {
                                                     nb_split += 1;
                                                     numseg2 = num2 + dnum1 + dnum2;
-                                                    dnum2 += 1;
+                                                    // cxx:1608 -- dnum2++ is dead: dnum2 is
+                                                    // never read again before the loop ends.
                                                 }
                                             } else if split_edge1(
                                                 wire,
@@ -703,7 +706,7 @@ pub fn fix_self_intersect_wire(
                                                 boxes,
                                             ) {
                                                 nb_split += 1;
-                                                dnum2 += 1;
+                                                // cxx:1616 -- dnum2++ is dead as well.
                                                 numseg2 = num2 + dnum1 + 1;
                                             }
                                         }

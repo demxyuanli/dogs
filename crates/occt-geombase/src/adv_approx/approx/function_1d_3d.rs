@@ -136,7 +136,7 @@ impl ApproxAFunction1d3d {
         for i in 0..num_curves as usize {
             num_coeff[i] = num_coeff[i].max(2);
         }
-        let mut poly_iv = vec![[-1.0, 1.0]; num_curves as usize];
+        let poly_iv = vec![[-1.0, 1.0]; num_curves as usize];
         let true_iv = intervals[..=num_curves as usize].to_vec();
         let continuity_v = prepare_convert(
             num_curves,

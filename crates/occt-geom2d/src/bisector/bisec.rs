@@ -137,7 +137,7 @@ impl BisectorBisec {
             let is_line = oncurve && fd.dot(&sd) < (2.0 * ANGULAR).sqrt() - 1.0;
             if is_line {
                 // `cxx:169-181`: half-straight.
-                let mut bis_ana = half_straight(apoint, afirstvector, adirection, INFINITE);
+                let bis_ana = half_straight(apoint, afirstvector, adirection, INFINITE);
                 u_first = bis_ana.parameter_of_start_point();
                 u_last = bis_ana.parameter_of_end_point();
                 bis = Arc::from(bis_ana.clone_dyn());
@@ -148,7 +148,7 @@ impl BisectorBisec {
                 if bis_cc.is_empty() {
                     // `cxx:194-232`: the algorithmic bisector is empty, build a
                     // false bisector through the origin.
-                    let mut bis_ana = false_bisector(
+                    let bis_ana = false_bisector(
                         apoint,
                         afirstvector,
                         asecondvector,
@@ -219,7 +219,7 @@ impl BisectorBisec {
             }
             if is_line {
                 // `cxx:312-325`: half-right.
-                let mut bis_ana = half_straight(apoint, afirstvector, adirection, rc);
+                let bis_ana = half_straight(apoint, afirstvector, adirection, rc);
                 u_first = bis_ana.parameter_of_start_point();
                 u_last = bis_ana.parameter_of_end_point();
                 bis = Arc::from(bis_ana.clone_dyn());
@@ -230,7 +230,7 @@ impl BisectorBisec {
                 bis_pc.perform(&*reversed, asecondpoint, -adirection, INFINITE);
                 if bis_pc.is_empty() {
                     // `cxx:334-354`: false bisector.
-                    let mut bis_ana = false_bisector(
+                    let bis_ana = false_bisector(
                         apoint,
                         afirstvector,
                         asecondvector,
@@ -318,7 +318,7 @@ impl BisectorBisec {
             }
             if is_line {
                 // `cxx:459-471`: half-straight.
-                let mut bis_ana = half_straight(apoint, afirstvector, adirection, rc);
+                let bis_ana = half_straight(apoint, afirstvector, adirection, rc);
                 u_first = bis_ana.parameter_of_start_point();
                 u_last = bis_ana.parameter_of_end_point();
                 bis = Arc::from(bis_ana.clone_dyn());
@@ -328,7 +328,7 @@ impl BisectorBisec {
                 bis_pc.perform(asecondcurve, afirstpoint, adirection, INFINITE);
                 if bis_pc.is_empty() {
                     // `cxx:480-498`: false bisector.
-                    let mut bis_ana = false_bisector(
+                    let bis_ana = false_bisector(
                         apoint,
                         afirstvector,
                         asecondvector,

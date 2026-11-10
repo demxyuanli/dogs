@@ -22,8 +22,7 @@ use crate::shape::{Face, TopoShape};
 use crate::shell_check::{shell_invariants};
 
 use crate::topo_tools::{
-    edge_vertices, edges_of, edges_of_wire, faces_of, shapes_of, vertex_position, vertices_of,
-    wires_of_face,
+    edges_of, faces_of,
 };
 
 pub(crate) use crate::bop_builder_planar_geom::*;

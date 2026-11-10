@@ -84,6 +84,9 @@ pub(super) fn update_bnd_box(p1: GpXY, p2: GpXY, b: &mut BndB2) {
 /// stored in a `HashMap` grid keyed by 2-D cells; a query point only inspects
 /// the circles whose clamped bounding box covers the query's cell.
 pub struct GridCircleTool {
+    /// Linear tolerance (`myTolerance`, `BRepMesh_CircleTool.hxx:130`); it is a
+    /// ctor argument to the inspector, which keeps the squared copy in
+    /// `mySqTolerance` (`BRepMesh_CircleInspector.hxx:37`).
     pub(super) tolerance: f64,
     pub(super) sq_tolerance: f64,
     pub(super) cell_size: GpXY,
@@ -95,15 +98,23 @@ pub struct GridCircleTool {
 
 impl GridCircleTool {
     pub(super) fn new() -> Self {
-        Self {
+        let mut tool = Self {
+            // `myTolerance(Precision::PConfusion())`
+            // (`BRepMesh_CircleTool.cxx:27`); `Precision::PConfusion()` == `PREC`.
             tolerance: PREC,
-            sq_tolerance: PREC * PREC,
+            // Filled below from `tolerance`, mirroring
+            // `mySelector(myTolerance, 64, theAllocator)` (`cxx:30`) whose ctor
+            // stores `mySqTolerance(theTolerance * theTolerance)`
+            // (`BRepMesh_CircleInspector.hxx:37`).
+            sq_tolerance: 0.0,
             cell_size: GpXY::new(10.0, 10.0),
             face_min: GpXY::zero(),
             face_max: GpXY::zero(),
             circles: Vec::new(),
             grid: HashMap::new(),
-        }
+        };
+        tool.sq_tolerance = tool.tolerance * tool.tolerance;
+        tool
     }
 
     pub(super) fn set_min_max_size(&mut self, min: GpXY, max: GpXY) {
@@ -194,8 +205,14 @@ impl GridCircleTool {
         }
     }
 
-    /// Binds an implicit zero (invalid) circle. Source: `MocBind`.
-    pub(super) fn moc_bind(&mut self, index: i32) {
+    /// Binds an implicit zero (invalid) circle. Source: `MocBind`
+    /// (`BRepMesh_CircleTool.cxx:166-170`).
+    ///
+    /// OCCT declares this `Standard_EXPORT` but never calls it itself (7.9.0 /
+    /// 7.9.1 / 7.9.3 all have only the declaration and the definition), so it is
+    /// an extension entry point; it is kept public for parity rather than wired
+    /// into the meshing pipeline.
+    pub fn moc_bind(&mut self, index: i32) {
         if self.circles.len() < index as usize {
             self.circles.resize(index as usize, DelaunCircle::default());
         }
@@ -237,12 +254,16 @@ impl GridCircleTool {
     }
 }
 
-/// Replacement mode for `create_and_replace_polygon_link`. Source: `ReplaceFlag`.
+/// Replacement mode for `create_and_replace_polygon_link`. Source: `ReplaceFlag`
+/// (`BRepMesh_Delaun.hxx:143-148`, private enum).
+///
+/// OCCT's `InsertBefore` case (`cxx:1653-1656`) is kept out: no OCCT call site
+/// passes it (the four `createAndReplacePolygonLink` callers at `cxx:1731`,
+/// `1796-1797`, `1813` and `1848` pass only `Replace` / `InsertAfter`).
 #[derive(Clone, Copy)]
 pub(super) enum ReplaceFlag {
     Replace,
     InsertAfter,
-    InsertBefore,
 }
 
 /// Stack of element ranges used by `cleanup_polygon`. Source: `StackOfFrames`.

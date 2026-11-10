@@ -112,7 +112,7 @@ pub fn split_e(eanc: &TopoShape, splits: &mut Vec<TopoShape>) -> bool {
         let par = BRepTool::parameter_of_vertex(&efor, &v);
 
         // cxx:516-517: `TopoDS_Edge ed; FUN_ds_CopyEdge(EFOR, ed)`.
-        let ed = BuildTool::new().copy_edge(&efor);
+        let _ed = BuildTool::new().copy_edge(&efor);
 
         // cxx:518-521: `v0.Orientation(FORWARD); BB.Add(ed, v0);
         // FUN_ds_Parameter(ed, v0, par0)`.

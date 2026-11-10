@@ -216,11 +216,4 @@ mod self_intersect;
 mod traits;
 mod uv_polygon;
 
-pub use self::amplify::*;
-pub use self::boundary_model::*;
-pub use self::discretize::*;
-pub use self::discretize_pcurves::*;
-pub use self::perform::*;
-pub use self::self_intersect::*;
 pub use self::traits::*;
-pub use self::uv_polygon::*;

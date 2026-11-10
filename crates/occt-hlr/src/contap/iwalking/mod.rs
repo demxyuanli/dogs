@@ -40,7 +40,7 @@ use occt_topo::topopebrep::tool::adaptor::SurfaceAdaptor;
 
 use super::iw_line::ContapIWLineOfTheIWalking;
 use super::surf_function::ContapSurfFunction;
-use types::{BndRange, InteriorPoint, PathPoint, StatusDeflection, WalkingData};
+use types::{BndRange, InteriorPoint, PathPoint, WalkingData};
 
 pub use types::{InteriorPoint as ContapWalkingInteriorPoint, PathPoint as ContapWalkingPathPoint};
 

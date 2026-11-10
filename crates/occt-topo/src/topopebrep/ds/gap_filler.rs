@@ -31,7 +31,6 @@
 use occt_core::gp::{GpDir, GpPnt, GpVec};
 use occt_core::precision::{INFINITE, RESOLUTION};
 
-use crate::abs::ShapeType;
 use crate::shape::{Face, TopoShape};
 use crate::shape_upgrade::GEOMABS_C1;
 use crate::topexp::Explorer;
@@ -199,9 +198,10 @@ impl GapFiller {
         }
     }
 
-    /// `AddPointsOnConnexShape(F, LI)` (`cxx:231-235`): empty in OCCT, the body
-    /// is commented out in the source.
-    fn add_points_on_connex_shape(&self, _f: &TopoShape, _li: &InterferenceList) {}
+    // `AddPointsOnConnexShape` (`cxx:231-235`), `FilterByEdge` (`cxx:287-303`)
+    // and `IsOnEdge` (`cxx:306-326`) have no caller in OCCT 8.0.0 either
+    // (`TopOpeBRepDS_GapFiller.cxx` `FindAssociatedPoints` filters by face only;
+    // `AddPointsOnConnexShape` has an empty body), so the port keeps none of them.
 
     /// `FilterByFace(F, LI)` (`cxx:239-258`): keep only the interferences that
     /// have a representation on `F`.
@@ -224,30 +224,6 @@ impl GapFiller {
         if let Some(s2) = s2 {
             if is_same(s2, &f.0) {
                 return true;
-            }
-        }
-        false
-    }
-
-    /// `FilterByEdge(E, LI)` (`cxx:287-303`): keep only the interferences whose
-    /// support is `E`.
-    fn filter_by_edge(&self, e: &TopoShape, li: &mut InterferenceList, hds: &HDataStructure) {
-        li.retain(|handle| self.is_on_edge(handle, e, hds));
-    }
-
-    /// `IsOnEdge(I, E)` (`cxx:306-326`).
-    fn is_on_edge(&self, i: &InterferenceHandle, e: &TopoShape, hds: &HDataStructure) -> bool {
-        for handle in self.gap_tool.same_interferences(i) {
-            let Ok(itf) = handle.read() else {
-                continue;
-            };
-            if itf.support_type() != Kind::Edge {
-                continue;
-            }
-            if let Some(s1) = hds.ds().shape(itf.support(), true) {
-                if is_same(&s1, e) {
-                    return true;
-                }
             }
         }
         false

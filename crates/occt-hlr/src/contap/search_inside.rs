@@ -108,10 +108,10 @@ impl ContapTheSearchInside {
         let mut rsnld = occt_math::MathFunctionSetRoot::new(&*func, &toler, 100);
 
         // `gxx:92-95`.
-        let mut umin = umin + du * 0.01;
-        let mut vmin = vmin + dv * 0.01;
-        let mut umax = umax - du * 0.01;
-        let mut vmax = vmax - dv * 0.01;
+        let umin = umin + du * 0.01;
+        let vmin = vmin + dv * 0.01;
+        let umax = umax - du * 0.01;
+        let vmax = vmax - dv * 0.01;
 
         let mut uvap = MathVector::new(1, 2);
 

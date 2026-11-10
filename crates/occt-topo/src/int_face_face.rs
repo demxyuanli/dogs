@@ -129,11 +129,9 @@ pub struct FaceFaceContext;
 
 #[path = "int_face_face_helpers.rs"]
 mod helpers;
-pub(crate) use helpers::{
-    gp_cone_from_surface, curve_range, gp_cylinder_from_surface, cylinder_params, lin2d_through,
-    line_in_uv_rect, mid, pcurve_of_curve, plane_cylinder_kind, plane_torus_circles, same_curve,
-    gp_sphere_from_surface, surface_sort_index,
-};
+pub(crate) use helpers::{gp_cone_from_surface, curve_range, gp_cylinder_from_surface, lin2d_through, line_in_uv_rect, pcurve_of_curve, plane_torus_circles, same_curve, gp_sphere_from_surface, surface_sort_index};
+#[cfg(test)]
+pub(crate) use helpers::mid;
 
 #[path = "int_face_face_bounds.rs"]
 pub(crate) mod bounds;

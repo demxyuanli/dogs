@@ -55,8 +55,8 @@ pub(crate) fn line_ellipse_geometric_intersection(
         b_val = 0.0;
     }
 
-    let mut x1 = 0.0;
-    let mut y1 = 0.0;
+    let x1;
+    let y1;
     let mut x2 = 0.0;
     let mut y2 = 0.0;
     let nbsol;
@@ -386,13 +386,17 @@ impl IntCurveIntConicConic {
         let mut pos2a;
         let mut pos2b;
 
-        let (mut p1a, mut tan1) = clib2d::ellipse_d1_ax22d(
+        // IntCurve_IntConicConic_1.cxx:2958-2964 -- P1a/P2a are dead until the loop
+        // body overwrites them; only Tan1/Tan2 are read by the opposite test.
+        let (_, mut tan1) = clib2d::ellipse_d1_ax22d(
             solution_ellipse[0].binf,
             &ellipse_axis,
             e.major_radius,
             e.minor_radius,
         );
-        let (mut p2a, mut tan2) = clib2d::line_d1_ax2d(solution_line[0].binf, &line_axis);
+        let (_, mut tan2) = clib2d::line_d1_ax2d(solution_line[0].binf, &line_axis);
+        let mut p1a;
+        let mut p2a;
 
         let is_opposite = tan1.dot(&tan2) < 0.0;
 
@@ -460,7 +464,7 @@ impl IntCurveIntConicConic {
                 pos1a, &mut tan1, &norm1, &mut t1a, pos2a, &mut tan2, &norm2, &mut t2a, tol,
             );
 
-            let mut einf;
+            let einf;
             if pos1a == IntRes2dPosition::End {
                 einf = de.last_parameter();
                 p1a = *de.last_point();
@@ -554,7 +558,7 @@ impl IntCurveIntConicConic {
                 );
 
                 let mut p1b = p1b_pt;
-                let mut esup;
+                let esup;
                 if pos1b == IntRes2dPosition::End {
                     // Faithful to OCCT `_1.cxx:3159`, which reads `DL` rather
                     // than `DE` here (unlike the Line/Circle twin at `:2556`).

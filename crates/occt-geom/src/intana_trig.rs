@@ -10,9 +10,12 @@ use super::quartic_roots;
 const EPS: f64 = 1.5e-12;
 
 /// Result of the trigonometric polynomial solver.
+///
+/// `math_TrigonometricFunctionRoots` returns its roots through out-parameters
+/// and has no failure state: the solver is either `Infinite` or yields the
+/// `Values` it found.
 #[derive(Debug, Clone)]
 pub(crate) enum TrigRoots {
-    Fail,
     Infinite,
     Values(Vec<f64>),
 }

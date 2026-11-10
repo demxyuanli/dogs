@@ -24,8 +24,9 @@ pub(super) struct GridIso {
     pub polynom: Vec<f64>,
     /// `Iso::NbCoeff` (`AdvApp2Var_Iso.cxx:543`). Stays 0 until `MakeApprox`.
     pub nb_coeff: i32,
-    pub ord_u: i32,
-    pub ord_v: i32,
+    // `myOrdInU` / `myOrdInV` of `AdvApp2Var_Iso` are only read by the class's
+    // `MakeApprox`, which the port drives from the shared `Context::ord_u` /
+    // `ord_v` (`make_approx.rs`), so the iso carries no copy of them.
 }
 
 pub(super) struct IsoStatus {
@@ -63,8 +64,6 @@ impl Framework {
             diftab: Vec::new(),
             polynom: Vec::new(),
             nb_coeff: 0,
-            ord_u: iu,
-            ord_v: iv,
         };
         Self {
             nodes: vec![

@@ -5,7 +5,6 @@
 // ---------------------------------------------------------------------------
 
 use super::prelude::*;
-use super::*;
 
 /// Distance from `p` to the segment `a..b`.
 /// `BRepMesh_CurveTessellator::splitByDeflection2d` (`cxx:157-188`).

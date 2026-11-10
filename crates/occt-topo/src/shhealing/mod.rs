@@ -27,6 +27,7 @@ pub(crate) use occt_core::gp::{GpDir, GpLin, GpPnt, GpVec};
 pub(crate) use occt_geom::GeomLine;
 
 pub(crate) use crate::abs::ShapeType;
+#[cfg(test)]
 pub(crate) use crate::brep_measure::edge_length;
 pub(crate) use crate::builder::TopoBuilder;
 pub(crate) use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Vertex, Wire};
@@ -81,8 +82,6 @@ pub use shape_fix_shape_modes::*;
 pub use shape_fix_shape::*;
 pub use shape_fix_shell::*;
 pub use shape_fix_same_parameter::*;
-/// The file-local `SplitWire` helper (`ShapeFix_Face.cxx:242-341`).
-pub(in crate::shhealing) use face_split::split_wire;
 pub use face_split::split_face_after_removed_segment;
 pub use loop_wire::*;
 pub use small_area::*;

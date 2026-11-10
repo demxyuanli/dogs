@@ -102,7 +102,7 @@ impl Geom2dTrimmedCurve {
         }
         let udeb = self.basis.first_parameter();
         let ufin = self.basis.last_parameter();
-        let mut same_sense = true;
+        let same_sense;
         if self.basis.is_periodic() {
             same_sense = sense;
             self.u_trim1 = u1;

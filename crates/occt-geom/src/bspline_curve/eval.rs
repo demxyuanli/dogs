@@ -45,31 +45,6 @@ impl GeomBSplineCurve {
         (new_u, span, uknots, umults)
     }
 
-    /// Finite-difference first derivative: (f(u+h) - f(u-h)) / (2h).
-    fn fd_d1(&self, u: f64) -> GpVec {
-        let h = 1e-6;
-        let p1 = self.d0(u + h);
-        let p2 = self.d0(u - h);
-        GpVec::new(
-            (p1.x() - p2.x()) / (2.0 * h),
-            (p1.y() - p2.y()) / (2.0 * h),
-            (p1.z() - p2.z()) / (2.0 * h),
-        )
-    }
-
-    /// Finite-difference second derivative: (f(u+h) - 2f(u) + f(u-h)) / h^2.
-    fn fd_d2(&self, u: f64) -> GpVec {
-        let h = 1e-6;
-        let p1 = self.d0(u + h);
-        let p0 = self.d0(u);
-        let p2 = self.d0(u - h);
-        GpVec::new(
-            (p1.x() - 2.0 * p0.x() + p2.x()) / (h * h),
-            (p1.y() - 2.0 * p0.y() + p2.y()) / (h * h),
-            (p1.z() - 2.0 * p0.z() + p2.z()) / (h * h),
-        )
-    }
-
     /// Private de Boor evaluation. The public d0 delegates to `eval`; this is
     /// kept as a self-contained reference.
     #[allow(dead_code)]

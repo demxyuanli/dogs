@@ -132,7 +132,8 @@ impl GccAnaCirc2d2TanRad {
                         cote = 1.0;
                     } else {
                         cote = -1.0;
-                        nbsol = 3;
+                        // _1.cxx:202 -- nbsol = 3 is repeated at _1.cxx:204 right
+                        // below, so the inner store is dead in OCCT too.
                     }
                     nbsol = 3;
                     ccote = 1.0;

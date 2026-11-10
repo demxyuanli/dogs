@@ -12,7 +12,6 @@
 //! | `GLOBAL_lfrtoprocess` | `GridSS.cxx:829` |
 //! | `GLOBAL_revownsplfacori` | `GridSS.cxx:807` |
 //! | `GLOBAL_SplitAnc` | `ffsfs.cxx:230-231` |
-//! | `STATIC_motheropedef` / `STATIC_Gmotherope` | `ffsfs.cxx:55-56` |
 //! | `stabuild_IMELF1/2`, `stabuild_IDMEALF1/2`, `stabuild_IMEF`, `static_CONF1/2` | `GridSS.cxx:718-729` |
 
 use std::cell::RefCell;
@@ -20,7 +19,6 @@ use std::cell::RefCell;
 use crate::abs::{Orientation, ShapeType, State};
 use crate::shape::TopoShape;
 use crate::topo_tools::{explorer_shapes, shape_map_key, ShapeMapKey};
-use crate::topopebrep::build::g_topo::GTopo;
 use crate::topopebrep::ds::kind::Config;
 
 use super::Builder;
@@ -35,10 +33,9 @@ struct SsGlobals {
     revownsplfacori: bool,
     /// `GLOBAL_SplitAnc`; `None` is OCCT's `nullptr`.
     split_anc: Option<Vec<(ShapeMapKey, TopoShape, i32)>>,
-    /// `STATIC_motheropedef`.
-    motheropedef: bool,
-    /// `STATIC_Gmotherope`.
-    motherope: GTopo,
+    // `STATIC_motheropedef` / `STATIC_Gmotherope` (`ffsfs.cxx:55-56`) are not
+    // kept: OCCT only hands `GM` back through `FUN_motherope()`, and the port
+    // passes that `GTopo` straight to `g_fill_faces_wes_make_faces`.
     /// `stabuild_IMELF1`.
     imelf1: Vec<(ShapeMapKey, TopoShape)>,
     /// `stabuild_IMELF2`.
@@ -154,29 +151,11 @@ pub fn split_anc_bind(f: &TopoShape, i: i32) {
     });
 }
 
-/// `FUN_setmotherope(G)` (`ffsfs.cxx:57-61`).
-pub fn set_motherope(g: &GTopo) {
-    SS_GLOBALS.with(|s| {
-        let mut s = s.borrow_mut();
-        s.motherope = g.clone();
-        s.motheropedef = true;
-    });
-}
-
-/// `FUN_unsetmotherope()` (`ffsfs.cxx:63-66`).
-pub fn unset_motherope() {
-    SS_GLOBALS.with(|s| s.borrow_mut().motheropedef = false);
-}
-
-/// `FUN_ismotheropedef()` (`ffsfs.cxx:68-71`).
-pub fn is_motherope_defined() -> bool {
-    SS_GLOBALS.with(|s| s.borrow().motheropedef)
-}
-
-/// `FUN_motherope()` (`ffsfs.cxx:73-76`).
-pub fn motherope() -> GTopo {
-    SS_GLOBALS.with(|s| s.borrow().motherope.clone())
-}
+// `FUN_setmotherope` (`ffsfs.cxx:57-61`), `FUN_unsetmotherope`
+// (`ffsfs.cxx:63-66`), `FUN_ismotheropedef` (`ffsfs.cxx:68-71`) and
+// `FUN_motherope` (`ffsfs.cxx:73-76`) store and hand back the `GTopo` of the
+// running WES merge. The port passes that `GTopo` as an argument into
+// `g_fill_faces_wes_make_faces`, so no caller reads the static.
 
 /// `FUNBUILD_MAPSUBSHAPES(LOFS, T, IM)` (`GridSS.cxx:655-665`) into the given
 /// map, appending only shapes not already present (an
@@ -302,15 +281,10 @@ pub fn build_orient_lofs(tb1: State, tb2: State, lofs: &mut [TopoShape]) {
     }
 }
 
-/// `static_CONF1` / `static_CONF2` as written by
-/// `FUNBUILD_ANCESTORRANKPREPARE`; exposed for callers that mirror OCCT's
-/// static reads.
-pub fn ancestor_rank_confs() -> (Config, Config) {
-    SS_GLOBALS.with(|g| {
-        let g = g.borrow();
-        (g.conf1, g.conf2)
-    })
-}
+// `static_CONF1` / `static_CONF2` (`GridSS.cxx:728-729`) are written by
+// `FUNBUILD_ANCESTORRANKPREPARE` (`GridSS.cxx:738-739`) and read by
+// `FUNBUILD_ANCESTORRANKGET` (`GridSS.cxx:749`), both ported below; no other
+// reader exists.
 
 /// `TopAbs::Complement` on an orientation, used by `GSplitFaceSFS`
 /// (`GridSS.cxx:926`, `:958`).

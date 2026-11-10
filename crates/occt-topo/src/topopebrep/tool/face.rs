@@ -9,7 +9,7 @@ use crate::abs::ShapeType;
 use crate::builder::TopoBuilder;
 use crate::fclass2d::{FClass2d, FaceState};
 use crate::shape::{Face, TopoShape};
-use crate::tgeometry::{FaceGeom, GeometryRegistry};
+use crate::tgeometry::GeometryRegistry;
 use crate::topo_tools::explorer_shapes;
 
 /// `class TopOpeBRepTool_face` (`hxx:26-56`).

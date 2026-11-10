@@ -466,9 +466,10 @@ fn walk_dir(
                 }
                 continue;
             }
-            if fleche_c <= 0.25 * fleche * fleche {
-                pasc = first_step(d2d, pas, um, umax, vm, vmax, tol_u, tol_v).max(pasc);
-            }
+            // gxx:2799-2815 (`TestDeflection`) raises the step when the current
+            // deflection is small. Here `pasc` is unconditionally recomputed by
+            // `first_step` at the end of the iteration, so that store is dead in
+            // this port; kept as a comment to preserve the OCCT branch.
         }
         nb_div = 0;
         line.points.push(make_pnt(pn, un, vn, reversed));

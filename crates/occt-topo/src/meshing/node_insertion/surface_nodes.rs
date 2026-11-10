@@ -1,33 +1,17 @@
 //! `BRepMesh_NodeInsertionMeshAlgo` face-basis scaling, `AddPoint` and `GenerateSurfaceNodes`.
 
-use std::collections::HashMap;
 
-use occt_core::gp::{GpPnt, GpPnt2d, GpXY};
-use occt_core::precision::SQUARE_CONFUSION;
-use occt_geom::geom_api::project_point_on_surface;
-use occt_geom::Surface;
+use occt_core::gp::{GpPnt, GpPnt2d};
 
-use crate::abs::Orientation;
 
-use super::super::data_model::*;
-use super::super::delaun::Delaun;
-use super::super::delaun_data::DelaunDataStructure;
-use super::super::delaun_types::{DelaunLink, DelaunTriangle, DelaunVertex, VertexState};
-use super::super::face_discret::Classifier;
+use super::super::delaun_types::VertexState;
 #[allow(unused_imports)]
 use super::super::mesh_algo::*;
 use super::super::face_discret::PointState;
-use super::super::deflection_control::{
-    DelaunayDeflectionControlMeshAlgo, DeflectionMesh,
-};
 use super::super::parameters::MeshParameters;
-use super::super::range_splitter::{
-    mesh_surface_type, create_range_splitter, factory_uses_deflection_control,
-    grab_params_of_internal_edges, RangeSplitter, MeshSurfaceType,
-};
+use super::super::range_splitter::{create_range_splitter, grab_params_of_internal_edges};
 use super::*;
 
-use super::*;
 
 impl DelaunayNodeInsertionMeshAlgo {
     /// Maps a UV point into the Delaunay face basis. Source:

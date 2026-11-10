@@ -10,10 +10,12 @@
 
 use std::sync::Arc;
 
-use occt_core::gp::{GpAx3, GpCylinder, GpDir, GpPln, GpPnt, GpSphere, GpTorus, GpVec};
-use occt_geom::{
-    Curve, GeomCylinder, GeomLine, GeomPlane, GeomSphere, GeomTorus, Surface,
-};
+use occt_core::gp::{GpDir, GpPnt, GpVec};
+#[cfg(test)]
+use occt_core::gp::{GpAx3, GpCylinder, GpPln, GpSphere, GpTorus};
+use occt_geom::{Curve, GeomLine, Surface};
+#[cfg(test)]
+use occt_geom::{GeomCylinder, GeomPlane, GeomSphere, GeomTorus};
 
 use crate::brep_surface::{classify_surface, SurfaceKind};
 
@@ -238,7 +240,7 @@ pub fn surface_surface_intersection(a: &dyn Surface, b: &dyn Surface, tol: f64) 
 mod tests {
     use super::*;
     use std::sync::Arc;
-    use occt_core::gp::GpAx1;
+    
 
     const TOL: f64 = 1e-6;
 

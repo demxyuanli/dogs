@@ -171,8 +171,8 @@ impl<'a> GFuncExtPC2d<'a> {
             };
             let delta = (du * DIVISION_FACTOR).max(MIN_STEP);
             let mut n = 1i32;
-            let mut v = GpVec2d::new(0.0, 0.0);
-            let mut is_derive_found = false;
+            let mut v;
+            let mut is_derive_found;
             loop {
                 n += 1;
                 v = curve_tool::geom2d_dn(c, self.u, n);

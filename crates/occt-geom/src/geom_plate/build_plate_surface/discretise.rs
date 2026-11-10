@@ -24,7 +24,7 @@
 use std::f64::consts::PI;
 use std::sync::Arc;
 
-use occt_core::gp::{GpXY, GpXyz};
+use occt_core::gp::GpXyz;
 use occt_geom2d::Curve2d;
 use occt_geom2d::curve_ops::curve2d_length_between;
 use occt_geom2d::geom2d_int::{GeomAbsCurveType2d, geom2d_curve_type};

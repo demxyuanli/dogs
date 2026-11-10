@@ -179,9 +179,11 @@ pub(crate) fn calcul_pts_inter_tri_edge_coplanaires(
         let pt1p = cote.dot(pt1);
         let pt2p = cote.dot(pt2);
         let mut lambda1 = 0.0;
-        let mut lambda2 = 0.0;
+        // cxx:2115-2215 -- OCCT also stores 0/1 constants into Lambda2/Alpha2 in
+        // branches that never read them afterwards; those dead stores are omitted.
+        let mut lambda2;
         let mut alpha1 = 0.0;
-        let mut alpha2 = 0.0;
+        let mut alpha2;
         let mut pep1 = IntPolyhPoint::default();
         let mut ptp1 = IntPolyhPoint::default();
         let mut pep2 = IntPolyhPoint::default();
@@ -195,7 +197,6 @@ pub(crate) fn calcul_pts_inter_tri_edge_coplanaires(
                 ptp1 = pt1.add(&cote.multiplication(alpha1));
                 *nb_points = 1;
                 if pt1p <= pe2p {
-                    lambda2 = 1.0;
                     pep2 = *pe2;
                     alpha2 = (pe2p - pt1p) / (pt2p - pt1p);
                     ptp2 = pt1.add(&cote.multiplication(alpha2));
@@ -203,7 +204,6 @@ pub(crate) fn calcul_pts_inter_tri_edge_coplanaires(
                 } else {
                     lambda2 = (pt1p - pe1p) / (pe2p - pe1p);
                     pep2 = pe1.add(&edge.multiplication(lambda2));
-                    alpha2 = 0.0;
                     ptp2 = *pt1;
                     *nb_points = 2;
                 }
@@ -214,7 +214,6 @@ pub(crate) fn calcul_pts_inter_tri_edge_coplanaires(
                 ptp1 = pt1.add(&cote.multiplication(alpha1));
                 *nb_points = 1;
                 if pt2p <= pe2p {
-                    lambda2 = 1.0;
                     pep2 = *pe2;
                     alpha2 = (pe2p - pt1p) / (pt2p - pt1p);
                     ptp2 = pt1.add(&cote.multiplication(alpha2));
@@ -222,7 +221,6 @@ pub(crate) fn calcul_pts_inter_tri_edge_coplanaires(
                 } else {
                     lambda2 = (pt2p - pe1p) / (pe2p - pe1p);
                     pep2 = pe1.add(&edge.multiplication(lambda2));
-                    alpha2 = 1.0;
                     ptp2 = *pt2;
                     *nb_points = 2;
                 }
@@ -237,7 +235,6 @@ pub(crate) fn calcul_pts_inter_tri_edge_coplanaires(
                 ptp1 = pt1.add(&cote.multiplication(alpha1));
                 *nb_points = 1;
                 if pt1p <= pe1p {
-                    lambda2 = 0.0;
                     pep2 = *pe1;
                     alpha2 = (pe1p - pt1p) / (pt2p - pt1p);
                     ptp2 = pt1.add(&cote.multiplication(alpha2));
@@ -245,7 +242,6 @@ pub(crate) fn calcul_pts_inter_tri_edge_coplanaires(
                 } else {
                     lambda2 = (pt1p - pe1p) / (pe2p - pe1p);
                     pep2 = pe2.add(&edge.multiplication(lambda2));
-                    alpha2 = 0.0;
                     ptp2 = *pt1;
                     *nb_points = 2;
                 }
@@ -256,7 +252,6 @@ pub(crate) fn calcul_pts_inter_tri_edge_coplanaires(
                 ptp1 = pt1.add(&cote.multiplication(alpha1));
                 *nb_points = 1;
                 if pt2p <= pe1p {
-                    lambda2 = 0.0;
                     pep2 = *pe1;
                     alpha2 = (pe1p - pt1p) / (pt2p - pt1p);
                     ptp2 = pt1.add(&cote.multiplication(alpha2));
@@ -264,7 +259,6 @@ pub(crate) fn calcul_pts_inter_tri_edge_coplanaires(
                 } else {
                     lambda2 = (pt2p - pe1p) / (pe2p - pe1p);
                     pep2 = pe1.add(&edge.multiplication(lambda2));
-                    alpha2 = 1.0;
                     ptp2 = *pt2;
                     *nb_points = 2;
                 }

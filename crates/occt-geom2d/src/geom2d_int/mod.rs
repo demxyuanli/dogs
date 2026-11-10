@@ -31,7 +31,6 @@ mod int_poly_poly_gen;
 mod polygon2d;
 mod proj_p_cur;
 
-pub use conic_conic::*;
 pub use conic_curve::*;
 pub use curve_locator::*;
 pub use curve_sampling::*;

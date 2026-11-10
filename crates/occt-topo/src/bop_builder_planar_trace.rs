@@ -8,9 +8,6 @@ use occt_core::gp::{GpPnt2d};
 
 
 
-use crate::bop_builder_core::{
-    disjoint_result, empty_result, validate, BoolOp, BooleanResult,
-};
 
 
 
@@ -18,10 +15,6 @@ use crate::bop_builder_core::{
 
 
 
-use crate::topo_tools::{
-    edge_vertices, edges_of, edges_of_wire, faces_of, shapes_of, vertex_position, vertices_of,
-    wires_of_face,
-};
 
 
 // ---------------------------------------------------------------------------

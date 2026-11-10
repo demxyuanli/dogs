@@ -37,9 +37,9 @@ use occt_core::precision::{epsilon, INFINITE, PCONFUSION};
 use occt_geom::Surface;
 
 use crate::brep_surface::{classify_surface, SurfaceKind};
-use crate::geom_int::{GLineKind, GeomIntLine, IntPatchIType};
+use crate::geom_int::{GLineKind, GeomIntLine};
 use crate::int_surf_quadric::IntSurfQuadric;
-use crate::int_tools_wline::{PatchPoint, PntOn2S, WLine};
+use crate::int_tools_wline::{PatchPoint, WLine};
 
 /// `Recadre(myHS1, myHS2, u1, v1, u2, v2)` (`cxx:44-153`): shift each periodic
 /// parameter into the surface's `[First, Last]` range by whole 2π turns.
@@ -416,13 +416,3 @@ pub(crate) fn is_segment_small(wline: &WLine, iv_first: i32, iv_last: i32) -> bo
     len <= tol
 }
 
-/// `IntPatch_IType` of a line, matching the `ArcType()` switch arms of the
-/// statics above.
-pub(crate) fn arc_type(l: &GeomIntLine) -> IntPatchIType {
-    l.arc_type()
-}
-
-/// `WLine->Point(i)` for the walking-line statics.
-pub(crate) fn wline_point(wline: &WLine, i: i32) -> PntOn2S {
-    *wline.point(i)
-}

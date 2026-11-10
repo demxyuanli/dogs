@@ -1,7 +1,6 @@
 //! `ShapeAnalysis_Curve::Project` (`ShapeAnalysis_Curve.cxx`) port.
 
 use super::super::prelude::*;
-use super::*;
 
 /// `ShapeAnalysis_Curve::ProjectOnSegments` (`ShapeAnalysis_Curve.cxx:81-122`).
 fn project_on_segments(

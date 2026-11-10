@@ -30,7 +30,7 @@
 
 use occt_math::{MathMatrix, MathVector};
 
-use crate::app_def::{MultiLine, MyLineTool};
+use crate::app_def::MultiLine;
 use crate::approx::line_tool::LineTool;
 use crate::app_par_curves::constraint::{Constraint, ConstraintCouple};
 use crate::app_par_curves::least_square::LeastSquare;

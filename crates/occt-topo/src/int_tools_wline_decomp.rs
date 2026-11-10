@@ -48,7 +48,7 @@ pub fn decomposition_of_wline(
     let mut nblines = 0i32;
     let tol_val = 0.5 * CONFUSION;
     let mut b_is_prev_point_on_boundary = false;
-    let mut b_is_point_on_boundary = false;
+    let mut b_is_point_on_boundary;
 
     for pit in 1..=nb_pnts_val {
         let mut b_is_current_point_on_boundary = false;
@@ -453,8 +453,8 @@ pub fn decomposition_of_wline(
                         let p3d_val = surface.d0(anewpoint.x(), anewpoint.y());
                         if let Some(proj) = project_point_on_surface(surface_other, &p3d_val, 0.0) {
                             if proj.distance < criteria {
-                                let mut found_u = u;
-                                let mut found_v = v;
+                                let mut found_u;
+                                let mut found_v;
                                 found_u = proj.u;
                                 found_v = proj.v;
                                 let aneindex1 = if j == 0 { i_first } else { i_last };

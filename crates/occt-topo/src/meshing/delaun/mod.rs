@@ -11,7 +11,7 @@
 //! Swap for `delaun_index::CircleTool` when it lands.
 mod prelude {
 
-pub(crate) use std::collections::{BTreeMap, BTreeSet, HashMap};
+pub(crate) use std::collections::{BTreeSet, HashMap};
 pub(crate) use std::f64::consts::PI;
 
 pub(crate) use occt_core::gp::{GpPnt2d, GpVec2d, GpXY};

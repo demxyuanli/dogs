@@ -22,7 +22,7 @@ use crate::brep_tool::BRepTool;
 use crate::chfi_ds::TypeOfConcavity;
 use crate::shape::{Compound, Edge, Face, TopoShape, Vertex};
 use crate::topo_tools::{
-    explorer_shapes, is_equal, is_same, shape_map_key, ShapeMapKey,
+    explorer_shapes, is_same, shape_map_key, ShapeMapKey,
 };
 use crate::topopebrep::tool::adaptor::CurveAdaptor;
 use occt_core::gp::GpVec;

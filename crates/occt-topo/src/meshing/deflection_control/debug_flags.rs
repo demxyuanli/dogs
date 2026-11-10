@@ -83,10 +83,6 @@ impl<'a> NormalDeviation<'a> {
     pub(super) fn new(ref_pnt: &'a GpPnt, normal: GpVec) -> Self {
         Self { ref_pnt, normal }
     }
-
-    pub(super) fn square_deviation(&self, point: &GpPnt) -> f64 {
-        SquareDeviation::square_deviation(self, point)
-    }
 }
 
 /// Functor computing the squared deflection of a point from a chord.
@@ -101,14 +97,10 @@ impl<'a> LineDeviation<'a> {
     pub(super) fn new(pnt1: &'a GpPnt, pnt2: &'a GpPnt) -> Self {
         Self { pnt1, pnt2 }
     }
-
-    pub(super) fn square_deviation(&self, point: &GpPnt) -> f64 {
-        SquareDeviation::square_deviation(self, point)
-    }
 }
 
 /// Abstraction of the two deflection functors.
-trait SquareDeviation {
+pub(super) trait SquareDeviation {
     fn square_deviation(&self, point: &GpPnt) -> f64;
 }
 

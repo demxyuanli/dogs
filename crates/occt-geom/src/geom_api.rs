@@ -24,7 +24,7 @@
 use std::sync::Arc;
 
 use occt_core::gp::{
-    GpAx2d, GpAx22d, GpDir2d, GpPln, GpPnt, GpPnt2d, GpVec, GpVec2d,
+    GpAx2d, GpAx22d, GpDir2d, GpPln, GpPnt, GpPnt2d, GpVec,
 };
 use occt_geom2d::bezier_curve::Geom2dBezierCurve;
 use occt_geom2d::bspline_curve::Geom2dBSplineCurve;
@@ -444,7 +444,7 @@ fn proj_lib_plane_project(c: &dyn Curve, pln: &GpPln) -> Option<Arc<dyn Curve2d>
     }
     // `Project(const gp_Circ& C)` (`cxx:110-123`).
     if let Some(cc) = c.gp_circ() {
-        let p = projlib::eval_pln_pnt2d(pln, &cc.location());
+        let _p = projlib::eval_pln_pnt2d(pln, &cc.location());
         let ax = ax22d_on_plane(pln, &cc.position())?;
         return Some(Arc::new(Geom2dCircle::new(
             occt_core::gp::GpCirc2d::new(ax, cc.radius()),

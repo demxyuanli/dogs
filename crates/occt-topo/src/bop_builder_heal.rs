@@ -16,7 +16,7 @@ use crate::shape::{Edge, Face, TopoShape, Wire};
 use crate::shell_check::{shell_is_closed};
 
 use crate::topo_tools::{
-    edge_vertices, edges_of, edges_of_wire, faces_of, shapes_of, vertex_position, vertices_of,
+    edges_of, edges_of_wire, faces_of, vertex_position, vertices_of,
     wires_of_face,
 };
 
@@ -24,8 +24,8 @@ use crate::topo_tools::{
 
 use crate::bop_builder_dispatch::{expand_compound};
 use crate::bop_builder_repair::{
-    analyze_boundary, boolean_repaired, decompose_multi_result, face_connectivity_groups,
-    repair_self_intersections, BoundaryAnalysisReport, MultiResult, RepairResult,
+    face_connectivity_groups,
+    repair_self_intersections, RepairResult,
 };
 
 use crate::bop_builder_planar::*;

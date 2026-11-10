@@ -6,7 +6,7 @@
 //!
 //! | OCCT | lines |
 //! |---|---|
-//! | `FUN_setmotherope` / `FUN_unsetmotherope` / `FUN_ismotheropedef` / `FUN_motherope` | `55-77` |
+//! | `FUN_setmotherope` / `FUN_unsetmotherope` / `FUN_ismotheropedef` / `FUN_motherope` | `55-77` (no reader; see `grid_ss_globals`) |
 //! | `FUN_getAncestorFsp(B, SC, LF, fsp, p3ddef, p3d)` | `111-163` |
 //! | `FUN_getAncestorFsp(B, SC, LF1, LF2, fsp)` | `165-231` |
 //! | `FUN_getAncestorFsp(B, SC, LF1, LF2, FOR, SplitAnc)` | `233-282` |
@@ -113,7 +113,9 @@ impl Builder {
                 let mut lf2 = lfso2.clone();
                 let mut dodo = !lf1.is_empty() && !lf2.is_empty();
 
-                gss::unset_motherope();
+                // `cxx:410`: `FUN_unsetmotherope();` — the port passes the
+                // `GTopo` into `g_fill_faces_wes_make_faces` directly, so the
+                // static keeps no `GTopo` reader.
 
                 let mut gm = gin.clone();
                 gm.change_config(Config::SameOriented, Config::SameOriented);
@@ -153,7 +155,7 @@ impl Builder {
                 gm.change_value_state(tb, State::On, false);
                 gm.change_value_state(ntb, State::On, true);
                 gm.change_config(Config::SameOriented, Config::DiffOriented);
-                gss::set_motherope(&gm);
+                // `cxx:481`: `FUN_setmotherope(GM);` — see the note above.
                 if dodo {
                     set_global_classify_split_edge(true);
                     self.g_fill_faces_wes_make_faces(&lf1, &lf2, &gm);
@@ -204,7 +206,7 @@ impl Builder {
                     gm.change_value_state(State::On, tb, false);
                     gm.change_value_state(State::On, ntb, true);
                     gm.change_config(Config::SameOriented, Config::DiffOriented);
-                    gss::set_motherope(&gm);
+                    // `cxx:556`: `FUN_setmotherope(GM);` — see the note above.
                     if dodo {
                         set_global_classify_split_edge(true);
                         self.g_fill_faces_wes_make_faces(&lf1, &lf2, &gm);
@@ -226,7 +228,7 @@ impl Builder {
                     }
                 }
 
-                gss::unset_motherope();
+                // `cxx:608`: `FUN_unsetmotherope();` — see the note above.
 
                 // `cxx:613`: `GLOBAL_SplitAnc->Clear()`.
                 gss::split_anc_clear();

@@ -145,8 +145,8 @@ impl Walking {
         let mut infb = MathVector::with_init(1, 4, 0.0);
         let mut supb = MathVector::with_init(1, 4, 0.0);
         let mut solrst = MathVector::with_init(1, 4, 0.0);
-        let mut prm = 0.0f64;
-        let mut dist = 0.0f64;
+        let mut prm;
+        let mut dist;
 
         let tool = if on_first {
             Rc::clone(&self.recdomain1)

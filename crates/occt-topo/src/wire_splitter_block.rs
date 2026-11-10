@@ -201,7 +201,7 @@ fn path(
     // `BOPAlgo_WireSplitter_1.cxx:518` (`aEOuta = aLS.Last()`): after the
     // closing scan cuts the path back, the incoming edge is the truncated
     // path's last edge; `None` means "the edge appended in this iteration".
-    let mut e_in: Option<Edge> = None;
+    let mut e_in: Option<Edge>;
     let eps = f64::EPSILON;
     loop {
         if ls.len() == 1 && is_same(&ls[0].0, &map.infos[va_slot][info_idx].edge.0) {

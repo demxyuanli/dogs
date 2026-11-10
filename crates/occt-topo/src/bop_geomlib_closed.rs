@@ -34,70 +34,53 @@ use crate::shape::{Edge, Face};
 
 /// `GeomLib::IsClosed(theSurf, theTol, isUClosed, isVClosed)`.
 pub fn geomlib_is_closed(surf: &dyn Surface, tol: f64) -> (bool, bool) {
-    let mut is_u = false;
-    let mut is_v = false;
     let (u1, u2) = surf.u_range();
     let (mut v1, v2) = surf.v_range();
     let tol2 = (tol.max(CONFUSION)).powi(2);
     match classify_surface(surf) {
-        SurfaceKind::Plane => return (false, false),
+        SurfaceKind::Plane => (false, false),
         SurfaceKind::Cylinder => {
             if !v1.is_finite() {
                 v1 = 0.0;
             }
+            let mut is_u = false;
             if u1.is_finite() && u2.is_finite() {
                 let p1 = surf.d0(u1, v1);
                 let p2 = surf.d0(u2, v1);
                 is_u = square_distance(&p1, &p2) <= tol2;
             }
-            return (is_u, false);
+            (is_u, false)
         }
         SurfaceKind::Cone => {
             let v_use = pick_cone_v(surf, v1, v2);
+            let mut is_u = false;
             if u1.is_finite() && u2.is_finite() {
                 let p1 = surf.d0(u1, v_use);
                 let p2 = surf.d0(u2, v_use);
                 is_u = square_distance(&p1, &p2) <= tol2;
             }
-            return (is_u, false);
+            (is_u, false)
         }
         SurfaceKind::Sphere => {
             let v_use = pick_sphere_v(v1, v2);
+            let mut is_u = false;
             if u1.is_finite() && u2.is_finite() {
                 let p1 = surf.d0(u1, v_use);
                 let p2 = surf.d0(u2, v_use);
                 is_u = square_distance(&p1, &p2) <= tol2;
             }
-            return (is_u, false);
+            (is_u, false)
         }
         SurfaceKind::Torus => {
-            let (du, dv) = u_v_resolution(surf, tol);
-            if surf.is_u_periodic() {
-                let per = (u2 - u1).abs();
-                is_u = per + du >= (u2 - u1).abs().max(CONFUSION) - du
-                    || (u2 - u1).abs() + du >= per - du;
-                // OCCT: (u2-u1) >= UPeriod() - UResolution.
-                let period = (u2 - u1).abs();
-                is_u = (u2 - u1) >= period - du;
-            }
-            if surf.is_v_periodic() {
-                let period = (v2 - v1).abs();
-                is_v = (v2 - v1) >= period - dv;
-            }
-            let _ = (du, dv);
-            // A full torus in the port is periodic in both, so the span is
-            // the period and both flags are true.
-            if surf.is_u_periodic() {
-                is_u = true;
-            }
-            if surf.is_v_periodic() {
-                is_v = true;
-            }
-            return (is_u, is_v);
+            // `cxx:2726-2733`: `isUClosed = (u2 - u1) >= UPeriod() - ures`,
+            // `isVClosed = (v2 - v1) >= VPeriod() - vres`. The resolution is the
+            // adaptor's `UResolution(Tol)` / `VResolution(Tol)`.
+            let (ures, vres) = u_v_resolution(surf, tol);
+            let is_u = (u2 - u1) >= surf.u_period() - ures;
+            let is_v = (v2 - v1) >= surf.v_period() - vres;
+            (is_u, is_v)
         }
-        SurfaceKind::Other => {
-            return sample_other_closed(surf, u1, u2, v1, v2, tol);
-        }
+        SurfaceKind::Other => sample_other_closed(surf, u1, u2, v1, v2, tol),
     }
 }
 

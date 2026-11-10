@@ -361,7 +361,7 @@ fn compute_tangency(
         let vtx = pstart.vertex_id.expect("non-new point has a vertex");
         let bidnorm = GpDir::new(1.0, 1.0, 1.0).expect("gp_Dir(1,1,1)");
         let tole = 1.0e-8;
-        let mut loc_trans = Orientation::Forward;
+        let mut loc_trans;
         let mut comptrans = CurveTransition::new();
         let mut vtxorien = domain.vertex_orientation(vtx);
         comptrans.reset(&vectg, &bidnorm, 0.0);

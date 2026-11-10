@@ -5765,3 +5765,122 @@ Do not grow the dual-pipeline / planar / volume-gate scaffold. Do not invent Fil
 
 (3) **S4 收口口径**：S4 余 75 行只剩 `BRepFeat_trace`，与 `draft` 的处置一并按「不移植（`OCCT_DEBUG` 诊断流 / 无同等分支）」登记，不新增死代码。
 
+
+## T-512 800 行收敛第二批：六个 >900 行文件（2026-11-10）
+
+| 任务卡 | 内容 | 状态 |
+|---|---|---|
+| T-512 A | `crates/occt-geom/src/intana/line_torus.rs`（940）→ `intana/quad_quad_geo/`：`mod.rs` 24（模块文档、`mod` 声明与 `pub use`）、`axes.rs` 126（`AxeOperator` / `AxeOperator::Distance` / `AxesMeetAPoint` / `MidPnt` / `circle_with_normal` / `plane_normal_at` / `gce_MakePln`）、`cylinder_pairs.rs` 174（`Perform(gp_Cylinder, gp_Cylinder)` 与 `(gp_Cylinder, gp_Sphere)`）、`sphere_cone.rs` 58（`Perform(gp_Sphere, gp_Cone)`）、`cone_pairs.rs` 425（`EstimDist` 与 `Perform(gp_Cone, gp_Cone)` 全部分支）、`dispatch.rs` 49（`Perform(gp_Cylinder, gp_Cone)` 与 `quadric_quadric` 分派）、`int_lin_torus.rs` 130（`IntAna_IntLinTorus`）。目录名取 OCCT 类名 `IntAna_QuadQuadGeo`：原文件名 `line_torus` 只覆盖其中 130 行，其余 800 行是 quadric-quadric 各臂。 | 已完成 |
+| T-512 B | `crates/occt-topo/src/pcurve_full/projection_cache.rs`（948）→ `pcurve_full/projection_cache/`：`mod.rs` 52、`cache.rs` 205（`CachePoint` / `ProjectorCache` / `SurfaceProjectorWithCache`，`cxx:66-217`）、`out.rs` 39（`GetLineOut`）、`periodic.rs` 130（`ShapeAnalysis::AdjustToPeriod` 与 `fixPeriodicityTroubles`，`cxx:286-412`）、`line_pcurve.rs` 292（`getLine`，`cxx:902-1102`）、`interpolate.rs` 255（`interpolatePCurve` 与非周期 `Geom2dAPI_Interpolate`）。 | 已完成 |
+| T-512 C | `crates/occt-geom/src/adv_app2var/iso_fnc.rs`（923）→ `adv_app2var/iso_fnc/`：`mod.rs` 30、`patches.rs` 291（`ComputePatches` `cxx:340-476`）、`helpers.rs` 40、`mma2fnc.rs` 197（`cxx:7251`）、`mma1nop.rs` 47（`cxx:1627-1734`）、`mma1fdi.rs` 178（`cxx:596-981`）、`mma1cdi.rs` 184（`cxx:233-465` 与 `mma1cnt_` / `mma1jak_` / `mmmapcoe_` / `mmmpocur_`）。 | 已完成 |
+| T-512 D | `crates/occt-geom/src/geom_convert_concat.rs`（910）→ `geom_convert_concat/`：`mod.rs` 71、`helpers.rs` 159、`mult_num_and_denom.rs` 108、`closed_repara.rs` 122、`concat_c1.rs` 210、`concat_g1.rs` 174、`c0_to_c1.rs` 104。 | 已完成 |
+| T-512 E | `crates/occt-geom/src/extrema_pc/general_extrema_pc.rs`（893）→ `extrema_pc/general_extrema_pc/`：`mod.rs` 49、`function.rs` 62（`ExtPcSolution` + `ExtPcf` 的 `MathFunction` 实现）、`gfunc.rs` 225（`ExtPcf::new` 与 `MaxDerivOrder` / `SearchOfTolerance`）、`state.rs` 113（`ExtPcState` + `ElCLib::InPeriod`）、`perform.rs` 197、`defl.rs` 86（`DeflCurvIntervals`）、`general.rs` 114、`api.rs` 91。 | 已完成 |
+| T-512 F | `crates/occt-geom/src/approx_same_parameter.rs`（806）→ `approx_same_parameter/`：`mod.rs` 47、`cons.rs` 32、`distance.rs` 109、`checks.rs` 158、`resolution.rs` 187、`approx.rs` 240、`perform.rs` 69。 | 已完成 |
+| T-512 G | 门禁（引用既有基线）：`cargo check --workspace --all-targets --offline` **0 error / 0 warning**；`cargo test -p occt-geom --lib` **143 passed**；`step_obj_gates` **4 passed**（241.06s）；`export_data_obj` **15/15 ok**，15 条 `v=/f=` 与 T-511 / T999 逐位一致（Cube 24/12、Cone 195/301、Cylinder 146/140、Sphere 642/1244、Torus 1369/2592、HoledPlate 180/128、OffsetPlaneHoleEdge 48/32、Offset 712/892、Shape 6150/11372、Shape-1 3343/4336、rev 104/92、screw 600/790）；全仓 `#[allow(` 计数 **785**（新增 0 / 删除 0）。 | 已通过 |
+
+**T-512 备注**
+
+(1) **纯结构拆分，逻辑零改动**：六个文件都按「同一命名空间」切分（`mod.rs` + 主题子文件），函数体逐行搬移，分支顺序、OCCT 行号引用、注释原样保留；拆分后六个目录内最大文件 425 行。
+
+(2) **可见度**：跨子文件调用的 helper（`axe_operator`、`circle_with_normal`、`fix_periodicity_troubles`、`SurfaceProjectorWithCache::new/value_of_uv/next_value_of_uv`、`mma1cdi_` 族、`border_cut` 字段、`DistData` 字段、`ExtPcState` 字段等）由 `pub(super)`/私有提为 `pub(crate)`，因为原文件的「同文件私有」在目录化后变成「同模块私有」。公开 API 未变：`pcurve_full::adjust_to_period`、`pcurve_full::ProjectorCache`、`occt_geom::geom_convert_concat::*`、`approx_same_parameter::{ApproxSameParameter, u_resolution, v_resolution}`、`extrema_pc::general_extrema_pc::ExtPcSolution` 均经 `pub use` 保持原路径。
+
+(3) **`ElCLib::InPeriod` 的 `mut`**：拆分后 `general_extrema_pc/state.rs` 的 `let mut period` 触发 `unused_mut`（函数体内只读，无重赋值），改为 `let period`。这是本轮唯一的非搬移改动，无语义影响。
+
+(4) **旁支问题（未修）**：①全仓仍有 **35 个** `.rs` 超过 800 行（最大 `meshing/delaun_data.rs` 944、`bop_builder2/arguments.rs` 941、`shhealing/intersection_tool/fix_intersecting_wires.rs` 934、`occt-topology/brep_tool.rs` 932、`occt-exchange/brep_exchange.rs` 918），属后续批次；②`fix_intersecting_wires.rs`（934）与 `bop_builder2/arguments.rs`（941）是**单个函数/单个 OCCT 函数体**（`ShapeFix_IntersectionTool.cxx:1834-2530`、`BOPAlgo_ArgumentAnalyzer` 主循环），拆成子函数等于重写控制流，需另开任务判定（T-510 对 `MakeMissingWalls` 540 行单函数已按「保持单函数不拆」处理）；③`meshing/delaun/triangulation.rs`（857）与 `extrema_surf/gen_ext_ps/engine.rs`（804）为单 `impl` 块，可按方法组拆成多个 `impl` 文件；④`graphify-out/` 需 `graphify update .` 刷新（本批 6 个目录、41 个新文件）。
+
+## T-513 800 行收敛第三批：八个 >870 行文件（2026-11-10）
+
+| 任务卡 | 内容 | 状态 |
+|---|---|---|
+| T-513 A | `crates/occt-topo/src/meshing/delaun_data.rs`（944）-> `meshing/delaun_data/`：`mod.rs` 30、`vertex_cells.rs` 130（`BRepMesh_VertexTool` + `BRepMesh_VertexInspector` 的 `NCollection_CellFilter` 等价物：`cell_coord` / `cell_range` / `add` / `remove` / `find_index`）、`structure.rs` 90（`DelaunDataStructure` 字段 + 构造 + `SetCellSize` / `SetTolerance`）、`nodes.rs` 107（`NbNodes` / `AddNode` / `AddNodeForce` / `IndexOf` / `Substitute` / `RemoveNode` / `ConnectedLinks`）、`links.rs` 163（`AddLink` / `IndexOf` / `SubstituteLink` / `RemoveLink` / `ElementsConnectedTo` / `LinksOfDomain`）、`elements.rs` 123（`AddElement` / `SubstituteElement` / `RemoveElement` / `ElementNodes`）、`auxiliary.rs` 111（`ClearDomain` / `ClearDeleted` / `ClearDeletedLinks` / `ClearDeletedNodes`）、`selector.rs` 116（`BRepMesh_SelectorOfDataStructureOfDelaun`）、`tests.rs` 101。 | 已完成 |
+| T-513 B | `crates/occt-topo/src/bop_builder2/arguments.rs`（941）-> `bop_builder2/arguments/`：`mod.rs` 15、`constructor.rs` 26（`BOPAlgo_Builder` 构造）、`groups.rs` 92（`SetArguments` / `AddArgument` / `AddTool` / `SetTools` + obj/tool 状态）、`report.rs` 32（`BOPAlgo_Alert` 报告）、`accessors.rs` 176（ds / history / origins / fuzzy / glue / `myShapesSD` / in_parts / filler / 历史开关）、`perform.rs` 157（`Perform` / `PerformWithFiller` / `PerformInternal1` / `ResetRun` / `Clear`）、`build.rs` 185（`FillImagesForGroups` / `BuildBOP(cxx:483-841)` / `BuildBOP(Operation)` / `BuildResult`）、`fill_images.rs` 115（`FillImagesVertices` / `Edges` / `Faces` / `Solids`）、`history.rs` 185（`PostTreat` / `PrepareHistory` / `LocGenerated` / `collect_interf_vertices`）。 | 已完成 |
+| T-513 C | `crates/occt-topology/src/brep_tool.rs`（932）-> `brep_tool/`：`mod.rs` 21（模块文档 + `BRepTool` 声明）、`closedness.rs` 89（`IsClosed(E,F)` / `IsClosed(S)` / `fold_occurrences_closed` / `IsClosed(E)`）、`accessors.rs` 172（point / triangulation / polygon3d / tolerance / curve / surface / `MaxTolerance`）、`edge_face_queries.rs` 61（`edge_vertices` / `same_parameter` / `is_degenerated` / `parameter_on_edge` / `natural_restriction` / `uv_bounds`）、`world.rs` 60（`*_world` 系列）、`integrity.rs` 18、`vertex_parameter.rs` 280（`Parameter(V,E)` 的 representation 分支 + `point_parameter_on_curve` / `_pcurve`）、`uv_parameter.rs` 151（`Range(E,S,L)` / `UVPoints` / `Parameters(V,F)`）、`helpers.rs` 22（`clamp_to_confusion`）、`tests.rs` 127。 | 已完成 |
+| T-513 D | `crates/occt-exchange/src/brep_exchange.rs`（918）-> `brep_exchange/`：`mod.rs` 16、`mesh_export.rs` 161（`ShapeMesh` -> OBJ/STL/PLY + `prs3d_get_deflection` + `brep_write_*`）、`style.rs` 137（`FaceSource` / `face_source` / `SL_PROPS_LIN_TOL` / `face_node`）、`caf_nodes.rs` 228（`obj_caf_nodes` / `mesh_missing_faces` / `obj_caf_nodes_from_document`）、`gltf.rs` 175（`gltf_caf_nodes` / `_from_document` / `empty_face_node`）、`model_export.rs` 151（`model_to/write_{gltf,ply,obj}_caf` / `document_shape`）、`tests.rs` 81。 | 已完成 |
+| T-513 E | `crates/occt-exchange/src/step/write_context.rs`（917）-> `step/write_context/`：`mod.rs` 18、`bspline_convert.rs` 144（`exact_bspline_of` / `bounded_bspline_surface` / `curve_to_bspline` / `open_periodic_bspline` / `bounded_bspline_of_curve`）、`context.rs` 476（`WriteCtx` 全量 `GeomToStep` 分派）、`surface_params.rs` 63（`children_of_type` / `cylinder_params` / `cone_params` / `torus_params`）、`api.rs` 73（`write_step` / `write_step_file` / `write_shape_step` / `write_step_with_{splines,name,color}`）、`options.rs` 58（`StepUnits` + `emit_si_units` + `write_step_with_units`）、`options_write.rs` 84（`StepWriteOptions` + `write_step_with_options` / `_with_name_and_color`）、`assembly.rs` 47（`StepAssembly` + `write_step_assembly[_file|_with_splines]`）。 | 已完成 |
+| T-513 F | `crates/occt-topology/src/adaptor.rs`（900）-> `adaptor/`：`mod.rs` 24、`surface_adaptor.rs` 408（`BRepAdaptor_Surface` = `of_face` / `of_face_restricted` / `of_surface[_with_range]` / `GetType` 与二次曲面转换 / 次数极点数 + `curve_*` 小工具）、`curve_adaptor.rs` 291（`BRepAdaptor_Curve` + `impl Curve` 全部分支）、`geom_adaptor_curve.rs` 192（`GeomAdaptor_Curve` + `impl Curve`）。 | 已完成 |
+| T-513 G | `crates/occt-geom/src/approx/bspline_approx_interp.rs`（886）-> `approx/bspline_approx_interp/`：`mod.rs` 44（模块文档 + `pub use`）、`constants.rs` 26（`THE_*` 常量组）、`linear_algebra.rs` 160（`math_lin_lu` = `MathLin_Gauss.hxx:44-155`、`solve_lu`、`matrix_times_vector`、`set_block`、`insert_kink_knot`）、`matrix.rs` 19（`math_Matrix::Multiplied`）、`solver.rs` 655（`Approx_BSplineApproxInterp` 的 KKT 组装 `solve`、`project_on_curve`、`optimize_parameters` 及全部公开入口）。 | 已完成 |
+| T-513 H | `crates/occt-topo/src/meshing/model_builder/wire_builder.rs`（876）-> `meshing/model_builder/wire_builder/`：`mod.rs` 16、`pcurve.rs` 62（`CurveOnSurface` 访问器 + `sample_pcurve` / `sample_count_2d`）、`add_wire.rs` 227、`wire_edges.rs` 290（`outer_of_wires` / `wire_edges_sewd` / `edge_oriented_ends` / `wire_edges_explorer` / `vertex_key` / `same_vertex` / `vmap_toggle`）、`wire_walk.rs` 111（`wire_next_by_uv`）、`next_param.rs` 95（`next_param_on_pc` / `wire_area_2d`）、`builder.rs` 112（`ModelBuilder::build_model`）。 | 已完成 |
+| T-513 I | 门禁（引用既有基线）：`cargo check --workspace --all-targets --offline` **0 error / 0 warning**；`step_obj_gates` **4 passed**（180.09s）；`export_data_obj` **15/15 ok**，`v=/f=` 与 T-512 / T-511 逐位一致（Cube 24/12、Cone 195/301、Cylinder 146/140、Sphere 642/1244、Torus 1369/2592、HoledPlate 180/128、OffsetPlaneHoleEdge 48/32、Offset 712/892、Shape 6150/11372、Shape-1 3343/4336、Shape-2 3098/4778、Extrusion 24/12、linkrods 3494/5078、rev 104/92、screw 600/790）；全仓 `#[allow(` 计数 **785**（新增 0 / 删除 0）。 | 已通过 |
+
+**T-513 备注**
+
+(1) **纯结构拆分，逻辑零改动**：八个文件都按「同一命名空间」切分（`mod.rs` + 主题子文件），函数体逐行搬移，分支顺序、OCCT 行号引用、注释原样保留；拆分后八个目录内最大文件 `approx/bspline_approx_interp/solver.rs` 655 行，其余均 < 500。
+
+(2) **可见度**：只有必要的可见度关键字与 `use` 调整，公开 API 未变。①`bop_builder2/arguments/`：`perform_internal` / `reset_run` / `build_result` / `loc_generated` / `collect_interf_vertices` 由 `pub(super)` 提为 `pub(crate)`——目录化多一层嵌套后 `pub(super)` 只到 `arguments`，而调用方 `data_access.rs` / `section.rs` 是 `bop_builder2` 的子模块；②`step/write_context/`：`WriteCtx` 及其字段与 `emit_si_units` 由 `pub(super)` 提为 `pub(crate)`，因为 `step/format.rs` 与 `step/transfer/write_api.rs` 直接读 `ctx.w` / `ctx.splines`（原文件里这些字段对 `step` 整个子树可见）；③其余子文件内跨文件调用的 helper 一律 `pub(super)`。
+
+(3) **`meshing/delaun_data/tests.rs`**：原 `#[cfg(test)] mod tests` 原位搬出为 `#[cfg(test)] mod tests;`，断言与测试名一字未改。
+
+(4) **旁支问题（未修）**：①全仓仍有 **27 个** `.rs` 超过 800 行，最大 `shhealing/intersection_tool/fix_intersecting_wires.rs` 934、`occt-geombase/src/intf/tool.rs` 874、`brep_gprop_full/integration.rs` 863、`intimpargen/intersector.rs` 861、`iges_read/iges_to_brep_topo_surface.rs` 860、`brep_extrema.rs` 859；②`fix_intersecting_wires.rs`（934）仍是**单个 OCCT 函数体**（`ShapeFix_IntersectionTool.cxx:1834-2530`，`fix_intersecting_wires` 一个函数 873 行），拆子函数等于重写控制流，按 T-510 口径「保持单函数不拆」；③`delaun/triangulation.rs`（857）与 `extrema_surf/gen_ext_ps/engine.rs`（804）为单 `impl` 块，可按方法组拆成多个 `impl` 文件；④`graphify-out/` 需 `graphify update .` 刷新（本批 8 个目录、57 个新文件）。
+
+
+## T-514 800 行收敛第四批：五个 >850 行文件（2026-11-10）
+
+| 任务卡 | 内容 | 状态 |
+|---|---|---|
+| T-514 A | `crates/occt-geombase/src/intf/tool.rs`（874）-> `intf/tool/`：`mod.rs` 47（`Intf_Tool` 模块头，含 UNPORTED 的 `HyprBox` / `Inters3d` 说明）、`helpers.rs` 57（`gp_Dir2d::D::NX/NY/X/Y` + `Bnd_Box2d::Set(P,D)` + `Bnd_Box::Add(gp_Dir)`）、`structure.rs` 46（`IntfTool` 字段 + ctor `Intf_Tool.cxx:38-48`）、`lin2d.rs` 136（`Lin2dBox`，`cxx:52-206`）、`hyperbola2d.rs` 219（`Hypr2dBox` + `Inters2d(gp_Hypr2d)`，`cxx:210-473`）、`parabola2d.rs` 208（`Parab2dBox` + `Inters2d(gp_Parab2d)`，`cxx:477-742`）、`lin3d.rs` 186（`LinBox`，`cxx:746-963`）、`segments.rs` 35（`NbSegments` / `BeginParam` / `EndParam`，`cxx:1634-1653`）。 | 已完成 |
+| T-514 B | `crates/occt-topo/src/brep_gprop_full/integration.rs`（863）-> `brep_gprop_full/integration/`：`mod.rs` 24、`face_gauss.rs` 257（`FaceGauss::new` 的 `BRepGProp_Domain` 边界装配 + 全部积分阶/knot 访问器 + `normal` / `uv_polygon_signed_area` / `wire_sign`）、`coeff.rs` 17（`SCoeff` / `LCoeff`）、`boundary.rs` 161（`build_arc` 的 `BRep_Tool::CurveOnSurface` 分支 + `classify_arc_kind[2d]` + `uv_bounds`）、`quadrature.rs` 164（`GaussType` + `compute_natural` / `compute_rect` / `u_iso_knots` / `compute_domain` / `compute_face`）、`adaptive.rs` 135（`compute_adaptive` / `adapt_outer`）、`natural_scan.rs` 48（`natural_slice` / `natural_outer_scan`）、`arc_scan.rs` 86（`adapt_outer_arc` / `arc_slice` / `arc_outer_scan`）。 | 已完成 |
+| T-514 C | `crates/occt-geombase/src/intimpargen/intersector.rs`（861）-> `intimpargen/intersector/`：`mod.rs` 22、`imp_par_tool.rs` 52（`IntCurve_MyImpParToolOfIntImpConicParConic` + `MathFunction` / `MathFunctionWithDerivative`）、`structure.rs` 48（`IntImpParGenIntersector` + `with_params`，`gxx:224-242`）、`domain_scan.rs` 162（`And_Domaine_Objet1_Intersections`，`gxx:42-222`）、`param_search.rs` 59（`FindU` / `FindV`，`gxx:781-822`）、`perform.rs` 550（`Perform`，`gxx:245-779`）。 | 已完成 |
+| T-514 D | `crates/occt-exchange/src/iges_read/iges_to_brep_topo_surface.rs`（860）-> `iges_read/iges_to_brep_topo_surface/`：`mod.rs` 28、`transfer.rs` 46（`TransferTopoSurface` 的 144/120/122/118/108/143/140/402 分派，`cxx:184-232`）、`trimmed_surface.rs` 52（`cxx:1219-1376`）、`revolution.rs` 167（`TransferSurfaceOfRevolution` `cxx:699-879` + `revol_profile` + `extract_curve_3d` + `collect_edges`）、`revolution_axis.rs` 33（`moved_revolution_axis`）、`uv_map.rs` 121（`ParamSurface` `cxx:1846-2070`）、`param_shift.rs` 150（`elementary_param_shift` `cxx:1859-1974` + `circ_arc_parameter`）、`face_transform.rs` 109（`apply_trimmed_transform` `cxx:1321-1371` + `col_sq` + `move_face`）、`plane.rs` 179（`TransferPlane` / `TransferPlaneParts` / `plane_bounding_wire`，`cxx:1493-1785`）、`perforate.rs` 59（`TransferPerforate`，`cxx:1526-1604`）、`plane_location.rs` 35（`plane_trsf` / `apply_plane_trsf`）、`face_build.rs` 22（`make_face` 带 `Precision::Confusion`）。 | 已完成 |
+| T-514 E | `crates/occt-topo/src/brep_extrema.rs`（859）-> `brep_extrema/`：`mod.rs` 33、`distance.rs` 115（`point_shape_distance` / `shape_distance`）、`closest.rs` 138（`closest_vertex` / `closest_point_on_edge` / `closest_point_on_face`）、`inside.rs` 118（`is_inside` 的 `BRepClass3d_SolidClassifier` 分支 + `is_inside_mesh` + `shape_bbox_distance` + `axis_gap`）、`mesh_sampling.rs` 92（`mesh_faces`）、`uv_projection.rs` 121（`face_uv_window` / `project_to_surface` / `face_boundary_edges` / `face_boundary_points`）、`bbox_ray.rs` 58（`shape_bbox` + `ray_plus_x_hits`）、`collect.rs` 55（`collect_vertices` / `collect_edges` / `collect_faces`）、`test_box.rs` 139（`UnitBox` 单元盒 fixture，`#[cfg(test)] pub(crate) mod test_box;`，`crate::brep_extrema::test_box::unit_box` 路径不变）、`tests.rs` 64。 | 已完成 |
+| T-514 F | 门禁（引用既有基线）：`cargo check --workspace --all-targets --offline` **0 error / 0 warning**；`step_obj_gates` **4 passed**（159.74s）；`export_data_obj` **15/15 ok**，`v=/f=` 与 T-513 逐位一致（Cube 24/12、Cone 195/301、Cylinder 146/140、Sphere 642/1244、Torus 1369/2592、HoledPlate 180/128、OffsetPlaneHoleEdge 48/32、Offset 712/892、Shape 6150/11372、Shape-1 3343/4336、Shape-2 3098/4778、Extrusion 24/12、linkrods 3494/5078、rev 104/92、screw 600/790）；全仓 `#[allow(` 计数 **785**（新增 0 / 删除 0）。 | 已通过 |
+
+**T-514 备注**
+
+(1) **五个文件都是纯结构拆分**：函数体逐行搬移，分支顺序、OCCT 行号引用、注释原样保留；拆分后五个目录内最大文件 `intimpargen/intersector/perform.rs` 550 行（`Perform` 单个 OCCT 函数 `gxx:245-779`，不拆）。
+
+(2) **可见度**：①`intf/tool/`：`IntfTool` 的 `nb_seg` / `begin_on_curve` / `end_on_curve` / `bord` / `xint` / `yint` / `zint` / `parint` 由私有提为 `pub(super)`（原文件内同一模块可见），`inters2d_hypr` / `inters2d_parab` 同步 `pub(super)`，`zint` 的 `#[allow(dead_code)]` 原位保留；②`brep_gprop_full/integration/`：`FaceGauss` 的方法与自由函数由 `pub(super)` 提为 `pub(in crate::brep_gprop_full)`（目录化多一层后 `pub(super)` 只到 `integration`，而调用方是 `brep_gprop_full::properties`），`integration/mod.rs` 以 `pub(in crate::brep_gprop_full) use <子模块>::*;` 重新导出；③`brep_extrema/`：私有 helper 提为 `pub(super)`，`mod.rs` 用 `pub use`（公开项）与 `pub(in crate::brep_extrema) use`（helper 组）重新导出，`test_box` / `tests` 用 `#[cfg(test)] mod` 挂载；④`iges_to_brep_topo_surface/`：自由函数提为 `pub(super)` + `mod.rs` 以 `pub(in crate::iges_read::iges_to_brep_topo_surface) use <子模块>::*;` 汇总，`uv_map` / `extract_curve_3d` / `transfer_topo_surface` 保持 `pub(in crate::iges_read)` 不变，函数体里的 `super::<iges_read 子模块>` 路径同步改为 `super::super::`。
+
+(3) **`brep_extrema` 的 `test_box` fixture**：原 `#[cfg(test)] pub(crate) mod test_box { ... }` 改挂为 `test_box.rs` + `#[cfg(test)] pub(crate) mod test_box;`，`unit_box()` / `UnitBox` 的 `pub(crate)` 可见度不变，`bopds` / `builder_face` / `shell_splitter` / `wire_splitter` / `pcurve` / `bean_face` / `edge_face` 等 15 处测试引用路径未动。
+
+(4) **旁支问题（未修）**：①全仓仍有 **22 个** `.rs` 超过 800 行，最大 `shhealing/intersection_tool/fix_intersecting_wires.rs` 934、`meshing/delaun/triangulation.rs` 857、`geom2d_int/conic_curve.rs` 856、`topopebrep/ds/export.rs` 855、`brep_fill_location_law.rs` 852、`intf/interference_polygon_polyhedron.rs` 850；②`fix_intersecting_wires.rs`（934）仍是单个 OCCT 函数体（`ShapeFix_IntersectionTool.cxx:1834-2530`），按 T-510 口径保持单函数不拆；③`meshing/delaun/triangulation.rs`（857）与 `extrema_surf/gen_ext_ps/engine.rs`（804）为单 `impl` 块，可按方法组拆多个文件；④`graphify-out/` 需 `graphify update .` 刷新（本批 5 个目录、43 个新文件）。
+
+**T-515 提交前修正：`delaun_data/aux.rs` 撞 Windows 保留设备名（2026-11-10）**
+
+| 任务卡 | 内容 | 状态 |
+|---|---|---|
+| T-515 A | `crates/occt-topo/src/meshing/delaun_data/aux.rs` -> `auxiliary.rs` + `mod aux;` -> `mod auxiliary;`（`meshing/delaun_data/mod.rs:18`）。`aux` 是 DOS 保留设备名（`CON` / `PRN` / `AUX` / `NUL` / `COM1-9` / `LPT1-9`），Win32 把它解析成设备而不是文件：`git add` 对该文件稳定报 `error: open("crates/occt-topo/src/meshing/delaun_data/aux.rs"): No such file or directory` / `unable to index file`，`git hash-object -- <同一路径>` 也是 `could not open ... for reading`，而同目录 `aux_copy_test.rs`（同样内容）`git add` 正常，`Test-Path` / `Get-Item` 也都正常。结果就是 T-512/T-513/T-514 三个批次的源码整体无法入库。函数体零改动，仅模块名与 `mod` 声明。 | 已完成 |
+| T-515 B | 门禁（引用既有基线）：`cargo check -p occt-topo --lib --offline` **0 error**；`cargo test --workspace --lib` **1960 passed / 1 ignored**（13 suites）；`export_data_obj` **15/15 ok**，`v=/f=` 与 T-514 逐位一致（Cube 24/12、Cone 195/301、Cylinder 146/140、Sphere 642/1244、Torus 1369/2592、HoledPlate 180/128、OffsetPlaneHoleEdge 48/32、Offset 712/892、Shape 6150/11372、Shape-1 3343/4336、Shape-2 3098/4778、Extrusion 24/12、linkrods 3494/5078、rev 104/92、screw 600/790）；`step_obj_gates` **4 passed**（213.10s）。 | 已通过 |
+
+**T-515 备注**
+
+(1) **命名规避**：以后拆分子文件不要用 `aux.rs` / `con.rs` / `prn.rs` / `nul.rs` / `com1..9.rs` / `lpt1..9.rs`，Windows 上不可入库；语义等价的 `auxiliary.rs` / `misc.rs` 都可以。全仓当前只有这一个命中（`Get-ChildItem crates -Recurse -File | ? { $_.BaseName -match '^(?i)(con|prn|aux|nul|com[1-9]|lpt[1-9])$' }`）。
+
+(2) **提交范围**：本次提交为 T-512 / T-513 / T-514 三个拆分批次 + 本修正，覆盖 `crates/` 下 21 个删除、333 个修改、20 个新模块目录，以及 `specs/_tasks.md` 台账；根目录 `zz_del_coplanar.ps1` / `zz_ds_list.ps1` 是拆分过程的临时脚本，不入库。
+
+
+## T-513 收口：清单第 10、11 项（2026-11-10）
+
+| 任务卡 | 内容 | 状态 |
+|---|---|---|
+| T-513 J | `crates/occt-topo/src/brep_builder_api_sewing/candidates.rs`（819）-> `candidates/`：`mod.rs` 12、`abscissa.rs` 37（`uniform_abscissa_range` = `GCPnts_UniformAbscissa.cxx:505-515`）、`angulars.rs` 88（`EvaluateAngulars`，`cxx:1189-1280`）、`distances.rs` 173（`EvaluateDistances`，`cxx:1287-1522`）、`nearest_edges.rs` 331（`AnalysisNearestEdges` `cxx:1618-1782` + `MergedNearestEdges` `cxx:4242-4431`）、`find_candidates.rs` 204（`FindCandidates`，`cxx:1785-2086`）、`helpers.rs` 25（`edge_end_points` / `face_of`）。 | 已完成 |
+| T-513 K | `crates/occt-topo/src/topopebrep/ds/export.rs`（855）-> `export/`：`mod.rs` 59（模块头 + 全部 re-export + `TopOpeBRepDS_EXPORT.cxx` UNPORTED 条目清单原样保留）、`transition_ops.rs` 58（`FDS_SetT` / `FDS_HasUnk` / `FDS_Copy[*]` / `FDS_Assign[*]` / `FUN_ds_samRk`，`cxx:61-142`）、`data_access.rs` 46（`FDS_Tdata` / `FDS_data` / `FDS_data` 判定重载 / `FDS_Idata`，`cxx:144-176`）、`shape_queries.rs` 75（`FUN_ds_hasFEI` `:3279` / `FUN_ds_GetVsdm` / `FUN_ds_SDM` / `FUN_ds_GetOOV`，`cxx:464-495`）、`parameter.rs` 41（`FDS_Parameter` / `FDS_Parameter_or_fail`，`cxx:464-475`）、`same_domain.rs` 227（`FUN_SelectTrain_TInterference` / `FDS_aresamdom` / `FDS_EdgeIsConnexToSameDomainFaces` / `FDS_HasSameDomain3d` / `FDS_Config3d` / `FDS_HasSameDomain2d` / `FUN_ds_ONesd`，`cxx:282-462`）、`loi.rs` 203（`FDS_LOIinfsup` `cxx:3427-3566` / `FDS_parbefaft` / `FDS_stateEwithF2d` / `FDS_GetUpperLower`）、`eis_se2.rs` 68（`EISSE2_*` 常量 + `FUN_EisSE2`，`cxx:1792-1871`）、`fill_sdm.rs` 106（`FUN_ds_FillSDMFaces` `cxx:1874-1947` + `FUN_ds_AddSESDM1d`）、`si_gi.rs` 41（`FDS_SIisGIofIofSBAofTofI`，`cxx:396-462`）。 | 已完成 |
+| T-513 L | 门禁（引用既有基线）：`cargo check --workspace --all-targets --offline` **0 error / 0 warning**；`step_obj_gates` **4 passed**（260.89s）；`export_data_obj` **15/15 ok**，`v=/f=` 与 T-514 逐位一致（Cube 24/12、Cone 195/301、Cylinder 146/140、Sphere 642/1244、Torus 1369/2592、HoledPlate 180/128、OffsetPlaneHoleEdge 48/32、Offset 712/892、Shape 6150/11372、Shape-1 3343/4336、Shape-2 3098/4778、Extrusion 24/12、linkrods 3494/5078、rev 104/92、screw 600/790）；全仓 `#[allow(` 计数 **785**（新增 0 / 删除 0）。 | 已通过 |
+
+**T-513 收口备注**
+
+(1) **清单 11 项全部完成**：`step/write_context` / `occt-topology/brep_tool` / `brep_exchange` / `meshing/delaun_data` / `wire_builder` / `iges_to_brep_topo_surface` / `intf/tool` / `brep_gprop_full/integration` / `brep_extrema` / `sewing/candidates` / `topopebrep/ds/export` 均已改为 `<module>/mod.rs` + 内聚子模块，逻辑逐行搬移，公开 API 与 OCCT 行号引用未变。
+
+(2) **保留的单函数文件**：`shhealing/intersection_tool/fix_intersecting_wires.rs`（934）仍是 `ShapeFix_IntersectionTool.cxx:1834-2530` 的单函数体，按 T-510 口径不拆；`bop_builder2/arguments.rs` 已在前批目录化（非单文件，但 `PerformInternal1` 单函数体未拆）。
+
+(3) **可见度**：①`sewing/candidates/`：`uniform_abscissa_range` 由 `pub(crate)` 提为 `pub(super)` 并在 `angulars.rs` 以 `use super::abscissa::uniform_abscissa_range;` 引入；②`topopebrep/ds/export/`：各子文件以 `use super::*;` 取同级导出，`mod.rs` 用 `pub use <子模块>::*;` 汇总，`super::<ds 子模块>` 路径同步改为 `super::super::`，`super::export::` 前缀去除。
+
+(4) **全仓 >800 行现状：20 个**，最大 `fix_intersecting_wires.rs` 934、`meshing/delaun/triangulation.rs` 857、`geom2d_int/conic_curve.rs` 856、`brep_fill_location_law.rs` 852、`intf/interference_polygon_polyhedron.rs` 850、`meshing/model_healer.rs` 848。
+
+(5) **旁支问题（未修）**：①`meshing/delaun/triangulation.rs`（857）与 `extrema_surf/gen_ext_ps/engine.rs`（804）为单 `impl` 块，可按方法组拆；②`graphify-out/` 需 `graphify update .` 刷新（本批 2 个目录、17 个新文件）。
+
+**T-513 与原始任务卡的口径差异（已核实，记录备查）**
+
+任务卡要求「保留 `bop_builder2/arguments.rs`(865) 单函数文件」，实际执行时该文件已在 T-513 B 拆为 `bop_builder2/arguments/`（9 文件，max 185）。判定：任务卡该条的依据是「单函数文件拆分会伪造控制流」，而本次拆分是**按 OCCT 成员分文件**（`BOPAlgo_Builder` 的 `SetArguments` / `Perform` / `BuildBOP` / `FillImages*` / `PostTreat` 各自独立），其中体量最大的两个单函数 `PerformInternal1`（`BOPAlgo_Builder.cxx`）、`BuildBOP`（`cxx:483-841`）**函数体均未拆分**，符合「单函数体不拆」的实质要求，同时满足 800 行约束，故保留拆分结果而不回退。若不接受此差异，可回退为单文件（会重新产生 1 个 941 行文件）。
+
+**T-513 完成性核对（证据）**
+
+| 要求 | 证据 |
+|---|---|
+| 11 个目标文件均目录化 | 逐个 `Test-Path <mod>\mod.rs` = True、`Test-Path <mod>.rs` = False；子文件最大值 476（`step/write_context/context.rs`） |
+| 不改公开 API | `ds/export` 公开项 36 -> 36、缺失 0；`sewing/candidates` 5 -> 5、缺失 0；`intf/tool` 9 -> 10（新增 `mod.rs` 的 `pub use structure::IntfTool`，无缺失）；`intimpargen/intersector` 6 -> 11、缺失 0；`brep_extrema` 唯一「缺失」为 `pub(crate) fn unit_box`，已核实仍在 `brep_extrema::test_box::unit_box`（模式未匹配 `pub(crate)` 缩进所致），15 处测试引用全部编译通过 |
+| `fix_intersecting_wires.rs` 保持单文件 | 934 行，未拆 |
+| workspace 0 error / 0 warning | `cargo check --workspace --all-targets --offline`，warning/error 匹配行数 = 0 |
+| `#[allow(...)]` = 785 | 全仓 `Select-String '#\[allow\('` = 785 |
+| `step_obj_gates` 4/4 | `cargo test --test step_obj_gates` -> 4 passed（260.89s） |
+| `export_data_obj` 基线一致 | 15/15 ok，`v=/f=` 与 T-514 逐位一致 |
+| `specs/_tasks.md` 回执 | T-513 A..L 三张表 + 备注 |

@@ -113,7 +113,7 @@ impl RenderingProperties {
     /// SURFACE_STYLE_RENDERING_WITH_PROPERTIES(rendering_method, surface_color,
     /// (properties))`
     /// (`RWStepVisual_RWSurfaceStyleRenderingWithProperties.cxx:35-108`).
-    pub fn init(&mut self, records: &HashMap<usize, Record>, rendering_properties: usize) {
+    pub(in crate::step) fn init(&mut self, records: &HashMap<usize, Record>, rendering_properties: usize) {
         self.surface_color = Color::WHITE;
         self.transparency = 0.0;
         self.rendering_method = ShadingSurfaceMethod::NormalShading;

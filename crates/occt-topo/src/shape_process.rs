@@ -156,7 +156,7 @@ fn rec_modif(
     // ("gka - modification to keep history for shape with location", OCC21617);
     // `r` starts at that key, or at the entry already stored for it.
     let s_val = s.located(&TopLocLocation::identity());
-    let mut r = map.find(&s_val).unwrap_or_else(|| s_val.clone());
+    let r = map.find(&s_val).unwrap_or_else(|| s_val.clone());
     if !r.is_null() {
         // `if (repl->Status(r, res, true) && res != r) map.Bind(aS, res);`
         // (`cxx:288-294`).

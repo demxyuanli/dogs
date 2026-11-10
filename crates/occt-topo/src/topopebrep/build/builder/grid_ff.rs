@@ -33,7 +33,7 @@ use crate::topo_tools::explorer_shapes;
 use crate::topopebrep::build::face_builder::FaceBuilder;
 use crate::topopebrep::build::wire_edge_set::WireEdgeSet;
 use crate::topopebrep::ds::data_structure::{DataStructure, IndexedShapeSet};
-use crate::topopebrep::ds::export::{fds_data, fds_idata, fun_ds_has_fei, fun_ds_sdm};
+use crate::topopebrep::ds::export::{fds_idata, fun_ds_has_fei, fun_ds_sdm};
 use crate::topopebrep::ds::kind::{Config, Kind};
 use crate::topopebrep::ds::process_interferences_tool::fun_reducedoublons;
 use crate::topopebrep::tool::{fun_tool_find_ancestor, fun_tool_par_e};
@@ -366,17 +366,15 @@ impl Builder {
         let mut wes = WireEdgeSet::new(&ff);
 
         // `cxx:561-573`
-        let mut n1;
         set_global_faces2d(true);
         self.g_fill_faces_wes_k(&lf1, lf2, gm, &mut wes, 1);
         set_global_faces2d(false);
-        n1 = wes.start_elements().len() as i32;
-
+        // `cxx:534` / `cxx:538` also store `n1 = WES.StartElements().Extent()`
+        // after K1 and K2; `cxx:541` overwrites it before `n1` is read, so those
+        // stores are dead in OCCT as well.
         self.g_fill_faces_wes_k(&lf1, lf2, gm, &mut wes, 2);
-        n1 = wes.start_elements().len() as i32;
-
         self.g_fill_faces_wes_k(&lf1, lf2, gm, &mut wes, 3);
-        n1 = wes.start_elements().len() as i32;
+        let n1 = wes.start_elements().len() as i32;
 
         // `cxx:577-578`: the start edges added by `GFillCurveTopologyWES` are
         // the ones to avoid from now on.

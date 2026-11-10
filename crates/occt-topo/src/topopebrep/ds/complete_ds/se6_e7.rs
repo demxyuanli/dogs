@@ -4,7 +4,7 @@
 
 use crate::abs::{Orientation, ShapeType};
 use crate::brep_tool::BRepTool;
-use crate::shape::{Edge, TopoShape};
+use crate::shape::Edge;
 use crate::topopebrep::ds::export::{
     fds_has_same_domain3d, fds_loi_inf_sup, fds_parameter, fun_ds_getoov_in_hds,
 };
@@ -251,7 +251,7 @@ pub fn fun_ds_complete_for_e7(hds: &mut HDataStructure) {
                     let Some(fs) = hds.ds().shape(ifs_i, true) else {
                         continue;
                     };
-                    let mut lfs: InterferenceList = Vec::new();
+                    let _lfs: InterferenceList = Vec::new();
                     if fun_select_si_interference(&mut loicopy.clone(), ifs_i, &mut lrev)
                         == 0
                     {

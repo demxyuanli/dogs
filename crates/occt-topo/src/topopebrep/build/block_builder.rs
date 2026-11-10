@@ -91,7 +91,8 @@ impl BlockBuilder {
                 // make a new block starting at element Eindex
                 self.my_blocks.push(e_index);
                 is_regular = true;
-                cur_nei = 0;
+                // `_cxx:83` also sets `CurNei = 0`, which `_cxx:98` overwrites
+                // before any read: an OCCT dead store.
 
                 m_extent = self.my_oriented_shape_map.extent();
                 let mut search_neighbours = e_index <= m_extent;

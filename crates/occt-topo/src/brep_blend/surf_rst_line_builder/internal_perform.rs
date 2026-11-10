@@ -80,7 +80,7 @@ impl SurfRstLineBuilder {
 
         let mut infbound = MathVector::with_init(1, 3, 0.0);
         let mut supbound = MathVector::with_init(1, 3, 0.0);
-        let mut parinit = MathVector::with_init(1, 3, 0.0);
+        let mut parinit;
         let mut tolerance = MathVector::with_init(1, 3, 0.0);
         let mut solinvp = MathVector::new(1, 3);
         let mut solinvrst = MathVector::new(1, 4);

@@ -57,10 +57,6 @@ impl IntBoolDataMap {
         self.size
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.size == 0
-    }
-
     pub fn clear(&mut self) {
         for b in &mut self.buckets {
             b.clear();

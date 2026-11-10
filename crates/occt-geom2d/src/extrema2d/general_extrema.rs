@@ -81,21 +81,15 @@ impl<'a> GGenExtCC<'a> {
         }
     }
 
-    /// `SetTolerance` (`hxx:393-396`).
-    pub(super) fn set_tolerance(&mut self, tol: f64) {
-        self.curve_min_tol = tol;
-    }
-
-    /// `SetSingleSolutionFlag` (`hxx:413-416`).
+    /// `SetSingleSolutionFlag` (`hxx:413-416`), called by
+    /// `Extrema_ExtCC2d::Perform`.
     pub(super) fn set_single_solution_flag(&mut self, flag: bool) {
         self.single_solution = flag;
     }
 
-    /// `GetSingleSolutionFlag`.
-    pub(super) fn single_solution_flag(&self) -> bool {
-        self.single_solution
-    }
-
+    /// `SetTolerance` (`hxx:393-396`) has no caller in
+    /// `Extrema_GGenExtCC::Perform`, which keeps the default `PCONFUSION`
+    /// (`hxx:622`), so the port exposes no tolerance setter.
     /// `IsDone()` (`hxx:813-822`).
     pub(super) fn is_done(&self) -> bool {
         self.done

@@ -1,5 +1,4 @@
 use super::prelude::*;
-use super::*;
 
 // ---------------------------------------------------------------------------
 // Constants (mirror BRepGProp_Gauss.cxx)

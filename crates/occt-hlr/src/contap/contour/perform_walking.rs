@@ -4,14 +4,13 @@
 use std::sync::Arc;
 
 use occt_core::bnd::BndBox;
-use occt_core::gp::{GpDir, GpPnt, GpPnt2d, GpVec};
+use occt_core::gp::{GpDir, GpPnt2d, GpVec};
 use occt_core::precision::{CONFUSION, INFINITE};
 
 use occt_topo::brep_adaptor_curve2d::Curve2dAdaptor;
 use occt_topo::brep_top_adaptor_topol_tool::TopolTool;
 use occt_topo::geom_bnd_lib_surface3d::add_surface_with_bounds;
 use occt_topo::intsurf_transition::{make_transition, IntSurfTransition};
-use occt_topo::topopebrep::tool::adaptor::SurfaceAdaptor;
 
 use super::super::iwalking::types::InteriorPoint;
 use super::super::iwalking::ContapTheIWalking;
@@ -45,7 +44,7 @@ impl ContapContour {
         let eps_v = surf.v_resolution(CONFUSION);
         let preci = eps_u.min(eps_v);
         let mut fleche = 0.01;
-        let mut pas = 0.005;
+        let pas = 0.005;
 
         // `cxx:1579-1625`: scale `Fleche`/`TolArc` by the largest extent of the
         // surface box; infinite bounds skip the box entirely.

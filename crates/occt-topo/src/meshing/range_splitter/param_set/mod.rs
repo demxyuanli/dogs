@@ -15,9 +15,7 @@ mod set;
 mod splitter;
 mod surface_type;
 
-pub use self::analytical::*;
-pub use self::intervals::*;
-pub use self::nurbs_grid::*;
+pub(in crate::meshing::range_splitter) use self::nurbs_grid::*;
 pub use self::set::*;
 pub use self::splitter::*;
 pub use self::surface_type::*;

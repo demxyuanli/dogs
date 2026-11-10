@@ -2,7 +2,9 @@
 //! boolean merge of the copies.
 //! Source: `AIS_Manipulator`-adjacent scene patterns, `BRepAlgoAPI` assembly.
 
-use occt_core::gp::{GpAx1, GpDir, GpPnt, GpTrsf, GpVec};
+use occt_core::gp::{GpAx1, GpPnt, GpTrsf, GpVec};
+#[cfg(test)]
+use occt_core::gp::GpDir;
 
 use crate::shape::TopoShape;
 use crate::shape_ops::transformed_copy;

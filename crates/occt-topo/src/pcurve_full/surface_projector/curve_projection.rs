@@ -142,7 +142,7 @@ pub fn project_curve_on_surface_perform(
     let mut iso_par2 = 0.0f64;
     let mut value_p1 = iso_out.value_p1;
     let mut value_p2 = iso_out.value_p2;
-    let mut iso_closed = false;
+    let iso_closed;
     if iso_param {
         // `cxx:1190-1209`.
         let (parf, parl) = if iso_out.is_type_u {

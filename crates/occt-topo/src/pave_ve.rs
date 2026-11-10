@@ -94,7 +94,7 @@ pub fn intersect_ve(
             continue;
         }
         let tol_v_new = BRepTool::vertex_tolerance(&v).max(dist);
-        let mut n_last = t.n_vsd;
+        let mut n_last;
         for n_v in t.members {
             let n_vx = update_vertex_sd(f, n_v, tol_v_new)?;
             n_last = n_vx;

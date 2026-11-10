@@ -55,7 +55,7 @@ pub use image::*;
 pub use render::*;
 pub use font::*;
 pub use overlay::*;
-pub use bitmap_glyphs::*;
+use bitmap_glyphs::*;
 
 #[cfg(test)]
 mod tests;

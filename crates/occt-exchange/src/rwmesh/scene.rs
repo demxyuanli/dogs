@@ -379,7 +379,9 @@ pub fn scene_with_texture_to_ppm(scene: &MeshScene, node_index: usize, width: u3
 // ---------------------------------------------------------------------------
 
 /// Parse OBJ content without a base directory (any `mtllib` reference is
-/// resolved against the current directory).
+/// resolved against the current directory). OCCT reads a file path, so this
+/// entry point exists only for the unit tests below.
+#[cfg(test)]
 pub(super) fn parse_obj_scene(content: &str, name: &str) -> Result<MeshScene, String> {
     parse_obj_scene_inner(content, name, None)
 }

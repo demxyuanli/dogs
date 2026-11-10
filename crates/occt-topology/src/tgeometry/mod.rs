@@ -21,7 +21,7 @@ use occt_geom::{Curve, Surface};
 use occt_geom2d::curve::Curve2d;
 
 use crate::shape::TopoShape;
-use crate::tshape::{EdgePcurves, OrderedSlots, VertexGeomCore};
+use crate::tshape::{EdgePcurves, OrderedSlots};
 
 /// Monotonic sequence number used by the in-tree pcurve/ReShape diagnostics to
 /// order an attach/remove against a recorded `Replace`.

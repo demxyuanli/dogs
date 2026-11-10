@@ -1,7 +1,6 @@
 //! `BRepSweep_Trsf::SetContinuity` (`BRepSweep_Trsf.cxx:97-201`).
 
 use occt_core::precision::CONFUSION;
-use occt_geom::curve::Curve;
 
 use crate::abs::{Orientation, ShapeType};
 use crate::brep_lib_continuity::set_stored_continuity;

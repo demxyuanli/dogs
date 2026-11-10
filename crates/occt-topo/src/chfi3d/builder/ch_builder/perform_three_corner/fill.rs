@@ -23,7 +23,6 @@
 use std::sync::Arc;
 
 use occt_core::gp::GpPnt2d;
-use occt_geom::curve::Curve;
 use occt_geom::geom_fill::boundary::Boundary;
 use occt_geom::geom_fill::ConstrainedFilling;
 use occt_geom::Surface;

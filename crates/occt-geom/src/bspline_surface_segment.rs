@@ -479,7 +479,7 @@ fn pole_span(
     mults: &[i32],
     nb_poles: i32,
 ) -> Result<(i32, i32), String> {
-    let mut p1 = pole_index(degree, index1, periodic, mults) + 1;
+    let p1 = pole_index(degree, index1, periodic, mults) + 1;
     let mut p2 = pole_index(degree, index2, periodic, mults) + 1;
     if p2 > nb_poles {
         p2 = nb_poles;

@@ -1,31 +1,17 @@
 //! `ParametricDelaun` (face-basis Delaun exposing parametric UV to deflection
 //! control) and the `CellsCount` / `ComputeErrFactors` helpers.
 
-use std::collections::HashMap;
 
-use occt_core::gp::{GpPnt, GpPnt2d, GpXY};
-use occt_core::precision::SQUARE_CONFUSION;
-use occt_geom::geom_api::project_point_on_surface;
+use occt_core::gp::{GpPnt2d, GpXY};
 use occt_geom::Surface;
 
-use crate::abs::Orientation;
 
-use super::super::data_model::*;
 use super::super::delaun::Delaun;
-use super::super::delaun_data::DelaunDataStructure;
 use super::super::delaun_types::{DelaunLink, DelaunTriangle, DelaunVertex, VertexState};
-use super::super::face_discret::Classifier;
 #[allow(unused_imports)]
 use super::super::mesh_algo::*;
-use super::super::face_discret::PointState;
-use super::super::deflection_control::{
-    DelaunayDeflectionControlMeshAlgo, DeflectionMesh,
-};
-use super::super::parameters::MeshParameters;
-use super::super::range_splitter::{
-    mesh_surface_type, create_range_splitter, factory_uses_deflection_control,
-    grab_params_of_internal_edges, RangeSplitter, MeshSurfaceType,
-};
+use super::super::deflection_control::DeflectionMesh;
+use super::super::range_splitter::{mesh_surface_type, MeshSurfaceType};
 use super::*;
 
 /// Delaun in face-basis coords, exposing parametric UV to deflection control

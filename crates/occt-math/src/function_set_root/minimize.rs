@@ -184,7 +184,8 @@ pub(super) fn minimize_direction_2pt<F: MathFunctionSetWithDerivatives>(
                     if sol.is_done() && sol.minimum().unwrap() <= result {
                         tsol = sol.location().unwrap();
                         good = true;
-                        result = sol.minimum().unwrap();
+                        // math_FunctionSetRoot.cxx:397 assigns Result, which is never
+                        // read afterwards (the function returns right after).
                     }
                 }
             }

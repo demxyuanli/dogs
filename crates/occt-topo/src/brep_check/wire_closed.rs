@@ -93,12 +93,6 @@ impl VertexEdges {
         self.lists.push(vec![e.clone()]);
         i
     }
-
-    fn clear(&mut self) {
-        self.keys.clear();
-        self.index.clear();
-        self.lists.clear();
-    }
 }
 
 /// `Propagate(mapVE, edg, mapE)` (`BRepCheck_Wire.cxx:1777-1823`): flood the

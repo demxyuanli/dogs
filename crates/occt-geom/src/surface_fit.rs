@@ -14,7 +14,7 @@ pub fn surface_fit_plane(points: &[GpPnt]) -> Option<GpPln> {
     if points.len() < 3 {
         return None;
     }
-    let n = points.len();
+    let _n = points.len();
     let c = centroid(points);
     let mut cov = [[0.0; 3]; 3];
     for p in points {
@@ -46,7 +46,7 @@ pub fn fit_sphere(points: &[GpPnt]) -> Option<(GpPnt, f64)> {
     }
     // Solve the linear system for the sphere equation
     // 2x·cx + 2y·cy + 2z·cz - (cx²+cy²+cz²-r²) = x²+y²+z².
-    let n = points.len();
+    let _n = points.len();
     let mut a = [[0.0f64; 4]; 4];
     let mut b = [0.0f64; 4];
     for p in points {

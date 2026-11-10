@@ -328,30 +328,30 @@ use super::*;
         (b.make_solid(&[shell]), base)
     }
 
-    /// A flared pipe: a cylinder (radius `R`, z from −1 to 1) topped by a cone
+    /// A flared pipe: a cylinder (radius `r`, z from -1 to 1) topped by a cone
     /// (apex at the origin, widening up, z from 1 to 2). The two share the
-    /// circle at z=1, radius R (the fillet edge).
-    pub(super) fn build_cylinder_cone_union(R: f64) -> (Solid, Edge) {
+    /// circle at z=1, radius r (the fillet edge).
+    pub(super) fn build_cylinder_cone_union(r: f64) -> (Solid, Edge) {
         let b = TopoBuilder::new();
         let ax = GpAx3::new(GpPnt::zero(), GpDir::new(0.0, 0.0, 1.0).unwrap(), &GpDir::new(1.0, 0.0, 0.0).unwrap()).unwrap();
-        let bottom = build_circle(&b, GpPnt::new(0.0, 0.0, -1.0), GpVec::new(0.0, 0.0, 1.0), R);
-        let junction = build_circle(&b, GpPnt::new(0.0, 0.0, 1.0), GpVec::new(0.0, 0.0, 1.0), R);
-        let seam_cyl = b.make_edge_segment(&GpPnt::new(R, 0.0, -1.0), &GpPnt::new(R, 0.0, 1.0));
+        let bottom = build_circle(&b, GpPnt::new(0.0, 0.0, -1.0), GpVec::new(0.0, 0.0, 1.0), r);
+        let junction = build_circle(&b, GpPnt::new(0.0, 0.0, 1.0), GpVec::new(0.0, 0.0, 1.0), r);
+        let seam_cyl = b.make_edge_segment(&GpPnt::new(r, 0.0, -1.0), &GpPnt::new(r, 0.0, 1.0));
         let cyl_lat = b.make_face(
-            Arc::new(GeomCylinder::new(GpCylinder::new(ax, R).unwrap())),
+            Arc::new(GeomCylinder::new(GpCylinder::new(ax, r).unwrap())),
             &[b.make_wire(&[bottom.clone(), seam_cyl.clone(), junction.clone(), seam_cyl])],
         );
         let bottom_cap = b.make_face(
             Arc::new(GeomPlane::new(plane_face(GpPnt::new(0.0, 0.0, -1.0), GpDir::new(0.0, 0.0, -1.0).unwrap()))),
             &[b.make_wire(&[bottom])],
         );
-        // Cone: apex at origin, axis +Z, widening up, α = atan(R/1).
-        let alpha = R.atan();
+        // Cone: apex at origin, axis +Z, widening up, alpha = atan(r/1).
+        let alpha = r.atan();
         let cone_ax = GpAx3::new(GpPnt::zero(), GpDir::new(0.0, 0.0, 1.0).unwrap(), &GpDir::new(1.0, 0.0, 0.0).unwrap()).unwrap();
         let cone = GpCone::new(cone_ax, 0.0, alpha).unwrap();
         let top_radius = 2.0 * alpha.tan();
         let top_circle = build_circle(&b, GpPnt::new(0.0, 0.0, 2.0), GpVec::new(0.0, 0.0, 1.0), top_radius);
-        let seam_cone = b.make_edge_segment(&GpPnt::new(R, 0.0, 1.0), &GpPnt::new(top_radius, 0.0, 2.0));
+        let seam_cone = b.make_edge_segment(&GpPnt::new(r, 0.0, 1.0), &GpPnt::new(top_radius, 0.0, 2.0));
         let cone_lat = b.make_face(
             Arc::new(GeomCone::new(cone)),
             &[b.make_wire(&[junction.clone(), seam_cone.clone(), top_circle.clone(), seam_cone])],

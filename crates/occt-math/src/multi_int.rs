@@ -109,7 +109,7 @@ mod tests {
 
     #[test]
     fn integral_3d_x() {
-        let f = |x: f64, y: f64, z: f64| x;
+        let f = |x: f64, _y: f64, _z: f64| x;
         let v = integrate_3d(&f, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 4);
         assert!((v - 0.5).abs() < 1e-12, "got {v}");
     }

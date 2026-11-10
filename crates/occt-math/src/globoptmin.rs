@@ -423,8 +423,8 @@ impl GlobOptMin {
         const A_MAX_EPS: f64 = 100.0;
         const A_PNT_NB: i32 = 13;
 
-        let mut curr_pnt = MathVector::new(1, self.n);
-        let mut param_step = MathVector::new(1, self.n);
+        let mut curr_pnt;
+        let param_step;
         // cxx:357-359: `aPrevValDiag` is whatever `Value` wrote; OCCT discards
         // the result, so the read below starts from the `-INF`-wide default.
         let mut prev_val_diag = INF;
@@ -476,11 +476,11 @@ impl GlobOptMin {
 
     fn compute_global_extremum(&mut self, f: &dyn MathMultipleVarFunction, j: usize) {
         let mut d = f64::MAX;
-        let mut prev_val = f64::MAX;
+        let mut prev_val;
         let mut val = f64::MAX;
-        let mut step_best_value = f64::MAX;
-        let mut step_best_point = MathVector::new(1, self.n);
-        let mut is_inside = false;
+        let mut step_best_value;
+        let mut step_best_point;
+        let mut is_inside;
         let mut is_reached = false;
 
         self.x.set_value(j, self.a.value(j) + self.e1);

@@ -23,7 +23,6 @@
 
 use occt_core::gp::GpPnt2d;
 use occt_geom::curve::Curve;
-use occt_geom::surface::Surface;
 
 use crate::chfi3d::builder_helpers::in_period;
 use crate::intcurvesurface::perform_curve_surface;

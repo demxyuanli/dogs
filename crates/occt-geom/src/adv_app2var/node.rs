@@ -12,9 +12,8 @@ pub(super) struct App2VarNode {
 }
 
 impl App2VarNode {
-    pub(super) fn new(iu: i32, iv: i32) -> Self {
-        Self::at(iu, iv, 0.0, 0.0)
-    }
+    // `AdvApp2Var_Node()` (`AdvApp2Var_Node.cxx:47-54`) builds a zeroed node;
+    // the port always needs `(u, v)` too, so `at` is the only constructor.
 
     pub(super) fn at(iu: i32, iv: i32, u: f64, v: f64) -> Self {
         let nu = iu.max(0) + 1;

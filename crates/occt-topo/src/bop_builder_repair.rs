@@ -16,14 +16,13 @@ use crate::shape::{Face, Shell, TopoShape};
 use crate::shell_check::{shell_is_closed};
 use crate::tgeometry::GeometryRegistry;
 use crate::topo_tools::{
-    edge_vertices, edges_of, edges_of_wire, faces_of, shapes_of, vertex_position, vertices_of,
-    wires_of_face,
+    edges_of, faces_of, shapes_of,
 };
 
 
 use crate::bop_builder_core::{single_shape_result, BoolOp, BooleanResult};
 use crate::bop_builder_dispatch::{
-    boolean_with_check, decompose_compound, detect_self_intersections, expand_compound,
+    detect_self_intersections, expand_compound,
     faces_polygon_overlap,
 };
 use crate::bop_builder_planar::*;

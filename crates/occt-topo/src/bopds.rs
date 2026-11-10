@@ -39,6 +39,7 @@ use crate::bbox_from_geometry::shape_bbox;
 use crate::bopds_ff::BopdsInterfFf;
 use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, TopoShape};
+#[cfg(test)]
 use crate::topo_tools::shapes_of;
 use crate::bopds_pave::ShapeKey;
 use crate::bopds_tree::{prepared_sub_shapes, structural_children};

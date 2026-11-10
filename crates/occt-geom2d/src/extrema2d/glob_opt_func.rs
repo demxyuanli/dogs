@@ -41,11 +41,6 @@ impl<'a> GlobOptFuncCCC2<'a> {
         Self { c1, c2 }
     }
 
-    /// `_NbVariables()` (`cxx:24-27`).
-    pub(super) fn nb_variables(&self) -> i32 {
-        2
-    }
-
     /// `_Value` (`cxx:49-65`): the distance `|C2(v) - C1(u)|`; `None` when the
     /// parameters leave the curves' ranges (`cxx:57-61`), which is how OCCT
     /// reports `false` to `math_GlobOptMin`.

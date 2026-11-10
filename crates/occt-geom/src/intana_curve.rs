@@ -2,7 +2,7 @@
 //! Source: `IntAna_Curve.cxx` / `.hxx`.
 
 use occt_core::elib::slib;
-use occt_core::gp::{GpAx3, GpCone, GpCylinder, GpPnt, GpSphere, GpTrsf, GpVec};
+use occt_core::gp::{GpAx3, GpCone, GpCylinder, GpPnt, GpTrsf, GpVec};
 use occt_core::precision::{PCONFUSION, SQUARE_CONFUSION};
 use std::f64::consts::PI;
 
@@ -13,7 +13,6 @@ enum QuadKind {
     Other,
     Cylinder,
     Cone,
-    Sphere,
 }
 
 /// `IntAna_Curve`.
@@ -432,13 +431,6 @@ impl IntAnaCurve {
                     radius: self.r_cyl,
                 };
                 slib::cylinder_value(&cy, u, v)
-            }
-            QuadKind::Sphere => {
-                let sp = GpSphere {
-                    pos: self.ax3,
-                    radius: self.r_cyl,
-                };
-                slib::sphere_value(&sp, u, v)
             }
             QuadKind::Other => GpPnt::new(0.0, 0.0, 0.0),
         }

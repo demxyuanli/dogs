@@ -157,8 +157,8 @@ impl HlrBRepIntersector {
         let mut decalage_b2 = 100.0;
 
         let mut pas_bon;
-        let mut d1 = IntRes2dDomain::new();
-        let mut d2 = IntRes2dDomain::new();
+        let mut d1;
+        let mut d2;
         loop {
             pas_bon = false;
 
@@ -166,7 +166,7 @@ impl HlrBRepIntersector {
             let (mut a1, mut ta, mut b1, mut tb) = the_edge1.status().bounds();
             // `pdist = max(tol, 0.0000001)` (`cxx:194-199`).
             let pdist = if tol < 0.000_000_1 { 0.000_000_1 } else { tol };
-            let mut d = b1 - a1;
+            let d = b1 - a1;
 
             if the_da1 != 0.0 {
                 let (_, va1) = c1.d1(a1);
@@ -221,7 +221,7 @@ impl HlrBRepIntersector {
 
             // ---- edge 2 ---------------------------------------------------
             let (mut a2, mut ta, mut b2, mut tb) = the_edge2.status().bounds();
-            let mut d = b2 - a2;
+            let d = b2 - a2;
 
             if the_da2 != 0.0 {
                 let (_, va2) = c2.d1(a2);
@@ -363,7 +363,7 @@ impl HlrBRepIntersector {
         let u3 = c1.parameter3d(the_u);
         let v3 = c2.parameter3d(the_v);
         let (p13, t13): (GpPnt2d, GpVec2d) = c1.d1(u3);
-        let (p23, t23): (GpPnt2d, GpVec2d) = c2.d1(v3);
+        let (_p23, t23): (GpPnt2d, GpVec2d) = c2.d1(v3);
 
         // `Pos1 = Pos2 = IntRes2d_Middle` (`cxx:500-501`) then
         // `IntImpParGen::DetermineTransition(Pos1, T13, Tr1, Pos2, T23, Tr2, 0.)`

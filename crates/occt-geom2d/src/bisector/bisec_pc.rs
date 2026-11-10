@@ -385,7 +385,7 @@ impl BisectorBisecPC {
         }
         let u_on_curve = self.link_bis_curve(u);
 
-        let mut tu = GpVec2d::zero();
+        let tu;
         let mut tuu = GpVec2d::zero();
         let mut t3u = GpVec2d::zero();
         let pc;

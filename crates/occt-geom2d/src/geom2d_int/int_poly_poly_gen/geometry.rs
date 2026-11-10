@@ -114,18 +114,17 @@ pub(super) fn head_or_end_point(
                 p2 = *d2.first_point();
                 if pos1 != IntRes2dPosition::Middle {
                     p1.set_coord(0.5 * (p1.x() + p2.x()), 0.5 * (p1.y() + p2.y()));
-                } else {
-                    p2 = p1;
                 }
+                // gxx:745 -- `P2 = P1` there is never read; the point stored below
+                // only uses P1 (gxx:766).
             } else if (v - d2.last_parameter()).abs() <= eps_x2 {
                 pos2 = IntRes2dPosition::End;
                 *end_on2 = true;
                 p2 = *d2.last_point();
                 if pos1 != IntRes2dPosition::Middle {
                     p1.set_coord(0.5 * (p1.x() + p2.x()), 0.5 * (p1.y() + p2.y()));
-                } else {
-                    p2 = p1;
                 }
+                // gxx:756 -- `P2 = P1` there is never read (see gxx:745).
             }
         }
 

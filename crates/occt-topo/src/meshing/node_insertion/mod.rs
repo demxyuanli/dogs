@@ -21,32 +21,21 @@
 
 use std::collections::HashMap;
 
-use occt_core::gp::{GpPnt, GpPnt2d, GpXY};
-use occt_core::precision::SQUARE_CONFUSION;
-use occt_geom::geom_api::project_point_on_surface;
-use occt_geom::Surface;
+use occt_core::gp::{GpPnt, GpPnt2d};
 
-use crate::abs::Orientation;
 
 use super::data_model::*;
-use super::delaun::Delaun;
 use super::delaun_data::DelaunDataStructure;
-use super::delaun_types::{DelaunLink, DelaunTriangle, DelaunVertex, VertexState};
+use super::delaun_types::{DelaunTriangle, DelaunVertex, VertexState};
 use super::face_discret::Classifier;
 // ponytail: `mesh_algo.rs` (BRepMesh_{BaseMeshAlgo,ConstrainedBaseMeshAlgo}) is a
 // stub; the base-algo contract it will provide is modelled here by
 // `NodeInsertionMeshAlgo` + `DelaunayNodeInsertionMeshAlgo` until it lands.
 #[allow(unused_imports)]
 use super::mesh_algo::*;
-use super::face_discret::PointState;
-use super::deflection_control::{
-    DelaunayDeflectionControlMeshAlgo,
-};
+#[cfg(test)]
 use super::parameters::MeshParameters;
-use super::range_splitter::{
-    mesh_surface_type, create_range_splitter, factory_uses_deflection_control,
-    grab_params_of_internal_edges, RangeSplitter, MeshSurfaceType,
-};
+use super::range_splitter::RangeSplitter;
 
 /// Abstract insertion of free vertices into a Delaunay mesh.
 /// Source: `BRepMesh_NodeInsertionMeshAlgo`.

@@ -17,7 +17,7 @@ mod pcurve_transfer;
 mod wire_data_boundary;
 
 pub(in crate::iges_read) use self::boundary::{
-    boundary_after_check, boundary_both, boundary_max_tol, trace_edges, BoundaryPiece,
+    boundary_after_check, boundary_both, boundary_max_tol, BoundaryPiece,
 };
 pub(in crate::iges_read) use self::curve_on_face::transfer_curve_on_face;
 pub(in crate::iges_read) use self::pcurve_transfer::{

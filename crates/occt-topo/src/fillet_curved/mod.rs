@@ -47,7 +47,7 @@ pub(crate) use crate::builder::TopoBuilder;
 pub(crate) use crate::fillet_edge::classify_surface_full;
 pub(crate) use crate::shape::{Edge, Face, TopoShape, Wire};
 pub(crate) use crate::topo_tools::{
-    edge_vertices, edges_of, edges_of_wire, faces_of, is_same, vertex_position, vertices_of,
+    edges_of, edges_of_wire, faces_of, is_same, vertices_of,
     wires_of_face,
 };
 
@@ -60,7 +60,7 @@ mod torus_blend;
 mod rolling_ball;
 mod corner_patch;
 pub use surface_info::*;
-pub use meridional::*;
+use meridional::*;
 pub use torus_blend::*;
 pub use rolling_ball::*;
 pub use corner_patch::*;

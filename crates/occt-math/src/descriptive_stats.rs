@@ -199,7 +199,7 @@ mod tests {
     #[test]
     fn moments_skew_kurtosis() {
         // Normal-ish samples → skew ≈ 0, kurtosis ≈ 0.
-        let xs: Vec<f64> = (0..40).map(|i| (i as f64 / 40.0 - 0.5)).collect();
+        let xs: Vec<f64> = (0..40).map(|i| i as f64 / 40.0 - 0.5).collect();
         assert!(skewness(&xs).abs() < 0.1);
         // Symmetric uniform → kurtosis ≈ −1.2 (excess).
         let k = kurtosis(&xs);

@@ -55,7 +55,7 @@ mod prelude {
 pub(crate) use std::cmp::Ordering;
 
 pub(crate) use occt_core::elib::{clib, slib};
-pub(crate) use occt_core::gp::{GpAx1, GpAx2, GpAx3, GpCone, GpCylinder, GpDir, GpLin, GpPln, GpPnt, GpSphere, GpTorus, GpTrsf, GpVec};
+pub(crate) use occt_core::gp::{GpAx1, GpAx2, GpCone, GpCylinder, GpDir, GpLin, GpPln, GpPnt, GpSphere, GpTorus, GpTrsf, GpVec};
 pub(crate) use occt_core::precision::{ANGULAR, CONFUSION, PCONFUSION, RESOLUTION, SQUARE_CONFUSION};
 
 pub(crate) use crate::curve::Curve;

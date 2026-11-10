@@ -22,10 +22,9 @@ impl BaseRangeSample {
     pub(crate) fn new() -> Self {
         Self { depth: 0 }
     }
-
-    pub(crate) fn with_depth(depth: i32) -> Self {
-        Self { depth }
-    }
+    // `IntTools_BaseRangeSample(const Standard_Integer theDepth = 0)` is a
+    // defaulted-argument constructor; the port covers the depth argument with
+    // `CurveRangeSample::set_depth` / `SurfaceRangeSample::with_indices`.
 }
 
 /// `IntTools_CurveRangeSample` — (depth, index) of a curve parameter cell.
@@ -92,13 +91,8 @@ pub(crate) struct SurfaceRangeSample {
 }
 
 impl SurfaceRangeSample {
-    pub(crate) fn new() -> Self {
-        Self {
-            range_u: CurveRangeSample::new(),
-            range_v: CurveRangeSample::new(),
-        }
-    }
-
+    // `IntTools_SurfaceRangeSample()` is the default constructor; the port
+    // builds every instance through `with_indices`, which sets both depths.
     pub(crate) fn with_indices(index_u: i32, depth_u: i32, index_v: i32, depth_v: i32) -> Self {
         let mut u = CurveRangeSample::with_index(index_u);
         u.set_depth(depth_u);
@@ -335,14 +329,6 @@ impl SurfaceRangeLocalizeData {
                 self.grid_points = vec![vec![GpPnt::zero(); n]; self.u_params.len()];
             }
         }
-    }
-
-    pub(crate) fn range_u_grid(&self) -> i32 {
-        self.u_params.len() as i32
-    }
-
-    pub(crate) fn range_v_grid(&self) -> i32 {
-        self.v_params.len() as i32
     }
 
     /// OCCT 1-based `SetUParam`.

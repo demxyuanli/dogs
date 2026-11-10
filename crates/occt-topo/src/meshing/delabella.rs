@@ -397,7 +397,9 @@ fn in_circumcircle(a: &GpPnt2d, b: &GpPnt2d, c: &GpPnt2d, p: &GpPnt2d) -> bool {
 }
 
 /// Strict in-circle test with a small positive margin: is `p` clearly inside
-/// the circumcircle of (a, b, c)? Collinear triangles return false.
+/// the circumcircle of (a, b, c)? Collinear triangles return false. Used by the
+/// triangulation unit tests only.
+#[cfg(test)]
 fn circumcircle_contains(a: &GpPnt2d, b: &GpPnt2d, c: &GpPnt2d, p: &GpPnt2d) -> bool {
     let Some(value) = circumcircle_det(a, b, c, p) else {
         return false;

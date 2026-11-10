@@ -66,17 +66,13 @@
 //! [`FacesFiller::insert`] runs `FillLineVPonR` → `ProcessRLine` /
 //! `ProcessVPonR` on such a line.
 
-use occt_core::gp::GpPnt;
-use occt_core::precision::PCONFUSION;
 
 use crate::abs::Orientation;
 use crate::shape::{Face, TopoShape};
 use crate::topopebrep::ds::h_data_structure::HDataStructure;
 use crate::topopebrep::ds::transition::Transition;
 use crate::topopebrep::faces_intersector::FacesIntersector;
-use crate::topopebrep::ff_transition_tool::FFTransitionTool;
 use crate::topopebrep::interf::v_point_inter::VPointInter;
-use crate::topopebrep::interf::v_point_inter_classifier::VPointInterClassifier;
 use crate::topopebrep::interf::PointClassifier;
 use crate::topopebrep::line_inter::LineInter;
 use crate::topopebrep::tool::shape_classifier::ShapeClassifier;

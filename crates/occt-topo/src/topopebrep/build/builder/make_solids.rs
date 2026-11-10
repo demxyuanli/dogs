@@ -45,7 +45,7 @@ impl Builder {
         // `cxx:79-80`: `nfa`/`nsh` are re-assigned per solid/shell; the value
         // seen by `cxx:150` is the last `InitShell`/`InitFace` extent.
         let mut nfa: i32 = 0;
-        let mut nsh: i32 = 0;
+        let mut nsh: i32;
         sobu.init_solid();
         while sobu.more_solid() {
             self.my_build_tool.make_solid(&mut new_solid);
@@ -104,7 +104,7 @@ impl Builder {
 
             // `cxx:148-167`: a single shell made of a single face is kept only
             // when it carries a non-degenerated edge.
-            let mut new_solid_ok = true;
+            let new_solid_ok;
             if nsh == 1 && nfa == 1 {
                 let mut has_non_degenerated = false;
                 for e in explorer_shapes(&new_solid, ShapeType::Edge) {

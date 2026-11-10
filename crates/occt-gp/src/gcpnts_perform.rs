@@ -205,7 +205,7 @@ pub fn perform_tangential_curve<C: CurveSecondDeriv>(
             current_point = curve.point(u2);
         }
 
-        let mut coef = 0.0;
+        let mut coef;
         let mut coef_val = 0.0;
         let mut f_coef = 0.0;
         let mut too_large = false;

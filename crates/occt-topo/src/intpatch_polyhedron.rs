@@ -297,10 +297,10 @@ impl IntPatchPolyhedron {
         }
 
         // Triangle position, general case
-        let mut lin_t = 0i32;
-        let mut col_t = 0i32;
-        let mut lin_o = 0i32;
-        let mut col_o = 0i32;
+        let mut lin_t;
+        let mut col_t;
+        let mut lin_o;
+        let mut col_o;
         let mut typ_e = typ_e;
         if triang != 0 {
             let t = (triang - 1) / nb_delta_vm2;

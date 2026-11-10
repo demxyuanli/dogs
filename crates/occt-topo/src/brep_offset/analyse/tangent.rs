@@ -21,7 +21,7 @@ use crate::chfi_ds::TypeOfConcavity;
 use crate::int_tools_full::IntToolsContext;
 use crate::shape::{Edge, Face, TopoShape};
 use crate::topo_tools::{
-    children_keep_orientation, explorer_shapes, is_equal, is_same, map_shapes_and_ancestors_into,
+    children_keep_orientation, explorer_shapes, is_same, map_shapes_and_ancestors_into,
     shape_map_key, ShapeMapKey,
 };
 

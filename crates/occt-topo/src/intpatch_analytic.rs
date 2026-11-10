@@ -3,12 +3,8 @@
 
 use std::sync::Arc;
 
-use occt_core::gp::{
-    GpAx1, GpAx2, GpAx3, GpCirc, GpCone, GpCylinder, GpDir, GpElips, GpPln, GpPnt, GpSphere, GpTorus,
-    GpVec,
-};
 use occt_geom::{
-    Curve, GeomCircle, GeomCylinder, GeomEllipse, GeomLine, GeomPlane, GeomSphere, GeomTorus,
+    Curve, GeomCircle, GeomEllipse, GeomLine,
     Surface,
 };
 
@@ -18,20 +14,6 @@ use super::IntersectionCurve;
 // ---------------------------------------------------------------------------
 // Curve construction helpers
 // ---------------------------------------------------------------------------
-
-/// A `GeomCircle` curve with the given center, plane normal and radius.
-fn circle_curve(center: GpPnt, normal: GpDir, radius: f64) -> Result<Arc<dyn Curve>, String> {
-    let z = GpDir::new(0.0, 0.0, 1.0).map_err(|_| "z dir")?;
-    let x_dir = if normal.is_normal(&z) { z } else { GpDir::new(1.0, 0.0, 0.0).map_err(|_| "x dir")? };
-    let ax2 = GpAx2::new(center, normal, x_dir).map_err(|e| e.to_string())?;
-    Ok(Arc::new(GeomCircle::new(GpCirc::new(ax2, radius))))
-}
-
-/// An in-plane unit direction perpendicular to `normal`, for building frames.
-fn perpendicular_dir(normal: &GpDir) -> Result<GpDir, String> {
-    let z = GpDir::new(0.0, 0.0, 1.0).map_err(|_| "z dir")?;
-    Ok(if normal.is_normal(&z) { z } else { GpDir::new(1.0, 0.0, 0.0).map_err(|_| "x dir")? })
-}
 
 /// Build an `IntersectionCurve` by sampling `curve` on a `n`-point grid and
 /// projecting every sample onto both surfaces.

@@ -7,7 +7,6 @@ use std::path::PathBuf;
 use occt_core::kernel::geomabs::JoinType;
 use occt_topo::abs::{Orientation, ShapeType};
 use occt_topo::brep_fill_offset_wire::BRepFillOffsetWire;
-use occt_topo::brep_lib_find_surface::FindSurface;
 use occt_topo::brep_mat2d_bisecting_locus::BRepMat2dBisectingLocus;
 use occt_topo::brep_mat2d_explorer::BRepMat2dExplorer;
 use occt_topo::builder::TopoBuilder;

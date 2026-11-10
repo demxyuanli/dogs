@@ -88,7 +88,7 @@ impl<'a> PWalking<'a> {
             eps_of(self.vm_2 - self.vm2),
         ];
         let mut status = StatusDeflection::Ok;
-        let mut prev_status = StatusDeflection::Ok;
+        let mut prev_status;
         let mut no_test = false;
         let mut empty_level = 0i32;
         let mut confondu_level = 0i32;
@@ -142,7 +142,10 @@ impl<'a> PWalking<'a> {
             for i in 0..4 {
                 param[i] += dp[i];
             }
-            let sv = param;
+            // cxx:908-911 -- `SvParam = Param` is saved here, but the three
+            // `Param = SvParam` restores (cxx:968/1151/1235) are all overwritten by
+            // `previousPoint.Parameters(Param)` at cxx:870 on the next iteration, so
+            // the snapshot is dead in OCCT as well.
             let mut try_n = 0;
             let mut best_iso = choix;
             loop {
@@ -195,7 +198,6 @@ impl<'a> PWalking<'a> {
 
             if !self.inter.is_done() {
                 arrive = false;
-                param = sv;
                 self.repartir_ou_diviser(&mut deja, &mut choix, &mut arrive);
                 continue;
             }
@@ -246,7 +248,6 @@ impl<'a> PWalking<'a> {
                     self.repartir_ou_diviser(&mut deja, &mut choix, &mut arrive);
                 }
                 StatusDeflection::PasTropGrand => {
-                    param = sv;
                     if without_append > 5 {
                         shrink_init(&mut self.pas_init, &self.pas_sav);
                         if prev_status != StatusDeflection::StepTooSmall
@@ -273,7 +274,6 @@ impl<'a> PWalking<'a> {
                         }
                     }
                     if grew {
-                        param = sv;
                         if prev_status != StatusDeflection::PasTropGrand
                             && self.line.len() != prev_nb
                         {

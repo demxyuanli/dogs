@@ -151,7 +151,7 @@ impl HlrBRepData {
         let mut ind = 0;
         let mut t1 = 0.0f32;
         let mut t2 = 0.0f32;
-        let mut orie = Orientation::Forward;
+        let mut orie;
         let mut or2 = Orientation::Internal;
         let mut inverted = false;
         // `TolZ = myBigSize * 0.00001` (`cxx:2347`).

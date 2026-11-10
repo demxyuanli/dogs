@@ -351,7 +351,7 @@ mod interpreter;
 mod commands;
 mod dispatch;
 pub use interpreter::*;
-pub use commands::*;
+use commands::*;
 pub use dispatch::*;
 
 #[cfg(test)]

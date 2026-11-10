@@ -1,4 +1,3 @@
-use super::prelude::*;
 use super::*;
     use crate::curve::Curve;
     use crate::{GeomBSplineCurve, GeomCircle, GeomLine};

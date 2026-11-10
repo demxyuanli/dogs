@@ -205,8 +205,8 @@ impl Powell {
         self.done = false;
         let n = self.location.len();
 
-        let mut pt = MathVector::new(1, n);
-        let mut ptt = MathVector::new(1, n);
+        let mut pt;
+        let mut ptt;
         let mut xit = MathVector::new(1, n);
         let mut f_dir = DirFunctionBis::new(n, f);
 

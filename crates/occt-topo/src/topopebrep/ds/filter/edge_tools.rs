@@ -24,7 +24,6 @@ use crate::topopebrep::tool::sc::fsc_get_psc;
 
 use crate::topopebrep::ds::export::{fds_data, fds_idata, fds_tdata};
 use crate::topopebrep::ds::h_data_structure::HDataStructure;
-use crate::topopebrep::ds::interference::InterferenceHandle;
 use crate::topopebrep::ds::interference_iterator::InterferenceList;
 use crate::topopebrep::ds::kind::Kind;
 use crate::topopebrep::ds::process_interferences_tool::{
@@ -145,7 +144,7 @@ pub fn fun_unkeep_e_symmetric_transitions(
             let (t2, cond) = {
                 let h = li[j].read().expect("interference lock");
                 let (gt2, g2, st2, s2) = fds_data(&h);
-                let (tsb2, isb2, tsa2, isa2) = fds_tdata(&h.transition());
+                let (_tsb2, isb2, _tsa2, isa2) = fds_tdata(&h.transition());
                 let id_gs = gt2 == gt1 && g2 == g1 && st2 == st1 && s2 == s1;
                 // `++971219` (`cxx:294-297`): the shape indices must also match.
                 let id_iba = isb1 == isb2 && isa1 == isa2;

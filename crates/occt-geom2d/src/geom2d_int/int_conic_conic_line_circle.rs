@@ -7,7 +7,7 @@
 use std::f64::consts::PI;
 
 use occt_core::elib::clib2d;
-use occt_core::gp::{GpCirc2d, GpLin2d, GpPnt2d, GpVec2d};
+use occt_core::gp::{GpCirc2d, GpLin2d, GpVec2d};
 use occt_core::intimpargen::gen::determine_position;
 use occt_core::intres2d::{
     IntRes2dDomain, IntRes2dIntersectionPoint, IntRes2dIntersectionSegment, IntRes2dPosition,
@@ -37,8 +37,8 @@ pub(crate) fn line_circle_geometric_intersection(
     let d_o1_o2 = line.distance(&circle.location());
     let r = circle.radius();
     let r_m_tol = r - tol;
-    let mut binf1 = 0.0;
-    let mut bsup1 = 0.0;
+    let mut binf1;
+    let mut bsup1;
     let mut binf2 = 0.0;
     let mut bsup2 = 0.0;
     let mut nbsol;
@@ -415,14 +415,20 @@ impl IntCurveIntConicConic {
         let mut t2a = IntRes2dTransition::new();
         let mut t1b = IntRes2dTransition::new();
         let mut t2b = IntRes2dTransition::new();
-        let mut pos1a = IntRes2dPosition::Middle;
-        let mut pos1b = IntRes2dPosition::Middle;
-        let mut pos2a = IntRes2dPosition::Middle;
-        let mut pos2b = IntRes2dPosition::Middle;
+        let mut pos1a;
+        let mut pos1b;
+        let mut pos2a;
+        let mut pos2b;
 
-        let (mut p1a, mut tan1) =
+        // IntCurve_IntConicConic_1.cxx:2367-2368 -- P1a/P2a are dead until the loop
+        // body re-assigns them at cxx:2403-2406; only Tan1/Tan2 are read here.
+        // IntCurve_IntConicConic_1.cxx:2367-2368 -- P1a/P2a are dead until the loop
+        // body overwrites them at cxx:2436-2437; only Tan1/Tan2 are read here.
+        let (_, mut tan1) =
             clib2d::circle_d1_ax22d(solution_circle[0].binf, &circle_axis, r);
-        let (mut p2a, mut tan2) = clib2d::line_d1_ax2d(solution_line[0].binf, &line_axis);
+        let (_, mut tan2) = clib2d::line_d1_ax2d(solution_line[0].binf, &line_axis);
+        let mut p1a;
+        let mut p2a;
 
         let is_opposite = tan1.dot(&tan2) < 0.0;
 
@@ -490,7 +496,7 @@ impl IntCurveIntConicConic {
                 pos1a, &mut tan1, &norm1, &mut t1a, pos2a, &mut tan2, &norm2, &mut t2a, tol,
             );
 
-            let mut cinf;
+            let cinf;
             if pos1a == IntRes2dPosition::End {
                 cinf = circ_domain.last_parameter();
                 p1a = *circ_domain.last_point();
@@ -566,7 +572,7 @@ impl IntCurveIntConicConic {
                 );
 
                 let mut p1b = p1b_pt;
-                let mut csup;
+                let csup;
                 if pos1b == IntRes2dPosition::End {
                     // Faithful to OCCT: `Csup = CIRC_Domain.LastParameter()`
                     // (`_1.cxx:2555-2556`); the `Perform(Line, Ellipse)` twin at

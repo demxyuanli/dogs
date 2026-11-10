@@ -50,7 +50,7 @@ fn dot_dir(v: &GpVec, d: &GpDir) -> f64 {
 /// the caller turns into `BRepFill_ThruSectionErrorStatus_Null3DCurve`.
 pub fn detect_kpart(edge1: &Edge, edge2: &Edge) -> i32 {
     let degen1 = BRepTool::is_degenerated(edge1);
-    let mut itype: i32 = 0;
+    let mut itype: i32;
 
     // `cxx:67-80`.
     let mut first1 = 0.0;

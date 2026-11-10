@@ -284,7 +284,7 @@ mod tests {
     #[test]
     fn torsion_helix() {
         // Helix r(t) = (cos t, sin t, t): κ = 1/2, τ = 1/2.
-        let h = |u: f64| GpPnt::new(u.cos(), u.sin(), u);
+        let _h = |u: f64| GpPnt::new(u.cos(), u.sin(), u);
         let d1 = |u: f64| GpVec::new(-u.sin(), u.cos(), 1.0);
         let d2 = |u: f64| GpVec::new(-u.cos(), -u.sin(), 0.0);
         let d3 = |u: f64| GpVec::new(u.sin(), -u.cos(), 0.0);

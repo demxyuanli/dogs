@@ -47,6 +47,7 @@ use occt_geom::GeomPlane;
 
 use crate::abs::Orientation;
 use crate::brep_lib_make_wire::MakeWire;
+#[cfg(test)]
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::mesh::ShapeMesh;

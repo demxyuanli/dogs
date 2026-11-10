@@ -281,7 +281,7 @@ impl BisectorBisecAna {
                 degenerate(&mut solution, tolerance);
                 // `sense` is `false` for the decisive call below (`cxx:489-502`);
                 // the first pass only contributes its status.
-                let sense = false;
+                let _sense = false;
                 let ok = if oncurve {
                     Self::distance(
                         apoint,

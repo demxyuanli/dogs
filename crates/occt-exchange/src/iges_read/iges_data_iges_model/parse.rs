@@ -175,13 +175,15 @@ pub(super) fn parse_own(
             })
         }
         142 => {
-            let mode = pr.read_integer()?;
+            // `IGESGeom_ToolCurveOnSurface::ReadOwnParams` (`cxx:41-139`) reads
+            // `Mode` into `myMode`, and `IGESToBRep_TopoCurve.cxx:506-507` uses
+            // only `PreferenceMode()`; nothing in the transfer reads `Mode()`.
+            let _mode = pr.read_integer()?;
             let surface = pr.read_entity(false)?;
             let curve_uv = pr.read_entity(true)?;
             let curve_3d = pr.read_entity(true)?;
             let preference = pr.read_integer()?;
             Ok(EntityData::CurveOnSurface {
-                mode,
                 surface,
                 curve_uv,
                 curve_3d,
@@ -367,7 +369,7 @@ pub(super) fn parse_own(
         510 => crate::iges_read::igessolid::parse_face(&mut pr),
         514 => crate::iges_read::igessolid::parse_shell(&mut pr),
         186 => crate::iges_read::igessolid::parse_manifold_solid(&mut pr),
-        _ => Ok(EntityData::Raw { type_number }),
+        _ => Ok(EntityData::Raw),
     }
 }
 

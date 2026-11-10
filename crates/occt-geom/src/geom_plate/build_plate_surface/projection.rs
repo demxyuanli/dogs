@@ -99,45 +99,9 @@ impl BuildPlateSurface {
         }
     }
 
-    /// `ProjectedCurve(Curv)` (`cxx:306-346`): the projector itself when it is
-    /// one continuous part spanning the whole curve.
-    pub(super) fn projected_curve(
-        &self,
-        curv: &Arc<dyn Curve>,
-    ) -> Result<Option<Arc<dyn Curve2d>>, String> {
-        let surf = self
-            .surf_init
-            .clone()
-            .ok_or_else(|| "GeomPlate_BuildPlateSurface: no initial surface".to_string())?;
-
-        // `cxx:313-315`.
-        let projector = CompProjectedCurve::with_tolerances(
-            surf,
-            curv.clone(),
-            self.tol_u / 10.0,
-            self.tol_v / 10.0,
-        );
-
-        // `cxx:316-319`.
-        if projector.nb_curves() != 1 {
-            return Ok(None);
-        }
-
-        // `cxx:325-341`.
-        let first1 = curv.first_parameter();
-        let last1 = curv.last_parameter();
-        let Some((first2, last2)) = projector.bounds(1) else {
-            return Ok(None);
-        };
-        let tol = self.tol_u.max(self.tol_v);
-        if (first1 - first2).abs() <= tol && (last1 - last2).abs() <= tol {
-            // `cxx:334-336` trims to `[first2, last2]`, which is the range
-            // `bounds(1)` just reported (see the module note).
-            Ok(Some(Arc::new(ProjectedCurve2d::new(projector))))
-        } else {
-            Ok(None)
-        }
-    }
+    // `ProjectedCurve(Curv)` (`cxx:306-346`) is a public `GeomPlate_BuildPlateSurface`
+    // entry point with no caller inside the class or the ported plate pipeline,
+    // so the port does not carry it.
 
     /// `ProjectPoint(p3d)` (`cxx:353-376`): the nearest parameter of the point
     /// on the initial surface, in the `(TolU, TolV)` window `Perform` set up.
@@ -148,7 +112,7 @@ impl BuildPlateSurface {
             .ok_or_else(|| "GeomPlate_BuildPlateSurface: no initial surface".to_string())?;
 
         // `myProj.Perform(p3d)` (`cxx:358`).
-        let mut ext = ExtPs::with_surface(p3d, surf.as_ref(), self.tol_u, self.tol_v);
+        let ext = ExtPs::with_surface(p3d, surf.as_ref(), self.tol_u, self.tol_v);
         if !ext.is_done() {
             return Err("GeomPlate_BuildPlateSurface: Extrema_ExtPS not done".to_string());
         }

@@ -26,7 +26,7 @@ fn find_holes(map: &[ShellHoles], shell: &TopoShape) -> Option<usize> {
 }
 
 fn classify_infinite(shell: &TopoShape) -> FaceState {
-    let mut trial = shell.clone();
+    let trial = shell.clone();
     if !trial.free() {
         trial.set_free(true);
     }
@@ -82,7 +82,7 @@ fn collect_solids(shells: &[TopoShape]) -> (Vec<ShellHoles>, Vec<(TopoShape, i32
         }
         let infin = state_of(st);
         let solid = {
-            let mut trial = shell1.clone();
+            let trial = shell1.clone();
             if !trial.free() {
                 trial.set_free(true);
             }
@@ -294,7 +294,7 @@ pub(in crate::iges_read) fn replace_multi_shell(shape: &TopoShape, ctx: &mut Sha
     };
     if solids.len() == 1 {
         let result = if shape.shape_type() == ShapeType::Shell {
-            let mut piece = solids[0].clone();
+            let piece = solids[0].clone();
             if !piece.free() {
                 piece.set_free(true);
             }
@@ -309,7 +309,7 @@ pub(in crate::iges_read) fn replace_multi_shell(shape: &TopoShape, ctx: &mut Sha
         let builder = TopoBuilder::new();
         for item in &solids {
             let piece = if shape.shape_type() == ShapeType::Shell {
-                let mut open = item.clone();
+                let open = item.clone();
                 open.set_closed(false);
                 if !open.free() {
                     open.set_free(true);

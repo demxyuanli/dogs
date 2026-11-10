@@ -72,7 +72,7 @@ pub(super) fn point_by_int(
     }
 
     let mut d_min = INFINITE;
-    let mut upc = 0.0;
+    let mut upc;
     let mut ya_sol = false;
     let mut p_sol = GpPnt2d::zero();
 

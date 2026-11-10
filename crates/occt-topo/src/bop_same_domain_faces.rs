@@ -201,11 +201,13 @@ fn collect_sd_pairs(
                     fill_map_shapes(f1, f2, dmsls);
                     continue;
                 }
-                vpsb.push(PairOfShapeBoolean::from_faces(
-                    f1.clone(),
-                    f2.clone(),
-                    fuzzy,
-                ));
+                // `BOPAlgo_Builder_2.cxx:703-705`: fill the pair through the
+                // setters instead of a combined constructor.
+                let mut psb = PairOfShapeBoolean::new();
+                *psb.shape1_mut() = f1.clone();
+                *psb.shape2_mut() = f2.clone();
+                psb.set_fuzzy_value(fuzzy);
+                vpsb.push(psb);
             }
         }
     }

@@ -28,7 +28,7 @@ impl ContapTheIWalking {
         let mut born_inf = [self.um, self.vm];
         let mut born_sup = [self.umax, self.vmax];
 
-        let mut pas_c = 0.0f64;
+        let mut pas_c;
         let mut pas_sav;
         let mut arrive;
         let mut cadre;
@@ -154,7 +154,10 @@ impl ContapTheIWalking {
             status_precedent = StatusDeflection::Ok;
             n = 0;
             save_n = 0;
-            ipass = 0;
+            // `gxx:2013` initializes `Ipass = 0`, but `gxx:2229`
+            // (`TestArretPassage`) always writes it inside this loop before the
+            // `gxx:2470` read, so the initial store is dead in OCCT as well.
+
             let mut a_nb_iter = 10;
 
             while !arrive {

@@ -40,7 +40,7 @@
 
 use occt_core::elib::clib;
 use occt_core::gp::GpPnt;
-use occt_core::precision::{Precision, COMPUTATIONAL, CONFUSION, PCONFUSION, REAL_SMALL};
+use occt_core::precision::{Precision, CONFUSION, PCONFUSION, REAL_SMALL};
 use occt_geom::extrema_pc::extrema_ext_pc_min_in_range;
 use occt_geom::Curve;
 
@@ -130,7 +130,7 @@ fn project_act(
     // `cxx:275-303`: `Extrema_ExtPC` on the range, closest `IsMin` solution.
     let mut proj_param = 0.0;
     let mut proj_point = GpPnt::zero();
-    let mut proj_distance = f64::INFINITY;
+    let proj_distance;
     let mut mod_min = f64::INFINITY;
     let mut ok = false;
     if let Some((u, q, d)) = extrema_ext_pc_min_in_range(curve, point, u_inf, u_sup) {
@@ -168,7 +168,9 @@ fn project_act(
         if let Some(circ) = curve.gp_circ() {
             // `cxx:355-374`: `GeomAbs_Circle`.
             let location = circ.position().location();
-            proj_point = location;
+            // cxx:325 -- `proj = aCirc.Position().Location()` is overwritten by both
+            // branches below; the cxx:326 guard reads `proj` only because C++ has no
+            // separate `location` temporary (the port uses `location` there).
             if circ.radius() <= REAL_SMALL || point.square_distance(&location) <= REAL_SMALL {
                 proj_param = u_inf;
                 proj_point = GpPnt::from_xyz(

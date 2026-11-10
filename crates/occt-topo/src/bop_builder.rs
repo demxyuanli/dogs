@@ -11,28 +11,33 @@
 //! pave filler and the result is `BOPAlgo_BOP`'s images (audit A5 finding 12).
 
 
+#[cfg(test)]
 use std::sync::Arc;
 
 
+#[cfg(test)]
 use occt_core::gp::{GpAx3, GpPln, GpPnt2d};
-use occt_geom::{GeomPlane};
+#[cfg(test)]
+use occt_geom::GeomPlane;
 
 use crate::abs::ShapeType;
 
 
 use crate::builder::TopoBuilder;
 
-use crate::shape::{Edge, Shell, Solid, TopoShape};
+use crate::shape::TopoShape;
+#[cfg(test)]
+use crate::shape::{Edge, Shell, Solid};
 use crate::shell_check::{shell_is_closed};
 
-use crate::topo_tools::{
-    edge_vertices, edges_of, edges_of_wire, faces_of, shapes_of, vertex_position, vertices_of,
-    wires_of_face,
-};
+use crate::topo_tools::{faces_of, shapes_of};
+#[cfg(test)]
+use crate::topo_tools::{edges_of, vertices_of};
 
 pub use crate::bop_builder_core::{BoolOp, BooleanResult};
 pub use crate::bop_builder_planar::boolean_planar_legacy;
-pub(crate) use crate::bop_builder_core::{empty_result, single_shape_result, validate};
+pub(crate) use crate::bop_builder_core::{single_shape_result, validate};
+#[cfg(test)]
 pub(crate) use crate::bop_builder_planar::*;
 
 // ---------------------------------------------------------------------------

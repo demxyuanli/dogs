@@ -48,7 +48,7 @@ impl IntPatchInterferencePolyhedron {
         // Compute the positions of the points of <Tri1> in the triangle <Tri2>
         // (`cxx:866-937`).
         for nob in 0..=2usize {
-            let nob2 = POURCENT3[nob + 1];
+            let _nob2 = POURCENT3[nob + 1];
             for nou in 0..=2usize {
                 let nou2 = POURCENT3[nou + 1];
                 if self.dp_op_t[nob][nou] <= tolerance {
@@ -125,7 +125,7 @@ impl IntPatchInterferencePolyhedron {
         // <Tri2> in <Tri1> (`cxx:939-1006`).
         if nbp_int < 3 {
             for nou in 0..=2usize {
-                let nou2 = POURCENT3[nou + 1];
+                let _nou2 = POURCENT3[nou + 1];
                 if t_tp[nou] == IntfPIType::External {
                     for nob in 0..=2usize {
                         let nob2 = POURCENT3[nob + 1];

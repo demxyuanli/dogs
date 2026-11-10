@@ -1,11 +1,10 @@
 //! `TriangleEdgeContact` (`IntPolyh_MaillageAffinage.cxx:2550-3138`).
 
-use occt_core::gp::GpVec;
 
 use super::super::super::point::IntPolyhPoint;
 use super::super::super::start_point::IntPolyhStartPoint;
 use super::super::super::triangle::IntPolyhTriangle;
-use super::super::{MaillageAffinage, MY_CONFUSION_PRECISION, SQUARE_MY_CONFUSION_PRECISION};
+use super::super::{MaillageAffinage, MY_CONFUSION_PRECISION};
 use super::calcul_pts_inter_tri_edge_coplanaires;
 
 impl MaillageAffinage<'_> {
@@ -300,8 +299,8 @@ impl MaillageAffinage<'_> {
 
                 let cote23x = cote23.x;
                 let mut d1 = 0.0;
-                let mut alpha = 0.0;
-                let mut beta = 0.0;
+                let alpha;
+                let beta;
 
                 // Combination Eq1 Eq2.
                 if cote23x.abs() > MY_CONFUSION_PRECISION {

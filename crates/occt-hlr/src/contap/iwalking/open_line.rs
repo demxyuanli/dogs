@@ -9,7 +9,6 @@ use occt_topo::int_tools_wline::PntOn2S;
 use super::line_ops::make_walking_point;
 use super::types::{math_vec2, uv_on, PathPoint, StatusDeflection};
 use super::{ContapIWLineOfTheIWalking, ContapTheIWalking};
-use occt_math::function_set_root::MathFunctionSetWithDerivatives;
 use occt_math::MathFunctionSetRoot;
 
 impl ContapTheIWalking {
@@ -26,7 +25,7 @@ impl ContapTheIWalking {
         let mut born_inf = [self.um, self.vm];
         let mut born_sup = [self.umax, self.vmax];
 
-        let mut pas_c = 0.0f64;
+        let mut pas_c;
         let mut arrive;
         let mut cadre;
         let mut arret_ajout;
@@ -38,8 +37,8 @@ impl ContapTheIWalking {
             v2: 0.0,
         };
         let mut tgtend;
-        let mut a_status = StatusDeflection::Ok;
-        let mut status_precedent = StatusDeflection::Ok;
+        let mut a_status;
+        let mut status_precedent;
         let mut nb_division;
         let mut step_sign;
         let mut n: i32;

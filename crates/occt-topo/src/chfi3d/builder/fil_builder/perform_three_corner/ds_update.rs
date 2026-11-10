@@ -29,8 +29,7 @@
 use std::sync::Arc;
 
 use occt_core::bnd::BndBox;
-use occt_core::gp::{GpPnt, GpPnt2d};
-use occt_geom::Surface;
+use occt_core::gp::GpPnt;
 use occt_geom2d::curve::Curve2d;
 
 use crate::abs::Orientation;
@@ -41,7 +40,7 @@ use crate::chfi3d::builder_0_helpers::{
 };
 use crate::chfi3d::builder_helpers::same_parameter_range;
 use crate::chfi3d::builder::ChFi3dBuilder;
-use crate::topopebrep::ds::{Curve as DsCurve, DataStructure};
+use crate::topopebrep::ds::Curve as DsCurve;
 
 use super::ThreeCorner;
 use super::super::super::corner_sd::{

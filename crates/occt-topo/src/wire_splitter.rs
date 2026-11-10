@@ -500,9 +500,12 @@ impl WireSplitter {
     }
 }
 
+
 /// Verify that a wire is topologically closed: every vertex of its edge set
 /// has even degree and the vertices are all connected. (Equivalent to the
-/// existence of a closed Eulerian walk over the wire edges.)
+/// existence of a closed Eulerian walk over the wire edges.) Used by the
+/// splitter unit tests only.
+#[cfg(test)]
 fn wire_chains_closed(wire: &TopoShape) -> bool {
     let edges = edges_of(wire);
     if edges.is_empty() {

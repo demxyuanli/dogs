@@ -1,7 +1,6 @@
 use crate::gp::ax1::GpAx1;
 use crate::gp::ax2::GpAx2;
 use crate::gp::ax3::GpAx3;
-use crate::gp::dir::GpDir;
 use crate::gp::pnt::GpPnt;
 use crate::gp::trsf::GpTrsf;
 use crate::gp::vec::GpVec;

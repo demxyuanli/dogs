@@ -112,8 +112,8 @@ pub(super) struct Intersection {
     pub derudeb: GpVec,
     /// `dervdeb`.
     pub dervdeb: GpVec,
-    /// `ptcoindeb`.
-    pub ptcoindeb: GpPnt2d,
+    /// `ptcoindeb` is only read by the `BoundSurf` call inside
+    /// `ComputeIntersection`, so it is a local of that body and not a field.
     /// `tolreached`.
     pub tolreached: f64,
     /// The `bool` `ComputeIntersection` returns.
@@ -198,7 +198,6 @@ pub(super) fn compute_intersection(
         pc2: out.pc2,
         derudeb,
         dervdeb,
-        ptcoindeb,
         tolreached: out.tolreached,
         done,
     })

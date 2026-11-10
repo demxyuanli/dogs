@@ -22,7 +22,6 @@ use crate::bop_tools_set::{BopToolsSet, BopToolsSetMap};
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::builder_solid::BuilderSolid;
-use crate::fclass2d::FaceState;
 use crate::shape::{Edge, Face, TopoShape};
 use crate::topo_tools::{edges_of, faces_of, ShapeMapKey};
 

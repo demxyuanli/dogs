@@ -49,13 +49,13 @@ fn main() {
     // healed shape and report how many faces now have a zero-width added-point
     // range. Measurement only -- the library is untouched.
     if args.iter().any(|a| a == "--fixall") {
-        use occt_topo::brep_bnd_lib;
-        use occt_topo::meshing::data_model::MeshModel;
-        use occt_topo::meshing::edge_discret::EdgeDiscret;
-        use occt_topo::meshing::incremental_mesh::IncrementalMesh;
-        use occt_topo::meshing::model_builder::ModelBuilder;
-        use occt_topo::meshing::parameters::MeshParameters;
-        use occt_topo::shape::TopoShape;
+        
+        
+        
+        
+        
+        
+        
         use occt_topo::shhealing::ShapeFixFace;
         use occt_topo::topo_tools::{faces_of, wires_of_face};
 
@@ -147,8 +147,8 @@ fn main() {
     if args.iter().any(|a| a == "--model") {
         use occt_topo::brep_bnd_lib;
         use occt_topo::brep_tool::BRepTool;
-        use occt_topo::meshing::data_model::MeshModel;
-        use occt_topo::meshing::edge_discret::EdgeDiscret;
+        
+        
         use occt_topo::meshing::model_builder::ModelBuilder;
         use occt_topo::meshing::parameters::MeshParameters;
         let want: Option<usize> = args
@@ -156,7 +156,7 @@ fn main() {
             .position(|a| a == "--model")
             .and_then(|i| args.get(i + 1))
             .and_then(|s| s.parse().ok());
-        let mut model = ModelBuilder::build_model(&shape, &MeshParameters::default())
+        let model = ModelBuilder::build_model(&shape, &MeshParameters::default())
             .expect("build_model");
         for i in 0..model.faces_nb() {
             if let Some(w) = want {

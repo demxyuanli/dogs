@@ -39,11 +39,13 @@ pub fn fill_internal_vertices_occt<B: BopBuilderLike>(f: &mut B) -> Result<(), S
             let mut v = Vertex(v_shape);
             v.0.set_orientation(Orientation::Internal);
             for f_im in p_lf_im {
-                vvfi.push(VertexFaceInternal::from_parts(
-                    v.clone(),
-                    Face(f_im.clone()),
-                    fuzzy,
-                ));
+                // `BOPAlgo_Builder_2.cxx:876-878`: `SetVertex` / `SetFace` /
+                // `SetFuzzyValue` on the freshly constructed pair.
+                let mut vfi = VertexFaceInternal::new();
+                vfi.set_vertex(v.clone());
+                vfi.set_face(Face(f_im.clone()));
+                vfi.set_fuzzy_value(fuzzy);
+                vvfi.push(vfi);
             }
         }
     }
@@ -54,11 +56,14 @@ pub fn fill_internal_vertices_occt<B: BopBuilderLike>(f: &mut B) -> Result<(), S
         if !vfi.is_internal() {
             continue;
         }
-        // `BRep_Builder().Add(aF, aV)` — the image TShape is shared, so the
-        // add is visible on every view of that face (`_2.cxx:1003-1006`).
-        let mut face = vfi.face().0.clone();
-        let vertex = vfi.vertex().0.clone();
-        bld.add(&mut face, &vertex);
+        // `_2.cxx:904-905` binds `TopoDS_Vertex& aV = aVFI.Vertex()` and
+        // `TopoDS_Face& aF = aVFI.Face()`, then `BRep_Builder().Add(aF, aV)`
+        // (`_2.cxx:1003-1006`). Rust cannot hold both `&mut` at once, so the
+        // vertex view is taken first; the image TShape is shared, so adding to
+        // the stored face is visible on every view of it.
+        let vertex = vfi.vertex_mut().0.clone();
+        let face = vfi.face_mut();
+        bld.add(&mut face.0, &vertex);
     }
     Ok(())
 }

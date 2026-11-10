@@ -32,7 +32,6 @@ use crate::bopds::BopdsDS;
 use crate::builder::TopoBuilder;
 use crate::iterator::cumulated_children;
 use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Vertex, Wire};
-use crate::tgeometry::GeometryRegistry;
 use crate::topo_tools::{edges_of, faces_of, shape_map_key, vertices_of, ShapeMapKey};
 
 /// `TopTools_ShapeMapHasher` key (`TopTools_ShapeMapHasher.hxx:30-38`; equal

@@ -25,36 +25,34 @@
 //! [`crate::pave_filler::PaveFiller::add_error`].
 mod prelude {
 
-pub(crate) use std::collections::{HashMap, HashSet};
+    pub(crate) use occt_core::gp::GpPnt;
+    pub(crate) use occt_core::precision::CONFUSION;
 
+    pub(crate) use crate::abs::ShapeType;
+    pub(crate) use crate::algo_tools::{AlgoTools, D_TOLERANCE};
+    pub(crate) use crate::bopds::{BopdsDS, BopdsIterator, BopdsPave};
+    pub(crate) use crate::brep_tool::BRepTool;
+    pub(crate) use crate::int_tools_full::IntToolsContext;
+    pub(crate) use crate::shape::{Edge, TopoShape, Vertex};
 
-pub(crate) use occt_core::gp::{GpPnt, GpPnt2d, GpVec};
-pub(crate) use occt_core::precision::{CONFUSION, PCONFUSION, RESOLUTION};
-pub(crate) use occt_geom::Curve;
+    // Only the DS-only cores driven by the unit tests need the rest.
+    #[cfg(test)]
+    pub(crate) use std::collections::HashSet;
 
-pub(crate) use crate::abs::ShapeType;
-pub(crate) use crate::algo_tools::{AlgoTools, D_TOLERANCE};
-pub(crate) use crate::bopds::{
-    BopdsCommonBlock, BopdsDS, BopdsFaceInfo, BopdsIterator, BopdsPave, BopdsPaveBlock,
-    BopdsShapeInfo,
-};
-pub(crate) use crate::boptools_2d::intermediate_point;
-pub(crate) use crate::bopds_ff::{BopdsCurve, BopdsInterfFf};
-pub(crate) use crate::brep_surface::face_is_plane_type;
-pub(crate) use crate::brep_tool::BRepTool;
-pub(crate) use crate::builder::TopoBuilder;
-pub(crate) use crate::edge_edge::EdgeEdge;
-pub(crate) use crate::edge_face::EdgeFace;
-pub(crate) use crate::fclass2d::FaceState;
-pub(crate) use crate::int_face_face::FaceFace;
-pub(crate) use crate::int_tools_full::IntToolsContext;
-pub(crate) use crate::inttools_data::{CommonPartType, IntRange};
-pub(crate) use crate::pave_filler::{EdgeRangeDistance, GlueEnum, PaveFiller};
-pub(crate) use crate::shape::{Edge, Face, TopoShape, Vertex};
-pub(crate) use crate::topo_tools::vertices_of;
+    #[cfg(test)]
+    pub(crate) use occt_core::precision::PCONFUSION;
+    #[cfg(test)]
+    pub(crate) use crate::bopds::BopdsPaveBlock;
+    #[cfg(test)]
+    pub(crate) use crate::builder::TopoBuilder;
+    #[cfg(test)]
+    pub(crate) use crate::pave_filler::{GlueEnum, PaveFiller};
+    #[cfg(test)]
+    pub(crate) use crate::shape::Face;
 
 }
 
+#[cfg(test)]
 use prelude::*;
 
 
@@ -323,7 +321,7 @@ mod tests {
         assert_eq!(ds.pave_blocks(n_e).len(), 1);
         assert!(ds.pave_blocks(n_e)[0].is_to_update());
 
-        let mut ctx = FillCtx { fuzzy: 1e-7, glue_full: false, non_destructive: false, errors: Vec::new() };
+        let mut ctx = FillCtx { fuzzy: 1e-7 };
         split_pave_blocks_impl(&mut ds, &mut ctx, &[n_e]).unwrap();
         let blocks = ds.pave_blocks(n_e);
         assert_eq!(blocks.len(), 3, "2 extra paves split 1 block into 3");
@@ -410,8 +408,6 @@ mod tests {
                 t_a: 0.5,
                 edge_b: ne2,
                 t_b: 0.5,
-                range1_first: 0.5,
-                range1_last: 0.5,
             },
             NewVertexSeed {
                 point: GpPnt::new(0.5, 0.0, 0.0),
@@ -420,8 +416,6 @@ mod tests {
                 t_a: 0.5,
                 edge_b: ne2,
                 t_b: 0.5,
-                range1_first: 0.5,
-                range1_last: 0.5,
             },
         ];
         let idx = treat_new_vertices(&mut ds, 1e-7, &seeds).unwrap();
@@ -606,9 +600,8 @@ mod tests {
 
 mod fill_ctx;
 mod vertex_face;
-mod face_face;
 mod perform;
-pub use fill_ctx::*;
+pub(crate) use fill_ctx::*;
 pub use vertex_face::*;
 
 pub use perform::*;

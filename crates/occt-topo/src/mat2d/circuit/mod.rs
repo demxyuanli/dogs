@@ -308,11 +308,6 @@ impl Mat2dCircuit {
     }
 }
 
-/// `FigItem.ChangeValue(i)`: 1-based access to a line of the figure.
-pub(crate) fn line_mut(fig_item: &mut Mat2dFigure, index: i32) -> &mut Vec<Mat2dItem> {
-    &mut fig_item[(index - 1) as usize]
-}
-
 /// `gp_Vec2d(P1, P2)` (`gp_Vec2d.hxx`): the translation `P2 - P1`.
 pub(crate) fn vec_between(p1: &GpPnt2d, p2: &GpPnt2d) -> GpVec2d {
     GpVec2d::new(p2.x() - p1.x(), p2.y() - p1.y())

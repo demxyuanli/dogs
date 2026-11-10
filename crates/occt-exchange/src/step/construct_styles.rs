@@ -81,12 +81,6 @@ impl<'a> ConstructStyles<'a> {
         Self { records, styles: Vec::new(), root_styles: Vec::new() }
     }
 
-    /// The STEP model, as `StepRepr_Representation` lookups and `DecodeColor`
-    /// need it.
-    pub(in crate::step) fn records(&self) -> &'a HashMap<usize, Record> {
-        self.records
-    }
-
     pub(in crate::step) fn record_opt(&self, id: usize) -> Option<&'a Record> {
         self.records.get(&id)
     }
@@ -241,12 +235,6 @@ impl<'a> ConstructStyles<'a> {
             }
         }
         res
-    }
-
-    /// The `GetColors` return value, as `SetStyle` reads it (`cxx:1279-1282`).
-    pub(in crate::step) fn has_colors(&self, style_id: usize) -> Option<StyleColors> {
-        let colors = self.colors(style_id);
-        if colors.is_defined() { Some(colors) } else { None }
     }
 }
 

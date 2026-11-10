@@ -10,13 +10,6 @@ use crate::topo_tools::{edges_of, edges_of_wire, faces_of, shapes_of, vertices_o
 // Sub-shape extraction helpers
 // ---------------------------------------------------------------------------
 
-/// Whether two parameter ranges overlap within `tol`.
-pub(crate) fn ranges_overlap(a1: f64, a2: f64, b1: f64, b2: f64, tol: f64) -> bool {
-    let (a1, a2) = if a1 <= a2 { (a1, a2) } else { (a2, a1) };
-    let (b1, b2) = if b1 <= b2 { (b1, b2) } else { (b2, b1) };
-    a1 <= b2 + tol && b1 <= a2 + tol
-}
-
 /// Direct vertex children of a shape (used for edges).
 pub(crate) fn direct_vertex_children(shape: &TopoShape) -> Vec<TopoShape> {
     shape

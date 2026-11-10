@@ -48,11 +48,11 @@ pub use intquadquad::IntQuadQuad;
 pub use quadric::IntAnaQuadric;
 
 mod analytic_intersections;
-mod line_torus;
+mod quad_quad_geo;
 #[path = "../intana_intconicquad.rs"]
 mod intconicquad;
 pub use analytic_intersections::*;
-pub use line_torus::*;
+pub use quad_quad_geo::*;
 pub use intconicquad::IntAnaIntConicQuad;
 
 #[cfg(test)]

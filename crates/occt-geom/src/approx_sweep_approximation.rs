@@ -436,7 +436,7 @@ impl ApproxSweepApproximation {
 
         // (2.2) Tolerance and transformation 2d (`cxx:132-160`).
         let mut two_d_tol: Vec<f64> = Vec::new();
-        let mut the_3d2d_tol = 0.0f64;
+        let the_3d2d_tol;
         if self.num_2d_ss > 0 {
             self.affin = vec![GpGTrsf2d::identity(); self.num_2d_ss as usize];
             the_3d2d_tol = 0.9 * bound_tol; // 10% of security.

@@ -278,7 +278,7 @@ pub(super) fn orient_several_wires(
         let Ok(clas) = class_one_wire(face, &aw) else {
             continue;
         };
-        let mut check_shift = true;
+        let mut check_shift;
         let staout = clas.perform_infinite_point_tab_orien();
         let mut sta = FaceState::Out;
         let mut int_wires: Vec<Wire> = Vec::new();

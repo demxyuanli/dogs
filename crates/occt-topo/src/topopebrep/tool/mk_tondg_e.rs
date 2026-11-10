@@ -360,7 +360,7 @@ fn fun_get_ec(f: &TopoShape, v: &TopoShape) -> Option<TopoShape> {
 /// `TopExp_Explorer exv(mydgE, TopAbs_VERTEX); exv.Current()` (`cxx:72`,
 /// `:282`, `:374`).
 fn first_vertex(e: &TopoShape) -> Option<TopoShape> {
-    let mut ex = Explorer::new(e, ShapeType::Vertex);
+    let ex = Explorer::new(e, ShapeType::Vertex);
     if ex.more() {
         Some(ex.current().clone())
     } else {

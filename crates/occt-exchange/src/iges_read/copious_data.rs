@@ -11,9 +11,7 @@ use std::sync::Arc;
 use occt_core::gp::{GpPnt, GpPnt2d};
 use occt_core::precision::{CONFUSION, REAL_SMALL};
 use occt_geom::bspline_curve::GeomBSplineCurve;
-use occt_geom::curve::Curve;
 use occt_geom2d::bspline_curve::Geom2dBSplineCurve;
-use occt_geom2d::curve::Curve2d;
 
 use super::iges_data_iges_model::{EntityData, IgesModel};
 use super::iges_to_brep_basic_curve::{

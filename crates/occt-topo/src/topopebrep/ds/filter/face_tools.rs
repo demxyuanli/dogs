@@ -22,7 +22,7 @@ use crate::topopebrep::tool::shape_classifier::ShapeClassifier;
 use crate::topopebrep::tool::tangent::{curves_same_oriented, tg_geom_e};
 use crate::topopebrep::tool::topology::{fun_tool_ng_geom_f, fun_tool_par_f};
 
-use crate::topopebrep::ds::export::{fds_data, fds_idata, fds_tdata};
+use crate::topopebrep::ds::export::{fds_data, fds_idata};
 use crate::topopebrep::ds::filter::funk::fun_unk_fstasta;
 use crate::topopebrep::ds::interference::Interference;
 use crate::topopebrep::ds::interference_iterator::InterferenceList;
@@ -295,7 +295,7 @@ pub fn fun_resolve_f_unknown(
                 }
                 None => {
                     // `cxx:401-418`
-                    let mut classif = p_classif.clone();
+                    let classif = p_classif.clone();
                     if let Some(c) = classif.as_ref() {
                         let rank_fs = ds.ancestor_rank_of(&fs_shape);
                         // MSV: find the solids of the same object rank as FS to
@@ -303,7 +303,7 @@ pub fn fun_resolve_f_unknown(
                         // rather than to the face (see CFE002 C2, SIX == 13).
                         let a_sref = ds.shape(rank_fs, true);
                         if let Some(a_sref) = a_sref {
-                            let mut ex = Explorer::new(&a_sref, ShapeType::Solid);
+                            let ex = Explorer::new(&a_sref, ShapeType::Solid);
                             if ex.more() {
                                 c.borrow_mut().set_reference(&a_sref);
                             }

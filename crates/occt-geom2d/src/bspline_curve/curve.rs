@@ -1,4 +1,3 @@
-use crate::curve::Curve2d;
 use occt_core::bspl::knots;
 use occt_core::gp::{GpPnt, GpPnt2d};
 

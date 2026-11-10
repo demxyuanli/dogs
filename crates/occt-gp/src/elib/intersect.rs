@@ -116,7 +116,7 @@ pub fn sphere_normal_at(sphere_center: &GpPnt, p: &GpPnt) -> GpVec {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gp::{GpDir, GpAx1, GpAx3};
+    use crate::gp::{GpDir, GpAx3};
 
     #[test]
     fn line_plane_basic() {

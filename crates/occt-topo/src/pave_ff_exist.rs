@@ -22,7 +22,6 @@ use crate::bbox_from_geometry::shape_bbox;
 use crate::bopds::{BopdsDS, BopdsPave, BopdsPaveBlock};
 
 use crate::brep_tool::BRepTool;
-use crate::int_tools_full::IntToolsContext;
 use crate::pave_ff::CoupleOfPaveBlocks;
 use crate::pave_filler::{EdgeRangeDistance, PaveFiller};
 use crate::pave_intersect::vertex_on_edge;
@@ -165,8 +164,6 @@ fn edge_box_out(ds: &BopdsDS, n_e: usize, other: &BndBox) -> bool {
     ds.box_of(n_e).map(|b| b.is_out_box(other)).unwrap_or(false)
 }
 
-/// `BOPAlgo_PaveFiller::IsExistingPaveBlock` ON/IN tree overload (`_6.cxx:2047`).
-pub(crate) use crate::pave_ff_exist_onin::is_existing_pave_block_on_in;
 
 /// `BOPAlgo_PaveFiller::PreparePostTreatFF` (`_6.cxx:3609`).
 pub(crate) fn prepare_post_treat_ff(

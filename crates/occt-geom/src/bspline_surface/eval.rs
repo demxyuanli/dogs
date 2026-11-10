@@ -1,7 +1,6 @@
 //! Evaluation of `Geom_BSplineSurface` (`EvalD0..D3`, `EvalDN`,
 //! `HomogeneousD1`) plus the free-standing [`eval_bspline_surface`].
 
-use super::knots::distinct_km;
 use super::*;
 use occt_core::gp::{GpPnt, GpVec};
 
@@ -20,10 +19,6 @@ impl GeomBSplineSurface {
     /// Distinct knots / multiplicities of one direction, restricted to the
     /// surface's own parameter window for a periodic direction (the flat
     /// periodic sequence carries one period of extension knots outside it).
-    fn distinct_km_pub(flat: &[f64], periodic: bool, range: (f64, f64)) -> (Vec<f64>, Vec<i32>) {
-        distinct_km(flat, periodic, range)
-    }
-
     /// Shared knot/mult args for `BSplSLib::{D2,D3,DN}` on this surface.
     /// Borrowed from the stored representation, so an evaluation allocates
     /// nothing for the knots.

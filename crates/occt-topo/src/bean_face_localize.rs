@@ -276,7 +276,7 @@ impl BeanFaceIntersector {
         let mut cur_par_u = range_u.first;
         let mut local_diff_u =
             (range_u.last - range_u.first) / surface_data.nb_sample_u() as f64;
-        let mut prev_par_u = cur_par_u;
+        let mut prev_par_u;
         let mut local_diff_v =
             (range_v.last - range_v.first) / surface_data.nb_sample_v() as f64;
 
@@ -340,7 +340,7 @@ impl BeanFaceIntersector {
             prev_par_u = cur_par_u;
             cur_par_u += local_diff_u;
             let mut cur_par_v = range_v.first;
-            let mut prev_par_v = cur_par_v;
+            let mut prev_par_v;
             let mut cur_index_v = cur_index_v_init;
             let mut b_has_out_v = false;
 
@@ -415,7 +415,7 @@ impl BeanFaceIntersector {
                 let mut list_of_index: Vec<i32> = Vec::new();
                 let mut b_has_out_c = false;
                 let mut cur_par = range_c.first;
-                let mut prev_par = range_c.first;
+                let mut prev_par;
                 let mut cur_range_c = new_range_c_template;
                 let mut cur_index = cur_index_init;
 
@@ -482,7 +482,7 @@ impl BeanFaceIntersector {
 
                 let mut new_range_c = new_range_c_template;
                 let mut b_use_old_c = false;
-                let mut b_use_old_s = false;
+                let mut b_use_old_s;
                 let b_check_size = !b_has_out_c;
 
                 for (t_it, box_c_val) in list_of_index.iter().zip(list_of_box.iter()) {
@@ -508,7 +508,9 @@ impl BeanFaceIntersector {
                                 if diag_c < diag_s {
                                     if diag_c * 10.0 < diag_s {
                                         b_use_old_c = true;
-                                        b_has_out_c = true;
+                                        // cxx:1772 also stores `bHasOutC = true` here, but
+                                        // the following `break` leaves the loop and the flag
+                                        // is never read again (cxx:1822 only tests bHasOutV).
                                         b_has_out_v = true;
                                         break;
                                     }

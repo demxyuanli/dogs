@@ -177,7 +177,7 @@ impl ShapeFixFace {
         if w2.is_none() {
             // cxx:1899-1992: add a degenerated edge for spheres and BSpline
             // cone-like surfaces, then handle them as a regular pair.
-            let mut builder_pt = GpPnt2d::new(0.0, 0.0);
+            let builder_pt;
             let dir;
             let range;
             if ismodeu != 0 && an_is_degenerated_tor {
@@ -416,7 +416,7 @@ impl ShapeFixFace {
                 wd2_edges[i1 - nb1 - 1].clone()
             };
             // `sa.PCurve(edge1, tmpF, c2d, f, l, true)` (`ShapeFix_Face.cxx:2149`).
-            let (c2d, f, l) = match boptools_2d::curve_on_surface_oriented(&edge1, &tmp_f, true) {
+            let (c2d, _f, l) = match boptools_2d::curve_on_surface_oriented(&edge1, &tmp_f, true) {
                 Some(v) => v,
                 None => return false, // cxx:2149-2152
             };

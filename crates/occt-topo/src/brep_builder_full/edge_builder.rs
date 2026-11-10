@@ -1,5 +1,4 @@
 use super::prelude::*;
-use super::*;
 
 /// Tolerance (model units) used when validating that consecutive wire edges
 /// share an endpoint, and when deciding whether a chain of edges is closed.

@@ -131,12 +131,11 @@ pub struct Builder {
     my_merged_out: DShapeOn1StateMap,
     /// `myEmptyShapeList` (`hxx:823`).
     my_empty_shape_list: Vec<TopoShape>,
-    /// `myListOfSolid` (`hxx:824`).
-    my_list_of_solid: Vec<TopoShape>,
+    /// `myListOfSolid` (`hxx:824`) and `myListOfEdge` (`hxx:826`) are declared
+    /// in OCCT but no `.cxx` body of this class reads or writes them, so they
+    /// have no member here.
     /// `myListOfFace` (`hxx:825`).
     my_list_of_face: Vec<TopoShape>,
-    /// `myListOfEdge` (`hxx:826`).
-    my_list_of_edge: Vec<TopoShape>,
     /// `myFSplits` (`hxx:827-828`).
     my_f_splits: HashMap<ShapeMapKey, Vec<TopoShape>>,
     /// `myESplits` (`hxx:829-830`).
@@ -151,8 +150,9 @@ pub struct Builder {
     my_solid_reference: Option<TopoShape>,
     /// `mySolidToFill` (`hxx:835`).
     my_solid_to_fill: Option<TopoShape>,
-    /// `myFaceAvoid` (`hxx:836`).
-    my_face_avoid: Vec<TopoShape>,
+    /// `myFaceAvoid` (`hxx:836`) — declared and only reset by `Clear()` in
+    /// OCCT; no classification or filling body reads it, so it has no member
+    /// here.
     /// `myFaceReference` (`hxx:837`).
     my_face_reference: Option<TopoShape>,
     /// `myFaceToFill` (`hxx:838`).
@@ -161,10 +161,9 @@ pub struct Builder {
     my_edge_avoid: Vec<TopoShape>,
     /// `myEdgeReference` (`hxx:840`).
     my_edge_reference: Option<TopoShape>,
-    /// `myEdgeToFill` (`hxx:841`).
-    my_edge_to_fill: Option<TopoShape>,
-    /// `myVertexAvoid` (`hxx:842`).
-    my_vertex_avoid: Vec<TopoShape>,
+    /// `myEdgeToFill` (`hxx:841`) and `myVertexAvoid` (`hxx:842`) — declared in
+    /// OCCT and never read by a filling or classification body, so they have no
+    /// member here.
     /// `myMAP1` (`hxx:843`).
     my_map1: IndexedShapeSet,
     /// `myMAP2` (`hxx:844`).
@@ -178,8 +177,7 @@ pub struct Builder {
     /// order `MergeKPartiskole` relies on when picking `pfOU`
     /// (`kpkole.cxx:135-152`).
     my_kp_map_f1f2: Vec<(TopoShape, Vec<TopoShape>)>,
-    /// `mySHASETindex` (`hxx:848`).
-    my_sha_set_index: i32,
+    /// `mySHASETindex` (`hxx:848`) — no ported body reads it.
     /// `myClassifyDef` (`hxx:849`).
     my_classify_def: bool,
     /// `myClassifyVal` (`hxx:850`).
@@ -194,8 +192,9 @@ pub struct Builder {
     my_shape_classifier: Rc<RefCell<ShapeClassifier>>,
     /// `myMemoSplit` (`hxx:852`).
     my_memo_split: IndexedShapeSet,
-    /// `myEmptyAS` (`hxx:853`).
-    my_empty_as: String,
+    /// `myEmptyAS` (`hxx:853`) — an empty `TopOpeBRepBuild_ShapeSet` handed to
+    /// the `ShapeSet` readers; no ported body reads the member, so it has no
+    /// field here.
     /// `myProcessON` (`hxx:854`).
     my_process_on: bool,
     /// `myONFacesMap` (`hxx:855`).
@@ -235,9 +234,7 @@ impl Builder {
             my_merged_on: DShapeOn1StateMap::new(),
             my_merged_out: DShapeOn1StateMap::new(),
             my_empty_shape_list: Vec::new(),
-            my_list_of_solid: Vec::new(),
             my_list_of_face: Vec::new(),
-            my_list_of_edge: Vec::new(),
             my_f_splits: HashMap::new(),
             my_e_splits: HashMap::new(),
             my_section_done: false,
@@ -245,23 +242,18 @@ impl Builder {
             my_section: Vec::new(),
             my_solid_reference: None,
             my_solid_to_fill: None,
-            my_face_avoid: Vec::new(),
             my_face_reference: None,
             my_face_to_fill: None,
             my_edge_avoid: Vec::new(),
             my_edge_reference: None,
-            my_edge_to_fill: None,
-            my_vertex_avoid: Vec::new(),
             my_map1: IndexedShapeSet::new(),
             my_map2: IndexedShapeSet::new(),
             my_is_k_part: 0,
             my_kp_map_f1f2: Vec::new(),
-            my_sha_set_index: 0,
             my_classify_def: false,
             my_classify_val: true,
             my_shape_classifier: Rc::new(RefCell::new(ShapeClassifier::new())),
             my_memo_split: IndexedShapeSet::new(),
-            my_empty_as: String::new(),
             my_process_on: false,
             my_on_faces_map: IndexedShapeData::new(),
             my_on_elem_map: IndexedShapeSet::new(),

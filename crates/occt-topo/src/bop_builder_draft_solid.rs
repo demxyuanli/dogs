@@ -19,7 +19,6 @@
 #![allow(dead_code)]
 
 use crate::abs::{Orientation, ShapeType};
-use crate::algo_tools::AlgoTools;
 use crate::bop_occt_util::{
     add_shell_to_solid, as_face, builder_add, images_bound, images_of, is_internal,
     iter_children, make_empty_shell, make_empty_solid, shape_key, shells_of_solid, BopSolidHost,

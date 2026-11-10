@@ -3,8 +3,7 @@
 //! `Perform` overloads themselves are ported on top of these.
 
 use occt_core::elib::clib2d;
-use occt_core::gp::{GpLin2d, GpPnt2d, GpVec2d};
-use occt_core::precision::PCONFUSION;
+use occt_core::gp::{GpLin2d, GpPnt2d};
 
 use occt_core::intres2d::{IntRes2dDomain, IntRes2dIntersectionPoint, IntRes2dPosition, IntRes2dSituation, IntRes2dTransition, IntRes2dTypeTrans};
 
@@ -235,17 +234,3 @@ pub(crate) fn compute_int_point(
     Some(pt)
 }
 
-/// `Precision::PConfusion()`, re-exported for the `Perform` parameters.
-pub(crate) fn pconfusion() -> f64 {
-    PCONFUSION
-}
-
-/// `gp_Vec2d` dot product helper (the OCCT `Tan1.Dot(Tan2)`).
-pub(crate) fn dir_dot(a: &GpVec2d, b: &GpVec2d) -> f64 {
-    a.dot(b)
-}
-
-/// `gp_Vec2d` cross product helper (the OCCT `Tan1.Crossed(Tan2)`).
-pub(crate) fn dir_cross(a: &GpVec2d, b: &GpVec2d) -> f64 {
-    a.x() * b.y() - a.y() * b.x()
-}

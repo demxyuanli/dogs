@@ -8,9 +8,9 @@ use occt_topo::meshing::data_model::MeshFace;
 use occt_topo::meshing::face_discret::Classifier;
 use occt_topo::meshing::parameters::MeshParameters;
 use occt_topo::meshing::incremental_mesh::IncrementalMesh;
-use occt_topo::meshing::range_splitter::{
-    mesh_surface_type, create_range_splitter, RangeSplitter, MeshSurfaceType,
-};
+use occt_topo::meshing::range_splitter::{mesh_surface_type, create_range_splitter, MeshSurfaceType};
+#[cfg(test)]
+use occt_topo::meshing::range_splitter::RangeSplitter;
 use occt_topo::shhealing::{edge_proj_aux_params, fix_shifted_wire};
 use occt_exchange::step::read_step_file;
 use occt_topo::abs::Orientation;
@@ -77,11 +77,11 @@ fn dump_grid(shape: &occt_topo::shape::TopoShape, stem: &str) {
             continue;
         };
         let ty = mesh_surface_type(surf.as_ref());
-        let (su0, su1, sv0, sv1) = BRepTool::uv_bounds(&face);
+        let (su0, _su1, sv0, _sv1) = BRepTool::uv_bounds(&face);
         let (u0, u1, v0, v1) = brep_tools::uv_bounds(&face);
         let nu_p = surf.nb_u_poles();
         let nv_p = surf.nb_v_poles();
-        let (ru, rv) = surf
+        let (_ru, _rv) = surf
             .uv_resolution(lin)
             .unwrap_or((f64::NAN, f64::NAN));
         let adapt_nb = |is_u: bool, range: (f64, f64)| -> i32 {

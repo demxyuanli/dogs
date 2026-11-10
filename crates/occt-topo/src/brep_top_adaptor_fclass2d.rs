@@ -39,7 +39,6 @@ use occt_core::elib::clib2d::parameter_lin2d;
 use occt_core::elib::clib::line2d_value;
 use occt_core::gp::{GpDir2d, GpLin2d, GpPnt, GpPnt2d, GpVec2d};
 use occt_core::precision::{CONFUSION, PCONFUSION};
-use occt_geom2d::curve::Curve2d;
 use occt_geom2d::gcpnts_quasi_uniform_deflection::QuasiUniformDeflection2d;
 
 use crate::abs::Orientation;
@@ -276,7 +275,7 @@ impl BrepTopAdaptorFClass2d {
             v2: 0.0,
         };
 
-        let mut a_nb_e = 0i32;
+        let mut a_nb_e;
         let mut is_bad_wire = false;
 
         for wire in wires {

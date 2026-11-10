@@ -13,15 +13,13 @@
 use std::sync::Arc;
 
 use occt_core::gp::{
-    GpAx1, GpAx2d, GpAx22d, GpAx3, GpCirc2d, GpDir, GpDir2d, GpElips2d, GpPln, GpPnt, GpPnt2d, GpVec,
+    GpAx2d, GpAx22d, GpCirc2d, GpDir2d, GpPnt, GpPnt2d, GpVec,
     GpVec2d,
 };
-use occt_geom::projlib;
 use occt_geom::{Curve, Surface};
 use occt_geom2d::curve::Curve2d;
 use occt_geom2d::{
-    Geom2dBezierCurve, Geom2dBSplineCurve, Geom2dCircle, Geom2dEllipse, Geom2dHyperbola, Geom2dLine,
-    Geom2dParabola,
+    Geom2dBSplineCurve, Geom2dCircle, Geom2dLine,
 };
 
 use crate::brep_surface::{classify_surface, SurfaceKind};

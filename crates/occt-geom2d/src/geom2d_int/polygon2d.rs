@@ -251,7 +251,8 @@ impl Geom2dIntPolygon2d {
                     if self.ti(i) > max_index_used {
                         max_index_used = self.ti(i);
                     }
-                    rprec = ri;
+                    // gxx:156 -- Rprec = Ri inside the branch is repeated at gxx:159
+                    // right after it; the inner store is dead in OCCT as well.
                 }
                 rprec = ri;
             }
@@ -294,7 +295,6 @@ impl Geom2dIntPolygon2d {
                                 dy = -dy;
                             }
                             if dx + dy > 1e-12 {
-                                let p1 = pim1;
                                 // `gp_Lin2d L(Pim1, gp_Dir2d(gp_Vec2d(Pim1, Pi)))`
                                 // (`gxx:220`). OCCT's `gp_Dir2d` raises
                                 // `Standard_ConstructionError` on a direction
@@ -322,15 +322,10 @@ impl Geom2dIntPolygon2d {
                                     self.set_tp(max_index_used, pm);
                                     self.set_tpar(max_index_used, u);
 
-                                    let u1m = 0.5 * (u + self.tpar(self.ti(i - 1)));
-                                    let p1m = curve_tool::geom2d_value(c, u1m);
-                                    if let Ok(dir) = GpDir2d::from_vec2d(&GpVec2d::new(
-                                        pm.x() - p1.x(),
-                                        pm.y() - p1.y(),
-                                    )) {
-                                        let l1m = GpLin2d::from_pnt_dir(p1, dir);
-                                        t = l1m.distance(&p1m);
-                                    }
+                                    // gxx:208-211 -- OCCT recomputes `u1m`/`P1m` and stores
+                                    // `L1m.Distance(P1m)` into `t`, but `t` is never read on
+                                    // this path (`i--` returns to the loop head), so the whole
+                                    // block is dead in OCCT as well.
                                     // `i--` (`gxx:239`), cancelled by the
                                     // `i++` of the `for` (`gxx:198`).
                                     i -= 1;

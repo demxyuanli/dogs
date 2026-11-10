@@ -45,7 +45,6 @@ pub(in crate::iges_read) enum EntityData {
     },
     /// 142. `IGESGeom_ToolCurveOnSurface::ReadOwnParams` (`cxx:41-139`).
     CurveOnSurface {
-        mode: i32,
         surface: Option<usize>,
         curve_uv: Option<usize>,
         curve_3d: Option<usize>,
@@ -264,8 +263,9 @@ pub(in crate::iges_read) enum EntityData {
         u_min: f64,
         u_max: f64,
     },
-    /// Types outside the transferred family. Transfer cites the OCCT arm.
-    Raw { type_number: i32 },
+    /// Types outside the transferred family. Transfer cites the OCCT arm. The
+    /// directory's `TypeNumber` stays on `Entity::type_number`.
+    Raw,
     /// 502. `IGESSolid_ToolVertexList::ReadOwnParams` (`cxx:46-91`).
     VertexList { vertices: Vec<[f64; 3]> },
     /// 504. `IGESSolid_ToolEdgeList::ReadOwnParams` (`cxx:47-297`).

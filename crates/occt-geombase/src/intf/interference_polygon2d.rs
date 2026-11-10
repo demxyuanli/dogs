@@ -671,8 +671,8 @@ impl IntfInterferencePolygon2d {
                     par_tsp,
                     sin_teta,
                 );
-                par_o[1] = par_osp;
-                par_t[1] = par_tsp;
+                // Intf_InterferencePolygon2d.cxx:675-676 stores parOSP/parTSP into
+                // slot 1, which is only read when nbpi > 1; the value is dead here.
             }
             if !self.base.self_intf {
                 let contains = self

@@ -278,7 +278,7 @@ pub(crate) fn function_set_root_3(
         };
         let mut alpha = 1.0;
         let mut accepted = x;
-        let mut best = n2;
+        let best = n2;
         for _ in 0..20 {
             let cand = [
                 clamp_finite(x[0] + alpha * dx[0], binf[0], bsup[0]),
@@ -288,7 +288,6 @@ pub(crate) fn function_set_root_3(
             let (fc, _) = func.values(s1, s2, cand);
             let nc = fc[0] * fc[0] + fc[1] * fc[1] + fc[2] * fc[2];
             if nc < best {
-                best = nc;
                 accepted = cand;
                 break;
             }

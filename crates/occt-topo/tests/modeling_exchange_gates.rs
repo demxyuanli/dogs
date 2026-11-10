@@ -14,7 +14,7 @@ use occt_topo::primitives::BRepPrimBox;
 use occt_topo::shape_naming::{find_vertex_at, geometric_hash};
 use occt_topo::shape_ops::translated_copy;
 use occt_topo::sweep_revolve::revolve_rectangle;
-use occt_exchange::step::{read_step, write_step, write_shape_step};
+use occt_exchange::step::{read_step, write_shape_step};
 
 fn approx(a: f64, b: f64) -> bool {
     (a - b).abs() < 1e-3 * b.abs().max(1.0)

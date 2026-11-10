@@ -5,7 +5,7 @@
 use crate::bspline_curve::Geom2dBSplineCurve;
 use occt_core::bspl::curve_dn::curve_dn;
 use occt_core::bspl::knots::reparametrize;
-use occt_core::gp::{GpPnt, GpPnt2d};
+use occt_core::gp::GpPnt;
 use occt_core::precision::CONFUSION;
 
 const DEFAULT_TOL_POLES: f64 = 0.000001;

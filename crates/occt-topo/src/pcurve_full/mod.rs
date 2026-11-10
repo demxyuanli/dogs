@@ -31,7 +31,7 @@ pub(crate) use occt_geom::{Curve, Surface};
 pub(crate) use occt_geom2d::curve::Curve2d;
 pub(crate) use occt_geom2d::{Geom2dBSplineCurve, Geom2dLine};
 
-pub(crate) use crate::brep_surface::{classify_surface, face_uv_bounds, sphere_center, SurfaceKind};
+pub(crate) use crate::brep_surface::{face_uv_bounds, sphere_center, SurfaceKind};
 pub(crate) use crate::pcurve::edge_pcurve_on_face;
 pub(crate) use crate::shape::{Edge, Face};
 pub(crate) use crate::tgeometry::GeometryRegistry;
@@ -46,7 +46,7 @@ mod singularities;
 pub use surface_projector::*;
 pub use make_pcurve::*;
 pub use projection_cache::*;
-pub use singularities::*;
+pub(crate) use singularities::*;
 
 /// `ShapeAnalysis_Surface::ValueOfUV` (`ShapeAnalysis_Surface.cxx:1245-1515`).
 /// Re-exported for `ShapeFix_ComposeShell::SplitWire` and `GetMiddlePoint`,

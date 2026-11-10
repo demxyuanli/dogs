@@ -54,7 +54,7 @@ use crate::shape::{Edge, Face, TopoShape};
 use crate::topo_tools::{explorer_shapes, is_equal, is_same, shape_map_key, ShapeMapKey};
 use crate::topopebrep::build::ShapeListOfShape;
 use crate::topopebrep::ds::connex::Connexity;
-use crate::topopebrep::ds::export::{fds_data, fds_has_same_domain2d, fds_has_same_domain3d};
+use crate::topopebrep::ds::export::fds_data;
 use crate::topopebrep::ds::kind::Kind;
 use crate::topopebrep::tool::c2d::fc2d_curve_on_surface_with_ef;
 use crate::topopebrep::tool::iso::uv_iso_curve;

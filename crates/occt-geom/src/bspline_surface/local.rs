@@ -35,7 +35,7 @@ impl GeomBSplineSurface {
         let mut i1 = occt_core::bspl::locate::hunt_occt(knots, new_u);
         i1 = i1.max(1).min(upper);
         while i1 + 1 <= upper
-            && (knots[(i1 as usize)] - new_u).abs() <= tol
+            && (knots[i1 as usize] - new_u).abs() <= tol
         {
             i1 += 1;
         }

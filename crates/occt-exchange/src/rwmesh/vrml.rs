@@ -1,8 +1,6 @@
 use super::prelude::*;
 use super::*;
 
-use crate::tdata_std_named_data::TDataStdNamedData;
-use crate::xcaf_doc_vis_material::XcafDocVisMaterial;
 
 
 /// Resolve a 1-based (or negative = from-end) OBJ index to a 0-based index.
@@ -135,9 +133,6 @@ impl Vp {
     }
     pub(super) fn peek_is(&self, t: &VTok) -> bool {
         self.peek() == Some(t)
-    }
-    pub(super) fn peek_lbrace(&self) -> bool {
-        self.peek_is(&VTok::LBrace)
     }
     pub(super) fn peek_rbrace(&self) -> bool {
         self.peek_is(&VTok::RBrace)

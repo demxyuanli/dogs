@@ -190,7 +190,7 @@ fn fun_brep_topowalki(
         .vp_bounds()
         .ok_or_else(|| "FUNBREP_topowalki : VPBounds".to_string())?;
     let fermee = l.is_v_closed();
-    let mut onsort = trans_line.orientation(State::Out, ShapeType::Face) == Orientation::Forward;
+    let onsort = trans_line.orientation(State::Out, ShapeType::Face) == Orientation::Forward;
     let lastdefinie = !lasttrans_line.is_unknown();
     let mut lastonsort = false;
     let mut lastinin = false;
@@ -204,7 +204,7 @@ fn fun_brep_topowalki(
 
     let mut litdefinie = false;
     let mut litonsort = false;
-    let mut lit = Transition::default();
+    let lit;
     let nointerf = dscil.is_empty();
     if !nointerf {
         let i = dscil.last().expect("non-empty DSCIL").clone();

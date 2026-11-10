@@ -15,7 +15,6 @@ use occt_core::precision::PCONFUSION;
 use occt_geom2d::curve::Curve2d;
 
 use crate::boptools_2d::curve_on_surface_oriented;
-use crate::brep_tool::BRepTool;
 use crate::shhealing::shape_analysis_curve::validate_range;
 use crate::shhealing::wire_fix::fix_same_parameter;
 

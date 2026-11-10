@@ -119,9 +119,9 @@ fn compute_at_degree<L: LineTool>(
         return DegOutcome::Done;
     }
 
-    let mut my_scu = MultiBSpCurve::with_nb_poles(nbpoles.max(0) as usize);
-    let mut the_tol3d = 0.0f64;
-    let mut the_tol2d = 0.0f64;
+    let my_scu;
+    let the_tol3d;
+    let the_tol2d;
     let mydone;
 
     if this.my_squares {
@@ -151,7 +151,7 @@ fn compute_at_degree<L: LineTool>(
             && (at_least_tangency(this.real_first_c)
                 || at_least_tangency(this.real_last_c))
         {
-            let mut thefitt = LeastSquare::with_knots_parameters(
+            let thefitt = LeastSquare::with_knots_parameters(
                 line,
                 knots,
                 mults,
@@ -169,7 +169,7 @@ fn compute_at_degree<L: LineTool>(
         let l2 = this.my_lambda2 / deg as f64;
         let constraints = this.my_constraints.clone();
 
-        let mut grad = BspGradient::with_lambdas(
+        let grad = BspGradient::with_lambdas(
             line,
             fpt,
             lpt,
@@ -194,7 +194,7 @@ fn compute_at_degree<L: LineTool>(
     } else {
         // `gxx:1015-1030`: as many poles as the degree, so the Bezier driver.
         let constraints = this.my_constraints.clone();
-        let mut grad2 = Gradient::new(
+        let grad2 = Gradient::new(
             line,
             fpt,
             lpt,

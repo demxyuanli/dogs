@@ -85,9 +85,9 @@ pub(super) fn interpol<L: LineTool>(this: &mut BsplComputeLine, line: &L) {
             the_mults[i as usize - 1] = 1;
         }
 
-        let nb_p = (3 * line.nb_p3d() + 2 * line.nb_p2d()).max(1) as usize;
-        let mut v1 = MathVector::with_init(1, nb_p, 0.0);
-        let mut v2 = MathVector::with_init(1, nb_p, 0.0);
+        let _nb_p = (3 * line.nb_p3d() + 2 * line.nb_p2d()).max(1) as usize;
+        let mut v1;
+        let mut v2;
 
         if nbpoints == 3 || nbpoints == 4 {
             // `gxx:1349-1359`.

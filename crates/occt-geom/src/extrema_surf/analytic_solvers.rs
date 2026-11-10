@@ -1,5 +1,4 @@
 use super::prelude::*;
-use super::*;
 
 /// Angle snap: OCCT's `ExtPElS_MyEps = Epsilon(2π)`; `ANGULAR` (1e-12) is the
 /// crate's angular resolution and is used here for the same purpose.
@@ -446,6 +445,11 @@ pub(crate) fn classify_plane(s: &dyn Surface) -> Option<GpPln> {
 /// Equivalent branch: `Extrema_ExtSS.cxx:117-119` takes `S1.GetType()` and the
 /// accessor is `Adaptor3d_Surface::Sphere()` (`GeomAdaptor_Surface.cxx`),
 /// mirrored here by `Surface::gp_sphere`.
+///
+/// Only the type-dispatch unit tests read it: the ported
+/// `Extrema_ExtSS::Perform` body reaches its `GeomAbs_Sphere` arm through the
+/// adaptor's own type query, so there is no production caller.
+#[cfg(test)]
 pub(crate) fn classify_sphere(s: &dyn Surface) -> Option<GpSphere> {
     s.gp_sphere()
 }

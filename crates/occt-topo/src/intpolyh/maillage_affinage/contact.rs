@@ -160,7 +160,7 @@ pub fn tri_contact(
     }
 
     // `cxx:1658-1667`: cosinus of the angle between the normals.
-    let mut sq_modn1 = -1.0;
+    let sq_modn1;
     let mut sq_modm1 = -1.0;
     sq_modn1 = n1.square_modulus();
     if sq_modn1 > SQUARE_MY_CONFUSION_PRECISION {

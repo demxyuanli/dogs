@@ -257,7 +257,7 @@ impl Quilt {
                 edges_of_faces.add(&edge);
             }
             let mut shell: Option<TopoShape> = None;
-            let mut new_o = shape.orientation();
+            let new_o;
             for edge in explore(&shape, ShapeType::Edge, None) {
                 if let Some(bound) = free_edges.find(&edge) {
                     let bound = bound.clone();
@@ -271,7 +271,7 @@ impl Quilt {
                     break;
                 }
             }
-            let mut shell = if let Some(shell) = shell {
+            let shell = if let Some(shell) = shell {
                 shell
             } else {
                 let shell = TopoShape::new(ShapeType::Shell);

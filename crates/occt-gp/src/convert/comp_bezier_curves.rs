@@ -113,7 +113,7 @@ where
 
     let mut det = 0.0f64;
     let mut p1 = [0.0f64; 3];
-    let mut points: Vec<GpPnt> = Vec::new();
+    let mut points: Vec<GpPnt>;
 
     for (i, curve) in sequence.iter().enumerate() {
         // 1- Raise the Bezier curve to the maximum degree (`Base.hxx:77-91`).

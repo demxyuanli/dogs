@@ -389,7 +389,7 @@ fn sphere_open(
     v2: f64,
 ) -> Result<GeomBSplineSurface, String> {
     let delta_u = u2 - u1;
-    let delta_v = v2 - v1;
+    let _delta_v = v2 - v1;
     if delta_u > 2.0 * PI || delta_u < 0.0 || v1 < -PI / 2.0 || v2 > PI / 2.0 {
         return Err("Convert_SphereToBSplineSurface".into());
     }

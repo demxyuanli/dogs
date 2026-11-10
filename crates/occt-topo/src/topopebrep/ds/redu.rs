@@ -67,7 +67,7 @@ pub fn fun_ds_redu2d1d(
     l1d: &InterferenceList,
 ) -> Option<Transition> {
     // `redu.cxx:68-81`
-    let (sb2, ib2, sa2, ia2, gt2, _g2, _st2, s2) = fds_idata(&i2d.read().unwrap());
+    let (sb2, ib2, _sa2, ia2, gt2, _g2, _st2, s2) = fds_idata(&i2d.read().unwrap());
     let t2d = i2d.read().unwrap().transition();
     let o2 = t2d.orientation(crate::abs::State::In, ShapeType::Face);
     let mut new_t2d = Transition::default();

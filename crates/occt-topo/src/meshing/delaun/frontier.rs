@@ -138,10 +138,9 @@ impl Delaun {
             return true;
         }
 
+        // `BRepMesh_Delaun.cxx:986`: `fillBndBox(aBoxes, aStartEdgeVertexS, aPivotVertex)`.
         let mut boxes: Vec<BndB2> = Vec::new();
-        let mut b0 = BndB2::void();
-        update_bnd_box(start_edge_vertex_s, pivot_vertex, &mut b0);
-        boxes.push(b0);
+        self.fill_bnd_box(&mut boxes, start_node, pivot_node);
 
         let mut dead_links: BTreeSet<i32> = BTreeSet::new();
         let mut leprous_links: BTreeSet<i32> = BTreeSet::new();
@@ -166,7 +165,8 @@ impl Delaun {
                 &mut dead_links,
             );
             if let Some((next_link_id, next_pivot_node, next_link_dir, next_link_bbox)) = result {
-                start_node = pivot_node;
+                // cxx:1019 -- `aStartNode = aPivotNode` is overwritten at cxx:1049
+                // (and cxx:1054) before any read; the store is dead in OCCT as well.
                 ref_link_dir = next_link_dir;
                 pivot_node = next_pivot_node;
                 pivot_vertex = self.mesh_data.node(next_pivot_node).location.coord;
@@ -619,10 +619,6 @@ impl Delaun {
             ReplaceFlag::InsertAfter => {
                 polygon.insert(root_index, new_edge_id);
                 poly_boxes.insert(root_index, new_box);
-            }
-            ReplaceFlag::InsertBefore => {
-                polygon.insert(root_index - 1, new_edge_id);
-                poly_boxes.insert(root_index - 1, new_box);
             }
         }
         new_edge_id

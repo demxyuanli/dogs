@@ -98,7 +98,7 @@ fn single_box_has_no_self_interference() {
 fn overlapping_boxes_create_intersection_vertices_and_edges() {
     let a = unit_box(0.0, 0.0, 0.0);
     let b = unit_box(0.5, 0.0, 0.0);
-    let base = argument_subshapes(&a) + argument_subshapes(&b);
+    let _base = argument_subshapes(&a) + argument_subshapes(&b);
     let mut pf = PaveFiller::new();
     pf.set_arguments(&[a, b]);
     pf.perform().expect("perform");

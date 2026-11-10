@@ -21,7 +21,6 @@
 
 use occt_core::gp::{GpPnt, GpVec};
 
-use crate::curve::Curve;
 use crate::surface::Surface;
 
 /// The `UNPORTED` message for a non-planar stop surface.

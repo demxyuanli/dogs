@@ -50,8 +50,8 @@ pub(crate) fn compute_internal_points_on_rstr(
     let toler = hcurve2d_resolution(&thearc, CONFUSION);
     let mut found = false;
     let mut vecref = GpVec::default();
-    let mut paraminf = 0.0;
-    let mut pcour = occt_core::gp::GpPnt::default();
+    let mut paraminf;
+    let mut pcour;
 
     // `cxx:1154-1184`.
     loop {
@@ -85,7 +85,7 @@ pub(crate) fn compute_internal_points_on_rstr(
     }
 
     let mut indexsup = indexinf + 1;
-    let mut paramsup = 0.0;
+    let mut paramsup;
     let mut toutvu = indexsup > nbpnts;
     // `ok` deliberately lives across the whole scan (`cxx:1136`).
     let mut ok = false;
@@ -175,14 +175,13 @@ pub(crate) fn compute_internal_points_on_rstr(
                         line.add_vertex(internalp);
                     }
                 }
-                paramsup = (f64::from(nbpnts - indexsup) * paramf
-                    + f64::from(indexsup - 1) * paraml)
-                    / f64::from(nbpnts - 1);
+                // `cxx:1269` also recomputes `paramsup` here, but `cxx:1181`
+                // overwrites it at the top of the next iteration before any read.
             }
             vecref = vectest;
-            indexinf = indexsup;
+            // `cxx:1271` also stores `indexinf = indexsup`; `indexinf` is never
+            // read again in this loop, so that store is dead in OCCT as well.
             indexsup += 1;
-            let _ = paramsup;
         }
         toutvu = indexsup > nbpnts;
     }

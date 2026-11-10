@@ -1,7 +1,7 @@
 //! End-to-end gate: BRepFeat features (draft/groove/neck), variable-radius
 //! fillet, shape healing, XML XCAF, and math depth (RK45).
 
-use occt_core::gp::{GpDir, GpPnt};
+use occt_core::gp::GpPnt;
 use occt_math::ode_rk45::rk45_solve;
 use occt_topo::brepfeat::draft;
 use occt_topo::fillet_var::{fillet_edge_var, radius_at, RadiusLaw, VarFilletSpec};

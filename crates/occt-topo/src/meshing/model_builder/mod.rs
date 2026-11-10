@@ -16,8 +16,7 @@ mod prelude {
 pub(crate) use std::collections::HashMap;
 pub(crate) use std::sync::Arc;
 
-pub(crate) use occt_core::bnd::{BndBox, BndBox2d};
-pub(crate) use occt_core::cslib::{Class2d, Class2dResult};
+pub(crate) use occt_core::bnd::BndBox;
 pub(crate) use occt_core::gp::{GpPnt2d, GpVec2d};
 pub(crate) use occt_core::precision::{CONFUSION, PCONFUSION, REAL_SMALL};
 
@@ -26,17 +25,17 @@ pub(crate) const PI: f64 = std::f64::consts::PI;
 pub(crate) use occt_geom::Curve;
 pub(crate) use occt_geom2d::curve::Curve2d;
 
-pub(crate) use crate::abs::{Orientation, ShapeType};
+pub(crate) use crate::abs::Orientation;
+#[cfg(test)]
+pub(crate) use crate::abs::ShapeType;
 pub(crate) use crate::bbox_from_geometry::shape_bbox;
 pub(crate) use crate::brep_tool::BRepTool;
-pub(crate) use crate::builder::TopoBuilder;
 pub(crate) use crate::pcurve_full::{make_pcurve_full};
 pub(crate) use crate::shape::{Edge, Face, TopoShape, Vertex, Wire};
 pub(crate) use crate::tgeometry::GeometryRegistry;
 pub(crate) use crate::topo_tools::{edge_vertices, edges_of, edges_of_wire, faces_of, wires_of_face};
 
 pub(crate) use super::super::data_model::{MeshCurve, MeshEdge, MeshModel, MeshPCurve, MeshStatus};
-pub(crate) use super::super::face_discret::PointState;
 pub(crate) use super::super::parameters::MeshParameters;
 pub(crate) use super::super::range_splitter::{mesh_surface_type, ConeRangeSplitter, RangeSplitter, MeshSurfaceType};
 pub(crate) use super::super::shape_tool::ShapeTool;

@@ -361,7 +361,7 @@ impl TopoBuilder {
     /// (`BRep_TFace.hxx:99-100`), so the list holds exactly this triangulation
     /// and it is active.
     pub fn make_face_from_triangulation(&self, tri: Arc<Triangulation>) -> Face {
-        let mut face = Face::new();
+        let face = Face::new();
         {
             let mut ts = face.0.tshape.write().unwrap();
             ts.set_face_triangulation(Some(tri), true);

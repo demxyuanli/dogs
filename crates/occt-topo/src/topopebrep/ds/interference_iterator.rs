@@ -10,7 +10,6 @@
 //! `Arc<RwLock<Interference>>` in this port, so every read of an interference
 //! goes through [`InterferenceIterator::value`].
 
-use std::sync::Arc;
 
 use super::interference::{Interference, InterferenceHandle};
 use super::kind::Kind;

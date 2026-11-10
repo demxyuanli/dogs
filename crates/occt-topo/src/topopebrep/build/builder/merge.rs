@@ -53,8 +53,8 @@ impl Builder {
         self.my_state2 = to_build2;
         self.my_shape1 = s1.cloned();
         self.my_shape2 = s2.cloned();
-        let s1null = s1.is_none();
-        let s2null = s2.is_none();
+        let _s1null = s1.is_none();
+        let _s2null = s2.is_none();
 
         // cxx:199-200
         self.map_shapes(s1, s2);
@@ -146,7 +146,7 @@ impl Builder {
         // sub-shape of the type that was explored. -----
         if let Some(shape1) = s1 {
             if t1 == ShapeType::Compound {
-                let mut ex1 = ShapeExplorer::with_shape(shape1, tex1, ShapeType::Shape);
+                let ex1 = ShapeExplorer::with_shape(shape1, tex1, ShapeType::Shape);
                 if ex1.more() {
                     if let Some(ss1) = ex1.current().cloned() {
                         let lss1 = self.merged(&ss1, to_build1).to_vec();
@@ -157,7 +157,7 @@ impl Builder {
         }
         if let Some(shape2) = s2 {
             if t2 == ShapeType::Compound {
-                let mut ex2 = ShapeExplorer::with_shape(shape2, tex2, ShapeType::Shape);
+                let ex2 = ShapeExplorer::with_shape(shape2, tex2, ShapeType::Shape);
                 if ex2.more() {
                     if let Some(ss2) = ex2.current().cloned() {
                         let lss2 = self.merged(&ss2, to_build2).to_vec();

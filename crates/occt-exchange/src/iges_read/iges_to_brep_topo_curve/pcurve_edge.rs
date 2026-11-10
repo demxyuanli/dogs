@@ -53,7 +53,7 @@ pub(super) fn pcurve_edge(
     // (`ShapeBuild_Edge.cxx:859-865`), and `ReverseCurves2d` then stores that
     // null edge; the caller here keeps the un-reversed pcurve range instead.
     let Some(build) = occt_topo::brep_lib_make_edge::init_2d(&pc, &surf, first, last) else {
-        let mut plain = TopoBuilder::new().make_edge(
+        let plain = TopoBuilder::new().make_edge(
             Arc::new(CurveOnSurface::new(pc.clone(), surf, first, last)),
             first,
             last,

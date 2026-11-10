@@ -40,27 +40,22 @@
 //! [`crate::bop_builder2`].
 mod prelude {
 
-pub(crate) use std::collections::{HashMap, HashSet};
-pub(crate) use std::sync::Arc;
-
-pub(crate) use occt_core::gp::{GpPnt, GpPnt2d};
-pub(crate) use occt_geom::Surface;
+pub(crate) use std::collections::HashMap;
 
 pub(crate) use crate::abs::{Orientation, ShapeType};
 pub(crate) use crate::algo_tools::AlgoTools;
 pub(crate) use crate::bop_hist::BopHistory;
 pub(crate) use crate::bopds::BopdsDS;
 pub(crate) use crate::boptools_2d;
+#[cfg(test)]
 pub(crate) use crate::brep_tool::BRepTool;
 
-pub(crate) use crate::builder_face::{builder_make_face_from_wire};
-pub(crate) use crate::fclass2d::{FClass2d, FaceState};
 pub(crate) use crate::int_tools_full::IntToolsContext;
-pub(crate) use crate::shape::{Edge, Face, TopoShape, Wire};
+pub(crate) use crate::shape::{Edge, Face, TopoShape};
 pub(crate) use crate::tgeometry::GeometryRegistry;
-pub(crate) use crate::topo_tools::{edge_vertices, edges_of_wire, vertex_position, ShapeMapKey};
-
-
+#[cfg(test)]
+pub(crate) use crate::topo_tools::edges_of_wire;
+pub(crate) use crate::topo_tools::ShapeMapKey;
 }
 
 use prelude::*;
@@ -322,71 +317,6 @@ mod tests {
         assert!(!stub.has_errors(), "errors: {:?}", stub.errors);
         // An empty face-info record means the face was not split.
         assert!(!stub.history().has_any_images(), "no split faces recorded");
-    }
-
-    /// A hole wire passed *before* its growth wire must still be attached to
-    /// the growth, not emitted as a standalone overlapping face.
-    ///
-    /// The old greedy grouping scanned `j > i` and took the first enclosing
-    /// wire, so a hole at index 0 had no growth to attach to. The
-    /// `PerformAreas` port classifies all wires first, then attaches every hole
-    /// to its (nearest) containing growth — order-independent.
-    #[test]
-    fn group_wires_as_areas_attaches_hole_regardless_of_order() {
-        use occt_core::gp::{GpAx3, GpPln};
-        use occt_geom::GeomPlane;
-
-        let b = TopoBuilder::new();
-        // Outer square and an inner diamond, both CCW in the +Z plane.
-        let sq = [
-            GpPnt::new(0.0, 0.0, 0.0),
-            GpPnt::new(1.0, 0.0, 0.0),
-            GpPnt::new(1.0, 1.0, 0.0),
-            GpPnt::new(0.0, 1.0, 0.0),
-        ];
-        let dia = [
-            GpPnt::new(0.2, 0.5, 0.0),
-            GpPnt::new(0.5, 0.2, 0.0),
-            GpPnt::new(0.8, 0.5, 0.0),
-            GpPnt::new(0.5, 0.8, 0.0),
-        ];
-        let sq_es: Vec<Edge> = (0..4).map(|i| b.make_edge_segment(&sq[i], &sq[(i + 1) % 4])).collect();
-        let dia_es: Vec<Edge> = (0..4).map(|i| b.make_edge_segment(&dia[i], &dia[(i + 1) % 4])).collect();
-        let surf: Arc<dyn Surface> = Arc::new(GeomPlane::new(GpPln::new(GpAx3::standard())));
-
-        // Hole wire first: `[diamond, square]`.
-        let groups = group_wires_as_areas(&[dia_es, sq_es], &Some(surf));
-        assert_eq!(groups.len(), 1, "exactly one growth group");
-        assert_eq!(groups[0].0, 1, "the growth is the square (wire 1)");
-        assert_eq!(groups[0].1, vec![0], "the diamond (wire 0) is its hole");
-    }
-
-    /// Two disjoint growth pieces (a diagonal split) never become each other's
-    /// holes: they share no containing relation, so both come out as growths.
-    #[test]
-    fn group_wires_as_areas_disjoint_pieces_are_both_growths() {
-        use occt_core::gp::{GpAx3, GpPln};
-        use occt_geom::GeomPlane;
-
-        let b = TopoBuilder::new();
-        // Two disjoint triangles inside a unit square (a diagonal split).
-        let t1 = [
-            GpPnt::new(0.0, 0.0, 0.0),
-            GpPnt::new(1.0, 0.0, 0.0),
-            GpPnt::new(1.0, 1.0, 0.0),
-        ];
-        let t2 = [
-            GpPnt::new(1.0, 1.0, 0.0),
-            GpPnt::new(0.0, 1.0, 0.0),
-            GpPnt::new(0.0, 0.0, 0.0),
-        ];
-        let e1: Vec<Edge> = (0..3).map(|i| b.make_edge_segment(&t1[i], &t1[(i + 1) % 3])).collect();
-        let e2: Vec<Edge> = (0..3).map(|i| b.make_edge_segment(&t2[i], &t2[(i + 1) % 3])).collect();
-        let surf: Arc<dyn Surface> = Arc::new(GeomPlane::new(GpPln::new(GpAx3::standard())));
-
-        let groups = group_wires_as_areas(&[e1, e2], &Some(surf));
-        assert_eq!(groups.len(), 2, "two disjoint pieces -> two growths");
-        assert!(groups.iter().all(|(_, hs)| hs.is_empty()), "no holes");
     }
 }
 

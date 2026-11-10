@@ -80,8 +80,8 @@ impl Geom2dIntIntPolyPolyGen {
         // for polygon contains all initial points
         // secondary search will be performed only for case when initial points
         // were dropped
-        let is_full_representation = (poly1.nb_segments() == nbsamples_on_c1
-            && poly2.nb_segments() == nbsamples_on_c2);
+        let is_full_representation = poly1.nb_segments() == nbsamples_on_c1
+            && poly2.nb_segments() == nbsamples_on_c2;
 
         if !self.find_intersect(
             c1,
@@ -234,7 +234,7 @@ impl Geom2dIntIntPolyPolyGen {
                             let (u, v) = eip.roots();
 
                             let (mut p1, tan1) = curve_tool::geom2d_d1(c1, u);
-                            let (mut p2, tan2) = curve_tool::geom2d_d1(c1, v);
+                            let (p2, tan2) = curve_tool::geom2d_d1(c1, v);
                             let mut dist = p1.distance(&p2);
                             let eps_x1 = 10.0 * curve_tool::geom2d_eps_x();
 
@@ -297,9 +297,11 @@ impl Geom2dIntIntPolyPolyGen {
                                     pos1, &tan1, &mut trans1, pos2, &tan2, &mut trans2, tol_conf,
                                 ) {
                                     let (pp1, t1, n1) = curve_tool::geom2d_d2(c1, u);
-                                    let (pp2, t2, n2) = curve_tool::geom2d_d2(c1, v);
+                                    // gxx:1010 -- the C2/V point stored into P2 is never
+                                    // read: P2 is re-derived at gxx:954 on the next loop
+                                    // iteration before any use.
+                                    let (_, t2, n2) = curve_tool::geom2d_d2(c1, v);
                                     p1 = pp1;
-                                    p2 = pp2;
                                     tan1 = t1;
                                     tan2 = t2;
                                     determine_transition_touch(
@@ -333,10 +335,10 @@ impl Geom2dIntIntPolyPolyGen {
             let mut param_inf_on_curve2;
             let mut param_sup_on_curve1;
             let mut param_inf_on_curve1;
-            let mut poly_u_inf = f64::MAX;
-            let mut poly_v_inf = f64::MAX;
-            let mut poly_u_sup = -f64::MAX;
-            let mut poly_v_sup = -f64::MAX;
+            let mut poly_u_inf;
+            let mut poly_v_inf;
+            let mut poly_u_sup;
+            let mut poly_v_sup;
             param_sup_on_curve2 = -f64::MAX;
             param_sup_on_curve1 = -f64::MAX;
             param_inf_on_curve2 = f64::MAX;
@@ -403,7 +405,7 @@ impl Geom2dIntIntPolyPolyGen {
             let mut trans2 = IntRes2dTransition::new();
 
             let (mut p1, mut tan1) = curve_tool::geom2d_d1(c1, poly_u_inf);
-            let (mut p2, mut tan2) = curve_tool::geom2d_d1(c1, poly_v_inf);
+            let (p2, mut tan2) = curve_tool::geom2d_d1(c1, poly_v_inf);
 
             if p1.distance(self.domain_on_curve1.first_point())
                 <= self.domain_on_curve1.first_tolerance()
@@ -463,9 +465,10 @@ impl Geom2dIntIntPolyPolyGen {
             if !determine_transition_simple(pos1, &tan1, &mut trans1, pos2, &tan2, &mut trans2, tol_conf)
             {
                 let (pp1, t1, n1) = curve_tool::geom2d_d2(c1, poly_u_inf);
-                let (pp2, t2, n2) = curve_tool::geom2d_d2(c1, poly_v_inf);
+                // gxx:580-581 -- same dead store as gxx:1010: P2 is re-derived on the
+                // next iteration before it is read.
+                let (_, t2, n2) = curve_tool::geom2d_d2(c1, poly_v_inf);
                 p1 = pp1;
-                p2 = pp2;
                 tan1 = t1;
                 tan2 = t2;
                 determine_transition_touch(
@@ -481,8 +484,8 @@ impl Geom2dIntIntPolyPolyGen {
             {
                 // bad segment
             } else {
-                let (mut p1, mut tan1) = curve_tool::geom2d_d1(c1, poly_u_sup);
-                let (mut p2, mut tan2) = curve_tool::geom2d_d1(c1, poly_v_sup);
+                let (p1, mut tan1) = curve_tool::geom2d_d1(c1, poly_u_sup);
+                let (p2, mut tan2) = curve_tool::geom2d_d1(c1, poly_v_sup);
                 pos1 = IntRes2dPosition::Middle;
                 pos2 = IntRes2dPosition::Middle;
 

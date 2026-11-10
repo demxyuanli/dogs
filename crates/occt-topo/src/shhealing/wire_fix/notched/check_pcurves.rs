@@ -108,7 +108,7 @@ pub fn check_pcurves_and_shift(wire: &mut Wire, face: &Face, preci: f64, modes: 
             if let Some((c2d, fp2d, lp2d)) = curve_on_surface_oriented(e, face, false) {
                 let (first, last) = BRepTool::edge_parameters(e);
                 if first.is_finite() && last.is_finite() {
-                    let (cfp, clp) = (c2d.first_parameter(), c2d.last_parameter());
+                    let (_cfp, _clp) = (c2d.first_parameter(), c2d.last_parameter());
                     if (first - fp2d).abs() > PCONFUSION || (last - lp2d).abs() > PCONFUSION {
                         reg.set_same_range(&e.0, false);
                     } else if !check_pcurve_range(first, last, c2d.as_ref()) {

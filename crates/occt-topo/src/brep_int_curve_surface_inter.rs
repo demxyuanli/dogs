@@ -27,7 +27,7 @@ use std::sync::Arc;
 use occt_core::bnd::box3d::BndBox;
 use occt_core::gp::{GpPnt, GpPnt2d};
 use occt_core::precision::Precision;
-use occt_geom::{Curve, Surface};
+use occt_geom::Curve;
 
 use crate::abs::State;
 use crate::bbox_from_geometry::shape_bbox;

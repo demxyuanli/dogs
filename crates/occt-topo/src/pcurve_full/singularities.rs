@@ -555,19 +555,19 @@ fn correct_extremity(
     let mut first;
     let mut second;
     let finish_param;
+    // `FirstParam` (`cxx:1857` / `cxx:1865`) is never read before `cxx:1915`
+    // overwrites it with `SecondParam`, so the initial store is dead in OCCT too.
     let mut first_param;
     let mut second_param;
     if is_first_point {
         first = pnt2d[2];
         second = pnt2d[1];
         finish_param = params[0];
-        first_param = params[2];
         second_param = params[1];
     } else {
         first = pnt2d[nb_pnt - 3];
         second = pnt2d[nb_pnt - 2];
         finish_param = params[nb_pnt - 1];
-        first_param = params[nb_pnt - 3];
         second_param = params[nb_pnt - 2];
     }
 

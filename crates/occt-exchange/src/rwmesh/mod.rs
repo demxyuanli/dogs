@@ -13,7 +13,7 @@ mod prelude {
 pub(crate) use std::collections::HashMap;
 pub(crate) use std::path::Path;
 
-pub(crate) use occt_core::gp::{GpMat, GpPnt, GpPnt2d, GpQuaternion, GpTrsf, GpXyz, TrsfForm};
+pub(crate) use occt_core::gp::{GpMat, GpPnt, GpPnt2d, GpTrsf, GpXyz, TrsfForm};
 pub(crate) use occt_core::io::ply::PlyMesh;
 pub(crate) use occt_core::io::stl::StlMesh;
 pub(crate) use occt_core::poly::Triangulation;
@@ -53,9 +53,9 @@ pub use gltf_caf_writer::{
     bin_file_path, write_gltf as perform_gltf, GltfCafNode, GltfCafWriterOptions,
     GltfCafWriterOutput, GltfWriterTrsfFormat,
 };
-pub use gltf_extras::*;
+use gltf_extras::*;
 pub use gltf_file::*;
-pub use gltf_material::*;
+use gltf_material::*;
 pub use gltf_prim_array::*;
 pub use gltf_shape_reader::*;
 pub use obj_caf_writer::*;

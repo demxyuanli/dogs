@@ -129,9 +129,9 @@ pub(crate) fn circle_circle_geometric_intersection(
     c1_res1: &mut PeriodicInterval,
     c1_res2: &mut PeriodicInterval,
 ) -> i32 {
-    let mut c1_binf1 = 0.0f64;
+    let mut c1_binf1;
     let mut c1_binf2 = 0.0f64;
-    let mut c1_bsup1 = 0.0f64;
+    let mut c1_bsup1;
     let mut c1_bsup2 = 0.0f64;
     let d_o1_o2 = c1.location().distance(&c2.location()); // `_1.cxx:166`
     let r1 = c1.radius();
@@ -553,18 +553,10 @@ impl IntCurveIntConicConic {
                         tol,
                     );
 
-                    if is_opposite {
-                        if nbsol != 3 {
-                            if c2inf < c2sup {
-                                c2inf += pi_p_pi();
-                            }
-                        }
-                    } else {
-                        if nbsol != 3 {
-                            if c2sup < c2inf {
-                                c2sup += pi_p_pi();
-                            }
-                        }
+                    // IntCurve_IntConicConic_1.cxx:1090-1103 -- the isOpposite branch
+                    // writes C2inf, which NewPoint2 below never reads (it uses C2sup).
+                    if !is_opposite && nbsol != 3 && c2sup < c2inf {
+                        c2sup += pi_p_pi();
                     }
 
                     let new_point2 = IntRes2dIntersectionPoint::with_transitions(
@@ -637,14 +629,10 @@ impl IntCurveIntConicConic {
                         tol,
                     );
 
-                    if is_opposite {
-                        if c2inf < c2sup {
-                            c2inf += pi_p_pi();
-                        }
-                    } else {
-                        if c2sup < c2inf {
-                            c2sup += pi_p_pi();
-                        }
+                    // IntCurve_IntConicConic_1.cxx:1143-1150 -- the isOpposite branch
+                    // writes C2inf, which NewPoint2 below never reads (it uses C2sup).
+                    if !is_opposite && c2sup < c2inf {
+                        c2sup += pi_p_pi();
                     }
 
                     let new_point2 = IntRes2dIntersectionPoint::with_transitions(

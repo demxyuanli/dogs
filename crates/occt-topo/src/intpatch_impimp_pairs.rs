@@ -5,7 +5,7 @@ use occt_core::gp::{GpAx1, GpPln};
 use occt_core::precision::Precision;
 use occt_core::precision::ANGULAR as PREC_ANG;
 use occt_geom::intana::{
-    axes_meet_at_point, cone_cone_analytic, quadric_quadric_cone_cone, quadric_quadric_cone_torus,
+    axes_meet_at_point, cone_cone_analytic, quadric_quadric_cone_torus,
     quadric_quadric_cylinder_cone, quadric_quadric_cylinder_cylinder,
     quadric_quadric_cylinder_sphere, quadric_quadric_cylinder_torus, quadric_quadric_plane_cone,
     quadric_quadric_plane_cylinder, quadric_quadric_plane_sphere, quadric_quadric_plane_torus,

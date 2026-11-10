@@ -43,8 +43,8 @@ pub struct ShellFaceClassifier<'a> {
     /// `myFaceShellMap` (`hxx:78`), a
     /// `NCollection_DataMap<TopoDS_Shape, TopoDS_Shape, TopTools_ShapeMapHasher>`.
     my_face_shell_map: HashMap<ShapeMapKey, TopoShape>,
-    /// `myShape` (`hxx:79`) — declared, never read nor written by `.cxx`.
-    my_shape: Option<TopoShape>,
+    // `myShape` (`hxx:79`) is declared but never read nor written by `.cxx`,
+    // so it has no member here.
 }
 
 impl<'a> ShellFaceClassifier<'a> {
@@ -58,7 +58,6 @@ impl<'a> ShellFaceClassifier<'a> {
             my_builder: TopoBuilder::new(),
             my_solid_classifier: SolidClassifier::new(),
             my_face_shell_map: HashMap::new(),
-            my_shape: None,
         }
     }
 

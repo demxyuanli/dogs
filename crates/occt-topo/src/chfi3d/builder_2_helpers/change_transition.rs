@@ -36,7 +36,6 @@ use occt_core::gp::GpVec;
 use occt_core::precision::CONFUSION;
 use occt_geom2d::curve::Curve2d;
 
-use crate::abs::Orientation;
 use crate::boptools_2d::curve_on_surface;
 use crate::chfi_ds::CommonPoint;
 use crate::shape::{Edge, Face, TopoShape};

@@ -23,6 +23,7 @@
 mod prelude {
 
 pub(crate) use std::f64::consts::PI;
+#[cfg(test)]
 pub(crate) use std::sync::Arc;
 
 pub(crate) use occt_core::cslib::{Class2d, Class2dResult};
@@ -39,7 +40,7 @@ pub(crate) use crate::curve_sampling_2d::geom2d_nb_samples;
 pub(crate) use crate::pcurve_full::make_pcurve_full;
 pub(crate) use crate::shape::{Edge, Face};
 pub(crate) use crate::tgeometry::GeometryRegistry;
-pub(crate) use crate::topo_tools::{edges_of_wire, wires_of_face};
+pub(crate) use crate::topo_tools::wires_of_face;
 
 }
 

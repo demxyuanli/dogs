@@ -8,8 +8,6 @@
 //! (`MAT2d_Circuit.cxx:103-105`, `:236-238`), so the two variants below are the
 //! whole of the geometry the port has to carry.
 
-use std::sync::Arc;
-
 use occt_core::gp::{GpPnt2d, GpVec2d};
 use occt_geom2d::curve::Curve2d;
 use occt_geom2d::trimmed::Geom2dTrimmedCurve;
@@ -108,9 +106,3 @@ pub type Mat2dLine = Vec<Mat2dItem>;
 /// `NCollection_Sequence<NCollection_Sequence<occ::handle(Geom2d_Geometry)>>`:
 /// the figure, one entry per contour line.
 pub type Mat2dFigure = Vec<Mat2dLine>;
-
-/// `Geom2d_TrimmedCurve` as the `Arc` a [`Mat2dItem`] would hand to a
-/// `Geom2dAdaptor_Curve` / `Curve2d` consumer.
-pub(crate) fn curve_arc(c: &Geom2dTrimmedCurve) -> Arc<dyn Curve2d> {
-    Arc::new(c.clone())
-}

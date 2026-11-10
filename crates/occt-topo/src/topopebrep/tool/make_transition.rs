@@ -31,7 +31,6 @@ use super::curvature::{
 };
 use super::project_curve::{fun_tool_bounds, fun_tool_value};
 use super::tangent::tg_geom_e;
-use super::topology::fun_tool_value_uv;
 
 /// `BEFORE (1)` / `AFTER (2)` (`cxx:28-29`).
 const BEFORE: i32 = 1;

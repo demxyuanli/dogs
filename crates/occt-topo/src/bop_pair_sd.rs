@@ -36,16 +36,6 @@ impl PairOfShapeBoolean {
         }
     }
 
-    /// Pair ready for `Perform`, with the builder fuzzy value.
-    pub fn from_faces(f1: TopoShape, f2: TopoShape, fuzzy: f64) -> Self {
-        Self {
-            shape1: f1,
-            shape2: f2,
-            flag: false,
-            fuzzy,
-        }
-    }
-
     /// `Shape1()`.
     pub fn shape1(&self) -> &TopoShape {
         &self.shape1
@@ -71,14 +61,9 @@ impl PairOfShapeBoolean {
         self.flag
     }
 
-    /// `SetFuzzyValue`.
+    /// `SetFuzzyValue` (inherited from `BOPAlgo_Options`, `_2.cxx:705`).
     pub fn set_fuzzy_value(&mut self, fuzzy: f64) {
         self.fuzzy = fuzzy;
-    }
-
-    /// Fuzzy value stored on the pair.
-    pub fn fuzzy_value(&self) -> f64 {
-        self.fuzzy
     }
 
     /// `BOPAlgo_PairOfShapeBoolean::Perform` (`_2.cxx:94-105`).
@@ -128,27 +113,14 @@ impl VertexFaceInternal {
         }
     }
 
-    /// Pair ready for `Perform`.
-    pub fn from_parts(vertex: Vertex, face: Face, fuzzy: f64) -> Self {
-        Self {
-            vertex,
-            face,
-            is_internal: false,
-            fuzzy,
-        }
-    }
-
     /// `SetVertex`.
     pub fn set_vertex(&mut self, v: Vertex) {
         self.vertex = v;
     }
 
-    /// `Vertex()`.
-    pub fn vertex(&self) -> &Vertex {
-        &self.vertex
-    }
-
-    /// `Vertex()` mutable — FillInternalVertices adds this vertex to the face.
+    /// `Vertex()` — OCCT returns a non-const `TopoDS_Vertex&`
+    /// (`BOPAlgo_Builder_2.cxx:168`) and `FillInternalVertices` binds it as
+    /// `TopoDS_Vertex& aV = aVFI.Vertex()` (`_2.cxx:904`).
     pub fn vertex_mut(&mut self) -> &mut Vertex {
         &mut self.vertex
     }
@@ -158,12 +130,8 @@ impl VertexFaceInternal {
         self.face = f;
     }
 
-    /// `Face()`.
-    pub fn face(&self) -> &Face {
-        &self.face
-    }
-
-    /// `Face()` mutable.
+    /// `Face()` — non-const `TopoDS_Face&` (`_2.cxx:174`), bound as
+    /// `TopoDS_Face& aF = aVFI.Face()` at `_2.cxx:905`.
     pub fn face_mut(&mut self) -> &mut Face {
         &mut self.face
     }

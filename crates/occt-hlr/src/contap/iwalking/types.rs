@@ -255,11 +255,6 @@ pub(crate) fn math_vec2(a: f64, b: f64) -> MathVector {
     v
 }
 
-/// `(UV(1), UV(2))`.
-pub(crate) fn vec2_array(v: &MathVector) -> [f64; 2] {
-    [v.value(1), v.value(2)]
-}
-
 /// `CutVectorByTolerances` (`gxx:391-397`).
 pub(crate) fn cut_vector_by_tolerances(v: &mut GpVec2d, tolerance: [f64; 2]) {
     if v.x().abs() < tolerance[0] {
@@ -342,9 +337,6 @@ impl BndRange {
         self.last = self.last.min(other.last);
     }
 
-    /// `SetVoid()` (`hxx:220-224`).
-    pub(crate) fn set_void(&mut self) {
-        self.first = 0.0;
-        self.last = -1.0;
-    }
+    // `SetVoid()` (`hxx:220-224`) has no caller in the ported walking bodies;
+    // a void range is produced by `Bnd_Range::void()`.
 }

@@ -15,7 +15,6 @@ use occt_core::precision::{CONFUSION, PCONFUSION};
 use occt_geom::bspline_curve::GeomBSplineCurve;
 use occt_geom::curve::Curve;
 use occt_geom2d::bspline_curve::Geom2dBSplineCurve;
-use occt_geom2d::curve::Curve2d;
 
 use super::copious_data::increase_continuity_3d;
 use super::iges_data_iges_model::{EntityData, IgesModel};

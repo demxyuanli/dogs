@@ -22,7 +22,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use occt_core::gp::{GpMat, GpPnt2d, GpVec, GpVec2d};
+use occt_core::gp::{GpMat, GpPnt2d, GpVec};
 use occt_core::precision::PCONFUSION;
 
 use crate::curve::Curve;

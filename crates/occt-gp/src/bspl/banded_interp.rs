@@ -2,8 +2,6 @@
 //! Source: `BSplCLib::BuildSchoenbergPoints`, `KnotSequence`, `Interpolate`
 //! (`BSplCLib.cxx:478`, `3331`, `3353`; `BSplCLib_2.cxx:327-425`).
 
-use crate::bspl::knots::hunt;
-
 /// `BSplCLib::KnotSequence` non-periodic (`cxx:488-516`).
 pub fn knot_sequence(knots: &[f64], mults: &[i32], _degree: i32) -> Vec<f64> {
     let mut seq = Vec::new();
@@ -28,45 +26,6 @@ pub fn schoenberg_points(degree: usize, flat: &[f64], n_poles: usize) -> Vec<f64
         p[i] = s * inv;
     }
     p
-}
-
-/// `BSplCLib::EvalBsplineBasis` for derivative request 0 (`BSplCLib_2.cxx:502-520`).
-fn eval_basis0(order: usize, flat: &[f64], parameter: f64) -> Option<(usize, Vec<f64>)> {
-    let n_poles = flat.len().saturating_sub(order);
-    if n_poles == 0 {
-        return None;
-    }
-    let degree = order - 1;
-    let mut span = hunt(flat, parameter).max(degree).min(n_poles.saturating_sub(1) + degree);
-    if span < degree {
-        span = degree;
-    }
-    if span > n_poles + degree - 1 {
-        span = n_poles + degree - 1;
-    }
-    // `ii` after subtracting Lower: 0-based knot index of the span.
-    let ii = span;
-    let first_nz = ii + 1 - order; // 0-based pole index
-    let mut basis = vec![0.0; order];
-    basis[0] = 1.0;
-    const RES: f64 = 1e-30;
-    for qq in 2..=order {
-        basis[qq - 1] = 0.0;
-        for pp in 1..qq {
-            let lo = ii + 1 + pp - qq;
-            let hi = ii + pp;
-            let scale = flat.get(hi).copied().unwrap_or(0.0) - flat.get(lo).copied().unwrap_or(0.0);
-            if scale.abs() < RES {
-                return None;
-            }
-            let factor = (parameter - flat.get(lo).copied().unwrap_or(0.0)) / scale;
-            let saved = factor * basis[pp - 1];
-            basis[pp - 1] *= 1.0 - factor;
-            basis[pp - 1] += basis[qq - 1];
-            basis[qq - 1] = saved;
-        }
-    }
-    Some((first_nz, basis))
 }
 
 /// `BSplCLib::EvalBsplineBasis` (`BSplCLib_2.cxx:429-563`).

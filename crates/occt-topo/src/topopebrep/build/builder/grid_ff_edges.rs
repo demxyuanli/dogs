@@ -30,18 +30,18 @@ use std::cell::Cell;
 use crate::abs::{Orientation, ShapeType, State};
 use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, Face, TopoShape};
-use crate::topo_tools::{edge_vertices, explorer_shapes, is_equal};
+use crate::topo_tools::{edge_vertices, is_equal};
 use crate::topopebrep::build::edge_builder::EdgeBuilder;
 use crate::topopebrep::build::pave_classifier::PaveClassifier;
 use crate::topopebrep::build::pave_set::PaveSet;
 use crate::topopebrep::build::loop_set::LoopSetSource;
 use crate::topopebrep::build::wire_edge_set::WireEdgeSet;
 use crate::topopebrep::ds::complete_ds::{
-    fun_ds_ori_e_in_f, ORI_E_IN_F_CLOSE_OPPO, ORI_E_IN_F_CLOSE_SAME, ORI_E_IN_F_FOR_REV_OPPO,
+    fun_ds_ori_e_in_f, ORI_E_IN_F_FOR_REV_OPPO,
     ORI_E_IN_F_ON_OPPO_SHA, ORI_E_IN_F_ON_SAME_SHA,
 };
 use crate::topopebrep::ds::kind::Config;
-use crate::topopebrep::tool::{curves_same_oriented_point, fun_tool_bounds, split_e};
+use crate::topopebrep::tool::{curves_same_oriented_point, fun_tool_bounds};
 
 use super::super::g_topo::GTopo;
 use super::Builder;
@@ -100,7 +100,7 @@ impl Builder {
 
         // `cxx:838-857`
         let mut o_ein_f = Orientation::External;
-        let mut oinref;
+        let oinref;
         let (hsdm, hsdm_e) = match self.my_data_structure.as_ref() {
             Some(hds) => {
                 let hsdm = match self.my_face_to_fill.clone() {
@@ -460,7 +460,7 @@ impl Builder {
 
         let c1 = g1.config1();
         let c2 = g1.config2();
-        let uuface = c1 == Config::UnshGeometry && c2 == Config::UnshGeometry;
+        let _uuface = c1 == Config::UnshGeometry && c2 == Config::UnshGeometry;
 
         let on_solid = ls_class
             .first()

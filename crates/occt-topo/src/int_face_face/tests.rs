@@ -4,7 +4,7 @@ use super::*;
 use std::f64::consts::PI;
 use std::sync::Arc;
 
-use occt_core::gp::{GpAx1, GpAx3, GpCone, GpCylinder, GpDir, GpPln, GpPnt, GpSphere, GpTorus};
+use occt_core::gp::{GpAx3, GpCone, GpCylinder, GpDir, GpPln, GpPnt, GpSphere, GpTorus};
 use occt_geom::{GeomCone, GeomCylinder, GeomSphere, GeomTorus, Surface};
 
 use crate::builder::TopoBuilder;

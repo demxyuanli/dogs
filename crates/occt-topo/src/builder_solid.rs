@@ -42,7 +42,6 @@
 use std::collections::{HashMap, HashSet};
 
 use occt_core::bnd::BndBox;
-use occt_core::gp::GpPnt;
 
 use crate::abs::Orientation;
 use crate::algo_tools::AlgoTools;
@@ -50,7 +49,6 @@ use crate::bbox_from_geometry::shape_bbox;
 use crate::bop_aabb_faces::AabbTree;
 use crate::algo_tools_classify_faces::classify_faces_occt;
 use crate::bop_occt_util::{iter_children, same_shape, shape_key as occt_shape_key};
-use crate::brep_extrema::{closest_point_on_face, is_inside};
 use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::fclass2d::FaceState;

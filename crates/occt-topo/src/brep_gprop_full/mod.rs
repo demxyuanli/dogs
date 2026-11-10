@@ -45,8 +45,8 @@ pub(crate) use crate::topo_tools::{edges_of, edges_of_wire, faces_of, vertices_o
 
 }
 
+#[cfg(test)]
 use prelude::*;
-
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -56,8 +56,6 @@ use prelude::*;
 mod tests {
     use super::*;
     use crate::primitives::{BRepPrimBox, BRepPrimCylinder, BRepPrimSphere};
-
-    const TOL: f64 = 1e-5;
 
     fn approx(a: f64, b: f64, tol: f64) -> bool {
         (a - b).abs() <= tol
@@ -186,6 +184,6 @@ mod integration;
 mod properties;
 mod mesh_inertia;
 pub use gauss::*;
-pub use integration::*;
+use integration::*;
 pub use properties::*;
 pub use mesh_inertia::*;

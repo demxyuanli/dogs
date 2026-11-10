@@ -1,9 +1,5 @@
 
-use super::*;
 
-/// `BOPAlgo_PaveFiller::PutSEInOtherFaces` (`BOPAlgo_PaveFiller_6.cxx:4277`).
-/// Intersects every section pave block with faces that did not create it.
-pub(crate) use crate::pave_ff_se::put_se_in_other_faces;
 
 // ---------------------------------------------------------------------------
 // Public API

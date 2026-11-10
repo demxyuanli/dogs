@@ -10,7 +10,7 @@
 use occt_core::gp::GpPnt2d;
 use occt_core::precision::ANGULAR;
 
-use crate::abs::{State, ShapeType};
+use crate::abs::State;
 use crate::shape::TopoShape;
 use crate::topopebrep::ds::h_data_structure::HDataStructure;
 use crate::topopebrep::ds::kind::Kind;
@@ -153,7 +153,7 @@ impl super::FacesFiller {
         let has_on_edge = vp.state(oo_shape_index)? == State::On;
         let has_oo_edge = if on2edges { true } else { has_on_edge };
 
-        let face = self.face(shape_index)?.clone();
+        let _face = self.face(shape_index)?.clone();
         let ooface = self.face(oo_shape_index)?.clone();
         let mut i_oo_face = hds.ds().shape_index(&ooface, true);
         if i_oo_face == 0 {
@@ -170,7 +170,7 @@ impl super::FacesFiller {
         let paredge = vp.edge_parameter(shape_index);
 
         let mut oo_edge_index = 0;
-        let mut oo_edge = TopoShape::new(ShapeType::Edge);
+        let oo_edge;
         if has_oo_edge {
             oo_edge = if on2edges {
                 vp.edge(oo_shape_index)

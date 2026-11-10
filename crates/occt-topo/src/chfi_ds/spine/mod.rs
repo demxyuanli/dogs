@@ -93,9 +93,8 @@ pub struct Spine {
     /// `myCurve` — `BRepAdaptor_Curve`, default-constructed (null edge) until
     /// `Load` / `SetCurrent`.
     my_curve: Option<CurveAdaptor>,
-    /// `myOffsetCurve` — never initialized by this class in OCCT; kept for the
-    /// member list.
-    my_offset_curve: Option<CurveAdaptor>,
+    /// `myOffsetCurve` (`hxx:95`) and `offsetAbscissa` (`hxx:270`) are declared
+    /// in OCCT but never written by this class, so they have no member here.
     /// `indexofcurve`
     index_of_curve: i32,
     /// `myTypeOfConcavity`
@@ -110,9 +109,6 @@ pub struct Spine {
     offset_spine: Vec<TopoShape>,
     /// `abscissa` — cumulative arc length per edge, 1-based in OCCT.
     abscissa: Option<Vec<f64>>,
-    /// `offset_abscissa` — declared in OCCT (`hxx:270`) and never written by
-    /// this class; kept for the member list.
-    offset_abscissa: Option<Vec<f64>>,
     /// `tolesp`
     tolesp: f64,
     /// `firstparam`
@@ -182,7 +178,6 @@ impl Spine {
             offset_elspines: Vec::new(),
             my_mode: ChamfMode::ClassicChamfer,
             my_curve: None,
-            my_offset_curve: None,
             index_of_curve: 0,
             my_type_of_concavity: TypeOfConcavity::Other,
             first_state: State::OnSame,
@@ -190,7 +185,6 @@ impl Spine {
             spine: Vec::new(),
             offset_spine: Vec::new(),
             abscissa: None,
-            offset_abscissa: None,
             tolesp: tol,
             firstparam: 0.0,
             lastparam: 0.0,

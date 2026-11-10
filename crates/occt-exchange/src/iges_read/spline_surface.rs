@@ -12,7 +12,7 @@ use occt_core::gp::{GpPnt, GpTrsf};
 use occt_geom::bspline_surface::GeomBSplineSurface;
 use occt_geom::surface::Surface;
 
-use super::iges_data_iges_model::{EntityData, IgesModel};
+use super::iges_data_iges_model::EntityData;
 use super::iges_data_param_reader::ParamReader;
 use super::iges_to_brep_basic_curve::{convert_location, entity_location, eps_geom};
 use super::iges_to_brep_curve_and_surface::Session;
@@ -360,7 +360,7 @@ fn increase_surface_continuity(
     }
     let degree_u = surf.deg_u() as i32;
     loop {
-        let (knots, mults) = surf.distinct_knots_and_mults_u();
+        let (_knots, mults) = surf.distinct_knots_and_mults_u();
         let last = occt_core::bspl::locate::last_u_knot_index(degree_u, &mults);
         let mut i = occt_core::bspl::locate::first_u_knot_index(degree_u, &mults) + 1;
         let mut modified = false;

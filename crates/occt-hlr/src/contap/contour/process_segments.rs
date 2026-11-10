@@ -4,7 +4,6 @@
 use occt_core::gp::GpVec;
 
 use occt_topo::brep_top_adaptor_topol_tool::TopolTool;
-use occt_topo::topopebrep::tool::adaptor::SurfaceAdaptor;
 
 use super::super::line::ContapLine;
 use super::super::point::ContapPoint;

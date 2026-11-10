@@ -16,22 +16,19 @@ use crate::shape::{Edge, Face, Solid, TopoShape};
 use crate::shell_check::{shell_is_closed};
 
 use crate::topo_tools::{
-    edge_vertices, edges_of, edges_of_wire, faces_of, shapes_of, vertex_position, vertices_of,
-    wires_of_face,
+    edges_of, faces_of,
 };
 
 
 use crate::bop_builder_core::{single_shape_result, BoolOp, BooleanResult};
 use crate::bop_builder_dispatch::{
-    boolean_multi, boolean_with_check, connected_components, decompose_compound,
-    detect_self_intersections, expand_compound, validate_boolean_result,
+    boolean_multi, boolean_with_check, validate_boolean_result,
 };
 use crate::bop_builder_repair::{
     analyze_boundary, boolean_repaired, boolean_split_result, decompose_multi_result,
     face_connectivity_groups, face_is_degenerate, repair_boolean_result,
-    repair_self_intersections, shape_boundary_components, split_connected_boundaries,
-    topologically_clean, BoundaryAnalysisReport, MultiResult, RepairResult, SelfIntersectionIssue,
-    SelfIntersectionKind,
+    repair_self_intersections,
+    topologically_clean, BoundaryAnalysisReport, MultiResult, RepairResult,
 };
 
 pub fn boolean_result_validate(r: &BooleanResult, tol: f64) -> Vec<String> {

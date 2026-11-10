@@ -272,7 +272,7 @@ impl Delaun {
         let mut used_link_id = 0usize;
         let mut opt_angle = 0.0;
         let mut min_dist = f64::MAX;
-        let mut pivot_node = nodes[1];
+        let mut pivot_node;
 
         for link_it in 3..=poly_len {
             let link_info = polygon[link_it - 1];

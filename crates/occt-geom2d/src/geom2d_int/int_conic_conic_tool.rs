@@ -141,10 +141,9 @@ impl Interval {
         r
     }
 
-    /// `Interval(a, hf, b, hl)` (`Tool.cxx:240-247`).
-    pub(crate) fn from_bounds_flags(a: f64, hf: bool, b: f64, hl: bool) -> Self {
-        Self { binf: a, bsup: b, has_first_bound: hf, has_last_bound: hl, is_null: false }
-    }
+    // `Interval(a, hf, b, hl)` (`Tool.cxx:240-247`) has no caller in the ported
+    // `IntCurve_IntConicConic` bodies, which build intervals through
+    // `from_bounds` / `from_domain`.
 
     /// `Length()` (`Tool.cxx:249-252`).
     pub(crate) fn length(&self) -> f64 {

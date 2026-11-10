@@ -240,10 +240,9 @@ pub fn fun_put_interfon_degen_ed(
             }
         };
         if rkv != rkdg {
-            // `cxx:511`: ensures `v` is a vertex of `dge`; only `rkv` is read
-            // afterwards, but the swap is kept as OCCT writes it.
+            // `cxx:511`: ensures `v` is a vertex of `dge`; only `v` is read
+            // afterwards, so OCCT's `rkv = rkdg` there is a dead store.
             v = ov;
-            rkv = rkdg;
         }
     }
     let _ = &v;

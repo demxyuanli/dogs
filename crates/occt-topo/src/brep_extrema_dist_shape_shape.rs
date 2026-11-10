@@ -576,7 +576,7 @@ impl DistShapeShape {
         // `cxx:556-570` (`DistanceFunctor`): refine in ascending box distance
         // with the early-exit rule.
         let mut solution: Option<SolutionPair> = None;
-        let mut start_dist = self.my_dist_ref;
+        let start_dist = self.my_dist_ref;
         let mut seq1: Vec<SolutionElem> = Vec::new();
         let mut seq2: Vec<SolutionElem> = Vec::new();
         for (i, j, box_dist) in pairs {

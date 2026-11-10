@@ -99,12 +99,12 @@ impl SurfRstLineBuilder {
         };
         self.sol = root;
 
-        let mut recads = rec_s
+        let recads = rec_s
             && self.recadre_on_curv(finv_c, &mut solinvs, &mut arc, &mut is_vtxs, &mut vtxs);
         if recads {
             ws = solinvs.value(1);
         }
-        let mut recadp = rec_p
+        let recadp = rec_p
             && self.recadre_on_point(finv_p, &mut solinvp, &mut is_vtxp, &mut vtxp);
         if recadp {
             wp = solinvp.value(1);
@@ -128,8 +128,8 @@ impl SurfRstLineBuilder {
                 if let Some(vtx) = vtxp.as_ref() {
                     trst = BlendTool::parameter(vtx, &self.rst);
                 }
-                is_vtxrst = is_vtxp;
-                vtxrst = vtxp.clone();
+                // cxx:415-416 -- IsVtxrst/Vtxrst are assigned here but never read
+                // afterwards in PerformFirstSection (OCCT has the same dead store).
             } else {
                 u = solinvrst.value(3);
                 v = solinvrst.value(4);
@@ -142,8 +142,7 @@ impl SurfRstLineBuilder {
             if let Some(vtx) = vtxp.as_ref() {
                 trst = BlendTool::parameter(vtx, &self.rst);
             }
-            is_vtxrst = is_vtxp;
-            vtxrst = vtxp.clone();
+            // cxx:431-432 -- same dead store as cxx:415-416.
             recadrst = true;
         } else if recadrst {
             u = solinvrst.value(3);

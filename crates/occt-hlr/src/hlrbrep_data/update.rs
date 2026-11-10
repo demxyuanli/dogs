@@ -6,7 +6,6 @@ use std::sync::Arc;
 use occt_core::precision::Precision;
 
 use occt_topo::abs::Orientation;
-use occt_topo::geom_bnd_lib_surface3d::GeomAbsSurfaceType as ST;
 use crate::hlr_algo::{
     add_min_max, copy_min_max, decode_min_max, encode_min_max, enlarge_min_max, init_min_max,
     size_box, HlrAlgoProjector, MinMaxIndices,

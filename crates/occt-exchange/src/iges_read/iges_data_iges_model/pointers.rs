@@ -158,7 +158,7 @@ pub(in crate::iges_read) fn pointer_targets(data: &EntityData) -> Vec<usize> {
         }
         EntityData::Point { .. }
         | EntityData::Direction { .. }
-        | EntityData::Raw { .. } => {}
+        | EntityData::Raw => {}
         // `IGESSolid_*::OwnShared` (`IGESSolid_ToolVertexList.cxx:...`,
         // `EdgeList.cxx:...`, `Loop.cxx:...`, `Face.cxx:...`, `Shell.cxx:...`,
         // `ManifoldSolid.cxx:165-179`).

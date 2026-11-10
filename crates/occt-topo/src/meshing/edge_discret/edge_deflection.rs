@@ -4,8 +4,6 @@
 // EdgeDeflection
 // ---------------------------------------------------------------------------
 
-use super::prelude::*;
-use super::*;
 
 /// EdgeDeflection computation helpers (`BRepMesh_Deflection`).
 pub struct EdgeDeflection;

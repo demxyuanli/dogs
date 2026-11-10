@@ -16,7 +16,7 @@ use crate::shape::{Edge, Face, TopoShape};
 
 use super::composite_surface::CompositeSurface;
 use super::helpers::*;
-use super::reshape::{MapReShape, SharedReShape};
+use super::reshape::SharedReShape;
 pub use crate::shape_extend::{
     decode_status, SHAPEEXTEND_DONE1, SHAPEEXTEND_FAIL2, SHAPEEXTEND_FAIL3, SHAPEEXTEND_FAIL4,
     SHAPEEXTEND_FAIL5, SHAPEEXTEND_FAIL6, SHAPEEXTEND_OK,

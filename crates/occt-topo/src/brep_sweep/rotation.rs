@@ -147,7 +147,7 @@ impl SweepOps for Rotation {
             origin.y() + along * vdir.y(),
             origin.z() + along * vdir.z(),
         );
-        let tol = BRepTool::vertex_tolerance(&Vertex(gen.clone()));
+        let _tol = BRepTool::vertex_tolerance(&Vertex(gen.clone()));
         let builder = TopoBuilder::new();
         if origin.distance(&p) <= CONFUSION {
             let axis = GpAx2::new(origin, dirz, GpDir::from_axis(occt_core::gp::dir::DirAxis::X))

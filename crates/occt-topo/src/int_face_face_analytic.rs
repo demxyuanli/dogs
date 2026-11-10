@@ -1,8 +1,7 @@
 //! Analytic FaceFace pair intersections (IntAna / intpatch closed forms).
 use std::sync::Arc;
 
-use occt_core::gp::{GpAx1, GpDir, GpLin, GpPnt, GpPnt2d, GpVec};
-use occt_core::precision::ANGULAR;
+use occt_core::gp::{GpDir, GpLin, GpPnt, GpPnt2d, GpVec};
 use occt_geom::intana::{
     quadric_quadric_cone_cone, quadric_quadric_cylinder_cone, quadric_quadric_cylinder_cylinder,
     quadric_quadric_sphere_cone, quadric_quadric_plane_cone, quadric_quadric_cylinder_sphere,
@@ -19,8 +18,8 @@ use crate::pcurve_full::torus_params;
 use crate::shape::Face;
 
 use super::{
-    gp_cone_from_surface, curve_range, gp_cylinder_from_surface, cylinder_params, lin2d_through,
-    line_in_uv_rect, plane_cylinder_kind, plane_torus_circles, gp_sphere_from_surface, FaceFace,
+    gp_cone_from_surface, curve_range, gp_cylinder_from_surface, lin2d_through,
+    line_in_uv_rect, plane_torus_circles, gp_sphere_from_surface, FaceFace,
     FaceFaceCurve,
 };
 

@@ -171,7 +171,7 @@ impl ContapTheIWalking {
         index: i32,
     ) -> (bool, i32) {
         let mut arrive = false;
-        let mut irang = 0i32;
+        let mut irang;
 
         let mut tolu = self.vec_tolerance[0];
         let mut tolv = self.vec_tolerance[1];

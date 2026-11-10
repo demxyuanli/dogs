@@ -516,13 +516,14 @@ impl IntPatchInterferencePolyhedron {
             if pivo >= 0 && pedg >= 0 {
                 // `pivo` and `pedg` are the `theTriCon` / `theOtherP` out
                 // parameters of `TriConnex` (`IntPatch_PolyhedronTool.lxx:54-61`).
-                let (_, tri_con, other_p) = first_pol.tri_connex(
+                let (_, tri_con, _) = first_pol.tri_connex(
                     tri1,
                     self.oi[pivo as usize],
                     self.oi[pedg as usize],
                 );
                 pivo = tri_con;
-                pedg = other_p;
+                // cxx:718 -- TriConnex also writes `theOtherP`, but OCCT never
+                // reads it: `pedg` is reset at cxx:729 before any use.
                 if pivo > tri1 {
                     nbp_ot = 0;
                     ideb = -1; // On a deja trouve celle ci
@@ -547,13 +548,14 @@ impl IntPatchInterferencePolyhedron {
                 }
             }
             if pivo >= 0 && pedg >= 0 {
-                let (_, tri_con, other_p) = secon_pol.tri_connex(
+                let (_, tri_con, _) = secon_pol.tri_connex(
                     tri2,
                     self.ti[pivo as usize],
                     self.ti[pedg as usize],
                 );
                 pivo = tri_con;
-                pedg = other_p;
+                // cxx:746 -- same as cxx:718: the `theOtherP` out parameter is
+                // discarded by OCCT as well.
                 if pivo > tri2 {
                     nbp_ot = 0;
                     ideb = -1; // It has been already found

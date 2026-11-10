@@ -16,7 +16,7 @@ use super::data_structure::DataStructure;
 use super::interference::{Interference, InterferenceHandle};
 use super::interference_iterator::InterferenceList;
 use super::interference_tool::{
-    make_curve_interference, make_edge_interference, make_edge_vertex_interference, make_handle,
+    make_curve_interference, make_edge_interference, make_handle,
 };
 use super::kind::Kind;
 use super::transition::Transition;

@@ -249,7 +249,7 @@ pub fn parameter_out_of_boundary(
     b_increase_par: bool,
     tol: f64,
 ) -> Option<f64> {
-    let mut new_parameter = parameter;
+    let mut new_parameter;
     let mut acurpar = parameter;
     let mut state = FaceState::On;
     let mut iter = 0i32;

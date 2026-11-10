@@ -43,22 +43,18 @@
 mod prelude {
 
 pub(crate) use std::collections::{HashMap, HashSet};
-pub(crate) use std::sync::Arc;
 
-pub(crate) use occt_core::gp::GpPnt;
 
 pub(crate) use crate::abs::{Orientation, ShapeType};
-pub(crate) use crate::algo_tools::AlgoTools;
 pub(crate) use crate::bop_hist::BopHistory;
 pub(crate) use crate::bop_occt_util::{fence_insert, same_shape, shape_key};
 pub(crate) use crate::bopds::BopdsDS;
-pub(crate) use crate::brep_extrema::{closest_point_on_edge, closest_point_on_face, is_inside};
 pub(crate) use crate::brep_tool::BRepTool;
 pub(crate) use crate::builder::TopoBuilder;
 pub(crate) use crate::fclass2d::FaceState;
 pub(crate) use crate::int_tools_full::IntToolsContext;
 pub(crate) use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Vertex, Wire};
-pub(crate) use crate::topo_tools::{edges_of, edges_of_wire, faces_of, vertices_of, ShapeMapKey};
+pub(crate) use crate::topo_tools::{edges_of_wire, vertices_of, ShapeMapKey};
 
 }
 

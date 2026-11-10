@@ -215,7 +215,7 @@ pub fn fun_get_dg_data(
     }
 
     // `cxx:277-361`: the degenerated edge arm
-    for (key, value) in mapved.iter() {
+    for (key, _value) in mapved.iter() {
         let dge = key;
         let rk = shaperk.find(dge);
         let f = if rk == 1 { f1 } else { f2 };
@@ -308,7 +308,7 @@ pub fn fun_get_dg_data(
 
 /// `TopExp_Explorer(e, TopAbs_VERTEX)`'s `Current()`.
 fn first_vertex(e: &TopoShape) -> Option<TopoShape> {
-    let mut ex = crate::topexp::Explorer::new(e, ShapeType::Vertex);
+    let ex = crate::topexp::Explorer::new(e, ShapeType::Vertex);
     if ex.more() {
         Some(ex.current().clone())
     } else {

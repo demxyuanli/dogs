@@ -26,7 +26,7 @@ use super::surf_index::{indices, surf_index, SurfType};
 use super::MoreThreeCorner;
 use crate::brep_tool::BRepTool;
 use crate::chfi3d::builder_c1::cherche_edge1;
-use crate::shape::{Edge, Face};
+use crate::shape::Face;
 use crate::topo_tools::{edge_vertices, is_same};
 use crate::topopebrep::ds::DataStructure;
 

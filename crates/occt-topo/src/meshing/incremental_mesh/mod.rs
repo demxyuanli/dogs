@@ -33,7 +33,6 @@ pub(crate) use crate::brep_tool::BRepTool;
 pub(crate) use crate::intpatch::refine_point_on_surface;
 pub(crate) use crate::mesh::{ShapeMesh};
 pub(crate) use crate::shape::{Edge, Face, TopoShape};
-pub(crate) use crate::wireframe;
 
 pub(crate) use super::super::data_model::{MeshEdge, MeshModel, MeshStatus};
 pub(crate) use super::super::delaun_types::VertexState;
@@ -58,7 +57,7 @@ pub(crate) use super::super::triangulator::{FaceTriangulation};
 mod discret_root;
 mod stitching;
 pub use discret_root::*;
-pub use stitching::*;
+use stitching::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]

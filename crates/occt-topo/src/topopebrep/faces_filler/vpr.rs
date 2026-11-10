@@ -26,7 +26,6 @@ use crate::topopebrep::ds::h_data_structure::HDataStructure;
 use crate::topopebrep::ds::interference::InterferenceHandle;
 use crate::topopebrep::ds::interference_tool::make_curve_interference;
 use crate::topopebrep::ds::kind::Kind;
-use crate::topopebrep::ds::point::Point;
 use crate::topopebrep::ds::point_iterator::PointIterator;
 use crate::topopebrep::ds::transition::Transition;
 use crate::topopebrep::ds::InterferenceList;

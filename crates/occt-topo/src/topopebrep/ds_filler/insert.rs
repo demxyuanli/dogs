@@ -93,7 +93,7 @@ impl DsFiller {
         // `cxx:509-519`
         let mut ff_samdom = true;
         let mut isl_ff_samdom = false;
-        let mut is_ff_samdom = false;
+        let mut is_ff_samdom;
         let mut is_ee = false;
         let mut lff1: Option<TopoShape> = None;
         let mut lff2: Option<TopoShape> = None;
@@ -138,7 +138,7 @@ impl DsFiller {
             let is_ff = t1 == crate::abs::ShapeType::Face && t2 == crate::abs::ShapeType::Face;
             is_ff_samdom = false;
             is_ee = t1 == crate::abs::ShapeType::Edge && t2 == crate::abs::ShapeType::Edge;
-            let mut unfill = !is_ee && isl_ff_samdom;
+            let unfill = !is_ee && isl_ff_samdom;
 
             if unfill {
                 let (Some(f1), Some(f2)) = (lff1.clone(), lff2.clone()) else {
@@ -391,6 +391,6 @@ impl DsFiller {
 
 /// `TopExp::MapShapes(S, TopAbs_SOLID)` emptiness test (`cxx:533-547`).
 fn has_solids(s: &TopoShape) -> bool {
-    let mut ex = Explorer::new(s, crate::abs::ShapeType::Solid);
+    let ex = Explorer::new(s, crate::abs::ShapeType::Solid);
     ex.more()
 }

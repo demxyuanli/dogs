@@ -4,7 +4,7 @@ use std::f64::consts::PI;
 use std::sync::Arc;
 
 use occt_core::gp::{
-    GpAx1, GpAx2, GpAx3, GpCirc, GpCone, GpCylinder, GpDir, GpDir2d, GpLin2d, GpPln, GpPnt,
+    GpAx2, GpAx3, GpCirc, GpCone, GpCylinder, GpDir, GpDir2d, GpLin2d, GpPln, GpPnt,
     GpPnt2d, GpSphere, GpVec, GpVec2d,
 };
 use occt_geom::{Curve, Surface};
@@ -13,7 +13,7 @@ use occt_geom2d::curve::Curve2d;
 use crate::brep_surface::SurfaceKind;
 use crate::builder::TopoBuilder;
 use crate::intpatch;
-use crate::inttools_data::{CurveKind, IntRange};
+use crate::inttools_data::IntRange;
 use crate::pcurve_full::{cone_params, make_pcurve_full};
 use crate::shape::Face;
 use crate::tgeometry::GeometryRegistry;
@@ -80,19 +80,6 @@ fn dist_to_axis(p: &GpPnt, c: &GpPnt, ax: &GpVec) -> f64 {
 
 /// The analytic family of a plane×cylinder intersection, recomputed from the
 /// plane normal and the cylinder axis (matches `intersect_plane_cylinder`).
-pub(crate) fn plane_cylinder_kind(pln: &GpPln, ax: &GpAx1) -> CurveKind {
-    let n = GpVec::from_xyz(pln.axis().direction().xyz()).normalized();
-    let az = GpVec::from_xyz(ax.direction().xyz()).normalized();
-    let n_par = n.dot(&az);
-    let n_perp = n.subtracted(&az.multiplied_scalar(n_par));
-    if n_perp.magnitude() <= 1e-9 {
-        CurveKind::Circle
-    } else if n_par.abs() <= 1e-9 {
-        CurveKind::Line
-    } else {
-        CurveKind::Ellipse
-    }
-}
 
 /// A unit direction perpendicular to `z` (axis for a cone/torus frame).
 fn perp_x_dir(z: &GpDir) -> GpDir {

@@ -202,7 +202,7 @@ impl HlrBRepData {
                 // `ed1.Used(true);` (`cxx:1904`).
                 self.my_e_data[my_fe as usize].set_used(true);
 
-                let (p, pt, uv) = {
+                let (_p, pt, uv) = {
                     let ec = self.my_e_data[my_fe as usize].geometry();
                     let p = ec.parameter3d((ec.last_parameter() + ec.first_parameter()) / 2.0);
                     (p, ec.value3d(p), uv_point(p, ec, fd.geometry()))

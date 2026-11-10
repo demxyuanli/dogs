@@ -111,10 +111,8 @@ pub(super) struct CornerProbe {
     pub p2d: [GpPnt2d; 4],
     /// `p3d[0..4]` (`cxx:462`): the same four points in space.
     pub p3d: [GpPnt; 4],
-    /// `deru` (`cxx:520`).
-    pub deru: GpVec,
-    /// `derv` (`cxx:520`).
-    pub derv: GpVec,
+    /// `deru` (`cxx:520`) and `derv` (`cxx:520`) are consumed by `norpl`
+    /// right where `Fac->D1` produces them, so they are not carried here.
     /// `norpl` (`cxx:523`).
     pub norpl: GpVec,
     /// `Tgpiv` (`cxx:500`): the face tangent at `p2d[pivot]`, only written by
@@ -540,8 +538,6 @@ pub(super) fn perform_three_corner(
         surf,
         p2d,
         p3d,
-        deru,
-        derv,
         norpl,
         tgpiv,
         tg3,

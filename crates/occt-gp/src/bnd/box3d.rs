@@ -219,8 +219,8 @@ impl BndBox {
 
         let mut parmin;
         let mut parmax;
-        let mut x_to_set;
-        let mut y_to_set;
+        let x_to_set;
+        let y_to_set;
         let mut xmin = 0.0;
         let mut xmax = 0.0;
         let mut ymin = 0.0;

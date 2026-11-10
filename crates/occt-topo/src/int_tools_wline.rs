@@ -560,7 +560,7 @@ fn is_point_in_degenerated_zone(
     let (vs21, vs22) = s1.v_range();
     let (u1, v1, u2, v2) = p2s;
     let delta = 1.0e-7;
-    let mut d = u_resolution(s1.as_ref(), delta);
+    let d = u_resolution(s1.as_ref(), delta);
     let mut p2d = GpPnt2d::new(u1, v1);
     if (u1 - us11).abs() < d {
         b_flag = is_degenerated_zone(&p2d, s1.as_ref(), 1);
@@ -574,7 +574,8 @@ fn is_point_in_degenerated_zone(
             return b_flag;
         }
     }
-    d = v_resolution(s1.as_ref(), delta);
+    // `cxx:167` (`aD = aGAS1.VResolution`) is never read: the V/U/V2 tests below
+    // all use `aDelta`, so OCCT's later `aD` stores are dead. Same for cxx:185/203.
     if (v1 - vs11).abs() < delta {
         b_flag = is_degenerated_zone(&p2d, s1.as_ref(), 2);
         if b_flag {
@@ -587,7 +588,7 @@ fn is_point_in_degenerated_zone(
             return b_flag;
         }
     }
-    d = u_resolution(s2.as_ref(), delta);
+    // `cxx:185` (`aD = aGAS2.UResolution`) is dead for the same reason.
     p2d = GpPnt2d::new(u2, v2);
     if (u2 - us21).abs() < delta {
         b_flag = is_degenerated_zone(&p2d, s2.as_ref(), 1);
@@ -601,7 +602,7 @@ fn is_point_in_degenerated_zone(
             return b_flag;
         }
     }
-    d = v_resolution(s2.as_ref(), delta);
+    // `cxx:203` (`aD = aGAS2.VResolution`) is dead for the same reason.
     if (v2 - vs21).abs() < delta {
         b_flag = is_degenerated_zone(&p2d, s2.as_ref(), 2);
         if b_flag {
@@ -614,7 +615,6 @@ fn is_point_in_degenerated_zone(
             return b_flag;
         }
     }
-    let _ = d;
     !b_flag
 }
 

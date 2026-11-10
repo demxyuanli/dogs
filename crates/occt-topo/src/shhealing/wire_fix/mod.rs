@@ -3,7 +3,7 @@ use super::*;
 
 use occt_core::bnd::BndBox2d;
 use occt_core::gp::{
-    GpAx3, GpDir2d, GpLin, GpPln, GpPnt, GpPnt2d, GpTrsf2d, GpVec, GpVec2d,
+    GpAx3, GpDir2d, GpPln, GpPnt, GpPnt2d, GpTrsf2d, GpVec2d,
 };
 use occt_core::precision::{CONFUSION, PCONFUSION, REAL_SMALL};
 use occt_geom::{Curve, GeomPlane, Surface};
@@ -38,12 +38,12 @@ mod add_curve3d;
 
 pub use shifted_wire::*;
 pub use modes::*;
-pub use pcurve_range::*;
+pub(crate) use pcurve_range::*;
 pub use same_parameter::*;
 pub use reorder_connected::*;
 pub use small::*;
 pub use degenerated::*;
-pub use lacking::*;
+pub(in crate::shhealing) use lacking::*;
 pub use notched::*;
 pub use add_curve3d::*;
 

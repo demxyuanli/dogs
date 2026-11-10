@@ -106,7 +106,7 @@ pub fn axe(spine: &TopoShape, profile: &Wire, tol: f64) -> Result<(GpAx3, bool),
     }
 
     // `cxx:730`: `Par` only feeds the edge branch.
-    let mut par = 0.0;
+    let mut par;
     let mut loc = GpPnt::new(0.0, 0.0, 0.0);
     let mut tang = GpVec::from_pnts(&GpPnt::new(0.0, 0.0, 0.0), &GpPnt::new(0.0, 0.0, 0.0));
 

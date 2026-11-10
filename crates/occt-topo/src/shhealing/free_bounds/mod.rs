@@ -269,7 +269,7 @@ mod wire_data;
 
 pub use free_bounds_class::*;
 pub use shape_analysis_shell::*;
-pub(crate) use connect_wires::{connect_edges_to_wires, connect_wires_to_wires};
+pub(crate) use connect_wires::connect_edges_to_wires;
 pub(crate) use split_wires::split_wires_impl;
 pub(crate) use wire_data::{WireAnalyzer, WireData};
 

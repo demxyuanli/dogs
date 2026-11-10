@@ -602,7 +602,6 @@ impl RangeSplitter for TorusRangeSplitter {
             .unwrap_or((0.0, 0.0));
         let deflection = self.deflection();
         let r = r_minor;
-        let R = r_major;
 
         let old_dv = arc_angular_step(r, deflection, params.angle, params.min_size);
         let dv = old_dv;
@@ -611,7 +610,7 @@ impl RangeSplitter for TorusRangeSplitter {
         let nb_v = nb_v.max(2);
         let dv = diff_v / (nb_v + 1) as f64;
 
-        let ru = R + r;
+        let ru = r_major + r;
         // `BRepMesh_TorusRangeSplitter.cxx:47`: `if (ru > 1.e-16)` -- literal match.
         let du = if ru > 1e-16 {
             let du0 = arc_angular_step(ru, deflection, params.angle, params.min_size);
@@ -629,14 +628,14 @@ impl RangeSplitter for TorusRangeSplitter {
         let mut nb_u = (diff_u / du) as i32;
         nb_u = nb_u.max(2);
         let ratio_terms = if diff_v * r != 0.0 {
-            nb_v as f64 * diff_u * R / (diff_v * r) / 5.0
+            nb_v as f64 * diff_u * r_major / (diff_v * r) / 5.0
         } else {
             0.0
         };
         nb_u = nb_u.max(ratio_terms as i32);
         let du = diff_u / (nb_u + 1) as f64;
 
-        let param_u = if R < r {
+        let param_u = if r_major < r {
             (0..=nb_u).map(|i| range_u.0 + i as f64 * du).collect()
         } else {
             self.fill_params(&self.inner.u_params, range_u, nb_u, 0.5)

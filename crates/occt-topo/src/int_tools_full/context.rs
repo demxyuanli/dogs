@@ -539,36 +539,6 @@ pub(super) fn ring_bounds(cl: &FClass2d) -> (f64, f64, f64, f64) {
     }
 }
 
-/// Closest `(parameter, distance)` of `p` on `curve` over its natural range.
-pub(super) fn project_point_on_curve(p: &GpPnt, curve: &dyn Curve) -> Option<(f64, f64)> {
-    let (a, b) = curve_param_window(curve, p);
-    let t = inttools_roots::parameter(&|u| curve.d0(u), p, a, b);
-    Some((t, p.distance(&curve.d0(t))))
-}
-
-/// A finite parameter window over which to project `p` onto `curve`.
-///
-/// Bounded curves use their natural range; unbounded curves (infinite lines)
-/// project `p` onto the tangent at a reference point and return a window around
-/// the estimated closest parameter (exact for straight lines).
-pub(super) fn curve_param_window(curve: &dyn Curve, near: &GpPnt) -> (f64, f64) {
-    let a = curve.first_parameter();
-    let b = curve.last_parameter();
-    if a.is_finite() && b.is_finite() && b > a {
-        return (a, b);
-    }
-    let p0 = curve.d0(0.0);
-    let tan = curve.d1(0.0).1;
-    let t_est = if tan.square_magnitude() > 1e-300 {
-        near.coord.subtracted(&p0.coord).dot(tan.xyz()) / tan.square_magnitude()
-    } else {
-        0.0
-    };
-    let t_est = if t_est.is_finite() { t_est } else { 0.0 };
-    let w = t_est.abs().max(1.0) + 1.0;
-    (t_est - w, t_est + w)
-}
-
 /// Minimum distance between two curves over their parameter ranges.
 ///
 /// Samples each curve and projects every sample onto the other curve, keeping

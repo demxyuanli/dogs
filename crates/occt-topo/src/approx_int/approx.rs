@@ -646,7 +646,7 @@ impl ApproxIntApprox {
 
             self.update_tol_reached();
 
-            let mut indice3d = 1;
+            let indice3d = 1;
             let mut indice2d1 = 2;
             let mut indice2d2 = 3;
             if !self.my_data.approx_xyz {

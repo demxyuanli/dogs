@@ -22,7 +22,7 @@
 
 use std::sync::Arc;
 
-use occt_core::gp::{GpPnt, GpVec};
+use occt_core::gp::GpVec;
 use occt_geom::curve::Curve;
 use occt_geom::law::LawFunction;
 use occt_geom::surface::Surface;

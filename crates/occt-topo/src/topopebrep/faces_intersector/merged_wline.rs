@@ -90,8 +90,8 @@ pub fn get_arc(
 ) -> i32 {
     // 1. find the number of the arc (edge) the WLine segments sit on.
     let mut min_distance2 = 1.0e+200;
-    let mut first_es1 = 0.0;
-    let mut last_es1 = 0.0;
+    let mut first_es1;
+    let mut last_es1;
     let mut arc_number = 0;
     let mut cur_arc = 0;
 

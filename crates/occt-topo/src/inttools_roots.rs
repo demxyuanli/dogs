@@ -18,7 +18,9 @@
 //! Everything here is pure geometry + ordering over [`crate::inttools_data`]
 //! values; it neither performs intersections nor mutates the data structure.
 
-use crate::inttools_data::{IntRange, IntRoot, RootType};
+use crate::inttools_data::IntRoot;
+#[cfg(test)]
+use crate::inttools_data::{IntRange, RootType};
 
 /// Tolerance used when two root parameters must differ before they count as
 /// distinct. Matches the magnitude OCCT uses in `RemoveIdenticalRoots` callers.

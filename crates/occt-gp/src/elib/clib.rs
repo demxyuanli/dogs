@@ -3,7 +3,7 @@ use crate::gp::{
     GpAx1, GpAx2, GpAx22d, GpAx2d, GpCirc, GpCirc2d, GpDir, GpDir2d, GpElips, GpElips2d, GpHypr,
     GpHypr2d, GpLin, GpLin2d, GpParab, GpParab2d, GpPnt, GpPnt2d, GpVec, GpVec2d, GpXY,
 };
-use occt_foundation::precision::{COMPUTATIONAL, REAL_SMALL, RESOLUTION};
+use occt_foundation::precision::{COMPUTATIONAL, REAL_SMALL};
 
 // Helper: GpVec from scaled & added GpXyz refs
 fn vec_add(a: &crate::gp::GpXyz, sa: f64, b: &crate::gp::GpXyz, sb: f64) -> GpVec {

@@ -28,9 +28,8 @@ use std::sync::Arc;
 
 use occt_core::precision::PCONFUSION;
 
-use crate::abs::{Orientation, ShapeType};
+use crate::abs::Orientation;
 use crate::brep_tool::BRepTool;
-use crate::shape::{Face, TopoShape};
 use crate::topopebrep::ds::curve::Curve as DsCurve;
 use crate::topopebrep::ds::h_data_structure::HDataStructure;
 use crate::topopebrep::ds::interference::InterferenceHandle;

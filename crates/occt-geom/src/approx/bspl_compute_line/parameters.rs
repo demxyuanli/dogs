@@ -31,7 +31,7 @@ pub(super) fn compute_parameters<L: LineTool>(
         let nb_p3d = line.nb_p3d();
         let nb_p2d = line.nb_p2d();
 
-        let mut dist = 0.0f64;
+        let mut dist;
         for i in first_p + 1..=last_p {
             let (prev, prev2d) = line.value(i - 1);
             let (cur, cur2d) = line.value(i);

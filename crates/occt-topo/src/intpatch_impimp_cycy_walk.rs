@@ -537,7 +537,7 @@ pub(crate) fn cy_cy_walk(
                             min_uexp = min_uexp.min(u_expect[i]);
                             continue;
                         }
-                        let mut step_tmp = step_max;
+                        let step_tmp;
                         let m = fill_step_matrix(&coeffs, u1, u2[i]);
                         if let Some(s) = step_computing(&m, v1[i], v2[i], delta_v1, delta_v2) {
                             step_tmp = s.clamp(step_min, step_max);

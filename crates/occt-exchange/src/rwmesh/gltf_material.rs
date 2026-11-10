@@ -17,7 +17,7 @@ use occt_core::quantity::Color;
 use crate::image_texture::ImageTexture;
 use crate::xcaf_doc_vis_material::{
     AlphaMode, LinearRgb, LinearRgba, TypeOfBackfacingModel, XcafDocVisMaterial,
-    XcafDocVisMaterialCommon, XcafDocVisMaterialPbr, srgb_to_linear,
+    XcafDocVisMaterialCommon, XcafDocVisMaterialPbr,
 };
 
 use super::gltf::{base64_decode, JVal};
@@ -518,8 +518,3 @@ pub(super) fn material_view(vis: &XcafDocVisMaterial) -> Material {
     }
 }
 
-/// `srgb_to_linear` re-export so the scene layer can build sRGB colors the
-/// same way the material parser does.
-pub(super) fn srgb_component(v: f64) -> f32 {
-    srgb_to_linear(v)
-}

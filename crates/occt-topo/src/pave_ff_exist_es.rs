@@ -98,28 +98,3 @@ pub fn process_existing_pave_blocks_es(
         }
     }
 }
-
-/// Wire the first overload from `MakeBlocks` after a new section edge is born.
-pub fn process_existing_after_make_edge(
-    f: &PaveFiller,
-    int: usize,
-    cur: usize,
-    n_f1: usize,
-    n_f2: usize,
-    es: &TopoShape,
-    on_in: &[BopdsPaveBlock],
-    on1: &[(usize, f64, f64)],
-    in1: &[(usize, f64, f64)],
-    on2: &[(usize, f64, f64)],
-    in2: &[(usize, f64, f64)],
-    distances: &HashMap<(usize, usize), Vec<EdgeRangeDistance>>,
-    mscpb: &mut Vec<(TopoShape, CoupleOfPaveBlocks)>,
-    lpbc: &mut Vec<BopdsPaveBlock>,
-    mpb_add: &mut HashSet<PbKey>,
-    pb_faces: &mut PbFacesMap,
-) {
-    process_existing_pave_blocks_es(
-        f, int, cur, n_f1, n_f2, es, on_in, on1, in1, on2, in2, distances, mscpb,
-        lpbc, mpb_add, pb_faces,
-    );
-}

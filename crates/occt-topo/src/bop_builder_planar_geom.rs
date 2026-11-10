@@ -8,9 +8,6 @@ use occt_core::gp::{GpAx1, GpAx3, GpDir, GpPln, GpPnt, GpPnt2d, GpVec};
 
 
 
-use crate::bop_builder_core::{
-    disjoint_result, empty_result, validate, BooleanResult,
-};
 
 use crate::brep_tool::BRepTool;
 
@@ -19,7 +16,7 @@ use crate::shape::{Face};
 
 use crate::tgeometry::GeometryRegistry;
 use crate::topo_tools::{
-    edge_vertices, edges_of, edges_of_wire, faces_of, shapes_of, vertex_position, vertices_of,
+    edges_of_wire,
     wires_of_face,
 };
 
@@ -31,8 +28,6 @@ use crate::topo_tools::{
 #[derive(Debug, Clone)]
 pub(crate) struct SubFace {
     pub(crate) face: Face,
-    /// 3D polygon vertices (outer loop, in boundary order).
-    pub(crate) poly3d: Vec<GpPnt>,
     /// The face's plane (normal = source solid's outward normal).
     pub(crate) plane: GpPln,
     /// A 3D point guaranteed inside the sub-face's region (avoids the outer

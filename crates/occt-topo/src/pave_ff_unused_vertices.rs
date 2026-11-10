@@ -31,18 +31,3 @@ pub fn unused_stick_vertices(f: &PaveFiller) -> Vec<TopoShape> {
     }
     out
 }
-
-/// True when a vertex index still has an ext-pave on any curve of `i`.
-pub fn vertex_used_on_ff_curves(f: &PaveFiller, i: usize, n_v: usize) -> bool {
-    for nc in f.ds().interf_ff()[i].curves() {
-        for pb in nc.pave_blocks() {
-            if pb.index1 == n_v || pb.index2 == n_v {
-                return true;
-            }
-            if pb.ext_paves().iter().any(|p| p.index == n_v) {
-                return true;
-            }
-        }
-    }
-    false
-}

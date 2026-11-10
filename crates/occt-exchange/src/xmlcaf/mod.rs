@@ -49,7 +49,7 @@ pub(crate) use occt_topo::tgeometry::GeometryRegistry;
 mod document;
 mod parser;
 pub use document::*;
-pub use parser::*;
+use parser::*;
 
 #[cfg(test)]
 #[path = "tests.rs"]

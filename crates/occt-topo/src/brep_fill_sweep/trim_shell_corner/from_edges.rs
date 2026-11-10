@@ -88,7 +88,7 @@ pub(super) fn find_from_u_edge(
         return None;
     };
     let (c1_f, c1_l) = reg.pcurve_range(the_ue1_new, key).unwrap_or((0.0, 0.0));
-    let mut p1 = if the_rank == 0 {
+    let p1 = if the_rank == 0 {
         a_c1.d0(c1_l)
     } else {
         a_c1.d0(c1_f)
@@ -132,9 +132,8 @@ pub(super) fn find_from_u_edge(
             b_sec_found = true;
             break;
         }
-        if let Some(v) = a_next_vertex.clone() {
-            a_prev_vertex = Some(v);
-        }
+        // cxx:1903 -- `aPrevVertex = aNextVertex` is dead: aPrevVertex is only
+        // read by the FindVertex call before this loop.
         a_pave1 = a_pave2;
         pit += 1;
     }
@@ -208,7 +207,7 @@ pub(super) struct FromVEdge {
 pub(super) fn find_from_v_edge(
     the_prev_pave: &BopdsPave,
     is_on_u_edge: bool,
-    the_ue1_old: &TopoShape,
+    _the_ue1_old: &TopoShape,
     the_ue2_old: &TopoShape,
     the_face: &TopoShape,
     the_sec_edges: &[TopoShape],
@@ -266,7 +265,7 @@ pub(super) fn find_from_v_edge(
 
     // `cxx:2138-2142`.
     let nbpave = the_ds.paves(the_bound_edge_index).len();
-    let mut pit = 0usize;
+    let mut pit;
     // `NCollection_Array1<NCollection_List<TopoDS_Shape>>(1, nbpave)`.
     let mut an_array_of_list_of_sec: Vec<Vec<TopoShape>> = vec![Vec::new(); nbpave + 1];
 
@@ -365,7 +364,8 @@ pub(super) fn find_from_v_edge(
                     if apaircounter <= nbpave {
                         an_array_of_list_of_sec[apaircounter].extend(a_ordered_list);
                     }
-                    apaircounter += 1;
+                    // cxx:2069 -- `apaircounter++` is dead here: the loop breaks
+                    // right below, exactly like the first occurrence at cxx:2040.
                     a_first_paves.push(a_first_pave);
                     a_last_paves.push(a_pave2v);
                     a_list_of_flags.push(0);
@@ -515,7 +515,9 @@ pub(super) fn find_from_v_edge(
                     &comp_of_sec_edges,
                     &mut a_ordered_list,
                 ) {
-                    comp_of_sec_edges = remove_edges(&comp_of_sec_edges, &a_ordered_list);
+                    // cxx:2297-2298 -- `aCompOfSecEdges` is local to FindFromVEdge:
+                    // nothing reads it after this point (only theListOfWireEdges and
+                    // isSectionFound are returned), so the rebuild is dropped here.
                     list_of_wire_edges.extend(a_ordered_list);
                     is_section_found = true;
                 } else {

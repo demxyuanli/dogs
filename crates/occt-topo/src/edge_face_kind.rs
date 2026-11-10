@@ -6,7 +6,6 @@
 //! `GeomAdaptor_Curve::load` / `GeomAdaptor_Surface::load`. No geometric
 //! sampling is involved.
 use occt_core::gp::{GpPnt, GpVec};
-use occt_core::precision::PCONFUSION;
 use occt_geom::{Curve, Surface};
 
 use crate::brep_surface::{classify_surface, SurfaceKind};

@@ -10,6 +10,4 @@ mod units;
 
 pub(in crate::iges_read) use self::entities::*;
 pub(in crate::iges_read) use self::model::*;
-pub(in crate::iges_read) use self::parse::*;
-pub(in crate::iges_read) use self::pointers::*;
 pub(in crate::iges_read) use self::units::*;

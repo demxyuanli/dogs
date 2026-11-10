@@ -374,10 +374,10 @@ mod srrwt;
 mod step_file;
 
 pub use self::assembly::*;
-pub use self::curves::*;
-pub use self::parse::*;
+pub(in crate::step) use self::curves::*;
+pub(in crate::step) use self::parse::*;
 pub use self::roundtrip::*;
-pub use self::shape_analysis::*;
-pub use self::srr_composer::*;
-pub use self::srrwt::*;
+pub(in crate::step) use self::shape_analysis::*;
+pub(in crate::step) use self::srr_composer::*;
+pub(in crate::step) use self::srrwt::*;
 pub use self::step_file::*;

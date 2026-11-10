@@ -26,8 +26,8 @@ impl Geom2dIntIntPolyPolyGen {
     ) -> bool {
         let inter_pp = IntfInterferencePolygon2d::between(poly1, poly2);
         let mut eip = Geom2dIntExactIntersectionPoint::new(c1, c2, tol_conf);
-        let mut u = 0.0;
-        let mut v = 0.0;
+        let mut u;
+        let mut v;
         self.base.done = true; // To prevent exception in nbp=NbPoints();
         //----------------------------------------------------------------------
         //-- Processing of SectionPoint
@@ -180,10 +180,10 @@ impl Geom2dIntIntPolyPolyGen {
             let mut param_inf_on_curve2;
             let mut param_sup_on_curve1;
             let mut param_inf_on_curve1;
-            let mut poly_u_inf = f64::MAX;
-            let mut poly_v_inf = f64::MAX;
-            let mut poly_u_sup = -f64::MAX;
-            let mut poly_v_sup = -f64::MAX;
+            let mut poly_u_inf;
+            let mut poly_v_inf;
+            let mut poly_u_sup;
+            let mut poly_v_sup;
             param_sup_on_curve2 = -f64::MAX;
             param_sup_on_curve1 = -f64::MAX;
             param_inf_on_curve2 = f64::MAX;
@@ -367,8 +367,8 @@ impl Geom2dIntIntPolyPolyGen {
                 {
                     self.base.insert(&pt_seg1);
                 } else {
-                    let (mut p1, mut tan1) = curve_tool::geom2d_d1(c1, poly_u_sup);
-                    let (mut p2, mut tan2) = curve_tool::geom2d_d1(c2, poly_v_sup);
+                    let (p1, mut tan1) = curve_tool::geom2d_d1(c1, poly_u_sup);
+                    let (p2, mut tan2) = curve_tool::geom2d_d1(c2, poly_v_sup);
                     pos1 = IntRes2dPosition::Middle;
                     pos2 = IntRes2dPosition::Middle;
 

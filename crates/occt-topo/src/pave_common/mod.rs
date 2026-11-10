@@ -51,6 +51,7 @@ pub(crate) use crate::brep_tool::BRepTool;
 pub(crate) use crate::inttools_range::ShrunkRange;
 pub(crate) use crate::pave_filler::PaveFiller;
 pub(crate) use crate::shape::{Edge, Vertex};
+#[cfg(test)]
 pub(crate) use crate::tgeometry::GeometryRegistry;
 
 }

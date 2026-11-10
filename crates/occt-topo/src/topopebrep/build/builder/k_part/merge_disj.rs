@@ -196,10 +196,10 @@ impl Builder {
         let soldisj = (hassol1 && hassol2) && !(hasnotsol1 || hasnotsol2);
 
         // cxx:882-886
-        let mut sol1 = TopoShape::new(ShapeType::Solid);
-        let mut outsha1 = TopoShape::new(ShapeType::Shell);
-        let mut sol2 = TopoShape::new(ShapeType::Solid);
-        let mut outsha2 = TopoShape::new(ShapeType::Shell);
+        let sol1;
+        let outsha1;
+        let sol2;
+        let outsha2;
 
         if soldisj {
             // cxx:891-895
@@ -334,7 +334,7 @@ fn build_new_solid(
     let outsha1 = outer_shell(sol1);
     let outsha2 = outer_shell(sol2);
     // `Snull` for `StateShapeShape(shacur, Snull, othersol)`.
-    let null_shape = TopoShape::new(ShapeType::Shape);
+    let _null_shape = TopoShape::new(ShapeType::Shape);
 
     let mut isdisjmap: HashSet<ShapeMapKey> = HashSet::new();
     let mut newsol = TopoShape::new(ShapeType::Solid);
@@ -469,7 +469,7 @@ fn disj_perform_fuse(
     let a_max_number_of_iterations = a_map_of_solid.len() * a_map_of_solid.len();
     let mut a_map_of_used_solids: HashSet<ShapeMapKey> = HashSet::new();
     let mut classifier = ShapeClassifier::new();
-    let null_shape = TopoShape::new(ShapeType::Shape);
+    let _null_shape = TopoShape::new(ShapeType::Shape);
     let mut the_map_of_result: Vec<TopoShape> = Vec::new();
 
     for i in 0..a_map_of_solid.len() {

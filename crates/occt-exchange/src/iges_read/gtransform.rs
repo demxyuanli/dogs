@@ -52,7 +52,7 @@ use std::sync::Arc;
 
 use occt_core::bspl::banded_interp::knot_sequence;
 use occt_core::convert::ParameterisationType;
-use occt_core::gp::{GpGTrsf, GpPnt, GpTrsf, GpVec, GpXyz};
+use occt_core::gp::{GpGTrsf, GpPnt, GpTrsf, GpVec};
 use occt_core::kernel::geomabs::Shape;
 use occt_core::precision::{PCONFUSION, CONFUSION};
 use occt_geom::bspline_curve::{GeomBSplineCurve, MAX_DEGREE};

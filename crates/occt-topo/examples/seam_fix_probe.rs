@@ -11,7 +11,6 @@ use occt_topo::brep_bnd_lib;
 use occt_topo::brep_tool::BRepTool;
 use occt_topo::builder::TopoBuilder;
 use occt_topo::meshing::data_model::{MeshFace, MeshModel};
-use occt_topo::meshing::edge_discret::EdgeDiscret;
 use occt_topo::meshing::model_builder::ModelBuilder;
 use occt_topo::meshing::parameters::MeshParameters;
 use occt_topo::meshing::range_splitter::create_range_splitter;
@@ -64,7 +63,7 @@ fn describe(tag: &str, face: &Face) {    let bb = brep_bnd_lib::shape_bnd_box(&f
 fn probe_splitter(face: &Face, label: &str) {
     let params = MeshParameters::default();
     let shape = face.0.clone();
-    let mut model = match ModelBuilder::build_model(&shape, &params) {
+    let model = match ModelBuilder::build_model(&shape, &params) {
         Ok(m) => m,
         Err(e) => {
             println!("SPLIT {label}: build_model failed: {e}");
@@ -208,7 +207,7 @@ fn main() {
             let mut sx = 0.0;
             let mut sy = 0.0;
             for (ei, e) in es.iter().enumerate() {
-                let fkk = occt_topo::tgeometry::GeometryRegistry::shape_key(&face.0);
+                let _fkk = occt_topo::tgeometry::GeometryRegistry::shape_key(&face.0);
                 if let Some((pc, f, l)) = occt_topo::boptools_2d::curve_on_surface_oriented(e, &face, true) {
                     let pf = pc.d0(f);
                     let pl = pc.d0(l);

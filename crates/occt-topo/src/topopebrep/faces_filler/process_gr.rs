@@ -36,9 +36,7 @@ use crate::topopebrep::geom_tool::GeomTool;
 use crate::topopebrep::interf::VPointInter;
 use crate::topopebrep::line_inter::LineInter;
 use crate::topopebrep::tool::adaptor::CurveAdaptor;
-use crate::topopebrep::tool::project_curve::{
-    fun_tool_bounds, fun_tool_proj_pon_e_tol,
-};
+use crate::topopebrep::tool::project_curve::fun_tool_proj_pon_e_tol;
 use crate::topopebrep::tool::sc::fsc_state_pon_face;
 use crate::topopebrep::tool::shape_classifier::ShapeClassifier;
 use crate::topopebrep::tool::topology::fun_tool_pin_c_range;

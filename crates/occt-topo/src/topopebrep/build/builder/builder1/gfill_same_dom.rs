@@ -31,14 +31,12 @@ use crate::topo_tools::{explorer_shapes, is_same, shape_map_key};
 use crate::topopebrep::build::g_topo::GTopo;
 use crate::topopebrep::build::shell_face_set::ShellFaceSet;
 use crate::topopebrep::build::tools::{
-    correct_face_2d, get_normal_in_nearest_point, get_normal_to_face_on_edge,
-    get_tangent_to_edge, normalize_face, update_edge_on_face, update_pcurves,
+    get_normal_in_nearest_point, get_normal_to_face_on_edge,
+    get_tangent_to_edge, update_edge_on_face, update_pcurves,
 };
 use crate::topopebrep::build::wire_edge_set::WireEdgeSet;
-use crate::topopebrep::ds::data_structure::IndexedShapeSet;
 
 use super::fill_2d::classify_edge_to_face_by_one_point;
-use super::global_use_new_builder;
 use super::super::Builder;
 
 /// `TopOpeBRepBuild_Tools::GetTangentToEdge` / `GetNormalToFaceOnEdge`

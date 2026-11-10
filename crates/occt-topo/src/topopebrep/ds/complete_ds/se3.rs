@@ -148,7 +148,7 @@ pub fn fun_ds_complete_for_se3(hds: &mut HDataStructure) {
                 };
                 (v.0, v.1, v.2.to_vec())
             };
-            let mut loicopy = loi.clone();
+            let loicopy = loi.clone();
             let tr_opt = fun_se3_transition(hds.ds(), &se, k, &loi);
 
             // `cxx:1390-1395`

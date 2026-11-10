@@ -74,7 +74,7 @@ pub(in crate::iges_read) fn build_model(
         form_number: 0,
         blank_status: 0,
         transform: 0,
-        data: EntityData::Raw { type_number: 0 },
+        data: EntityData::Raw,
         shared: false,
     });
     for (i, dir) in directory.iter().enumerate() {

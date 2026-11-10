@@ -140,11 +140,3 @@ pub(crate) fn coord(p: &GpPnt, k: usize) -> f64 {
     }
 }
 
-/// `SetCoord(K, V)` (`gp_Pnt.hxx:130-160`) with a 0-based `k`.
-pub(crate) fn set_coord(p: &mut GpPnt, k: usize, v: f64) {
-    match k {
-        0 => p.set_x(v),
-        1 => p.set_y(v),
-        _ => p.set_z(v),
-    }
-}

@@ -37,7 +37,6 @@ impl TrigPolyRoots {
             infinite: false,
         };
         match trig_function_roots(cc, sc, c, s, cte, binf, bsup) {
-            TrigRoots::Fail => return out,
             TrigRoots::Infinite => {
                 out.done = true;
                 out.infinite = true;
@@ -142,34 +141,6 @@ pub(crate) fn add_special_points_cyl(quad: &IntAnaQuadric, cyl: &GpCylinder, t1:
     for pt in quad.special_points() {
         let (u, v) = slib::cylinder_parameters(&cyl.position(), pt);
         let proj = slib::cylinder_value(cyl, u, v);
-        if pt.square_distance(&proj) > SQUARE_CONFUSION {
-            continue;
-        }
-        let mut d1 = (*t1 - u).min(0.0);
-        let mut d2 = (u - *t2).max(0.0);
-        if d1 < -std::f64::consts::PI {
-            d1 = 0.0;
-        }
-        if d2 > std::f64::consts::PI {
-            d2 = 0.0;
-        }
-        max_delta = max_delta.max((-d1).max(d2));
-    }
-    if max_delta != 0.0 {
-        *t1 -= max_delta;
-        *t2 += max_delta;
-        if *t2 - *t1 > period {
-            *t2 = *t1 + period;
-        }
-    }
-}
-
-pub(crate) fn add_special_points_cone(quad: &IntAnaQuadric, cone: &GpCone, t1: &mut f64, t2: &mut f64) {
-    let period = std::f64::consts::PI + std::f64::consts::PI;
-    let mut max_delta: f64 = 0.0;
-    for pt in quad.special_points() {
-        let (u, v) = slib::cone_parameters(&cone.position(), cone.radius(), cone.semi_angle(), pt);
-        let proj = slib::cone_value(cone, u, v);
         if pt.square_distance(&proj) > SQUARE_CONFUSION {
             continue;
         }

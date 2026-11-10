@@ -36,7 +36,6 @@ use occt_core::gp::GpPnt;
 use occt_core::math_function_all_roots::FunctionAllRoots;
 use occt_core::math_function_sample::FunctionSample;
 use occt_core::precision::{CONFUSION, INFINITE, PCONFUSION};
-use occt_geom::Surface;
 use occt_math::brent_minimum::BrentMinimum;
 
 use occt_topo::brep_adaptor_curve2d::Curve2dAdaptor;
@@ -387,7 +386,7 @@ fn bounded_arc(
     }
 
     // `gxx:566-739`: the near-tangency treatment and the point collection.
-    let mut nbi = 0i32;
+    let mut nbi;
     if nbp > 0 {
         // `gxx:570-580`: `SolInfo` copies of the sorted point parameters.
         let mut a_si: Vec<(f64, i32)> = (1..=nbp).map(|k| (p_sol.point(k), k)).collect();
@@ -600,8 +599,8 @@ fn compute_bounds_from_infinite(func: &mut ContapArcFunction) -> (f64, f64, i32)
 
     if d_dist != 0.0 {
         u0 -= d_u * dist0 / d_dist;
-        let mut pdeb = u0;
-        let mut pfin = u0;
+        let pdeb;
+        let pfin;
 
         let mut umin = u0 - 1.0e5;
         func.eval(umin, &mut dist0);

@@ -28,7 +28,7 @@
 use std::sync::Arc;
 
 use occt_core::bnd::BndBox2d;
-use occt_core::gp::{GpDir2d, GpPnt, GpPnt2d, GpVec, GpVec2d};
+use occt_core::gp::{GpDir2d, GpPnt, GpPnt2d, GpVec};
 use occt_geom::geom_plate::BuildPlateSurface;
 use occt_geom::Surface;
 use occt_geom2d::cl_props2d::GeomLPropCLProps2d;

@@ -11,7 +11,9 @@
 
 use std::path::PathBuf;
 
-use occt_geom::{Curve, Surface};
+use occt_geom::Surface;
+#[cfg(test)]
+use occt_geom::Curve;
 use occt_geom2d::Curve2d;
 use occt_topo::abs::ShapeType;
 use occt_topo::brep_gprop_full::surface_properties;

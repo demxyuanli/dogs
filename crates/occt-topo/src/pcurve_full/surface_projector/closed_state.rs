@@ -113,7 +113,7 @@ pub(crate) fn sa_u_close_state(s: &dyn Surface) -> (f64, f64, f64) {
         TypeKind::BSplineSurface => {
             if let Some(bs) = s.osculating_bspline() {
                 let nbup = bs.poles.len();
-                let mut distmin = f64::MAX;
+                let mut distmin;
                 let (m1, m2) = end_mults(bs.knots_u());
                 if bs.u_periodic() {
                     // `cxx:724-728`.
@@ -276,7 +276,7 @@ pub(crate) fn sa_v_close_state(s: &dyn Surface) -> (f64, f64, f64) {
         TypeKind::BSplineSurface => {
             if let Some(bs) = s.osculating_bspline() {
                 let nbvp = bs.nb_poles_v();
-                let mut distmin = f64::MAX;
+                let mut distmin;
                 let (m1, m2) = end_mults(bs.knots_v());
                 if bs.v_periodic() {
                     close = 0.0;

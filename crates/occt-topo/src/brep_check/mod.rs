@@ -8,12 +8,11 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use occt_core::gp::GpPnt;
 use occt_core::precision::PCONFUSION;
 use occt_geom::curve::Curve;
 use occt_geom2d::curve::Curve2d;
 
-use crate::abs::{Orientation, ShapeType};
+use crate::abs::ShapeType;
 use crate::bop_occt_util::{explore, iter_children, shape_key};
 use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Vertex, Wire};

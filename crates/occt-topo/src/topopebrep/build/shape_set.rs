@@ -34,8 +34,9 @@ use crate::topopebrep::tool::shape_explorer::ShapeExplorer;
 
 /// `class TopOpeBRepBuild_ShapeSet` (`hxx:51`).
 pub struct ShapeSet {
-    /// `myShapeType` (`hxx:115`).
-    pub(super) my_shape_type: ShapeType,
+    /// `myShapeType` (`hxx:115`) is computed by the constructor (`cxx:33-46`)
+    /// but no `.cxx` body reads it, so the port keeps only the constructor's
+    /// `ShapeType` validation and no member.
     /// `mySubShapeType` (`hxx:116`).
     pub(super) my_sub_shape_type: ShapeType,
     /// `mySubShapeExplorer` (`hxx:117`).
@@ -77,17 +78,15 @@ impl ShapeSet {
     /// `cxx:47` overwrites `myCheckShape` with `false` ("temporary NYI"), so
     /// the `checkshape` argument has no effect, exactly as in OCCT.
     pub fn new(sub_shape_type: ShapeType, checkshape: bool) -> Self {
-        let my_shape_type = if sub_shape_type == ShapeType::Edge {
-            ShapeType::Face
-        } else if sub_shape_type == ShapeType::Vertex {
-            ShapeType::Edge
-        } else {
-            // cxx:43-46: Standard_ProgramError("ShapeSet : bad ShapeType")
-            panic!("ShapeSet : bad ShapeType");
-        };
+        // cxx:33-46: `myShapeType` is computed from `SubShapeType` and any
+        // other type raises `Standard_ProgramError("ShapeSet : bad ShapeType")`.
+        // Nothing reads `myShapeType` afterwards, so only the check remains.
+        match sub_shape_type {
+            ShapeType::Edge | ShapeType::Vertex => {}
+            _ => panic!("ShapeSet : bad ShapeType"),
+        }
         let _ = checkshape;
         Self {
-            my_shape_type,
             my_sub_shape_type: sub_shape_type,
             my_sub_shape_explorer: ShapeExplorer::new(),
             my_start_shapes: Vec::new(),

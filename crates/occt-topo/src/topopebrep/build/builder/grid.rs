@@ -23,7 +23,6 @@ use occt_core::gp::GpPnt2d;
 use crate::abs::{Orientation, ShapeType, State};
 use crate::brep_tool::BRepTool;
 use crate::shape::{Edge, Face, TopoShape, Vertex};
-use crate::topo_tools::is_same;
 use crate::topopebrep::ds::kind::Config;
 
 use super::super::g_topo::GTopo;

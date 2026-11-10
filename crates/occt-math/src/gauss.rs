@@ -12,7 +12,7 @@ pub fn gauss_legendre(a: f64, b: f64, n: usize) -> (Vec<f64>, Vec<f64>) {
 
     for i in 1..=m {
         let mut z = (std::f64::consts::PI * (i as f64 - 0.25) / (n as f64 + 0.5)).cos();
-        let mut pp = 0.0;
+        let mut pp;
         loop {
             let mut p1 = 1.0;
             let mut p2 = 0.0;

@@ -83,12 +83,12 @@ impl Walking {
         let mut state = BlendStatus::OnRst12;
         let mut situ1 = FaceState::In;
         let mut situ2 = FaceState::In;
-        let mut w1 = bound;
-        let mut w2 = bound;
+        let mut w1;
+        let mut w2;
         let mut index1 = 0usize;
         let mut index2 = 0usize;
-        let mut recad1 = false;
-        let mut recad2 = false;
+        let mut recad1;
+        let mut recad2;
         let mut is_vtx1 = false;
         let mut is_vtx2 = false;
         let mut vtx1: Option<HVertex> = None;
@@ -202,8 +202,8 @@ impl Walking {
                                 // The wrong solution was taken.
                                 echecrecad = true;
                                 recad1 = false;
-                                state = BlendStatus::StepTooLarge;
-                                bonpoint = false;
+                                // cxx:1951-1952 -- State/bonpoint are written here but
+                                // both are overwritten at cxx:2216-2229 before being read.
                                 stepw /= 2.0;
                             }
                         }
@@ -227,8 +227,7 @@ impl Walking {
                             } else {
                                 echecrecad = true;
                                 recad2 = false;
-                                state = BlendStatus::StepTooLarge;
-                                bonpoint = false;
+                                // cxx:1981-1982 -- same dead store as cxx:1951-1952.
                                 stepw /= 2.0;
                             }
                         }

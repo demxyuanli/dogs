@@ -138,14 +138,6 @@ impl Box2dTree {
             self.select_node(n.right as usize, query, out);
         }
     }
-
-    pub fn leaf_count(&self) -> usize {
-        self.leaves.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.leaves.is_empty()
-    }
 }
 
 fn longest_axis_2d(b: &BndBox2d) -> usize {

@@ -1,5 +1,5 @@
 use occt_core::gp::{GpAx3, GpCone, GpDir, GpPnt};
-use occt_geom::{GeomCone, Surface};
+use occt_geom::GeomCone;
 
 fn main() {
     let h = 1.0f64;

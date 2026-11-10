@@ -6,9 +6,9 @@
 //! verify each against analytic expectations.
 
 use occt_core::geom::polygon_boolean::{polygon_difference, polygon_intersect, polygon_union};
-use occt_core::gp::{GpAx1, GpAx3, GpCirc, GpDir, GpLin, GpPnt, GpTrsf, GpVec};
+use occt_core::gp::{GpAx1, GpAx3, GpDir, GpLin, GpPnt};
 use occt_geom::extrema::{curve_surface_extrema_with_samples, point_curve_extrema, surface_surface_extrema};
-use occt_geom::{GeomCircle, GeomLine, GeomSphere};
+use occt_geom::{GeomLine, GeomSphere};
 use occt_topo::brep_offset::{offset_shell, polygon_offset_3d};
 use occt_exchange::gltf::{build_gltf_bin, GltfOptions};
 use occt_topo::primitives::BRepPrimBox;
