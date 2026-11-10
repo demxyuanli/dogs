@@ -281,7 +281,9 @@ impl MakeRevol {
         }
         let comp = TopoBuilder::new().make_compound_of(&tools);
 
-        // `cxx:431-437`.
+        // `cxx:431-437`. The reference reads `trP.Shape()` without checking
+        // `IsDone`, so a failed Cut raises `StdFail_NotDone` there; here it is
+        // the same give-up as an empty intersection scan.
         let mut tr_p = crate::brep_feat::algo_api::cut(vrairevol, &comp.0);
         if tr_p.build().is_err() {
             return Ok(None);
@@ -290,7 +292,11 @@ impl MakeRevol {
             return Ok(None);
         };
 
-        // `cxx:438-447`: the first solid that keeps a face of `myPbase`.
+        // `cxx:438-447`: `VraiRevol` starts as the *whole* revolution and the
+        // loop only overwrites it. The reference's `break` leaves the face loop
+        // alone, so the scan keeps going over the remaining solids and the last
+        // one that carries a face of `myPbase` wins; with no such solid the
+        // uncut revolution is still answered.
         let mut picked: Option<TopoShape> = None;
         for solid in explorer_shapes(&cutsh, ShapeType::Solid) {
             let keeps = match &self.my_pbase {
@@ -301,10 +307,9 @@ impl MakeRevol {
             };
             if keeps {
                 picked = Some(solid);
-                break;
             }
         }
-        Ok(picked)
+        Ok(Some(picked.unwrap_or_else(|| vrairevol.clone())))
     }
 
     /// `cxx:448-466` / `cxx:774-789`: fuse the picked revolution into the basis,

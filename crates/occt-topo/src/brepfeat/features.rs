@@ -42,24 +42,76 @@ pub fn draft(solid: &Solid, face_pts: &[GpPnt], angle_deg: f64, pivot: &GpPln, t
     Ok(FeatResult { shape: copy, volume })
 }
 
-/// Groove: `BRepFeat_MakeRevol::Perform(2*M_PI)` in `Mode == 0` (cut) over the
-/// 2D `profile` (`x` = radius >= 0, `y` = height along the axis) revolved
-/// around `axis` (`BRepFeat_MakeRevol.cxx:200-336`).
+/// How far a `BRepFeat_MakeRevol` feature travels: one variant per `Perform`
+/// overload of the reference (`hxx:54-102`).
+///
+/// The five arms share the class state and only differ in the sweep angle and
+/// in whether a limit shape of the basis stops the sweep, so the feature layer
+/// takes the limit instead of exposing five near-identical entry points.
+#[derive(Debug, Clone)]
+pub enum RevolLimit {
+    /// `Perform(Angle)` (`BRepFeat_MakeRevol.cxx:200-336`).
+    Angle(f64),
+    /// `PerformThruAll()` (`cxx:655-667`), i.e. `Perform(2*M_PI)`.
+    ThruAll,
+    /// `Perform(Until)` (`cxx:340-467`): sweep an almost complete turn and stop
+    /// the result at `Until`, a shape of the basis solid.
+    Until(TopoShape),
+    /// `Perform(From, Until)` (`cxx:473-648`): keep the part of the revolution
+    /// between the two limit shapes of the basis.
+    FromUntil(TopoShape, TopoShape),
+    /// `PerformUntilAngle(Until, Angle)` (`cxx:670-792`): sweep `Angle` and stop
+    /// the result at `Until`.
+    UntilAngle(TopoShape, f64),
+}
+
+/// Groove: `BRepFeat_MakeRevol` in `Mode == 0` (cut) over the 2D `profile`
+/// (`x` = radius >= 0, `y` = height along the axis) revolved around `axis`,
+/// as a full turn (`PerformThruAll()`, `cxx:655-667`).
 ///
 /// `tol` is kept for the caller's signature only: the reference's Boolean arm
 /// is a plain `BRepAlgoAPI_Cut` with no fuzzy value (`cxx:308-327`), so the
 /// port passes none either. See [`revolve_feature`].
-pub fn groove(solid: &Solid, profile: &[GpPnt2d], axis: &GpAx1, _tol: f64) -> Result<FeatResult, String> {
-    require_min_profile(profile, "groove")?;
-    revolve_feature(solid, profile, axis, false, "groove")
+pub fn groove(solid: &Solid, profile: &[GpPnt2d], axis: &GpAx1, tol: f64) -> Result<FeatResult, String> {
+    groove_limited(solid, profile, axis, &RevolLimit::ThruAll, tol)
 }
 
-/// Neck: `BRepFeat_MakeRevol::Perform(2*M_PI)` in `Mode == 1` (fuse) over the
-/// same profile (`BRepFeat_MakeRevol.cxx:200-336`); `tol` is unused, see
+/// Neck: `BRepFeat_MakeRevol` in `Mode == 1` (fuse) over the same profile, as a
+/// full turn (`PerformThruAll()`, `cxx:655-667`); `tol` is unused, see
 /// [`groove`].
-pub fn neck(solid: &Solid, profile: &[GpPnt2d], axis: &GpAx1, _tol: f64) -> Result<FeatResult, String> {
+pub fn neck(solid: &Solid, profile: &[GpPnt2d], axis: &GpAx1, tol: f64) -> Result<FeatResult, String> {
+    neck_limited(solid, profile, axis, &RevolLimit::ThruAll, tol)
+}
+
+/// [`groove`] with an explicit [`RevolLimit`]: the same cut, run through the
+/// `Perform` overload the limit names (`BRepFeat_MakeRevol.cxx:200-792`).
+///
+/// The `Until` / `FromUntil` / `UntilAngle` arms take real shapes of the basis
+/// solid, exactly as the reference does: the sweep is cut by the tool solid
+/// built from the limit face (`BRepFeat::Tool`, `BRepFeat.cxx:643-712`) and the
+/// piece that still carries the generating face is kept (`cxx:438-447`,
+/// `:756-770`).
+pub fn groove_limited(
+    solid: &Solid,
+    profile: &[GpPnt2d],
+    axis: &GpAx1,
+    limit: &RevolLimit,
+    _tol: f64,
+) -> Result<FeatResult, String> {
+    require_min_profile(profile, "groove")?;
+    revolve_feature(solid, profile, axis, false, limit, "groove")
+}
+
+/// [`neck`] with an explicit [`RevolLimit`]; `tol` is unused, see [`groove`].
+pub fn neck_limited(
+    solid: &Solid,
+    profile: &[GpPnt2d],
+    axis: &GpAx1,
+    limit: &RevolLimit,
+    _tol: f64,
+) -> Result<FeatResult, String> {
     require_min_profile(profile, "neck")?;
-    revolve_feature(solid, profile, axis, true, "neck")
+    revolve_feature(solid, profile, axis, true, limit, "neck")
 }
 
 /// The planar profile face of a `groove`/`neck` cross-section `profile`
@@ -383,9 +435,9 @@ fn profile_face_on(profile: &[GpPnt2d], axis: &GpAx1) -> Result<TopoShape, Strin
     crate::shape_ops::transformed_copy(&face, &t)
 }
 
-/// [`groove`] / [`neck`]: `BRepFeat_MakeRevol::Perform(2*M_PI)`
-/// (`BRepFeat_MakeRevol.cxx:537` / `:707` for the `2*M_PI` overload, the body
-/// of `Perform(Angle)` at `cxx:200-336`).
+/// [`groove`] / [`neck`]: `BRepFeat_MakeRevol`'s `Perform` overloads
+/// (`BRepFeat_MakeRevol.cxx:200-336`, `:340-467`, `:473-648`, `:655-667`,
+/// `:670-792`).
 ///
 /// `profile_face_on` is the generating face `myPbase` (`cxx:239-243`), swept by
 /// `LocOpe_Revol` (`cxx:241-242`), recorded in `myMap` by `MajMap`
@@ -400,13 +452,20 @@ fn profile_face_on(profile: &[GpPnt2d], axis: &GpAx1) -> Result<TopoShape, Strin
 /// `TopoShape::is_null` is constantly `false` — `shape.rs:69-73` — so an
 /// `Option` would be the equivalent and the class signature takes `&Face`.)
 ///
-/// `Modify` (`cxx:109-117`) only reaches `GlobalPerform`, which this path does
-/// not run, so the reference's `Standard_False` default is passed.
+/// The `Until` arms consult it when they test `Until.IsSame(mySkface)`
+/// (`cxx:359`, `:690`) and when `transform_shape_fu` / `GlobalPerform` read the
+/// sketch-face flag; the generating face is what the reference's `Init` would
+/// have received for a feature whose profile lies on the basis.
+///
+/// `Modify` (`cxx:109-117`) only reaches `GlobalPerform`, which the `Until` arms
+/// do run, so the reference's `Standard_False` default is passed: the port has
+/// no `Modify`-toggle above this layer either.
 fn revolve_feature(
     solid: &Solid,
     profile: &[GpPnt2d],
     axis: &GpAx1,
     fuse: bool,
+    limit: &RevolLimit,
     feature: &str,
 ) -> Result<FeatResult, String> {
     let pbase = profile_face_on(profile, axis).map_err(|e| format!("{feature}: {e}"))?;
@@ -420,8 +479,15 @@ fn revolve_feature(
         if fuse { 1 } else { 0 },
         false,
     );
-    feat.perform_angle(2.0 * std::f64::consts::PI)
-        .map_err(|e| format!("{feature}: {e}"))?;
+    // `cxx:200-792`: the five `Perform` overloads, one arm per variant.
+    match limit {
+        RevolLimit::Angle(angle) => feat.perform_angle(*angle),
+        RevolLimit::ThruAll => feat.perform_thru_all(),
+        RevolLimit::Until(until) => feat.perform_until(until),
+        RevolLimit::FromUntil(from, until) => feat.perform_from_until(from, until),
+        RevolLimit::UntilAngle(until, angle) => feat.perform_until_angle(until, *angle),
+    }
+    .map_err(|e| format!("{feature}: {e}"))?;
     let shape = feat
         .form
         .shape()

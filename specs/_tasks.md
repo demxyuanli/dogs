@@ -5884,3 +5884,20 @@ Do not grow the dual-pipeline / planar / volume-gate scaffold. Do not invent Fil
 | `step_obj_gates` 4/4 | `cargo test --test step_obj_gates` -> 4 passed（260.89s） |
 | `export_data_obj` 基线一致 | 15/15 ok，`v=/f=` 与 T-514 逐位一致 |
 | `specs/_tasks.md` 回执 | T-513 A..L 三张表 + 备注 |
+
+## T-516 `BRepFeat_MakeRevol` 的 `Until` / `From(Until)` / `UntilAngle` 三支接上真实几何（2026-11-10）
+
+| 任务卡 | 内容 | 状态 |
+|---|---|---|
+| T-516 A | `brepfeat::features` 新增 `RevolLimit`：`BRepFeat_MakeRevol` 的五个 `Perform` 重载各占一支（`Angle` / `ThruAll` / `Until` / `FromUntil` / `UntilAngle`，`BRepFeat_MakeRevol.cxx:200-336`、`:340-467`、`:473-648`、`:655-667`、`:670-792`）。`groove` / `neck` 改为 `groove_limited` / `neck_limited` + `RevolLimit::ThruAll`（`PerformThruAll()` 就是 `Perform(2*M_PI)`，与 T-511 的原调用同一支），签名与语义不变 —— 于是 17 条既有 `brepfeat` 单测现在覆盖「枚举 -> 重载」这一层分派。 | 已完成 |
+| T-516 B | `revolve_feature` 由一个 `perform_angle(2π)` 改为按 `RevolLimit` 逐一调用 `perform_angle` / `perform_thru_all` / `perform_until` / `perform_from_until` / `perform_until_angle`；`Until` 三支吃的是基体真实拓扑（`mySUntil` = 基体面，`TransformShapeFU` 走 `BRepFeat::FaceUntil` 裁剪，`BRepFeat::Tool` 由该面建工具实体再 `BRepAlgoAPI_Cut` 挑件）。 | 已完成 |
+| T-516 C | 订正 `revol/mod.rs::cut_pick_solid`（`cxx:438-447` / `:756-770`）：原实现取**第一个**仍带 `myPbase` 面的实体并 `break` 出实体循环；OCCT 的 `break` 只出**面**循环，`VraiRevol` 先置为整圈旋转体、循环只做覆盖，故**最后一个**命中者胜，且一个都不命中时仍答整圈旋转体（不由 `None` 变成无结果）。改为扫全量取最后一个命中，未命中回落 `vrairevol`；只有 `ASI` 无交点才是参考的静默不赋值。 | 已完成 |
+| T-516 D | 门禁（引用既有基线）：`cargo check --workspace --all-targets --offline` **0 error / 0 warning**；`cargo test -p occt-topo --lib` **980 passed**（含 `brepfeat` 17 条）；`features_healing_math_gates` **5 passed**；全仓 `#[allow(` = **785**（未增未减）。 | 已通过 |
+
+**T-516 备注**
+
+(1) **三支的首次真实几何运行**（一次性的 example 探针，跑完即删，不入库；用既有基线的同一批几何 —— `BRepPrimBox::make_box(2,2,1)`、`BRepPrimCylinder::make_cylinder(1,3)`、`brepfeat/tests.rs` 的那两个 profile）：`ThruAll` 与 `FromUntil` 在既有 profile 上逐位等于基线（`neck` 4.502654824574367 = 4 + pi*0.16；`groove` 7.816282522131361，与 `tests.rs:37-43` 记录的分析值一致），说明 `FromUntil` 的 `LocOpe_CSIntersector` / `BRepFeat::Tool` / `BRepAlgoAPI_Cut` / `ParametricBarycenter` 挑件链是真实几何。
+
+(2) **`Until` / `UntilAngle` 的可用条件是几何条件，不是接线缺口**：`Until` 走 `myCurves`（`LocOpe_Revol::Curves` 的圆，即 `FirstShape` 采样点到轴的圆），`UntilAngle` 走 `myBCurve`（同一批采样点的重心圆），两者都要求 `Until` 面与这些圆**真穿过**。在 `box 2x2x1 + neck profile`（圆心 (1,1)、r 0.4、z 1..2）上，基体的顶/底/侧面都不与 r=0.4 的圆相交（最近的侧面 x=2 距轴 1.0 > 0.4），两处 `ASI` 都无交点 ⇒ `GlobalPerform` 的 `sens` 停在 0 ⇒ `BRepFeat_IncDirection`，最终 `myShape` 为空（参考同样不 `Done()`，`Shape()` 抛 `StdFail_NotDone`）。换成让园穿墙的配置（轴 (1,0.5)+Z、profile r 0.35..0.75、z 0.3..0.7、`Until` = box 的 y=0 面，单实体结果）：`Until` = 3.448618388324 / 12 面，`UntilAngle(1.0)` = 3.770362926583 / 12 面，`UntilAngle(3.0)` = 3.635595137016 / 12 面（角度越大去掉越多，单调）；`FromUntil` 同面（`y0,y0`）答 `IncParameter`，与 `cxx:597-600` 的 `!(PrU > PrF)` 一致。这些是探针读数，不是新门禁。
+
+(3) **旁支问题（未修，只记录）**：①`crates/occt-topo/src/locope/` 与 `brep_sweep/` 里有 `[sweep-dbg] ...` 的 `println!` 调试输出（`cargo run --example` 时刷屏），不是本轮引入，未删；②`perform_from_until` 的 `cxx:618-620`（`VraiRevol = ex.Current()` 在循环之前，空列表时参考是未定义行为）保持端口现状 `solids.first()` + `Standard_OutOfRange`，未与 `cut_pick_solid` 统一。
