@@ -93,17 +93,24 @@ pub fn inv_m_matrix(classe: i32) -> MathMatrix {
 ///
 /// The gram matrix is accumulated directly (`math_Matrix::Transposed` is
 /// square-only in this port, and `P` is not), which is the same product.
+///
+/// The result carries the `lo..=hi` bounds, not `1..=n`. OCCT declares the
+/// destination as `math_Matrix IBP(bdeb, bfin, bdeb, bfin)`
+/// (`AppCont_LeastSquare.cxx:473`) and `IBPMatrix` / `IBTMatrix` write it at
+/// `i + LowerRow() - 1` (`AppCont_ContMatrices.pxx:123-126`, `:144-147`), so
+/// the caller then reads `IBP(i, j)` with the same `bdeb..=bfin` indices
+/// (`cxx:506`). Re-basing to `1..=n` made that read index past the end for
+/// every `classe != 5`.
 fn gram_inverse(classe: i32, lo: i32, hi: i32) -> MathMatrix {
     let m = m_matrix(classe);
-    let n = (hi - lo + 1) as usize;
-    let mut gram = MathMatrix::with_init(1, n, 1, n, 0.0);
-    for i in 1..=n {
-        for j in 1..=n {
+    let mut gram = MathMatrix::with_init(lo as usize, hi as usize, lo as usize, hi as usize, 0.0);
+    for i in lo..=hi {
+        for j in lo..=hi {
             let mut sum = 0.0;
-            for k in 1..=classe as usize {
-                sum += m.value(k, (lo as usize) + i - 1) * m.value(k, (lo as usize) + j - 1);
+            for k in 1..=classe {
+                sum += m.value(k as usize, i as usize) * m.value(k as usize, j as usize);
             }
-            gram.set_value(i, j, sum);
+            gram.set_value(i as usize, j as usize, sum);
         }
     }
     gram.invert()

@@ -104,23 +104,31 @@ pub fn curve_type(c: &dyn Curve) -> CurveType {
     }
 }
 
-/// `ComputeTolU` (`cxx:53-61`): the surface's U resolution, capped at a
-/// hundredth of the U period on a periodic surface.
-pub fn compute_tol_u(s: &dyn Surface, tolerance: f64) -> Option<f64> {
-    let (mut tol_u, _) = s.uv_resolution(tolerance)?;
+/// `ComputeTolU` (`ProjLib_ProjectedCurve.cxx:56-63`): the surface's
+/// `UResolution` capped at a hundredth of the U period on a periodic surface.
+///
+/// `theSurf->UResolution(theTolerance)` is `GeomAdaptor_Surface::UResolution`
+/// (`GeomAdaptor_Surface.cxx:1818-1896`), whose elementary branches are
+/// [`crate::approx_same_parameter::u_resolution`]. The `Surface::uv_resolution`
+/// trait method is *not* that function: the five elementary surface types do
+/// not override it, so reading it here used to answer `None` for every plane /
+/// cylinder / cone / sphere / torus and abort `ProjLib_ComputeApprox` before it
+/// even fitted (`compute_approx/mod.rs:186-191`).
+pub fn compute_tol_u(s: &dyn Surface, tolerance: f64) -> f64 {
+    let mut tol_u = crate::approx_same_parameter::u_resolution(s, tolerance);
     if s.is_u_periodic() {
         tol_u = tol_u.min(0.01 * s.u_period());
     }
-    Some(tol_u)
+    tol_u
 }
 
-/// `ComputeTolV` (`cxx:64-74`).
-pub fn compute_tol_v(s: &dyn Surface, tolerance: f64) -> Option<f64> {
-    let (_, mut tol_v) = s.uv_resolution(tolerance)?;
+/// `ComputeTolV` (`ProjLib_ProjectedCurve.cxx:68-76`).
+pub fn compute_tol_v(s: &dyn Surface, tolerance: f64) -> f64 {
+    let mut tol_v = crate::approx_same_parameter::v_resolution(s, tolerance);
     if s.is_v_periodic() {
         tol_v = tol_v.min(0.01 * s.v_period());
     }
-    Some(tol_v)
+    tol_v
 }
 
 /// `IsoIsDeg(S, Param, IT, TolMin, TolMax)` (`cxx:80-126`): an iso of the

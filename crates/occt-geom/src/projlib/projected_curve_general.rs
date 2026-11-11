@@ -45,8 +45,8 @@ pub(crate) fn general_approx(
     bnd_pnt: Constraint,
 ) -> Option<(Arc<Geom2dBSplineCurve>, f64)> {
     // `cxx:616-624`: the 2D tolerances and their diagonal.
-    let tol_u = compute_tol_u(surface.as_ref(), tolerance)?;
-    let tol_v = compute_tol_v(surface.as_ref(), tolerance)?;
+    let tol_u = compute_tol_u(surface.as_ref(), tolerance);
+    let tol_v = compute_tol_v(surface.as_ref(), tolerance);
     let a_tol_u = tol_u.max(precision::CONFUSION);
     let a_tol_v = tol_v.max(precision::CONFUSION);
     let a_tol2d = (a_tol_u * a_tol_u + a_tol_v * a_tol_v).sqrt();

@@ -233,10 +233,29 @@ impl MathMatrix {
 
     // ---- invert (Gauss-Jordan) ----
 
-    /// Invert in-place via Gauss-Jordan elimination.
-    /// Source: `math_Matrix.cxx` (Invert)
+    /// Invert in-place via Gauss-Jordan elimination; the bounds are preserved,
+    /// as in `math_Matrix::Inverse` (`math_Matrix.cxx`).
     pub fn invert(&mut self) -> Result<(), &'static str> {
         if !self.is_square() { return Err("Invert: not square"); }
+        let n = self.row_count();
+        let lr = self.lower_row;
+        let lc = self.lower_col;
+        let mut a = Self::with_init(1, n, 1, n, 0.0);
+        for i in 1..=n {
+            for j in 1..=n {
+                a.set_value(i, j, self.value(i + lr - 1, j + lc - 1));
+            }
+        }
+        a.invert_1based()?;
+        for i in 1..=n {
+            for j in 1..=n {
+                self.set_value(i + lr - 1, j + lc - 1, a.value(i, j));
+            }
+        }
+        Ok(())
+    }
+
+    fn invert_1based(&mut self) -> Result<(), &'static str> {
         let n = self.row_count();
         let mut inv = Self::with_init(1, n, 1, n, 0.0);
         for i in 1..=n { inv.set_value(i, i, 1.0); }

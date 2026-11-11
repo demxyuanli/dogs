@@ -6025,3 +6025,47 @@ Do not grow the dual-pipeline / planar / volume-gate scaffold. Do not invent Fil
 (3) **仍未对齐（只记录，未修）**：Z 孔上壁 `cf9` 的四段 CyCy 边里有一段与另一段的 p-curve 偏差仍是 `7.4e-5`（其余三段已到 `4.7e-7`）。探针 `max|d3-cyl|=1.665e-16` 说明 p-curve 严格落在圆柱面上，所以这 7.4e-5 来自该段 3D 走链曲线本身的 `v(u)` 轮廓（插值点是 1.27713866，解析 1.27716386），即 `intpatch_impimp_cycy_walk` 的走链精度，不再是 p-curve 拟合问题。剩余体量差 6e-7 与这段走链同量级。
 
 (4) 探针 `examples/zz_pave_cc.rs`、`specs/occt_probe/zz_cc_*` 仍是工作树未跟踪文件，不入库。
+
+## T-523 `pcurve_of_curve` 换成 `GeomInt_IntSS::BuildPCurves` 的真实投影调用：cf9 的 `v(u)` 偏差 7.475e-5 → 5.096e-7（2026-11-11）
+
+| 任务卡 | 内容 | 状态 |
+|---|---|---|
+| T-523 A | `int_face_face_helpers.rs::pcurve_of_curve` 原来走 `pcurve_full::make_pcurve_full(&临时边, face)`，即 `ShapeConstruct_ProjectCurveOnSurface::Perform`（`ShapeConstruct_ProjectCurveOnSurface.cxx:707-775`）：固定 `THE_NCONTROL` 个均匀采样点再插值，弦高随区间长度按 `h^4 |f''''|` 增长。OCCT 在 `GeomInt_IntSS::BuildPCurves`（`GeomInt_IntSS_1.cxx:1172-1303`）里调的是 `GeomProjLib::Curve2d(theCurve, theFirst, theLast, theSurface, Tol)`（`cxx:1172-1199`，`GeomProjLib.cxx:54-134`）→ `ProjLib_ProjectedCurve` → 自适应 `ProjLib_ComputeApprox`/`Approx_CurveOnSurface`（`ProjLib_ProjectedCurve.cxx:614-676`、`:720`）。现按 cxx 改成 `occt_geom::geom_proj_lib::curve_2d_range`，并补齐 `BuildPCurves` 的另外三支：空结果时 `Tol += Precision::Confusion()` 后重试五参 `GeomProjLib::Curve2d`（`cxx:1200-1204`）、`Geom2d_BSplineCurve` 结点重参数化到 `[theFirst, theLast]`（`cxx:1206-1222`）、区间短于 `ProjLib_Function` 的 epsilon 时用 `Extrema_ExtPS` 投影两端点做 degree-1 线段并回灌 `theTol`（`cxx:1223-1282`，`ParametersOfNearestPointOnSurface` 见 `cxx:151-175`）。U 周期平移仍走既有的 `adjust_u_periodic_on_face`（`cxx:1284-1303`）。 | 已完成 |
+| T-523 B | 订正 T-522 备注 (3) 的定位：`cf9` 那 7.475e-5 **不是** `intpatch_impimp_cycy_walk` 的走链精度问题。判据是「同一条 3D 曲线、只换 p-curve」：`zz_pave_cc` 把同一个 3D 边分别用「继承的 p-curve」（在父交线区间 `[0, 2pi]` 上按 22 段均匀结点投影，步长 0.2856，落进 `[0, pi/2]` 象限只剩 5 段）和「按该边自己的区间重新投影的 p-curve」各走 201 点比对解析 `v(u)`，前者 7.475e-5、后者 5.096e-7，差 146 倍。3D 曲线在这两次测量里完全相同，所以偏差归属 p-curve 的区间与结点密度，不是走链点。 | 已完成 |
+| T-523 C | 门禁（引用既有基线）：`cargo check -p occt-topo --lib --offline` 0 error（`--all-targets` 唯一 warning 在未入库的 `examples/zz_pave_cc.rs`）；`cargo test -p occt-topo --lib --offline` **980 passed**；`cargo test -p occt-topo --test step_obj_gates --offline` **4 passed**；`export_data_obj` 15 个 `data/*.step` 全部 ok 且包围盒不变；`hlr_poly_probe` 读数不变（`bi_pnt_vis=4 bi_pnt_hid=4`、`VCompound=4`、`HCompound=4`）。 | 已通过 |
+
+**T-523 备注**
+
+(1) **`cf9` p-curve 密集采样最大偏差**（`zz_pave_cc`，`[a, b]` 上 201 点，对齐解析 `u = atan2(y-1, x-1)`、`v = z + 0.5`）：
+
+| 边区间 | 改前 | 改后 |
+|---|---|---|
+| `[0.0000, 1.5708]` | 7.475e-5 | **5.096e-7** |
+| `[4.7124, 6.2832]` | 7.475e-5 | **5.096e-7** |
+| `[1.5708, 4.7124]` | 1.332e-15 | 2.665e-15 |
+| `[0, 6.2832]`（闭合） | 2.000e-7 | 2.000e-7 |
+
+(2) **体量（`box 2x2x1` − Z 孔 r0.3 − Y 孔 r0.3，OCCT 8.0.0 = 3.295769984 / 10 面）**：
+
+| 入口 | T-522 后 | T-523 后 | 相对 OCCT |
+|---|---|---|---|
+| 纯布尔 `boolean(.., Cut)` | 3.295770949 | **3.295769712** | -2.7e-7 |
+| `through_hole`（Z 再 Y） | 3.295770602 | **3.295769659** | -3.2e-7 |
+
+(3) **旁支（只记录，未修）**：`pcurve_of_curve` 现在对约 37% 的 F/F 曲线（`zz_pave_cc` 里 98 次调用中 36 次）拿到空投影，靠 `BOPAlgo_PaveFiller::MakePCurves` 的 `BOPTools_AlgoTools2D::BuildPCurveForEdgeOnFace` 在 pave block 区间上重建才拿到 p-curve。根因在 `occt-geom`：`ProjLib_ProjectedCurve::Perform` 对 `GeomAbs_BSplineCurve` on `GeomAbs_Cylinder` 走 `ProjLib_ComputeApprox`（`projlib/projected_curve.rs:595-633` → `compute_approx/mod.rs::fit_and_divide`），`FitAndDivide2d` 在 `compute_approx/mod.rs:212`（`is_all_approximated()`）为假，`myBSpline` 保持空，于是 `get_type()` 停在 `CurveType::OtherCurve`，`GeomProjLib::Curve2d` 按 `GeomProjLib.cxx:108-111` 的 `default:` 返回空。OCCT 不会空（`ProjLib_ComputeApprox.cxx:1333` 的分支成立），所以这是 `Approx_ComputeCLine`/`AppCont_Function` 拟合链的缺口，不是 `int_face_face` 侧的。
+
+## T-524 `ProjLib_ComputeApprox` 恢复初等曲面的 `U/VResolution`，修正 `AppCont_ContMatrices` 非 1 基矩阵（2026-11-11）
+
+| 任务卡 | 内容 | 状态 |
+|---|---|---|
+| T-524 A | `projlib/projected_curve.rs::compute_tol_u/compute_tol_v` 原来直接读 `Surface::uv_resolution`，而 Plane/Cylinder/Cone/Sphere/Torus 均未覆写该 trait 默认值 `None`，导致 `ProjLib_ComputeApprox::fit_and_divide` 在 `ProjLib_ComputeApprox.cxx:1318-1321` 之前提前返回；改为调用已逐支移植的 `approx_same_parameter::{u_resolution,v_resolution}`，对齐 `GeomAdaptor_Surface.cxx:1818-1958`，周期面的 `0.01 * Period` 上限保持不变。`projected_curve_general.rs` 同步采用非空返回值，因为 OCCT 的 `UResolution`/`VResolution` 不返回空。 | 已完成 |
+| T-524 B | 投影链第一次真正进入 `AppCont_LeastSquare` 后暴露 `cont_matrices::gram_inverse` 的边界错误：OCCT 构造 `math_Matrix IBP(bdeb,bfin,bdeb,bfin)`（`AppCont_LeastSquare.cxx:473`），`IBPMatrix`/`IBTMatrix` 按 `LowerRow/LowerCol` 写入（`AppCont_ContMatrices.pxx:123-126,144-147`）；Rust 却返回 `1..n`，调用方仍按 `bdeb..bfin` 读取，触发越界。现让 `gram_inverse` 保留 `lo..hi` 边界，并让 `MathMatrix::invert` 通过内部 1 基工作副本运算后写回原边界，对齐 OCCT 任意下界矩阵语义。 | 已完成 |
+| T-524 C | 真实几何复核：同一 `zz_pave_cc` 路径里 `pcurve_of_curve` 的 98 次 `[0,2pi]` 投影由 **36 次空**变为 **98/98 非空**，不再依赖 `MakePCurves` 重建。 | 已完成 |
+| T-524 D | 既有门禁：`cargo check -p occt-topo --lib --offline` 0 error；`cargo test -p occt-math --lib` **210 passed**；`cargo test -p occt-geom --lib` **143 passed**；`cargo test -p occt-geom2d --lib` **72 passed**；`cargo test -p occt-topo --lib` **980 passed**；`step_obj_gates` **4 passed**；`export_data_obj` 15 个 STEP 全 ok；`hlr_poly_probe` 保持 `bi_pnt_vis=4 bi_pnt_hid=4`、V/H compound 各 4 边。 | 已通过 |
+
+**T-524 备注**
+
+(1) T-523 备注 (3) 的“`FitAndDivide2d::is_all_approximated()==false`”结论被本轮更早的控制流探针订正：失败发生在 `compute_tol_u()` 返回 `None`，`FitAndDivide2d::perform` 当时根本没有执行。按 OCCT 恢复 `GeomAdaptor_Surface::U/VResolution` 后，投影链正常产出 2D B-spline。
+
+(2) `zz_pave_cc` 在本轮完整跑通；该探针耗时约 9 分钟且仍为未跟踪定位产物，不入库。
+

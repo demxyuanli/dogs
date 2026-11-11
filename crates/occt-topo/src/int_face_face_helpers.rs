@@ -11,12 +11,10 @@ use occt_geom::{Curve, Surface};
 use occt_geom2d::curve::Curve2d;
 
 use crate::brep_surface::SurfaceKind;
-use crate::builder::TopoBuilder;
 use crate::intpatch;
 use crate::inttools_data::IntRange;
-use crate::pcurve_full::{cone_params, make_pcurve_full};
+use crate::pcurve_full::cone_params;
 use crate::shape::Face;
-use crate::tgeometry::GeometryRegistry;
 
 use super::FaceFaceCurve;
 
@@ -266,23 +264,112 @@ pub(crate) fn curve_range(curve: &dyn Curve) -> IntRange {
     }
 }
 
-/// Pcurve of `curve` on `face` over `range`, via a temporary edge registered in
-/// the geometry side-table (cleaned up immediately after). Best-effort: returns
-/// `None` when the pcurve cannot be computed.
+/// Pcurve of `curve` on `face` over `range` —
+/// `GeomInt_IntSS::BuildPCurves` (`GeomInt_IntSS_1.cxx:1172-1303`).
+///
+/// `cxx:1187-1202`: the 2D curve is `GeomProjLib::Curve2d(theCurve, theFirst,
+/// theLast, theSurface, Tol)` — `ProjLib_ProjectedCurve` over exactly that
+/// range with the tolerance it reports. `ShapeConstruct_ProjectCurveOnSurface`
+/// (`make_pcurve_full`) is a different OCCT class: it interpolates a
+/// *fixed-count* uniform sample set, so its chord error grows with the range
+/// (`h^4 |f''''|`) and it is not what this call site must use.
+///
+/// The three `cxx` branches after it are ported below: the
+/// `Tol += Confusion` retry when the UV-box projection comes back null
+/// (`cxx:1200-1204`), the `Geom2d_BSplineCurve` knot re-parametrization
+/// (`cxx:1206-1222`), and the degree-1 segment for ranges too short for
+/// `ProjLib_Function` (`cxx:1223-1282`). The U-periodic window shift
+/// (`cxx:1284-1303`) is [`adjust_u_periodic_on_face`].
 pub(crate) fn pcurve_of_curve(
     curve: &Arc<dyn Curve>,
     range: IntRange,
     face: &Face,
 ) -> Option<Arc<dyn Curve2d>> {
-    if !range.is_valid() || range.length() < 1e-12 {
+    if !range.is_valid() {
         return None;
     }
-    let builder = TopoBuilder::new();
-    let edge = builder.make_edge(curve.clone(), range.first, range.last);
-    let mut pc = make_pcurve_full(&edge, face).ok()?;
-    GeometryRegistry::global().clear_shape(&edge.0);
+    let surf = crate::brep_tool::BRepTool::face_surface(face)?;
+    let mut tol = occt_core::precision::CONFUSION;
+    let mut pc = if range.length() > 2.0e-9 {
+        // `cxx:1189-1199`: `ProjLib_Function` shrinks the range by 1.e-09, so
+        // only a wider span reaches `GeomProjLib::Curve2d`.
+        let mut projected =
+            occt_geom::geom_proj_lib::curve_2d_range(curve, range.first, range.last, &surf, &mut tol);
+        if projected.is_none() {
+            // `cxx:1200-1204`: retry against the surface's own UV box (the
+            // five-argument `GeomProjLib::Curve2d`) with the widened tolerance.
+            tol += occt_core::precision::CONFUSION;
+            projected = occt_geom::geom_proj_lib::curve_2d_with_tolerance(curve, &surf, &mut tol);
+        }
+        projected?
+    } else {
+        short_range_pcurve(curve, range, &surf, &mut tol)?
+    };
+    // `cxx:1206-1222`: the approximation can land on knots that miss the
+    // requested ends by more than `Precision::PConfusion()`; re-parameterize
+    // them onto `[theFirst, theLast]` the way `Geom2d_TrimmedCurve` expects.
+    if let Some(mut bs) = pc.bspline_copy2d() {
+        if bs.first_parameter() - range.first > occt_core::precision::PCONFUSION
+            || range.last - bs.last_parameter() > occt_core::precision::PCONFUSION
+        {
+            if let Some((mut knots, _)) = pc.bspline_distinct_knots_mults() {
+                occt_core::bspl::knots::reparametrize(range.first, range.last, &mut knots);
+                let _ = bs.set_knots(&knots);
+                pc = Arc::new(bs);
+            }
+        }
+    }
     adjust_u_periodic_on_face(&mut pc, face, range.first, range.last);
     Some(pc)
+}
+
+/// `GeomInt_IntSS::BuildPCurves` short-range branch
+/// (`GeomInt_IntSS_1.cxx:1223-1282`).
+///
+/// `theLast - theFirst` is inside `ProjLib_Function`'s own epsilon, so the
+/// reference treats the 2D image as a segment: project both 3D ends with
+/// `Extrema_ExtPS` (`ParametersOfNearestPointOnSurface`, `cxx:151-175`), emit a
+/// degree-1 B-spline with knots `[theFirst, theLast]` and multiplicity 2, and
+/// fold the mid-point's 3D-to-2D distance into `theTol`.
+fn short_range_pcurve(
+    curve: &Arc<dyn Curve>,
+    range: IntRange,
+    surf: &Arc<dyn occt_geom::surface::Surface>,
+    tol: &mut f64,
+) -> Option<Arc<dyn Curve2d>> {
+    // `cxx:1225`: `(theLast - theFirst) > Epsilon(std::abs(theFirst))`.
+    if range.length() <= occt_core::precision::epsilon(range.first) {
+        return None;
+    }
+    let conf = occt_core::precision::CONFUSION;
+    let p1 = occt_geom::geom_api::project_point_on_surface(surf.as_ref(), &curve.d0(range.first), conf)?;
+    let p2 = occt_geom::geom_api::project_point_on_surface(surf.as_ref(), &curve.d0(range.last), conf)?;
+    let a_p2d1 = occt_core::gp::GpPnt2d::new(p1.u, p1.v);
+    let a_p2d2 = occt_core::gp::GpPnt2d::new(p2.u, p2.v);
+    // `cxx:1258`: a degenerate 2D span leaves the curve null.
+    if a_p2d1.distance(&a_p2d2) <= occt_core::precision::REAL_SMALL {
+        return None;
+    }
+    // `cxx:1266-1270`: knots `[theFirst, theLast]`, both multiplicity 2.
+    let knots = vec![range.first, range.first, range.last, range.last];
+    let bs = occt_geom2d::bspline_curve::Geom2dBSplineCurve::from_flat(
+        vec![a_p2d1.x(), a_p2d2.x()],
+        vec![a_p2d1.y(), a_p2d2.y()],
+        None,
+        knots,
+        1,
+        false,
+    )
+    .ok()?;
+    // `cxx:1272-1278`: widen `theTol` by the mid-point's deviation.
+    let p_mid = curve.d0(0.5 * (range.first + range.last));
+    let pmid2d = occt_core::gp::GpPnt2d::new(
+        0.5 * (a_p2d1.x() + a_p2d2.x()),
+        0.5 * (a_p2d1.y() + a_p2d2.y()),
+    );
+    let a_pc = surf.d0(pmid2d.x(), pmid2d.y());
+    *tol = p_mid.distance(&a_pc).max(*tol);
+    Some(Arc::new(bs))
 }
 
 /// `GeomInt_IntSS::BuildPCurves` tail (`GeomInt_IntSS_1.cxx:1285-1305`):

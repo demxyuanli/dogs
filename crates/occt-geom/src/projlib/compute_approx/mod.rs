@@ -179,15 +179,9 @@ impl ComputeApprox {
             a_last_c = mapped;
         }
 
-        // `cxx:1318-1321`. OCCT's `UResolution` / `VResolution` cannot fail; the
-        // port models them as `Option`, so a surface that has no resolution
-        // skips the fit instead of inventing one.
-        let Some(a_tol_u) = compute_tol_u(s, self.tolerance) else {
-            return;
-        };
-        let Some(a_tol_v) = compute_tol_v(s, self.tolerance) else {
-            return;
-        };
+        // `cxx:1318-1321`.
+        let a_tol_u = compute_tol_u(s, self.tolerance);
+        let a_tol_v = compute_tol_v(s, self.tolerance);
         let a_tol2d = (a_tol_u * a_tol_u + a_tol_v * a_tol_v).sqrt().max(PCONFUSION);
 
         // `cxx:1323-1329`.
