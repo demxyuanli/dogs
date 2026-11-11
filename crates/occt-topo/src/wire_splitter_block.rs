@@ -104,7 +104,11 @@ pub(crate) fn split_wire_block(face: &Face, edges: &[Edge]) -> Result<Vec<TopoSh
     }
 
     if map.verts.is_empty() {
-        return Err("SplitBlock: no edges with a pcurve on the face".into());
+        // `BOPAlgo_WireSplitter_1.cxx:144-148`: start elements without a
+        // p-curve on the face are skipped, so nothing enters the smart map and
+        // `bNothingToDo` (`cxx:199-283`) stays true -> a plain wire over the
+        // whole block (`cxx:284-295`).
+        return Ok(vec![make_wire(edges)]);
     }
 
     for infos in &mut map.infos {
@@ -135,6 +139,10 @@ pub(crate) fn split_wire_block(face: &Face, edges: &[Edge]) -> Result<Vec<TopoSh
     }
     refine_angles(face, &mut map);
 
+    if std::env::var("ZZ_SB").is_ok() {
+        dump_map(face, &map, &vert_closed);
+    }
+
     let mut loops: Vec<TopoShape> = Vec::new();
     let nverts = map.verts.len();
     for slot in 0..nverts {
@@ -154,7 +162,12 @@ pub(crate) fn split_wire_block(face: &Face, edges: &[Edge]) -> Result<Vec<TopoSh
         }
     }
     if loops.is_empty() {
-        return Err("SplitBlock: Path produced no wires".into());
+        // `Path` (`BOPAlgo_WireSplitter_1.cxx:407-611`) can end without closing
+        // a single loop on a block that is neither regular nor walkable; OCCT
+        // only leaves those edges unrepresented (they go to `myShapesToAvoid`
+        // in `BOPAlgo_BuilderFace::PerformLoops`, `BOPAlgo_BuilderFace.cxx:313-321`),
+        // it is not an error.
+        return Ok(Vec::new());
     }
     Ok(loops)
 }
@@ -223,6 +236,20 @@ fn path(
 
         let vb = next_vertex(&p_va, &e_out);
         let pb = coord2d(&vb, &e_out, face);
+        if trace() {
+            eprintln!(
+                "[sbp] stp{} e={} or={:?} va={} pa=({},{}) -> vb={} pb=({},{})",
+                ls.len(),
+                sk(&e_out.0),
+                e_out.orientation(),
+                sk(&va),
+                pa.x(),
+                pa.y(),
+                sk(&vb),
+                pb.x(),
+                pb.y()
+            );
+        }
         let Some(&vb_slot) = map.index.get(&GeometryRegistry::shape_key(&vb)) else {
             return;
         };
@@ -261,6 +288,9 @@ fn path(
                     }
                 }
                 if same_v && same_v2d {
+                    if trace() {
+                        eprintln!("[sbp]   close i={} d2={} tol2={}", i + 1, coord_va[i].square_distance(&pb), tol2d2);
+                    }
                     let mut priz = true;
                     if buf.len() == 2 && is_same(&buf[0].0, &buf[1].0) {
                         priz = false;
@@ -315,6 +345,19 @@ fn path(
             } else {
                 if closed {
                     let p2 = coord2d_vf(&ei.edge, face);
+                    if trace() {
+                        eprintln!(
+                            "[sbp]   vfcheck e={} or={:?} p2=({},{}) pb=({},{}) d2={} tol2={}",
+                            sk(&ei.edge.0),
+                            ei.edge.orientation(),
+                            p2.x(),
+                            p2.y(),
+                            pb.x(),
+                            pb.y(),
+                            p2.square_distance(&pb),
+                            tol2d2
+                        );
+                    }
                     if p2.square_distance(&pb) > tol2d2 {
                         continue;
                     }
@@ -324,6 +367,19 @@ fn path(
             if is_boundary && ei.is_inside {
                 n_inside += 1;
                 only_inside = Some(k);
+            }
+            if trace() {
+                eprintln!(
+                    "[sbp]   at {} cand e={} in={} ins={} ang={} cw={} cw_in={} ang_in={}",
+                    sk(&vb),
+                    sk(&ei.edge.0),
+                    ei.is_in as u8,
+                    ei.is_inside as u8,
+                    ei.angle,
+                    ang,
+                    clockwise_angle(angle_in, ei.angle),
+                    angle_in
+                );
             }
             if ang < min_angle - eps {
                 min_angle = ang;
@@ -716,6 +772,53 @@ fn refine_angle_2d(
         }
     }
     None
+}
+
+fn dump_map(face: &Face, map: &SmartMap, vert_closed: &HashMap<usize, bool>) {
+    for slot in 0..map.verts.len() {
+        let v = &map.verts[slot];
+        let p = BRepTool::vertex_point(&Vertex(v.clone()));
+        let vk = GeometryRegistry::shape_key(v);
+        eprintln!(
+            "[sb] V key={} p=({},{},{}) closed={:?} n={}",
+            sk(v),
+            p.x(),
+            p.y(),
+            p.z(),
+            vert_closed.get(&vk).copied().unwrap_or(false) as u8,
+            map.infos[slot].len()
+        );
+        for ei in &map.infos[slot] {
+            let mut vv = v.clone();
+            vv.set_orientation(if ei.is_in {
+                Orientation::Reversed
+            } else {
+                Orientation::Forward
+            });
+            let tv = vertex_parameter_on_face(&vv, &ei.edge);
+            let mut pv = vv.clone();
+            pv.set_orientation(Orientation::Forward);
+            let uv = coord2d(&pv, &ei.edge, face);
+            eprintln!(
+                "[sb]   E key={} in={} ins={} tv={} uv=({},{}) ang={}",
+                sk(&ei.edge),
+                ei.is_in as u8,
+                ei.is_inside as u8,
+                tv,
+                uv.x(),
+                uv.y(),
+                ei.angle
+            );
+        }
+    }
+}
+
+fn sk(s: &TopoShape) -> usize {
+    GeometryRegistry::shape_key(s)
+}
+
+fn trace() -> bool {
+    std::env::var("ZZ_SB").is_ok()
 }
 
 fn edge_closed_on_face(e: &Edge, _face: &Face, face_key: usize) -> bool {

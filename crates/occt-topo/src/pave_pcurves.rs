@@ -70,6 +70,38 @@ pub fn update_vertices_pcurve(e: &Edge, f: &Face) {
     }
 }
 
+/// `BOPAlgo_MPC::Perform` periodic branch (`BOPAlgo_PaveFiller_7.cxx:263-282`):
+/// the edge already carries a p-curve, but on a U- or V-periodic surface the
+/// stored 2D curve is re-shifted by whole periods so that its point at the
+/// middle of the edge's own range on that face (`BRep_Tool::CurveOnSurface
+/// (aE, aF, f, l)` — the pave block sub-range, not the parent curve's) lands
+/// inside the face UV box (`BOPTools_AlgoTools2D::AdjustPCurveOnSurf`). The
+/// shifted curve is written back (`BRep_Builder::UpdateEdge`); a no-op shift
+/// leaves the stored representation untouched (`myNewC2d.Nullify()`).
+fn adjust_existing_pcurve(edge: &Edge, face: &Face) {
+    let Some(surf) = BRepTool::face_surface(face) else {
+        return;
+    };
+    if !surf.is_u_periodic() && !surf.is_v_periodic() {
+        return;
+    }
+    let Some((pc, first, last)) = crate::boptools_2d::curve_on_surface_range(edge, face) else {
+        return;
+    };
+    let face_tol = BRepTool::face_tolerance(face);
+    let Ok(adj) =
+        crate::algo_tools::AlgoTools2D::adjust_pcurve_on_surf(&pc, face, first, last, face_tol)
+    else {
+        return;
+    };
+    let mid = 0.5 * (first + last);
+    if pc.d0(mid) == adj.d0(mid) {
+        return;
+    }
+    let key = crate::tgeometry::GeometryRegistry::shape_key(&face.0);
+    crate::tgeometry::GeometryRegistry::global().set_edge_pcurve(&edge.0, key, adj);
+}
+
 fn build_or_warn(f: &mut PaveFiller, edge: &Edge, face: &Face, n_e: usize, n_f: usize) {
     match build_pcurve_for_edge_on_face(edge, face) {
         Ok(_) => update_vertices_pcurve(edge, face),
@@ -175,6 +207,7 @@ pub fn make_p_curves(f: &mut PaveFiller) -> Result<(), String> {
                         if b_pc[m] && an_ef_pairs.insert((n_e, n_f[m])) {
                             if let Some(ref face) = ff_val[m] {
                                 if has_curve_on_surface(&e, face) {
+                                    adjust_existing_pcurve(&e, face);
                                     update_vertices_pcurve(&e, face);
                                 } else {
                                     build_or_warn(f, &e, face, n_e, n_f[m]);

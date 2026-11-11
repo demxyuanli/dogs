@@ -279,9 +279,53 @@ pub(crate) fn pcurve_of_curve(
     }
     let builder = TopoBuilder::new();
     let edge = builder.make_edge(curve.clone(), range.first, range.last);
-    let pc = make_pcurve_full(&edge, face).ok();
+    let mut pc = make_pcurve_full(&edge, face).ok()?;
     GeometryRegistry::global().clear_shape(&edge.0);
-    pc
+    adjust_u_periodic_on_face(&mut pc, face, range.first, range.last);
+    Some(pc)
+}
+
+/// `GeomInt_IntSS::BuildPCurves` tail (`GeomInt_IntSS_1.cxx:1285-1305`):
+/// "Recadre dans le domaine UV de la face" — on a U-periodic surface the
+/// freshly projected 2D curve is translated by whole periods so that the point
+/// at the middle of the 3D range `[first, last]` (`aTm = .5 * (aFirst +
+/// aLast)`) lands inside `[umin, umax]`. The offset comes from
+/// `GeomInt::AdjustPeriodic`, and the translation is applied to the whole
+/// curve, so the pcurve keeps its analytic type.
+///
+/// `theUmin`/`theUmax` are the surface adaptor's first/last U parameter, i.e.
+/// the face's UV box (`IntTools_FaceFace.cxx:1035-1060`).
+fn adjust_u_periodic_on_face(
+    pc: &mut Arc<dyn Curve2d>,
+    face: &Face,
+    first: f64,
+    last: f64,
+) {
+    let Some(surf) = crate::brep_tool::BRepTool::face_surface(face) else {
+        return;
+    };
+    if !surf.is_u_periodic() {
+        return;
+    }
+    let (umin, umax, _, _) = crate::brep_tool::BRepTool::uv_bounds(face);
+    let period = surf.u_period();
+    if !period.is_finite() || period <= 0.0 {
+        return;
+    }
+    let midpoint = pc.d0(0.5 * (first + last)).x();
+    let (_, du) = crate::geom_int::geom_int_adjust_periodic(
+        midpoint,
+        umin,
+        umax,
+        period,
+        occt_core::precision::PCONFUSION,
+    );
+    if du == 0.0 {
+        return;
+    }
+    let mut t = occt_core::gp::GpTrsf2d::identity();
+    t.set_translation_vec(&GpVec2d::new(du, 0.0));
+    *pc = Arc::from(pc.transformed(&t));
 }
 
 /// Whether two curves represent the same intersection (same kind, same range

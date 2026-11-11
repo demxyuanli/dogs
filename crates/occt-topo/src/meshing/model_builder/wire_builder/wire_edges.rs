@@ -1,5 +1,5 @@
 use super::next_param::wire_area_2d;
-use super::pcurve::pcurve_and_range;
+use super::pcurve::pcurve_and_range_on_face;
 use super::wire_walk::wire_next_by_uv;
 
 use super::super::prelude::*;
@@ -232,8 +232,8 @@ pub(crate) fn wire_edges_explorer(wire: &Wire, face: &Face) -> Vec<Edge> {
             if let Some(v2) = v2 {
                 if same_vertex(&v1, &v2) {
                     let (Some((prev_pc, p11, p12)), Some((next_pc, p21, p22))) = (
-                        pcurve_and_range(out.last().unwrap(), face),
-                        pcurve_and_range(&candidate, face),
+                        pcurve_and_range_on_face(out.last().unwrap(), face),
+                        pcurve_and_range_on_face(&candidate, face),
                     ) else {
                         break;
                     };

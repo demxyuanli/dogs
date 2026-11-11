@@ -23,14 +23,21 @@
 //! | `Validate` (`cxx:652-688`) | `validate` |
 //! | `Baryc` / `BoxParameters` / `GetOffset` / `CreateCyl` | `statics` |
 //!
+//! Entry points: [`crate::brepfeat::through_hole`] and
+//! [`crate::brepfeat::blind_hole`] (`Perform(Radius)` and `PerformBlind` plus
+//! `Build`).
+//!
 //! Deviations (every one of them a reference dereference the port answers with
 //! a value instead):
 //! - `myArguments.First()` on an empty list and a null object raise
 //!   `Standard_ConstructionError` (`cxx:58-62`); the port answers `Err`.
 //! - `BoxParameters` raises on an empty `Bnd_Box` (`B.Get`, `cxx:725`); the
 //!   port answers `None` and the caller reports `InvalidPlacement`.
-//! - `CreateCyl` hangs a `BRepPrim_Cylinder` on a frame the port's cylinder
-//!   branch does not take; see `statics` for the `gp_Trsf` placement.
+//! - `BRepPrim_Cylinder(a2, R, H)` builds its faces in the given `gp_Ax2`
+//!   (`BRepPrim_Cylinder.cxx:34-64`); the port's `primitives::BRepPrimCylinder`
+//!   only takes the identity frame, so `statics::cylinder` transforms a copy of
+//!   it and bakes the frame into the geometry, which is what the reference
+//!   constructor answers (identity `TopLoc_Location`).
 //! - `GetOffset` dereferences the `BRepAdaptor_Surface` handle of a face that
 //!   may be null (`cxx:757`); the port answers `false` (`None`), i.e. falls
 //!   back to `offF = Radius` (`cxx:792-795`).
@@ -183,19 +190,21 @@ impl MakeCylindricalHole {
         Status::NoError
     }
 
-    /// `ex.Current().IsSame(myTopFace)`: TShape equality, location ignored
-    /// (`TopoDS_Shape.hxx:275-278`); a null `myTopFace` matches nothing.
+    /// `ex.Current().IsSame(myTopFace)` (`cxx:660`, `:675`): the same `TShape`
+    /// **and** the same `TopLoc_Location` (`TopoDS_Shape.hxx:266-272`); a null
+    /// `myTopFace` matches nothing.
     fn top_face_is(&self, f: &TopoShape) -> bool {
         self.my_top_face
             .as_ref()
-            .is_some_and(|t| f.same_tshape(&t.0))
+            .is_some_and(|t| crate::topo_tools::is_same_occurrence(f, &t.0))
     }
 
-    /// `ex.Current().IsSame(myBotFace)`.
+    /// `ex.Current().IsSame(myBotFace)` (`cxx:681`), same comparison as
+    /// [`Self::top_face_is`].
     fn bot_face_is(&self, f: &TopoShape) -> bool {
         self.my_bot_face
             .as_ref()
-            .is_some_and(|b| f.same_tshape(&b.0))
+            .is_some_and(|b| crate::topo_tools::is_same_occurrence(f, &b.0))
     }
 
     /// `myArguments.First()` plus the two `IsNull` guards of every entry point

@@ -143,11 +143,21 @@ pub fn create_cyl(
     Ok((Shell(shell), top, bottom))
 }
 
-/// `BRepPrim_Cylinder(a2, R, H)`: the identity-frame cylinder placed into the
-/// frame `a2` (see the module comment), answering the solid plus its top and
-/// bottom faces (`BRepPrim_Cylinder::TopFace` / `BottomFace`).
+/// `BRepPrim_Cylinder(a2, R, H)`: the cylinder of the frame `a2`, answering the
+/// solid plus its top and bottom faces (`BRepPrim_Cylinder::TopFace` /
+/// `BottomFace`).
 ///
 /// `R <= 0` and `H <= 0` are `BRepPrim_Cylinder`'s `Standard_DomainError`.
+///
+/// The frame is **baked into the geometry**, not attached as a `TopLoc_Location`:
+/// `BRepPrim_Cylinder(gp_Ax2, R, H)` builds its faces through `BRepPrim_OneAxis`
+/// on the given `gp_Ax2` (`BRepPrim_Cylinder.cxx:34-64`), and every edge, vertex
+/// and surface of that result is expressed in the absolute frame -- the shape it
+/// answers has an identity location. Attaching a location instead (the earlier
+/// implementation) hands `BOPAlgo_BOP` a tool whose faces live in a location the
+/// boolean's shape set does not know, which fails with
+/// `BOPAlgo_AlertUnknownShape` on a through hole and silently mis-builds the
+/// `PartsOfTool` split on the `CreateCyl` path.
 pub fn cylinder(a2: &GpAx2, radius: f64, height: f64) -> Result<(Solid, Face, Face), String> {
     if radius <= 0.0 || height <= 0.0 {
         return Err("Standard_DomainError: BRepPrim_Cylinder".to_string());
@@ -156,11 +166,11 @@ pub fn cylinder(a2: &GpAx2, radius: f64, height: f64) -> Result<(Solid, Face, Fa
     let mut t = GpTrsf::identity();
     // `gp_Trsf::SetTransformation(FromSystem, gp::XOY())` (`gp_Trsf.cxx:172-194`).
     t.set_transformation_from_to(&a2.to_ax3(), &GpAx3::standard());
-    let solid = Solid(crate::transform::move_shape(&prim.solid.0, &t));
+    let solid = Solid(crate::shape_ops::transformed_copy(&prim.solid.0, &t)?);
     // `primitives::BRepPrimCylinder::make_cylinder` stores bottom, top, lateral
     // in that order (`BRepPrim_OneAxis::BottomFace` / `TopFace` /
     // `LateralFace`), the same convention `brep_builder_api::make_cylinder_full`
-    // relies on.
+    // relies on; `transformed_copy` keeps that order.
     let faces = faces_of(&solid.0);
     let bottom = faces
         .first()

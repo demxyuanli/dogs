@@ -21,16 +21,35 @@ fn shape_key(s: &TopoShape) -> usize {
     GeometryRegistry::shape_key(s)
 }
 
+/// `TopAbs_Orientation` as a hashable code.
+fn ori_code(o: Orientation) -> u8 {
+    match o {
+        Orientation::Forward => 0,
+        Orientation::Reversed => 1,
+        Orientation::Internal => 2,
+        Orientation::External => 3,
+    }
+}
+
+/// `TopoDS_Shape::IsEqual` identity: the same TShape, Location **and**
+/// Orientation.
+///
+/// `NCollection_Map<TopoDS_Shape>` (`BOPAlgo_ShellSplitter.cxx:164`, `:177`)
+/// uses the default hasher, whose equality predicate is
+/// `TopoDS_Shape::operator==` -> `IsEqual` (`TopoDS_Shape.hxx`). Unlike the
+/// `TopTools_ShapeMapHasher` maps (`IsSame`, orientation-free), the FORWARD and
+/// REVERSED copy of one face are two distinct elements here, so both copies can
+/// enter different shells of the same block.
+fn face_ikey(s: &TopoShape) -> (usize, u8) {
+    (shape_key(s), ori_code(s.orientation()))
+}
+
 /// `BOPTools_AlgoTools::GetEdgeOff` (`BOPTools_AlgoTools.cxx:1099-1126`).
 ///
 /// OCCT matches `theE1` inside `theF2` with `IsSame` (the same `TopoDS_Edge`
-/// TShape) and requires the opposite orientation. Its BOP guarantees that two
-/// faces meeting along a boundary carry that shared edge, so `IsSame` is the
-/// geometric edge. This port does not run that share step, hence the same
-/// geometric identity ([`edge_ek`]) is used instead of `IsSame`, exactly as in
-/// the ancestor maps above. Two geometric views of one segment may carry
-/// opposite intrinsic directions, so the orientation test is expressed as the
-/// traversal test it stands for in OCCT ([`crate::shell_splitter::edge_traversal`]).
+/// TShape) and requires the opposite orientation. [`edge_ek`] is that same
+/// `IsSame` identity, and the orientation test is expressed as the equivalent
+/// traversal test ([`crate::shell_splitter::same_traversal`]).
 fn edge_off_geo(e1: &Edge, f2: &TopoShape) -> Option<Edge> {
     let k = edge_ek(e1);
     for w in crate::bop_occt_util::iter_children(f2) {
@@ -47,8 +66,8 @@ fn edge_off_geo(e1: &Edge, f2: &TopoShape) -> Option<Edge> {
             }
             // `GetEdgeOff` (`BOPTools_AlgoTools.cxx:1115-1123`) requires the
             // occurrence of `theE1` inside `theF2` to carry the opposite
-            // orientation; the geometric views used here are compared by
-            // traversal instead ([`crate::shell_splitter::same_traversal`]).
+            // orientation; the shared TShape is compared by traversal
+            // ([`crate::shell_splitter::same_traversal`]).
             let off = match crate::shell_splitter::same_traversal(e1, &e2) {
                 Some(same) => !same,
                 None => e2.0.orientation() == e1.0.orientation().reversed(),
@@ -61,34 +80,12 @@ fn edge_off_geo(e1: &Edge, f2: &TopoShape) -> Option<Edge> {
     None
 }
 
-/// Identity of an edge for the ancestor maps of `SplitBlock`.
-///
-/// OCCT keys `aEFMap` / `aMEFP` with `TopExp::MapShapesAndAncestors`, i.e. the
-/// `TopoDS_Edge` itself (`BOPAlgo_ShellSplitter.cxx:192`, `:310`). In OCCT the
-/// BOP pipeline already guarantees that two faces meeting along a boundary
-/// share that `TopoDS_Edge`, so the TShape *is* the geometric edge. This port
-/// does not run that share step, so the equivalent identity is the geometric
-/// one the rest of the splitter uses
-/// ([`crate::shell_splitter::edge_key`], the module's documented convention and
-/// the key [`crate::shell_splitter::ShellSplitter::perform`] builds the blocks
-/// with). Keying `SplitBlock` by TShape instead makes every face whose
-/// neighbors were built by a different producer look "free-edged" and drops
-/// the whole block.
-fn edge_ek(e: &Edge) -> crate::shell_splitter::EKey {
-    crate::shell_splitter::edge_key(e)
-}
-
-fn ori_byte(o: Orientation) -> u8 {
-    match o {
-        Orientation::Forward => 0,
-        Orientation::Reversed => 1,
-        Orientation::Internal => 2,
-        Orientation::External => 3,
-    }
-}
-
-fn ori_key(s: &TopoShape) -> (usize, u8) {
-    (shape_key(s), ori_byte(s.orientation()))
+/// Identity of an edge for the ancestor maps of `SplitBlock`: the
+/// `TopoDS_Edge` TShape (`IsSame`), the key
+/// `TopExp::MapShapesAndAncestors` builds (`BOPAlgo_ShellSplitter.cxx:192`,
+/// `:310`) and the one `GetEdgeOff` matches with.
+fn edge_ek(e: &Edge) -> usize {
+    shape_key(&e.0)
 }
 
 fn face_boundary_edges(face: &TopoShape) -> Vec<Edge> {
@@ -116,8 +113,8 @@ fn make_shell(faces: &[TopoShape]) -> TopoShape {
 /// *free* edge (`aLF.Extent() == 1`), so `SplitBlock`'s free-edge pass
 /// (`BOPAlgo_ShellSplitter.cxx:202-214`) removes the whole lateral face and the
 /// removal cascades through its neighbors.
-fn map_edges_and_faces(faces: &[TopoShape]) -> HashMap<crate::shell_splitter::EKey, Vec<TopoShape>> {
-    let mut mef: HashMap<crate::shell_splitter::EKey, Vec<TopoShape>> = HashMap::new();
+fn map_edges_and_faces(faces: &[TopoShape]) -> HashMap<usize, Vec<TopoShape>> {
+    let mut mef: HashMap<usize, Vec<TopoShape>> = HashMap::new();
     for f in faces {
         for e in face_boundary_edges(f) {
             let k = edge_ek(&e);
@@ -130,7 +127,7 @@ fn map_edges_and_faces(faces: &[TopoShape]) -> HashMap<crate::shell_splitter::EK
 /// `TopExp::MapShapesAndAncestors(aShell, EDGE, FACE, aMEFP)`
 /// (`BOPAlgo_ShellSplitter.cxx:266`): occurrence-counting append, as above.
 fn merge_face_into_mef(
-    mef: &mut HashMap<crate::shell_splitter::EKey, Vec<TopoShape>>,
+    mef: &mut HashMap<usize, Vec<TopoShape>>,
     face: &TopoShape,
 ) {
     for e in face_boundary_edges(face) {
@@ -143,11 +140,26 @@ fn shell_is_closed(shell: &TopoShape) -> bool {
     !crate::bop_build_solids::geometrically_open(shell)
 }
 
+/// Every copy in `shapes` whose `IsEqual` identity is still live in `m_faces`.
+///
+/// `BOPAlgo_ShellSplitter` keeps `aMFaces` / `AddedFacesMap` keyed by
+/// `TopoDS_Shape::IsEqual` (TShape+Location+Orientation) and feeds
+/// `MapShapesAndAncestors` from the shape *list*, so the FORWARD and REVERSED
+/// copies of one face are two separate elements of `aMFaces` and two separate
+/// edges-ancestor entries.
+fn live_copies(shapes: &[TopoShape], m_faces: &HashMap<(usize, u8), TopoShape>) -> Vec<TopoShape> {
+    shapes
+        .iter()
+        .filter(|f| m_faces.contains_key(&face_ikey(f)))
+        .cloned()
+        .collect()
+}
+
 /// `RefineShell` (`ShellSplitter.cxx:443`). Empty stop-edge set returns the
 /// input shell. Otherwise the walk does not cross stop edges.
 fn refine_shell(
     shell: &TopoShape,
-    mef: &HashMap<crate::shell_splitter::EKey, Vec<TopoShape>>,
+    mef: &HashMap<usize, Vec<TopoShape>>,
 ) -> Vec<TopoShape> {
     let faces: Vec<TopoShape> = crate::bop_occt_util::iter_children(shell)
         .into_iter()
@@ -156,7 +168,7 @@ fn refine_shell(
     if faces.is_empty() {
         return Vec::new();
     }
-    let mut stop: HashSet<crate::shell_splitter::EKey> = HashSet::new();
+    let mut stop: HashSet<usize> = HashSet::new();
     for (ek, lf) in mef {
         if lf.len() > 2 {
             stop.insert(*ek);
@@ -170,11 +182,8 @@ fn refine_shell(
                 .into_iter()
                 .find(|e| edge_ek(e) == *ek);
             // `RefineShell` (`BOPAlgo_ShellSplitter.cxx:470-481`) stops on the
-            // edges whose two faces traverse them the same way. It compares the
-            // orientations of the one shared `TopoDS_Edge`; the geometric views
-            // used here are compared by traversal instead
-            // ([`crate::shell_splitter::same_traversal`], which also covers the
-            // closed ring whose endpoints carry no traversal).
+            // edges whose two faces carry the same occurrence orientation of
+            // the shared `TopoDS_Edge`.
             if let (Some(a), Some(b)) = (e1, e2) {
                 let same_dir = match crate::shell_splitter::same_traversal(&a, &b) {
                     Some(same) => same,
@@ -202,15 +211,20 @@ fn refine_shell(
     if stop.is_empty() {
         return vec![shell.clone()];
     }
+    // `RefineShell` (`BOPAlgo_ShellSplitter.cxx:524-537`) walks with
+    // `aMFProcessed`, a `NCollection_Map<TopoDS_Shape>` (`IsEqual`), while the
+    // block itself is `aMFB`, an `IndexedMap` with `TopTools_ShapeMapHasher`
+    // (`IsSame`) — so the two copies of a duplicated face belong to different
+    // walks but to the same block.
     let mut processed: HashSet<(usize, u8)> = HashSet::new();
     let mut out: Vec<TopoShape> = Vec::new();
     for f1 in &faces {
-        if !processed.insert(ori_key(f1)) {
+        if !processed.insert(face_ikey(f1)) {
             continue;
         }
         let mut block: Vec<TopoShape> = vec![f1.clone()];
-        let mut in_block: HashSet<(usize, u8)> = HashSet::new();
-        in_block.insert(ori_key(f1));
+        let mut in_block: HashSet<usize> = HashSet::new();
+        in_block.insert(shape_key(f1));
         let mut wave = vec![f1.clone()];
         loop {
             let mut next: Vec<TopoShape> = Vec::new();
@@ -232,11 +246,11 @@ fn refine_shell(
                         if is_same(fp1, fp) {
                             continue;
                         }
-                        if in_block.contains(&ori_key(fp1)) {
+                        if in_block.contains(&shape_key(fp1)) {
                             continue;
                         }
-                        if processed.insert(ori_key(fp1)) {
-                            in_block.insert(ori_key(fp1));
+                        if processed.insert(face_ikey(fp1)) {
+                            in_block.insert(shape_key(fp1));
                             block.push(fp1.clone());
                             next.push(fp1.clone());
                         }
@@ -259,14 +273,20 @@ fn refine_shell(
 pub fn split_shell_block(block: &mut ConnexityBlock) {
     block.change_loops_mut().clear();
     let shapes_val = block.shapes().to_vec();
+    // `BOPAlgo_ShellSplitter.cxx:177-182`: `aMFaces` is a
+    // `NCollection_Map<TopoDS_Shape>`, i.e. `TopoDS_Shape::IsEqual` —
+    // TShape+Location+Orientation. The FORWARD and REVERSED copy that
+    // `BuildSplitSolids` appends for every `IN` face
+    // (`BOPAlgo_Builder_3.cxx:505-511`) are two elements of that map, and
+    // `aLFConnected` can carry both into different shells.
     let mut m_faces: HashMap<(usize, u8), TopoShape> = HashMap::new();
     for f in &shapes_val {
-        m_faces.insert(ori_key(f), f.clone());
+        m_faces.entry(face_ikey(f)).or_insert_with(|| f.clone());
     }
     loop {
-        let live: Vec<TopoShape> = m_faces.values().cloned().collect();
+        let live = live_copies(&shapes_val, &m_faces);
         let ef = map_edges_and_faces(&live);
-            let begin = m_faces.len();
+        let begin = m_faces.len();
         for (ek, lf) in &ef {
             let Some(e_rep) = live.iter().find_map(|f| {
                 face_boundary_edges(f)
@@ -279,7 +299,7 @@ pub fn split_shell_block(block: &mut ConnexityBlock) {
                 continue;
             }
             if lf.len() == 1 {
-                m_faces.remove(&ori_key(&lf[0]));
+                m_faces.remove(&face_ikey(&lf[0]));
             }
         }
         let end = m_faces.len();
@@ -290,11 +310,19 @@ pub fn split_shell_block(block: &mut ConnexityBlock) {
     if m_faces.is_empty() {
         return;
     }
+    let dbg = std::env::var_os("SPLIT_DBG").is_some();
+    if dbg {
+        eprintln!("[split] block faces={} live={}", shapes_val.len(), m_faces.len());
+    }
 
+    // `BOPAlgo_ShellSplitter.cxx:230-247`: `aMFaces.Contains(aF)` (IsEqual) for
+    // the list and the `aBoundaryFaces` add/remove toggle, whose map uses
+    // `TopTools_ShapeMapHasher` (`IsSame`), so a face present twice in the block
+    // is added and removed again, i.e. it is not a boundary face.
     let mut lf_connected: Vec<TopoShape> = Vec::new();
     let mut boundary: HashSet<usize> = HashSet::new();
     for f in &shapes_val {
-        if m_faces.contains_key(&ori_key(f)) {
+        if m_faces.contains_key(&face_ikey(f)) {
             lf_connected.push(f.clone());
             if !boundary.insert(shape_key(f)) {
                 boundary.remove(&shape_key(f));
@@ -302,8 +330,15 @@ pub fn split_shell_block(block: &mut ConnexityBlock) {
         }
     }
     let nb_shapes = lf_connected.len();
-    let live: Vec<TopoShape> = m_faces.values().cloned().collect();
+    // `aEFMap` (`BOPAlgo_ShellSplitter.cxx:187-198`) is built by
+    // `MapShapesAndAncestors` over every element of `myShapes` that is still in
+    // `aMFaces`, so *both* copies of a duplicated face answer the edge lookup.
+    // That is what lets `GetEdgeOff` find a neighbor whose shared edge is
+    // traversed the other way whichever copy seeded the walk.
+    let live = live_copies(&shapes_val, &m_faces);
     let ef_map = map_edges_and_faces(&live);
+    // `AddedFacesMap` (`cxx:164`) is a `NCollection_Map<TopoDS_Shape>` as well:
+    // it is keyed by `IsEqual`, so a face enters a shell once per orientation.
     let mut added: HashSet<(usize, u8)> = HashSet::new();
     let ctx = IntToolsContext::new();
     let mut all_taken = false;
@@ -311,11 +346,11 @@ pub fn split_shell_block(block: &mut ConnexityBlock) {
         if all_taken {
             break;
         }
-        if !added.insert(ori_key(ff)) {
+        if !added.insert(face_ikey(ff)) {
             continue;
         }
         let mut shell_faces: Vec<TopoShape> = vec![ff.clone()];
-        let mut mefp: HashMap<crate::shell_splitter::EKey, Vec<TopoShape>> = HashMap::new();
+        let mut mefp: HashMap<usize, Vec<TopoShape>> = HashMap::new();
         merge_face_into_mef(&mut mefp, ff);
         let mut i = 0usize;
         while i < shell_faces.len() {
@@ -345,7 +380,7 @@ pub fn split_shell_block(block: &mut ConnexityBlock) {
                 let mut nb_ways_inside = 0i32;
                 let mut sel_val: Option<TopoShape> = None;
                 for fl in lf_val {
-                    if is_same(&f_val, fl) || added.contains(&ori_key(fl)) {
+                    if is_same(&f_val, fl) || added.contains(&face_ikey(fl)) {
                         continue;
                     }
                     let Some(el) = edge_off_geo(&e_val, fl) else {
@@ -370,7 +405,7 @@ pub fn split_shell_block(block: &mut ConnexityBlock) {
                     }
                 }
                 if let Some(sel) = sel_val {
-                    if added.insert(ori_key(&sel)) {
+                    if added.insert(face_ikey(&sel)) {
                         shell_faces.push(sel.clone());
                         merge_face_into_mef(&mut mefp, &sel);
                     }
@@ -382,6 +417,18 @@ pub fn split_shell_block(block: &mut ConnexityBlock) {
         let mut l_sh_nc: Vec<TopoShape> = Vec::new();
         let refined = refine_shell(&walked, &mefp);
         let n_sp = refined.len();
+        if dbg {
+            eprintln!(
+                "[split] seed or={:?} walked={} stops_refined={} closed={:?}",
+                ff.orientation(),
+                shell_faces.len(),
+                n_sp,
+                refined
+                    .iter()
+                    .map(|s| crate::topo_tools::faces_of(s).len())
+                    .collect::<Vec<_>>()
+            );
+        }
 
         for sh in refined {
             if shell_is_closed(&sh) {
@@ -402,7 +449,7 @@ pub fn split_shell_block(block: &mut ConnexityBlock) {
         for sh in l_sh_nc {
             for f in crate::bop_occt_util::iter_children(&sh) {
                 if f.is_face() {
-                    added.remove(&ori_key(&f));
+                    added.remove(&face_ikey(&f));
                 }
             }
         }

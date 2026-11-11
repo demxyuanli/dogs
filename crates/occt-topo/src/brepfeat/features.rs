@@ -170,6 +170,64 @@ fn profile_face(profile: &[GpPnt2d]) -> Result<TopoShape, String> {
     Ok(face.0)
 }
 
+/// Through hole: `BRepFeat_MakeCylindricalHole::Perform(Radius)` followed by
+/// `Build()` (`BRepFeat_MakeCylindricalHole.cxx:56-100`, `:630-648`) - a
+/// `BOPAlgo_BOP` cut with the cylinder of `radius` about `axis`, made long
+/// enough to cross the whole solid (`cxx:76-81`: an infinite cylinder cannot be
+/// used for a topological operation, so the tool spans twice the bounding-box
+/// extent along the axis).
+///
+/// `WithControl` is the reference's `true` default (`hxx:66-68`), so `Build`
+/// runs `Validate` (`cxx:652-688`) and a result that still carries one of the
+/// tool's caps is reported as an error instead of being accepted.
+pub fn through_hole(solid: &Solid, axis: &GpAx1, radius: f64) -> Result<FeatResult, String> {
+    let mut hole = crate::brep_feat::MakeCylindricalHole::new();
+    hole.init(&solid.0, axis);
+    hole.perform(radius)
+        .map_err(|e| format!("through_hole: {e}"))?;
+    finish_hole(hole, "through_hole")
+}
+
+/// Blind hole: `BRepFeat_MakeCylindricalHole::PerformBlind(Radius, Length, Cont)`
+/// plus `Build()` (`BRepFeat_MakeCylindricalHole.cxx:474-626`, `:630-648`).
+///
+/// `length` is measured **from the origin of `axis`**, exactly as the reference
+/// documents it (`hxx:80-87`) and enforces it (`cxx:516-528`: the next hit's
+/// parameter must exceed `length`, otherwise `BRepFeat_HoleTooLong`). The tool
+/// is the finite cylinder of `cxx:539-556`, which reaches from below the
+/// bounding box up to `length`.
+pub fn blind_hole(
+    solid: &Solid,
+    axis: &GpAx1,
+    radius: f64,
+    length: f64,
+) -> Result<FeatResult, String> {
+    let mut hole = crate::brep_feat::MakeCylindricalHole::new();
+    hole.init(&solid.0, axis);
+    hole.perform_blind(radius, length, true)
+        .map_err(|e| format!("blind_hole: {e}"))?;
+    finish_hole(hole, "blind_hole")
+}
+
+/// `Build()` (`cxx:630-648`) for the two hole entry points, then
+/// [`solid_volume`] over the result.
+///
+/// A non-`NoError` status is the reference's "`myShape` is never assigned"
+/// (`cxx:636-643`), so it is answered as an error carrying the status name.
+fn finish_hole(
+    mut hole: crate::brep_feat::MakeCylindricalHole,
+    feature: &str,
+) -> Result<FeatResult, String> {
+    hole.build();
+    let status = hole.status();
+    if status != crate::brep_feat::status::Status::NoError {
+        return Err(format!("{feature}: {status:?}"));
+    }
+    let shape = hole.shape().clone();
+    let volume = solid_volume(&shape);
+    Ok(FeatResult { shape, volume })
+}
+
 /// Rib: a thin plate feature standing `height` above `plane`. The profile's
 /// in-plane bounding rectangle is the footprint; a dimension thinner than
 /// `thickness` is padded (centered) so a line-like profile becomes a plate of

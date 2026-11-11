@@ -1,5 +1,6 @@
-//! TKFeat feature modeling — draft, groove, neck, rib, through-boss.
-//! Source: `BRepFeat_MakeDPrism`, `BRepFeat_MakeRevol`, `BRepFeat_MakeLinearForm`.
+//! TKFeat feature modeling — draft, groove, neck, rib, through-boss, holes.
+//! Source: `BRepFeat_MakeDPrism`, `BRepFeat_MakeRevol`, `BRepFeat_MakeLinearForm`,
+//! `BRepFeat_MakeCylindricalHole`.
 //!
 //! A "feature" modifies an existing solid by adding or removing material in a
 //! locally parametrized way. This module ports the common TKFeat classes:
@@ -9,7 +10,9 @@
 //!   (fuse);
 //! - `BRepFeat_MakeLinearForm` (rib / slot) → [`rib`];
 //! - a through-boss (a `BRepPrimAPI_MakeCylinder` fused across the solid) →
-//!   [`boss_thru_all`].
+//!   [`boss_thru_all`];
+//! - `BRepFeat_MakeCylindricalHole` to [`through_hole`] (`Perform(Radius)`) and
+//!   [`blind_hole`] (`PerformBlind`).
 //!
 //! Each operation builds a tool solid and combines it with the target:
 //! - `draft` rotates the target face's supporting plane about the hinge (the
@@ -21,7 +24,9 @@
 //! - `rib` extrudes the profile's in-plane footprint into a thin plate of the
 //!   requested wall `thickness` and standing `height`, fused on;
 //! - `boss_thru_all` fuses a cylinder tall enough to pass through the solid's
-//!   bounding-box height.
+//!   bounding-box height;
+//! - `through_hole` / `blind_hole` cut a cylinder along an axis through
+//!   `BRepFeat_MakeCylindricalHole`.
 //!
 //! # Geometry strategy
 //!

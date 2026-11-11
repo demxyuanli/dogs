@@ -127,9 +127,48 @@ pub fn perform_shapes_to_avoid(fb: &mut FaceBuilder) -> Result<(), String> {
     Ok(())
 }
 
+fn dbg_edges(face: Option<&Face>, tag: &str, edges: &[TopoShape]) {
+    if std::env::var("ZZ_FL").is_err() {
+        return;
+    }
+    if let Some(f) = face {
+        let kind = BRepTool::face_surface(f)
+            .map(|s| format!("{:?}", crate::brep_surface::classify_surface(s.as_ref())))
+            .unwrap_or_else(|| "-".into());
+        eprintln!(
+            "[fl] face key={} kind={} uv={:?}",
+            sk(&f.0),
+            kind,
+            crate::brep_tools::uv_bounds(f)
+        );
+    }
+    eprintln!("[fl] {tag}: {} edge(s)", edges.len());
+    for e in edges {
+        let ed = Edge(e.clone());
+        let (v1, v2) = edge_vertices(&ed);
+        let p0 = v1.as_ref().map(|v| BRepTool::vertex_point(&Vertex(v.0.clone())));
+        let p1 = v2.as_ref().map(|v| BRepTool::vertex_point(&Vertex(v.0.clone())));
+        let uv = face
+            .and_then(|f| crate::boptools_2d::curve_on_surface_range(&ed, f))
+            .map(|(c, a, b)| (c.d0(a), c.d0(b)));
+        eprintln!(
+            "[fl]   key={} or={:?} v0={:?} v1={:?} p0={:?} p1={:?} uv={:?}",
+            sk(e),
+            e.orientation(),
+            v1.as_ref().map(|v| sk(&v.0)),
+            v2.as_ref().map(|v| sk(&v.0)),
+            p0.map(|p| (p.x(), p.y(), p.z())),
+            p1.map(|p| (p.x(), p.y(), p.z())),
+            uv.map(|(a, b)| ((a.x(), a.y()), (b.x(), b.y())))
+        );
+    }
+}
+
 /// `BOPAlgo_BuilderFace::PerformLoops`.
 pub fn perform_loops(fb: &mut FaceBuilder) -> Result<(), String> {
     fb.base.loops.clear();
+    dbg_edges(fb.face.as_ref(), "shapes", &fb.base.shapes);
+    dbg_edges(fb.face.as_ref(), "avoid@start", &fb.base.avoid);
     let mut wes = WireEdgeSet::new();
     if let Some(face) = fb.face.clone() {
         wes.set_face(face);
@@ -155,6 +194,18 @@ pub fn perform_loops(fb: &mut FaceBuilder) -> Result<(), String> {
     for w in wsp.wires() {
         fb.base.loops.push(w.clone());
     }
+    if std::env::var("ZZ_FL").is_ok() {
+        for (i, w) in fb.base.loops.iter().enumerate() {
+            let we = edges_of(w);
+            eprintln!(
+                "[fl] loop {i}: {} edge(s) closed={}",
+                we.len(),
+                BRepTool::is_closed(&Wire(w.clone()))
+            );
+            let shapes: Vec<TopoShape> = we.iter().map(|e| e.0.clone()).collect();
+            dbg_edges(fb.face.as_ref(), "loop-edges", &shapes);
+        }
+    }
     let mut mep: HashSet<usize> = HashSet::new();
     for w in &fb.base.loops {
         for e in edges_of(w) {
@@ -171,6 +222,7 @@ pub fn perform_loops(fb: &mut FaceBuilder) -> Result<(), String> {
             }
         }
     }
+    dbg_edges(fb.face.as_ref(), "avoid@end", &fb.base.avoid);
     fb.base.internal.clear();
     let nb_ea = fb.base.avoid.len();
     if nb_ea == 0 {

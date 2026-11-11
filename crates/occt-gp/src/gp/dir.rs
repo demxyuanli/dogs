@@ -328,8 +328,12 @@ impl GpDir {
         std::f64::consts::PI - self.angle_tol(other) <= ang_tol
     }
 
+    /// Same direction or opposite, both unit: `|dir ^ other| <= Resolution`
+    /// (the `sin` of the angle, as `GpVec::is_parallel` at `vec.rs:288-291`).
+    /// `gp_Dir::IsParallel` has no default-tolerance overload in OCCT
+    /// (`gp_Dir.hxx:191-195`), so this mirrors the `gp_Vec` helper.
     pub fn is_parallel(&self, other: &GpDir) -> bool {
-        self.dot(other).abs() - 1.0 <= RESOLUTION
+        self.coord.crossed(&other.coord).modulus() <= RESOLUTION
     }
 
     #[cfg(feature = "serde_json")]

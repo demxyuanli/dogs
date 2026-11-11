@@ -1,5 +1,5 @@
 use super::next_param::next_param_on_pc;
-use super::pcurve::pcurve_and_range;
+use super::pcurve::pcurve_and_range_on_face;
 use super::wire_edges::{edge_oriented_ends, same_vertex};
 
 use super::super::prelude::*;
@@ -14,7 +14,7 @@ pub(super) fn wire_next_by_uv(
     tol_u: f64,
     tol_v: f64,
 ) -> Option<usize> {
-    let (pcurve, df_f_par, df_l_par) = pcurve_and_range(edge, face)?;
+    let (pcurve, df_f_par, df_l_par) = pcurve_and_range_on_face(edge, face)?;
     // The 2D point of the current vertex on the current edge (`cxx:548-547`):
     // MAX pcurve parameter for a FORWARD edge, MIN for a REVERSED one.
     let rev = edge.0.orientation().is_reversed();
@@ -50,7 +50,7 @@ pub(super) fn wire_next_by_uv(
                 k += 1;
                 continue;
             };
-            let Some((pc, f, l)) = pcurve_and_range(e, face) else {
+            let Some((pc, f, l)) = pcurve_and_range_on_face(e, face) else {
                 k += 1;
                 continue;
             };

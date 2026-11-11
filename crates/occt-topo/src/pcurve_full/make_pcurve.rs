@@ -156,8 +156,37 @@ pub fn make_pcurve_full(edge: &Edge, face: &Face) -> Result<Arc<dyn Curve2d>, St
         }
     }
 
-    // General B-spline surface (or a non-isoparametric edge): sample the
-    // projection and fit a clamped degree-1 B-spline over the edge range.
+    // General B-spline surface (or a non-isoparametric edge): the projection
+    // itself, `GeomProjLib::Curve2d` (`GeomProjLib.cxx:70-90`) ->
+    // `ProjLib_ProjectedCurve` -> `ProjLib_ComputeApprox`
+    // (`ProjLib_ProjectedCurve.cxx:720`). OCCT never re-fits a polyline through
+    // sampled `(u, v)` values here; it keeps the projected curve, whose error is
+    // the projector tolerance (`Precision::Confusion`). `edge_pcurve_on_face`
+    // already scores that same projector
+    // (`ShapeConstruct_ProjectCurveOnSurface::Perform`,
+    // `ShapeConstruct_ProjectCurveOnSurface.cxx:2152-2213` cubic
+    // interpolation), so take its curve instead of resampling it: a
+    // degree-1 fit through the samples reintroduces the chord error
+    // (`h^2 / 8 * kappa`), which was the ~2e-4 `v` sagitta on the cylinder
+    // boolean pcurves.
+    let preci = GeometryRegistry::global()
+        .edge_tolerance(&edge.0)
+        .max(occt_core::precision::CONFUSION);
+    let mut cache = crate::pcurve_full::ProjectorCache::default();
+    if let Some(c2d) = crate::pcurve_full::project_curve_on_surface_perform(
+        curve.as_ref(),
+        surf.as_ref(),
+        a,
+        b,
+        preci,
+        -1.0,
+        -1.0,
+        &mut cache,
+    ) {
+        return Ok(c2d);
+    }
+    // The projector found nothing: keep the sampled polyline as the last resort
+    // so callers still get a bounded pcurve instead of a null one.
     let pts = edge_pcurve_on_face(edge, face, 48);
     if pts.len() < 2 {
         return Err("make_pcurve_full: too few projected samples".into());

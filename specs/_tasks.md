@@ -5901,3 +5901,127 @@ Do not grow the dual-pipeline / planar / volume-gate scaffold. Do not invent Fil
 (2) **`Until` / `UntilAngle` 的可用条件是几何条件，不是接线缺口**：`Until` 走 `myCurves`（`LocOpe_Revol::Curves` 的圆，即 `FirstShape` 采样点到轴的圆），`UntilAngle` 走 `myBCurve`（同一批采样点的重心圆），两者都要求 `Until` 面与这些圆**真穿过**。在 `box 2x2x1 + neck profile`（圆心 (1,1)、r 0.4、z 1..2）上，基体的顶/底/侧面都不与 r=0.4 的圆相交（最近的侧面 x=2 距轴 1.0 > 0.4），两处 `ASI` 都无交点 ⇒ `GlobalPerform` 的 `sens` 停在 0 ⇒ `BRepFeat_IncDirection`，最终 `myShape` 为空（参考同样不 `Done()`，`Shape()` 抛 `StdFail_NotDone`）。换成让园穿墙的配置（轴 (1,0.5)+Z、profile r 0.35..0.75、z 0.3..0.7、`Until` = box 的 y=0 面，单实体结果）：`Until` = 3.448618388324 / 12 面，`UntilAngle(1.0)` = 3.770362926583 / 12 面，`UntilAngle(3.0)` = 3.635595137016 / 12 面（角度越大去掉越多，单调）；`FromUntil` 同面（`y0,y0`）答 `IncParameter`，与 `cxx:597-600` 的 `!(PrU > PrF)` 一致。这些是探针读数，不是新门禁。
 
 (3) **旁支问题（未修，只记录）**：①`crates/occt-topo/src/locope/` 与 `brep_sweep/` 里有 `[sweep-dbg] ...` 的 `println!` 调试输出（`cargo run --example` 时刷屏），不是本轮引入，未删；②`perform_from_until` 的 `cxx:618-620`（`VraiRevol = ex.Current()` 在循环之前，空列表时参考是未定义行为）保持端口现状 `solids.first()` + `Standard_OutOfRange`，未与 `cut_pick_solid` 统一。
+
+## T-517 `BRepFeat_MakeCylindricalHole` 接上调用方并跑真实几何：两处订正（2026-11-11）
+
+| 任务卡 | 内容 | 状态 |
+|---|---|---|
+| T-517 A | `brep_feat/cyl_hole/statics.rs::cylinder` 对齐 `BRepPrim_Cylinder(gp_Ax2, R, H)`（`BRepPrim_Cylinder.cxx:34-64`）：坐标系**烘进几何**（`shape_ops::transformed_copy`），不再用 `transform::move_shape` 挂 `TopLoc_Location`。旧写法把工具面放进一个 `BOPAlgo` 形状集合不认识的位置，`Perform(Radius)` / `PerformBlind` 直接 `BOPAlgo_AlertUnknownShape`，`CreateCyl` 那几支则静默错算（`ThruNext` 在 box 2x2x1 上答 2.666666667 / 4 面）。 | 已完成 |
+| T-517 B | `cyl_hole/mod.rs::validate` 的 `IsSame` 恢复为 `TShape` + `TopLoc_Location`（`topo_tools::is_same_occurrence`），对齐 `TopoDS_Shape.hxx:266-272`；原实现只比 `same_tshape`，注释还把该头文件误记成 "location ignored"。 | 已完成 |
+| T-517 C | `brepfeat::features` 新增 `through_hole(solid, axis, radius)` 与 `blind_hole(solid, axis, radius, length)`：`Perform(Radius)` / `PerformBlind(Radius, Length, WithControl=true)` + `Build()`（`cxx:56-100`、`:474-626`、`:630-648`），非 `NoError` 状态按参考 "`myShape` 未赋值" 答 `Err`。该类此前全仓零调用者。 | 已完成 |
+| T-517 D | 门禁（引用既有基线）：`cargo check -p occt-topo --all-targets --offline` **0 error / 0 warning**；`cargo test -p occt-topo --lib` **980 passed**（含 `brepfeat` 17 条）；`features_healing_math_gates` **5 passed**；`step_obj_gates` **4 passed**；`export_data_obj` **15/15 ok**。 | 已通过 |
+
+**T-517 备注**
+
+(1) **首次真实几何读数**（一次性 example 探针，跑完即删，不入库；几何沿用既有基线：`BRepPrimBox::make_box(2,2,1)`、`BRepPrimCylinder::make_cylinder(1,3)`）：`through_hole r0.3` on box = 3.717256661（= 4 - pi*0.09）、`blind_hole r0.3 len1.5` = 3.858628331（= 4 - pi*0.09*0.5）、`through_hole r0.3` on cylinder r1 h3 = 8.576547944（= 3*pi - pi*0.09*3）、`blind_hole len1.5` = 9.000662953、`perform_thru_next` / `perform_until_end` / `perform_range` 与 `Perform(Radius)` 在 box 上同为 3.717256661；双区间基体（2x2x2 挖 1x1x0.5 空腔，轴穿两板）上 `perform_thru_next` = 7.287942496（只去靠近轴原点的一块板）、`perform_until_end` = 7.075884992（两块都去），与解析值逐位一致（差 < 4e-15）。`PerformBlind(R, 2.5)` 在 box 上答 `HoleTooLong`、轴在实体外答 `InvalidPlacement`，与 `cxx:516-528`、`:58-62` 一致。
+
+(2) **`Perform(R, PFrom, PTo)` 不是参数裁剪**：`LocOpe_CurveShapeIntersector::LocalizeAfter` 对孤立交点返回 `IndFrom == IndTo`（`LocOpe_CurveShapeIntersector.cxx:96-129`），`perform_range` 于是取「跨越 [PFrom,PTo] 的那一对出入口」建工具，在两板基体上 `1.5..2.5` 仍答 7.075884992（= 整孔 2.0 长），与参考控制流一致，不是缺口。
+
+(3) **旁支问题（未修，只记录）**：①两次垂直孔相交的体（先 Z 孔再 Y 孔）当时答 3.347782662，解析值 3.295769984；见 T-518 备注(2)，该读数在当前树上**无法复现**（现答 3.151769984），当时的探针几何已删、无法回溯；同 operands 的 `brep_algo_api::cut` 直接答 4.275226220（大于原体 4，拓扑整体错），判定为布尔/裁剪在圆柱面-圆柱面交线处的既有缺陷，与本类无关，未动；②`BRepFeat_Builder::FillIn3DParts`（`BRepFeat_Builder.cxx:801-826`）仍标 UNPORTED（`builder/mod.rs` 偏差段），本类走 `PerformResult` 时会经过该缺口的位置。
+
+## T-518 圆柱面-圆柱面布尔裁剪：`MakeConnexityBlocks` / `MakeWires` 按参考重建，周向接缝按 `TopExp_Explorer` 走访（2026-11-11）
+
+| 任务卡 | 内容 | 状态 |
+|---|---|---|
+| T-518 A | `wire_splitter.rs`：把之前的「启发式规整性 + 贪心走链」整段换成 `BOPTools_AlgoTools::MakeConnexityBlocks`（`BOPTools_AlgoTools.cxx:187-255`）——起始元素进 compound（`cxx:197-211`），重复出现者记入 `aMNRegular` 并强制 `IsRegular = false`（`cxx:232-237`），`IsRegular` 由 `TopExp::MapShapesAndAncestors(compound, VERTEX, EDGE)` 的「每个顶点恰好 2 个祖先」判定（`cxx:241-249`、`TopExp.cxx:80-107`）。规整块走 `BOPAlgo_WireSplitter::MakeWire` 直取（`BOPAlgo_WireSplitter.cxx:186-191` / `.lxx`：空 wire + 加边 + `Closed(IsClosed)`），不规整块才进 `SplitBlock`（`cxx:192-197`）。 | 已完成 |
+| T-518 B | `wire_splitter_block.rs`：`Path` 输出 0 条 loop 时不再当错误。参考里 `SplitBlock` 没吃掉的边不由它负责——`BOPAlgo_BuilderFace::PerformLoops` 会把这些边收进 `myShapesToAvoid`，所以「空 loop」是合法结果而不是 `SplitBlock: Path produced no wires`。原实现的 `Err` 会把整张面（含其中已建好的 loop）一起作废。 | 已完成 |
+| T-518 C | `bop_builder_split_faces.rs`：边界边收集从 `edges_of(&face)`（去重）改为 `explore_edges(&face)`，走 `wires_of_face` + `edges_of_wire`，对齐 `BOPAlgo_Builder_2.cxx:363` 的 `TopExp_Explorer(aFace, TopAbs_EDGE)`：`TopoDS_Iterator` 组合朝向且**不去重**，所以周向接缝（boundary wire 里一次 FORWARD 一次 REVERSED）会被访问两次。去重时接缝只进一次，`MakeConnexityBlocks` 的祖先计数随之少 1，规整块被判成不规整，圆柱面在接缝处拆出来的链无法闭合。 | 已完成 |
+| T-518 D | 清理本轮与上一轮的临时探针物件：`crates/occt-topo/examples/zz_*.rs`（6 个）、根目录 `zz_*.ps1`（2 个）、以及 `intpatch_impimp_cycy.rs` / `intpatch_impimp_pairs.rs` / `pave_ff_make.rs` / `pave_ff_perform.rs` / `bop_builder_face_perform.rs` 里 `ZZ_*` 环境变量门控与无门控的 `[raw]` / `[coeff]` / `[cycy]` / `[mk]` / `[ff]` / `[sp]` `eprintln!` 跟踪（后者在每次圆柱-圆柱求交时无条件刷 stderr）。`intpatch_impimp_pairs.rs` 已回到 HEAD 内容。 | 已完成 |
+| T-518 E | `crates/occt-gp/src/gp/dir.rs::GpDir::is_parallel` 对齐 `gp_Dir::IsParallel`（`gp_Dir.hxx:191-195`）：判据是 `|D1 ^ D2| <= Resolution`（夹角的正弦），与同仓 `GpVec::is_parallel`（`vec.rs:288-291`）一致；原实现写的是 `|D1.D2| - 1 <= Resolution`（夹角余弦），在近垂直一对上误判成平行，`IntPatch` 的 `CyCy` 平行/非平行分叉会走错支。 | 已完成 |
+| T-518 F | 门禁（引用既有基线）：`cargo check -p occt-topo --offline` **0 error / 0 warning**；`cargo test -p occt-topo --lib` **980 passed**；`features_healing_math_gates` + `step_obj_gates` + `bopalgo_builder_gates` + `pave_filler_gates` **19 passed**；`export_data_obj` **15/15 ok**（`data/*.step` 逐个体量/面数不变）。 | 已通过 |
+
+**T-518 备注**
+
+(1) **本轮修好的证据**（一次性 example 探针，跑完即删；几何：`BRepPrimCylinder::make_cylinder(1,3)` 被一条 r=0.3、轴沿 Y、过 (0,*,1.5) 的垂直圆柱贯穿）：改动前布尔**根本没切**——结果 3 面、体积 9.424777961（= 3*pi，原封不动）、`closed=true`；改动后切下去了——4 面、体积 8.870655378、`closed=true`、Euler 特征 0（单个通孔的正确值）。即：`WireSplitter` 原来在圆柱面上的 loop 建不出来，`BOPAlgo_BOP` 只能把工具丢掉。
+
+(2) **仍未对齐的残留缺陷（已定位到读数层面，未修）**：
+  ①`box 2x2x1` 先钻 Z 孔（r0.3）、再钻 Y 孔（r0.3，轴过 (1,*,0.5)）：结果 8 面、`closed=true`、Euler = -2（两个独立通孔的正确值），但体积 3.151769984，解析 3.295769984，差 **-1.440e-1**，正好等于两圆柱相交体积 `16r^3/3 = 0.144`。逐面看：Z 孔壁面积 1.884956 = `2*pi*0.3*1`（**整根，一点没裁**），Y 孔壁 3.769911 = `2*pi*0.3*2`（同样整根），也就是说两孔相交处谁都没被另一根切开，体积积分把交集算了两遍。Euler 与闭合性都对，说明面拼得起来，缺的是「第二刀的工具面没被第一刀留下的圆柱面裁剪」。
+  ②同一缺陷的另一种表现（原始圆柱被垂直圆柱贯穿）：4 面、`closed=true`、Euler 0，但两侧修边量对不上——母圆柱面掉了 0.559137，工具圆柱面只掉 0.087525，体积 8.870655378 对解析 9.003291283 差 **-1.326e-1**（1.5%）。
+  ③两者的共同点：`IntPatch_ImpImpIntersection` 的 `CyCy` 交线能给出范围（`boundaries_computing` 在 ①的第二次布尔里给出 `r1=[(5.978,6.588),(9.120,9.729)]`），缺口在 `PaveFiller` 之后——`BuildSplitFaces` 对这类「源面是上一轮布尔产出的圆柱面」没有拿到 IN/Sc paves（`nb_pb_in == nb_pb_sc == 0` 时直接 `continue`），或拿到后 `rebuild_split_areas` 只切出一块。下一轮应从 `pave_ff_make` 的 `is_valid_block_for_faces` / `pave_ff_exist_onin` 对圆柱面-圆柱面的取舍开始查，仍然以这四条读数当基线。
+
+(3) **`perform_areas` 与 `pave_ff_*` 里的 `eprintln!` 已全部删除**，`ZZ_*` / `[raw]` / `[coeff]` / `[cycy]` / `[mk]` / `[ff]` / `[sp]` 七类前缀在 `crates/` 下 `rg` 为 0 命中；后续排查请用一次性 example 探针，不要把这些打印写回库代码。
+
+
+## T-519 周期面 p-curve 按参考重定位：圆柱面-圆柱面交线终于能互相裁剪（2026-11-11）
+
+| 任务卡 | 内容 | 状态 |
+|---|---|---|
+| T-519 A | `pave_pcurves.rs` 新增 `adjust_existing_pcurve`，接上 `BOPAlgo_MPC::Perform` 的周期分支（`BOPAlgo_PaveFiller_7.cxx:263-282`）：pave block 边**已有** p-curve 时，只要面是 U/V 周期面，就按**这条边在该面上的自身区间**（`BRep_Tool::CurveOnSurface(aE, aF, f, l)`，不是父曲线的区间）取中点，用 `BOPTools_AlgoTools2D::AdjustPCurveOnSurf` 整周期平移，再写回（`BRep_Builder::UpdateEdge`）；平移量为 0 时保持原表示不动（`myNewC2d.Nullify()`）。调用点在 `make_p_curves` 的 F/F section 边循环里（`has_curve_on_surface` 为真那支，原来只 `update_vertices_pcurve`）。 | 已完成 |
+| T-519 B | `int_face_face_helpers.rs::pcurve_of_curve` 补上 `GeomInt_IntSS::BuildPCurves` 尾段的重定位（`GeomInt_IntSS_1.cxx:1285-1305`）：投影完成后，周期面按 3D 区间中点 `GeomInt::AdjustPeriodic` 出整周期偏移，整条 2D 曲线平移（保解析类型）。`theUmin/theUmax` 取面的 UV 盒，对齐 `IntTools_FaceFace.cxx:1035-1060` 的 adaptor 区间。 | 已完成 |
+| T-519 C | 门禁（引用既有基线）：`cargo check -p occt-topo --all-targets --offline` **0 error / 0 warning**；`cargo test -p occt-topo --offline` **1049 passed / 1 ignored（15 suites）**，含 `fuse_box_cylinder_is_closed_solid`、`step_obj_gates`、`features_healing_math_gates`。 | 已通过 |
+
+**T-519 备注**
+
+(1) **缺口定位**：T-518 备注(2)① 的读数（两孔相交体积答 3.151769984，解析 3.295769984）根因在 p-curve 的 2D 区间，不在 `WireSplitter`。`box 2x2x1` 先 Z 孔再 Y 孔时，Z 孔壁面 30 上的 section 边 p-curve 落在 `[-pi/2, 0]` 与 `[2pi, 5pi/2]`（`int_face_face` 的父曲线参数化起点在 `-pi/2`），而 OCCT 探针 `specs/occt_probe/zz_cc_split_probe.cpp` 在 OCCT 8.0.0 上量到的是 `[3pi/2, 2pi]` / `[0, pi/2]` / `[pi/2, pi]` / `[pi, 3pi/2]`。于是 `BOPAlgo_WireSplitter_1.cxx:570-582` 的接缝 2D 连续性检查在 `V=(1.3,1.0,0.5)`、`u=2pi` 处对每条候选边算出 `d2 = 39.478`（`tol2 = 4.44e-13`），全部丢弃，两孔相交窗口的 loop 建不出来 -> 谁都没被另一根切开。修好后同一处 `d2 = 6.4e-22`。
+
+(2) **本轮读数**（`zz_pave_cc` 探针，几何与 `specs/occt_probe/zz_cc_split_probe.cpp` 完全一致：`BRepPrimBox::make_box(2,2,1)`、Z 工具 `gp_Ax2((1,1,-0.5),Z) r0.3 h2`、Y 工具 `gp_Ax2((1,-2,0.5),Y) r0.3 h4`）：`through_hole(axis_y, r0.3)` 于第一刀结果 -> **10 面、体积 3.296065671**（偏转 0.02 与 0.001 同值）；OCCT 8.0.0 同一几何 = **10 面、3.295769984**，差 `+2.96e-4`（相对 8.97e-5）。第一刀 `box - Zcyl` 仍是 7 面，与 OCCT 一致。
+
+(3) **仍未对齐（未修，只记录）**：同一几何走**纯布尔**（`bop_builder::boolean(.., BoolOp::Cut)`，对应 `BRepAlgoAPI_Cut`）仍答 **12 面 / 2 个闭合壳 / 体积 3.354848891**（OCCT 10 面 / 1 壳 / 3.29577）。多出来的是一整个闭合壳，由两片面构成：`cf10` 圆柱面（Z 孔壁 `u in [pi,2pi]`、`z in [0.2,0.8]`，面积 0.361407）与 `cf11` 平面（`y=0` 上 r0.3 的圆盘，面积 0.282743）——即「Y 工具体内那半片 Z 孔壁 + Y 孔在 `y=0` 边界上的孔口圆盘」，本应在 CUT 里被判为删除/空。下一轮从 3D part 分类（`FillIn3DParts` 的 keep/drop 与 soliding）查，而不是再从 p-curve 侧改。
+
+(4) 探针 `crates/occt-topo/examples/zz_pave_cc.rs` 保留在工作树（未跟踪），不入库；库代码里没有新增 `eprintln!`。
+
+## T-520 `BOPAlgo_ShellSplitter::SplitBlock` 身份键按参考分成 IsEqual / IsSame（2026-11-11）
+
+| 任务卡 | 内容 | 状态 |
+|---|---|---|
+| T-520 A | `shell_splitter_block.rs`：`aMFaces` / `AddedFacesMap` / `RefineShell::aMFProcessed` 三处的键从 `IsSame`（只有 TShape）改成 `TopoDS_Shape::IsEqual`（TShape + Location + Orientation，`TopoDS_Shape.hxx`、`face_ikey`）。这三处在参考里都是 `NCollection_Map<TopoDS_Shape>`，默认 hasher 的相等谓词是 `operator==` -> `IsEqual`；只有 `aBoundaryFaces` / `aMFB` 用 `TopTools_ShapeMapHasher`（`IsSame`）。改前 FORWARD/REVERSED 两份副本被并成一份，`BuildSplitSolids` 给 `IN` 面加的第二份永远进不了任何 shell。 | 已完成 |
+| T-520 B | 同文件：`aEFMap` / `aMEFP` 的边身份从几何端点对（`shell_splitter::edge_key`）改回 `TopoDS_Edge` TShape（`edge_ek` = `shape_key`），对齐 `TopExp::MapShapesAndAncestors`（`BOPAlgo_ShellSplitter.cxx:192`、`:310`）与 `GetEdgeOff` 的 `IsSame` 判据（`BOPTools_AlgoTools.cxx:1115`）。改前圆柱面上「端点相同、曲线不同」的边互相顶替，`aLF` 计数虚高，`RefineShell` 把一整段走链按伪 stop 边切成 2/2/1，工具实体因此多出一个闭合壳。 | 已完成 |
+| T-520 C | 门禁（引用既有基线）：`cargo check -p occt-topo --lib --offline` **0 error / 0 warning**；`cargo test -p occt-topo --lib --offline` **980 passed**；`cargo test -p occt-topo --test step_obj_gates --offline` **4 passed**；`zz_pave_cc` 探针两条几何对 OCCT 8.0.0 读数。 | 已通过 |
+
+**T-520 备注**
+
+(1) **T-519 备注(3) 的残留已修**：`bop_builder::boolean(.., BoolOp::Cut)` 在 `box - Zcyl - Ycyl` 上原来答 12 面 / 2 壳 / 3.354848891（多出 `cf10`+`cf11` 那片闭合壳），现在答 **10 面 / 1 壳 / 3.296752028**，与 OCCT 8.0.0（`specs/occt_probe/zz_cc_gf_probe.cpp` 的 `myImages[arg]`：10 面、3.29577）面数一致，体量差 `9.8e-4`（相对 3.0e-4）。
+
+(2) **内腔（`cube - 内含小方盒`）由 12 面 / 体量 0.784 对上参考**：OCCT 同一几何是 1 个 Solid + 2 个 Shell（外盒 6 面 + 内腔 6 面反向），体量 0.784；改前 Rust 把内外拆成两个 Solid。改后两例同时对上，说明 A（IsEqual）与 B（TShape 边）是同一套语义的两半，缺任一例都会跑偏。
+
+(3) 探针 `crates/occt-topo/examples/zz_pave_cc.rs` 与 `specs/occt_probe/zz_cc_gf_probe.{cpp,exe}` 仍在工作树（未跟踪），不入库；库代码未新增 `eprintln!`（`shell_splitter_block.rs` 里只有原有的 `SPLIT_DBG` 门控两行）。
+
+## T-521 `BRepFeat_MakeCylindricalHole` 五个入口与 OCCT 8.0.0 对拍（2026-11-11）
+
+| 任务卡 | 内容 | 状态 |
+|---|---|---|
+| T-521 A | 逐支复核 `crates/occt-topo/src/brep_feat/cyl_hole/`：`Perform(Radius)`（`cxx:56-100`）、`Perform(Radius,PFrom,PTo,Cont)`（`cxx:357-470`）、`PerformThruNext`（`cxx:106-253`）、`PerformUntilEnd`（`cxx:257-353`）、`PerformBlind`（`cxx:474-626`）与 `Build`/`Validate`（`cxx:630-688`）逐行对上：`LocalizeAfter`/`LocalizeBefore` 的复位与朝向判定、`BoxParameters`/`CreateCyl`/`GetOffset` 的工具构造、`PartsOfTool` 的 `Baryc`+`ElCLib::LineParameter` 取舍嵌套（含 `cxx:226-241` 那处 `else` 只在前者更近时进入）、`HoleTooLong` 的 `Point(IFNext).Parameter() <= Length`。无缺口，未改代码。 | 已核对 |
+| T-521 B | 新增 C++ 真值探针 `specs/occt_probe/zz_ch_probe.cpp`（构建脚本 `build_zz_ch.bat`，链接 `TKFeat.lib`）：`box 2x2x1`、`r=0.3`，轴 `(1,1,-0.5)+Z`（参数 0.5..1.5）与 `(1,1,1.2)-Z`（参数 0.2..1.2），跑五个入口 + `PerformBlind(2.0)` 越界例，输出状态/体量/逐面面积/wire/edge/UV。真值存 `specs/occt_probe/zz_ch_out.txt`。 | 已完成 |
+| T-521 C | Rust 侧同一几何（`examples/zz_pave_cc.rs` 末尾 `--- cylindrical hole entry points ---`）对拍。 | 已通过 |
+
+**T-521 备注**
+
+(1) **五个入口逐项对上 OCCT**（面数 / 体量 / 逐面面积）：
+
+| 入口 | OCCT 8.0.0 | Rust |
+|---|---|---|
+| `Perform(Radius)` | 7 面 / 3.71726 / 孔壁 1.88496 | 7 面 / 3.717256661 / 1.884956 |
+| `Perform(Radius,0.5,1.0)` | 7 面 / 3.71726 / 孔壁 1.88496 | 7 面 / 3.717256661 / 1.884956 |
+| `Perform(Radius,1.0,0.5)`（参数反序） | 同上 | 同上 |
+| `PerformThruNext` | 7 面 / 3.71726 | 7 面 / 3.717256661 |
+| `PerformUntilEnd` | 7 面 / 3.71726 | 7 面 / 3.717256661 |
+| `PerformBlind(0.8)` | 8 面 / 3.83035 / 壁 1.13097 / 底盘 0.282743 | 8 面 / 3.830353997 / 1.130973 / 0.282743 |
+| `PerformBlind(2.0)` | `status=2 HoleTooLong`，shape 为空 | `Status::HoleTooLong`，0 面 |
+
+(2) **仍未对齐（未修，属布尔裁剪层而非特征层）**：同一几何上连打两孔（Z 孔再垂直 Y 孔，`through_hole` 两次）仍是 **10 面 / 3.296065671**，OCCT 8.0.0 为 **10 面 / 3.295769984**，差 `+2.96e-4`（与 T-519 备注(2) 同一读数，T-520 未改变）。逐面量到差别只在**上半个 Z 孔壁**（`bb=(0.7,0.7,0.5)-(1.3,1.3,1)`，OCCT 面积 0.582478，Rust 0.579742，缺 0.47%）；其余 9 面面积与 OCCT 逐一对上（含两个 Y 孔壁 1.524839 对 1.52496、两个带孔平面 3.717257 / 1.717257）。同一对曲面的交线端点落在 `z=0.49998858`（差 `1.14e-5`）说明裁剪曲线的定界略偏，属于 `IntPatch`/`GeomInt` 的 CyCy 交线与 p-curve 定界，不在 `BRepFeat_MakeCylindricalHole` 分支里。下一轮若要收这条，从该面的 loop 边（两条 CyCy 交线 + 上端圆）在 Z 圆柱面 p-curve 上的实际区间查起。
+
+(3) 探针 `specs/occt_probe/zz_ch_probe.{cpp,exe}`、`build_zz_ch.bat`、`zz_ch_out.txt` 与 `examples/zz_pave_cc.rs` 均为工作树未跟踪文件，不入库；库代码本轮 0 改动（`cargo check -p occt-topo --all-targets` 0 error / 0 warning，`--lib` 980 passed 不受影响）。
+
+## T-522 p-curve 回退分支回到 OCCT 投影曲线：CyCy 裁剪体积差从 +2.96e-4 收到 +6e-7（2026-11-11）
+
+| 任务卡 | 内容 | 状态 |
+|---|---|---|
+| T-522 A | `pcurve_full/make_pcurve.rs::make_pcurve_full` 的通用分支原来把 `edge_pcurve_on_face(edge, face, 48)` 的 48 个 `(u, v)` 采样点**重新拟合成 degree-1 B 样条**（折线），把投影器已经算好的曲线又降级成弦逼近：弦高 `h^2/8*kappa` 在圆柱面上就是实测的 `v` 矢高 2.1e-4。改成直接返回 `pcurve_full::project_curve_on_surface_perform(...)` 的曲线，对齐 `GeomProjLib::Curve2d`（`GeomProjLib.cxx:70-90`）-> `ProjLib_ProjectedCurve` -> `ProjLib_ComputeApprox`（`ProjLib_ProjectedCurve.cxx:720`）：OCCT 在这里保留投影曲线（偏差 = 投影器容差 `Precision::Confusion`），从不按采样点折线化。`edge_pcurve_on_face` 用的本来就是同一个投影器（`ShapeConstruct_ProjectCurveOnSurface::Perform` 的三次插值，`ShapeConstruct_ProjectCurveOnSurface.cxx:2152-2213`）。投影器返回空时仍保留原折线作为最后的兜底（不给调用方空 p-curve）。 | 已完成 |
+| T-522 B | 顺带清掉上一轮定位用的 `ZZ_GPROP_DEBUG` 诊断打印（`brep_gprop_full/integration/quadrature.rs`），库代码回到无新增 `eprintln!`。 | 已完成 |
+| T-522 C | 门禁（引用既有基线）：`cargo check -p occt-topo --lib --offline` 0 error；`cargo test -p occt-topo --lib --offline` **980 passed**；`cargo test -p occt-topo --test step_obj_gates --offline` **4 passed**；`export_data_obj` 15 个 `data/*.step` 全部 ok 且包围盒不变；`hlr_poly_probe` 读数不变；`zz_pave_cc` 对 OCCT 8.0.0 真值。 | 已通过 |
+
+**T-522 备注**
+
+(1) **同一几何（`box 2x2x1` - Z 孔 r0.3 - Y 孔 r0.3）三个入口的体量**：
+
+| 入口 | 改前 | 改后 | OCCT 8.0.0 |
+|---|---|---|---|
+| 纯布尔 `bop_builder::boolean(.., Cut)` | 3.296752028 | **3.295770949** | 3.295769984 |
+| `BuilderSolid` 复现 | 3.296065671 | **3.295771** | 3.295769984 |
+| `through_hole`（Z 再 Y） | 3.296065671 | **3.295770602** | 3.295769984 |
+
+(2) **逐面面积对上**（`zz_pave_cc` 的 `cf*` 段）：Z 孔下壁 0.582479（OCCT 0.582478）、Z 孔上壁 0.582472（OCCT 0.582478）、两片 Y 孔壁 1.524953 / 1.524953（OCCT 1.52496 / 1.52496）。改前上壁是 0.579742、Y 壁 1.521693。
+
+(3) **仍未对齐（只记录，未修）**：Z 孔上壁 `cf9` 的四段 CyCy 边里有一段与另一段的 p-curve 偏差仍是 `7.4e-5`（其余三段已到 `4.7e-7`）。探针 `max|d3-cyl|=1.665e-16` 说明 p-curve 严格落在圆柱面上，所以这 7.4e-5 来自该段 3D 走链曲线本身的 `v(u)` 轮廓（插值点是 1.27713866，解析 1.27716386），即 `intpatch_impimp_cycy_walk` 的走链精度，不再是 p-curve 拟合问题。剩余体量差 6e-7 与这段走链同量级。
+
+(4) 探针 `examples/zz_pave_cc.rs`、`specs/occt_probe/zz_cc_*` 仍是工作树未跟踪文件，不入库。

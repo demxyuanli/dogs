@@ -28,6 +28,31 @@ pub(super) fn pcurve_and_range(e: &Edge, face: &Face) -> Option<(Arc<dyn Curve2d
     Some((pc, a, b))
 }
 
+/// `BRepAdaptor_Curve2d(E, F)` -> `BRep_Tool::CurveOnSurface(E, F, First, Last)`
+/// (`BRep_Tool.cxx:300-361`): the *face-oriented* overload.
+///
+/// Unlike `ShapeAnalysis_Edge::PCurve` this one composes `F.Orientation()` into
+/// the edge view first (`cxx:308-314`) and then, on a closed surface, returns
+/// `PCurve2` for the resulting REVERSED edge (`cxx:354-357`). The
+/// `BRepTools_WireExplorer` walk reads its `myC2d` this way, so on a periodic
+/// face the seam occurrence at `u = 0` and the one at `u = 2*pi` resolve to
+/// different pcurves and the walked UV ring closes.
+pub(super) fn pcurve_and_range_on_face(
+    e: &Edge,
+    face: &Face,
+) -> Option<(Arc<dyn Curve2d>, f64, f64)> {
+    if let Some(v) = crate::boptools_2d::curve_on_surface_range(e, face) {
+        return Some(v);
+    }
+    let pc = make_pcurve_full(e, face).ok()?;
+    let fwd = Edge(e.0.oriented(Orientation::Forward));
+    let (a, b) = BRepTool::edge_parameters(&fwd);
+    if !a.is_finite() || !b.is_finite() {
+        return None;
+    }
+    Some((pc, a, b))
+}
+
 /// Uniform sample of a pcurve over `[a, b]` (endpoints + interior) with the
 /// point count OCCT uses for both `ShapeAnalysis::TotCross2D`
 /// (`ShapeAnalysis_Curve::GetSamplePoints`, `ShapeAnalysis_Curve.cxx:1317-1337`)

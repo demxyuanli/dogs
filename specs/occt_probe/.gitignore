@@ -27,6 +27,18 @@ zz_face_area_probe.exe
 zz_face_area_probe.obj
 zz_face_area_probe.exp
 zz_face_area_probe.lib
+zz_cc_gf_probe.exe
+zz_cc_gf_probe.obj
+zz_cc_gf_probe.exp
+zz_cc_gf_probe.lib
+zz_cc_split_probe.exe
+zz_cc_split_probe.obj
+zz_cc_split_probe.exp
+zz_cc_split_probe.lib
+zz_ch_probe.exe
+zz_ch_probe.obj
+zz_ch_probe.exp
+zz_ch_probe.lib
 tmp_probe_build.log
 
 ZZ_*.obj

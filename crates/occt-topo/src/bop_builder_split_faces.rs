@@ -32,7 +32,19 @@ use crate::builder_face::FaceBuilder;
 use crate::int_tools_full::IntToolsContext;
 use crate::shape::{Edge, Face, TopoShape};
 use crate::tgeometry::GeometryRegistry;
-use crate::topo_tools::edges_of;
+use crate::topo_tools::{edges_of_wire, wires_of_face};
+
+/// `TopExp_Explorer(aFace, TopAbs_EDGE)`: the face's edges with `TopoDS_Iterator`
+/// composition and without uniquifying, so a seam (stored once FORWARD and once
+/// REVERSED in the boundary wire) is visited twice. `_2.cxx:363` collects the
+/// bounding edges through exactly this explorer.
+fn explore_edges(face: &Face) -> Vec<Edge> {
+    let mut out: Vec<Edge> = Vec::new();
+    for w in wires_of_face(face) {
+        out.extend(edges_of_wire(&w));
+    }
+    out
+}
 
 /// `GeomLib::IsClosed` stand-in: a surface is U/V closed when it is periodic
 /// Whether a source edge is a seam on `face` that must be doubled on the
@@ -90,7 +102,7 @@ fn collect_split_edge_set<B: BopBuilderLike>(
     let mut ff = face.clone();
     ff.0.set_orientation(Orientation::Forward);
 
-    for be in edges_of(&ff.0) {
+    for be in explore_edges(&ff) {
         let an_ori_e = be.0.orientation();
         if !f.history().has_image(&be.0) {
             if an_ori_e == Orientation::Internal {

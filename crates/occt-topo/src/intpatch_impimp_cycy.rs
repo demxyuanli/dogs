@@ -122,7 +122,7 @@ fn short_cos_form(cos_f: f64, sin_f: f64) -> (f64, f64) {
     (coeff, angle)
 }
 
-fn coeffs_from_cylinders(c1: &GpCylinder, c2: &GpCylinder) -> Option<Coeffs> {
+pub(crate) fn coeffs_from_cylinders(c1: &GpCylinder, c2: &GpCylinder) -> Option<Coeffs> {
     let mut a1 = c1.x_axis().direction().xyz().multiplied(-c1.radius());
     let mut a2 = c2.x_axis().direction().xyz().multiplied(c2.radius());
     let mut b1 = c1.y_axis().direction().xyz().multiplied(-c1.radius());

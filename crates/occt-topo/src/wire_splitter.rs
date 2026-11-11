@@ -1,17 +1,21 @@
 //! Split a set of edges into closed wires (loops).
 //!
-//! Ports `BOPAlgo_WireSplitter` (TKBO). `perform()` runs MakeWire on a
-//! regular block (even vertex degree after geometric dedup) and
-//! `SplitBlock` / `Path` (`wire_splitter_block`) on an irregular block.
+//! Ports `BOPAlgo_WireSplitter` (TKBO) together with
+//! `BOPTools_AlgoTools::MakeConnexityBlocks` (`BOPTools_AlgoTools.cxx:187-255`).
+//! `perform()` runs the plain `MakeWire` of `BOPAlgo_WireSplitter.lxx` on a
+//! regular connexity block and `SplitBlock` / `Path`
+//! (`wire_splitter_block`) on an irregular one.
 //!
-//! Edges are matched by the coordinates of their endpoints (order
-//! independent for identity, order aware for the chaining), taken from
+//! Edges are matched by the coordinates of their endpoints for connexity
+//! (order independent for identity, order aware for the chaining), taken from
 //! `topo_tools::{edge_vertices, vertex_position}`.
 
 use std::collections::{HashMap, HashSet};
 
+use crate::abs::Orientation;
 use crate::builder::TopoBuilder;
 use crate::shape::{Edge, Face, TopoShape, Vertex};
+use crate::tgeometry::GeometryRegistry;
 use crate::topo_tools::{edge_vertices, edges_of, vertex_position};
 
 /// Vertex identity: 3D coordinates quantized onto a `1e-6` grid.
@@ -104,52 +108,48 @@ fn select_next_edge(
     sel
 }
 
-/// Deduplicate the edges by geometric endpoint pair: the on-face edges arrive
-/// FORWARD and REVERSED, which are the same segment and would otherwise be seen
-/// by the greedy walk as an immediate loop-back (every loop cut into single
-/// edges). One representative per segment is kept.
-fn dedup_edges(edges: &[Edge]) -> Vec<Edge> {
-    let mut dedup: Vec<Edge> = Vec::new();
-    let mut seen: HashSet<(VKey, VKey)> = HashSet::new();
-    for e in edges {
-        let (a, b) = edge_vertices(e);
-        let (Some(av), Some(bv)) = (a, b) else { continue };
-        let key = (vertex_key(&av).min(vertex_key(&bv)), vertex_key(&av).max(vertex_key(&bv)));
-        if seen.insert(key) {
-            dedup.push(e.clone());
-        }
-    }
-    dedup
-}
-
-/// Whether every vertex has even degree when each geometric segment is counted
-/// once (OCCT `IsRegular`). A regular block is a union of closed loops (a face
-/// whose only on-face edges form closed section rings); an irregular block has
-/// odd-degree vertices (a face cut by open section segments).
-fn is_regular_block(edges: &[Edge]) -> bool {
-    let mut deg: HashMap<VKey, usize> = HashMap::new();
-    let mut seen: HashSet<(VKey, VKey)> = HashSet::new();
-    for e in edges {
-        let (a, b) = edge_vertices(e);
-        let (Some(av), Some(bv)) = (a, b) else { continue };
-        let key = (vertex_key(&av).min(vertex_key(&bv)), vertex_key(&av).max(vertex_key(&bv)));
-        if !seen.insert(key) {
-            continue;
-        }
-        *deg.entry(vertex_key(&av)).or_default() += 1;
-        *deg.entry(vertex_key(&bv)).or_default() += 1;
-    }
-    deg.values().all(|&d| d % 2 == 0)
-}
-
-/// Split `edges` into vertex-connexity blocks, in input order.
+/// A connexity block of start elements.
 ///
-/// Mirrors `BOPTools_AlgoTools::MakeConnexityBlocks(theEdges, TopAbs_VERTEX,
-/// TopAbs_EDGE, theBlocks)`: two edges belong to the same block when they share
-/// a vertex (transitively). Vertex identity is the quantized position used by
-/// the chaining above, so the blocks match the `edge_vertices` endpoints.
-fn connexity_blocks(edges: &[Edge]) -> Vec<Vec<Edge>> {
-    let n = edges.len();
+/// `BOPTools_ConnexityBlock` (`BOPTools_ConnexityBlock.hxx`) holds the block's
+/// shapes plus the `IsRegular` flag that `MakeWires` dispatches on.
+struct ConnexityBlock {
+    shapes: Vec<Edge>,
+    regular: bool,
+}
+
+/// `BOPTools_AlgoTools::MakeConnexityBlocks(theLS, TopAbs_VERTEX, TopAbs_EDGE,
+/// theLCB)` (`BOPTools_AlgoTools.cxx:187-255`).
+///
+/// The start elements go into a compound (`cxx:197-211`); an element seen more
+/// than once is *not* added twice to the compound but recorded in
+/// `aMNRegular`, and its block then receives it twice (FORWARD and REVERSED,
+/// `cxx:232-237`) with `IsRegular` forced to false.
+///
+/// `IsRegular` (`cxx:241-249`) needs every vertex of every element of the block
+/// to be shared by exactly two elements of the compound --
+/// `aCMap.FindFromKey(vertex).Extent() == 2`, where `aCMap` is
+/// `TopExp::MapShapesAndAncestors(compound, VERTEX, EDGE)` (`TopExp.cxx:80-107`)
+/// and therefore counts *occurrences*: a closed edge (one vertex shape under
+/// both of its ends) lists itself twice at that vertex.
+fn make_connexity_blocks(edges: &[Edge]) -> Vec<ConnexityBlock> {
+    let mut fence: HashSet<usize> = HashSet::new();
+    let mut multi_regular: HashSet<usize> = HashSet::new();
+    let mut compound: Vec<Edge> = Vec::new();
+    for e in edges {
+        if fence.insert(GeometryRegistry::shape_key(&e.0)) {
+            compound.push(e.clone());
+        } else {
+            multi_regular.insert(GeometryRegistry::shape_key(&e.0));
+        }
+    }
+    // Ancestor occurrences per vertex.
+    let mut nb_ancestors: HashMap<VKey, usize> = HashMap::new();
+    for e in &compound {
+        for v in [edge_vertices(e).0, edge_vertices(e).1].into_iter().flatten() {
+            *nb_ancestors.entry(vertex_key(&v)).or_default() += 1;
+        }
+    }
+    let n = compound.len();
     let mut parent: Vec<usize> = (0..n).collect();
     fn find(parent: &mut Vec<usize>, mut i: usize) -> usize {
         while parent[i] != i {
@@ -159,9 +159,8 @@ fn connexity_blocks(edges: &[Edge]) -> Vec<Vec<Edge>> {
         i
     }
     let mut owner: HashMap<VKey, usize> = HashMap::new();
-    for (i, e) in edges.iter().enumerate() {
-        let (a, b) = edge_vertices(e);
-        for v in [a, b].into_iter().flatten() {
+    for (i, e) in compound.iter().enumerate() {
+        for v in [edge_vertices(e).0, edge_vertices(e).1].into_iter().flatten() {
             let k = vertex_key(&v);
             match owner.get(&k).copied() {
                 Some(j) => {
@@ -176,17 +175,46 @@ fn connexity_blocks(edges: &[Edge]) -> Vec<Vec<Edge>> {
             }
         }
     }
-    let mut blocks: Vec<Vec<Edge>> = Vec::new();
     let mut slot: HashMap<usize, usize> = HashMap::new();
-    for (i, e) in edges.iter().enumerate() {
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    for i in 0..n {
         let r = find(&mut parent, i);
         let idx = *slot.entry(r).or_insert_with(|| {
-            blocks.push(Vec::new());
-            blocks.len() - 1
+            groups.push(Vec::new());
+            groups.len() - 1
         });
-        blocks[idx].push(e.clone());
+        groups[idx].push(i);
     }
-    blocks
+    groups
+        .into_iter()
+        .map(|members| {
+            let mut regular = true;
+            let mut shapes: Vec<Edge> = Vec::new();
+            for i in members {
+                let e = &compound[i];
+                if multi_regular.contains(&GeometryRegistry::shape_key(&e.0)) {
+                    regular = false;
+                    let mut fwd = e.clone();
+                    fwd.0.set_orientation(Orientation::Forward);
+                    shapes.push(fwd);
+                    let mut rev = e.clone();
+                    rev.0.set_orientation(Orientation::Reversed);
+                    shapes.push(rev);
+                    continue;
+                }
+                shapes.push(e.clone());
+                if regular {
+                    for v in [edge_vertices(e).0, edge_vertices(e).1].into_iter().flatten() {
+                        if nb_ancestors.get(&vertex_key(&v)).copied().unwrap_or(0) != 2 {
+                            regular = false;
+                            break;
+                        }
+                    }
+                }
+            }
+            ConnexityBlock { shapes, regular }
+        })
+        .collect()
 }
 
 /// A set of edges together with the face they belong to.
@@ -289,85 +317,48 @@ impl WireSplitter {
         &self.wires
     }
 
-    /// Split `edges` into closed wires, consuming one loop per call to
-    /// [`WireSplitter::make_wire`].
-    fn split_edges(mut pool: Vec<Edge>) -> Result<Vec<TopoShape>, String> {
-        let mut wires = Vec::new();
-        while !pool.is_empty() {
-            wires.push(Self::make_wire(&mut pool)?);
-        }
-        Ok(wires)
+    /// `BOPAlgo_WireSplitter::MakeWire` (`BOPAlgo_WireSplitter.lxx`, inline at
+    /// the end of the header): make an empty wire, add every element as it is,
+    /// then flag the wire closed.
+    fn make_plain_wire(shapes: &[Edge]) -> TopoShape {
+        let w = TopoBuilder::new().make_wire(shapes);
+        w.0.set_closed(true);
+        w.0
     }
 
-    /// Run the splitting: chain the edges of the [`WireEdgeSet`] into closed
-    /// wires.
+    /// Run the splitting: `BOPAlgo_WireSplitter::MakeWires`
+    /// (`BOPAlgo_WireSplitter.cxx:163-219`).
     ///
-    /// The on-face edges arrive FORWARD and REVERSED. A *regular* block — every
-    /// geometric segment counted once gives each vertex even degree, i.e. a
-    /// face whose only on-face edges form closed section rings — is chained
-    /// after deduplicating the reversed copies: the greedy walk would otherwise
-    /// see the reversed copy as an immediate loop-back and cut every ring into
-    /// single edges. An irregular block (odd-degree vertices from open section
-    /// segments) is chained directly; on failure a planar face falls back to
-    /// the `SplitBlock` angle walk.
+    /// The start elements are cut into connexity blocks
+    /// (`BOPTools_AlgoTools::MakeConnexityBlocks(StartElements, VERTEX, EDGE,
+    /// myLCB)`, `BOPAlgo_WireSplitter.cxx:107-110`); a *regular* block becomes
+    /// one wire through the plain `MakeWire` (`cxx:186-191`), an irregular one
+    /// goes through `SplitBlock` (`cxx:192-197`) whose produced loops are added
+    /// as they are. A block that yields no loop adds nothing -- that is not an
+    /// error in OCCT, the untouched edges are left to
+    /// `BOPAlgo_BuilderFace::PerformLoops`' post treatment.
     pub fn perform(&mut self) -> Result<(), String> {
         self.wires.clear();
         if self.wes.edges.is_empty() {
             return Err("BOPAlgo_WireSplitter::perform: no input edges".to_string());
         }
-        let regular = is_regular_block(&self.wes.edges);
-        // OCCT `BOPAlgo_WireSplitter::MakeWires`: the wire edge set is first
-        // split into vertex-connexity blocks
-        // (`BOPTools_AlgoTools::MakeConnexityBlocks(StartElements, VERTEX,
-        // EDGE, myLCB)`), then every block is chained by `SplitBlock` -- a
-        // regular block through the `bNothingToDo` early-out (`MakeWire` on
-        // the block shapes), an irregular one through the angle walk (`Path`).
-        // Feeding all blocks at once would merge them in that early-out.
-        if let Some(face) = self.wes.face().cloned() {
-            let mut wires: Vec<TopoShape> = Vec::new();
-            for block in connexity_blocks(&self.wes.edges) {
-                match crate::wire_splitter_block::split_wire_block(&face, &block) {
-                    Ok(mut w) => wires.append(&mut w),
-                    Err(_) => {
-                        // No usable pcurve on the face for this block: keep the
-                        // coordinate-based chaining.
-                        let pool = if is_regular_block(&block) {
-                            dedup_edges(&block)
-                        } else {
-                            block
-                        };
-                        let mut w = Self::split_edges(pool)?;
-                        wires.append(&mut w);
-                    }
-                }
+        let face = self.wes.face().cloned();
+        let mut wires: Vec<TopoShape> = Vec::new();
+        for block in make_connexity_blocks(&self.wes.edges) {
+            if block.regular {
+                wires.push(Self::make_plain_wire(&block.shapes));
+                continue;
             }
-            self.wires = wires;
-            return Ok(());
-        }
-        if !regular {
-            if let Some(face) = self.wes.face().cloned() {
-                self.wires = crate::wire_splitter_block::split_wire_block(&face, &self.wes.edges)?;
-                return Ok(());
+            let Some(face) = face.as_ref() else {
+                return Err("BOPAlgo_WireSplitter::perform: no face for SplitBlock".to_string());
+            };
+            match crate::wire_splitter_block::split_wire_block(face, &block.shapes) {
+                Ok(mut w) => wires.append(&mut w),
+                Err(e) => return Err(e),
             }
         }
-        let edges = if regular {
-            dedup_edges(&self.wes.edges)
-        } else {
-            self.wes.edges.clone()
-        };
-        match Self::split_edges(edges) {
-            Ok(w) => {
-                self.wires = w;
-                Ok(())
-            }
-            Err(greedy_err) => {
-                if let Some(face) = self.wes.face().cloned() {
-                    self.wires = crate::wire_splitter_block::split_wire_block(&face, &self.wes.edges)?;
-                    return Ok(());
-                }
-                Err(greedy_err)
-            }
-        }
+        self.wires = wires;
+        Ok(())
     }
 
     /// Chain the given edges by vertex adjacency into one closed wire.
@@ -658,13 +649,34 @@ mod tests {
             GpPnt::new(0.75, 0.75, 0.0),
             GpPnt::new(0.25, 0.75, 0.0),
         ];
+        // `BRep_Builder::Add` shares the vertex `TShape` between the two edges
+        // that meet at it, so the fixture does too -- `SplitBlock` keys its
+        // smart map on `IsSame` (`TopTools_ShapeMapHasher`).
+        let outer_v: Vec<_> = outer_p
+            .iter()
+            .map(|p| b.make_vertex(*p, occt_core::precision::CONFUSION))
+            .collect();
+        let inner_v: Vec<_> = inner_p
+            .iter()
+            .map(|p| b.make_vertex(*p, occt_core::precision::CONFUSION))
+            .collect();
         let mut outer_edges = Vec::new();
         for i in 0..4 {
-            outer_edges.push(b.make_edge_segment(&outer_p[i], &outer_p[(i + 1) % 4]));
+            outer_edges.push(b.make_edge_segment_with_vertices(
+                &outer_p[i],
+                &outer_p[(i + 1) % 4],
+                &outer_v[i],
+                &outer_v[(i + 1) % 4],
+            ));
         }
         let mut inner_edges = Vec::new();
         for i in 0..4 {
-            inner_edges.push(b.make_edge_segment(&inner_p[i], &inner_p[(i + 1) % 4]));
+            inner_edges.push(b.make_edge_segment_with_vertices(
+                &inner_p[i],
+                &inner_p[(i + 1) % 4],
+                &inner_v[i],
+                &inner_v[(i + 1) % 4],
+            ));
         }
         let outer_wire = b.make_wire(&outer_edges);
         let inner_wire = b.make_wire(&inner_edges);
@@ -679,8 +691,9 @@ mod tests {
         }
 
         // Covering-style WES (`BuildSplitFaces` 1.1 + 1.2): outer boundary
-        // plus IN hole edges FORWARD and REVERSED. A regular block must
-        // still walk the annulus (outer + inner) after dedup.
+        // plus IN hole edges FORWARD and REVERSED. The outer block stays
+        // regular (plain `MakeWire`), the doubled hole edges make their block
+        // irregular so it goes through `SplitBlock`.
         let mut wes = WireEdgeSet::new();
         wes.set_face(face.clone());
         wes.add_edges(&outer_edges);
@@ -693,7 +706,11 @@ mod tests {
         let mut ws = WireSplitter::new();
         ws.set_wes(wes);
         ws.perform().expect("IN + boundary walks the annulus");
-        assert_eq!(ws.wires().len(), 2, "outer loop and hole loop from IN+boundary");
+        // `SplitBlock` walks the doubled hole edges twice -- once per
+        // orientation -- because each copy is an unused OUT entry at the
+        // corner vertices, so the hole loop comes out FORWARD and REVERSED on
+        // top of the outer boundary loop.
+        assert_eq!(ws.wires().len(), 3, "outer loop plus both hole orientations");
         for w in ws.wires() {
             assert_eq!(edges_of(w).len(), 4);
             assert!(w.is_closed());
