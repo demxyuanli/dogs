@@ -34,7 +34,7 @@ use crate::bspline_curve::GeomBSplineCurve;
 use crate::cone::GeomCone;
 use crate::curve::Curve;
 use crate::cylinder::GeomCylinder;
-use crate::offset_surface_eval_dn::{evaluate_d3, evaluate_dn};
+use crate::offset_surface_eval_dn::{evaluate_d2, evaluate_d3, evaluate_dn};
 use crate::offset_surface_utils::{evaluate_d0, evaluate_d1};
 use crate::osculating_surface::{OsculatingSurface, OSCULATING_TOL};
 use crate::plane::GeomPlane;
@@ -53,6 +53,14 @@ fn offset_interval_continuity(s: u8) -> u8 {
     }
 }
 
+fn is_elementary_surface(s: &dyn Surface) -> bool {
+    s.gp_pln().is_some()
+        || s.gp_cylinder().is_some()
+        || s.gp_cone().is_some()
+        || s.gp_sphere().is_some()
+        || s.gp_torus().is_some()
+}
+
 /// Surface obtained by offsetting a basis surface along its normals by a
 /// constant signed distance. Source: `Geom_OffsetSurface.hxx`.
 #[derive(Clone)]
@@ -66,7 +74,11 @@ impl GeomOffsetSurface {
     /// Wraps `basis` offset by the signed `distance` along the basis normal.
     pub fn new(basis: Arc<dyn Surface>, distance: f64) -> Self {
         let osc = OsculatingSurface::new(basis.clone(), OSCULATING_TOL);
-        Self { basis, offset: distance, osc }
+        Self {
+            basis,
+            offset: distance,
+            osc,
+        }
     }
 
     /// The basis surface.
@@ -189,19 +201,6 @@ impl GeomOffsetSurface {
         }
     }
 
-    /// Unit normal of the basis surface at `(u, v)` (the offset direction).
-    /// Prefer `evaluate_d0` / `d0` for the offset point; this remains for iso.
-    fn unit_normal(&self, u: f64, v: f64) -> GpVec {
-        let (_, du, dv) = self.basis.d1(u, v);
-        let n = du.xyz().crossed(dv.xyz());
-        let m = n.modulus();
-        if m > 1e-12 {
-            GpVec::new(n.x / m, n.y / m, n.z / m)
-        } else {
-            GpVec::new(0.0, 0.0, 1.0)
-        }
-    }
-
     /// `Geom_OffsetSurface::UIso` (`Geom_OffsetSurface.cxx:601-652`).
     pub fn u_iso(&self, uu: f64) -> Option<Arc<dyn Curve>> {
         if self.basis.is_surface_of_linear_extrusion() {
@@ -265,7 +264,8 @@ impl GeomOffsetSurface {
             }
             0
         };
-        let approx = ApproxAFunction3d::approx_c1(first, last, 14, 100, APPROXIMATION, &eval).ok()?;
+        let approx =
+            ApproxAFunction3d::approx_c1(first, last, 14, 100, APPROXIMATION, &eval).ok()?;
         if !approx.done && !approx.has_result {
             return None;
         }
@@ -284,7 +284,7 @@ impl Surface for GeomOffsetSurface {
     fn d0(&self, u: f64, v: f64) -> GpPnt {
         // `Geom_OffsetSurfaceUtils::EvaluateD0` (`pxx:586-783`).
         let (p, d1u, d1v) = self.basis.d1(u, v);
-        match evaluate_d0(
+        evaluate_d0(
             u,
             v,
             self.basis.as_ref(),
@@ -293,20 +293,14 @@ impl Surface for GeomOffsetSurface {
             p,
             d1u,
             d1v,
-        ) {
-            Some(r) => r,
-            None => {
-                let basis_p = self.basis.d0(u, v);
-                let n = self.unit_normal(u, v);
-                GpPnt::from_xyz(&basis_p.coord.added(&n.xyz().multiplied(self.offset)))
-            }
-        }
+        )
+        .expect("Geom_UndefinedValue: Geom_OffsetSurface::EvalD0")
     }
 
     fn d1(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec) {
         // `Geom_OffsetSurfaceUtils::EvaluateD1` (`pxx:804-1095`).
         let (p, d1u, d1v, d2u, d2v, d2uv) = self.basis.d2(u, v);
-        match evaluate_d1(
+        evaluate_d1(
             u,
             v,
             self.basis.as_ref(),
@@ -318,10 +312,16 @@ impl Surface for GeomOffsetSurface {
             d2u,
             d2v,
             d2uv,
-        ) {
-            Some(r) => r,
-            None => (self.d0(u, v), d1u, d1v),
-        }
+        )
+        .expect("Geom_UndefinedDerivative: Geom_OffsetSurface::EvalD1")
+    }
+
+    /// `Geom_OffsetSurface::EvalD2` (`Geom_OffsetSurface.cxx:392-424`) through
+    /// `Geom_OffsetSurfaceUtils::EvaluateD2` (`pxx:1138-1404`).
+    fn d2(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec, GpVec, GpVec, GpVec) {
+        let r = evaluate_d2(u, v, self.basis.as_ref(), self.offset, Some(&self.osc))
+            .expect("Geom_UndefinedDerivative: Geom_OffsetSurface::EvalD2");
+        (r.point, r.d1u, r.d1v, r.d2u, r.d2v, r.d2uv)
     }
 
     fn u_range(&self) -> (f64, f64) {
@@ -340,8 +340,22 @@ impl Surface for GeomOffsetSurface {
         self.basis.is_v_periodic()
     }
 
+    fn u_period(&self) -> f64 {
+        self.basis.u_period()
+    }
+
+    fn v_period(&self) -> f64 {
+        self.basis.v_period()
+    }
+
     fn continuity(&self) -> u8 {
-        self.basis.continuity()
+        // `Geom_OffsetSurface::Continuity` (`cxx:320-334`).
+        match self.basis.continuity() {
+            4 => 2,
+            5 => 4,
+            6 => 6,
+            _ => 0,
+        }
     }
 
     /// `Geom_OffsetSurface::IsCNu` (`cxx:692-696`): the basis at order `N + 1`.
@@ -349,9 +363,11 @@ impl Surface for GeomOffsetSurface {
         if n < 0 {
             return Err("Geom_OffsetSurface::IsCNu: Geom_OffsetSurface.cxx:694".into());
         }
-        self.basis.is_cnu(n.checked_add(1).ok_or_else(|| {
-            "Geom_OffsetSurface::IsCNu: Geom_OffsetSurface.cxx:695".to_string()
-        })?)
+        self.basis.is_cnu(
+            n.checked_add(1).ok_or_else(|| {
+                "Geom_OffsetSurface::IsCNu: Geom_OffsetSurface.cxx:695".to_string()
+            })?,
+        )
     }
 
     /// `Geom_OffsetSurface::IsCNv` (`cxx:700-704`).
@@ -359,14 +375,20 @@ impl Surface for GeomOffsetSurface {
         if n < 0 {
             return Err("Geom_OffsetSurface::IsCNv: Geom_OffsetSurface.cxx:702".into());
         }
-        self.basis.is_cnv(n.checked_add(1).ok_or_else(|| {
-            "Geom_OffsetSurface::IsCNv: Geom_OffsetSurface.cxx:703".to_string()
-        })?)
+        self.basis.is_cnv(
+            n.checked_add(1).ok_or_else(|| {
+                "Geom_OffsetSurface::IsCNv: Geom_OffsetSurface.cxx:703".to_string()
+            })?,
+        )
     }
 
-    fn transform(&mut self, _t: &GpTrsf) {
-        // Transform is not carried into the basis (matches the simplified
-        // derivative handling above).
+    /// `Geom_OffsetSurface::Transform` (`cxx:838-844`).
+    fn transform(&mut self, t: &GpTrsf) {
+        let mut basis = self.basis.clone_dyn();
+        basis.transform(t);
+        self.basis = Arc::from(basis);
+        self.offset *= t.scale_factor();
+        self.osc = OsculatingSurface::new(self.basis.clone(), OSCULATING_TOL);
     }
 
     fn clone_dyn(&self) -> Box<dyn Surface> {
@@ -387,6 +409,35 @@ impl Surface for GeomOffsetSurface {
 
     fn offset_equivalent_surface(&self) -> Option<Arc<dyn Surface>> {
         self.equivalent_surface()
+    }
+
+    /// `Geom_OffsetSurface::IsUClosed` (`cxx:735-798`).
+    fn is_u_closed(&self) -> bool {
+        if let Some(base) = self.basis.rectangular_trimmed_basis() {
+            let supported = is_elementary_surface(base.as_ref())
+                || base.is_surface_of_revolution()
+                || base
+                    .extrusion_basis_curve()
+                    .is_some_and(|c| c.gp_circ().is_some() || c.gp_ellipse().is_some());
+            return supported && self.basis.is_u_closed();
+        }
+        if is_elementary_surface(self.basis.as_ref()) {
+            self.basis.is_u_closed()
+        } else if self.basis.is_surface_of_revolution() {
+            true
+        } else {
+            self.basis
+                .extrusion_basis_curve()
+                .is_some_and(|c| c.gp_circ().is_some() || c.gp_ellipse().is_some())
+        }
+    }
+
+    /// `Geom_OffsetSurface::IsVClosed` (`cxx:802-834`).
+    fn is_v_closed(&self) -> bool {
+        if let Some(base) = self.basis.rectangular_trimmed_basis() {
+            return is_elementary_surface(base.as_ref()) && self.basis.is_v_closed();
+        }
+        is_elementary_surface(self.basis.as_ref()) && self.basis.is_v_closed()
     }
 
     /// `Geom_Surface::UReversed` (`Geom_Surface.cxx:33-38`) =
@@ -435,16 +486,20 @@ impl Surface for GeomOffsetSurface {
     }
     fn nb_u_intervals(&self, continuity: u8) -> i32 {
         // `GeomAdaptor_Surface::NbUIntervals` Offset (`cxx:664-684`).
-        self.basis.nb_u_intervals(offset_interval_continuity(continuity))
+        self.basis
+            .nb_u_intervals(offset_interval_continuity(continuity))
     }
     fn nb_v_intervals(&self, continuity: u8) -> i32 {
-        self.basis.nb_v_intervals(offset_interval_continuity(continuity))
+        self.basis
+            .nb_v_intervals(offset_interval_continuity(continuity))
     }
     fn u_intervals(&self, continuity: u8) -> Vec<f64> {
-        self.basis.u_intervals(offset_interval_continuity(continuity))
+        self.basis
+            .u_intervals(offset_interval_continuity(continuity))
     }
     fn v_intervals(&self, continuity: u8) -> Vec<f64> {
-        self.basis.v_intervals(offset_interval_continuity(continuity))
+        self.basis
+            .v_intervals(offset_interval_continuity(continuity))
     }
     fn extrusion_basis_curve(&self) -> Option<Arc<dyn Curve>> {
         self.basis.extrusion_basis_curve()
@@ -460,9 +515,16 @@ impl Surface for GeomOffsetSurface {
         if nu + nv < 1 || nu < 0 || nv < 0 {
             return Err("Geom_OffsetSurface::EvalDN: Geom_OffsetSurface.cxx:470".into());
         }
-        evaluate_dn(u, v, nu, nv, self.basis.as_ref(), self.offset, Some(&self.osc)).ok_or_else(
-            || "Geom_OffsetSurface::EvalDN: Geom_OffsetSurface.cxx:494".to_string(),
+        evaluate_dn(
+            u,
+            v,
+            nu,
+            nv,
+            self.basis.as_ref(),
+            self.offset,
+            Some(&self.osc),
         )
+        .ok_or_else(|| "Geom_OffsetSurface::EvalDN: Geom_OffsetSurface.cxx:494".to_string())
     }
 
     /// `Geom_OffsetSurface::EvalD3` (`cxx:428-461`): `D3UUV` is `(2,1)`, `D3UVV` is `(1,2)`.
@@ -475,9 +537,7 @@ impl Surface for GeomOffsetSurface {
             (3, 0) => third.d3u,
             (0, 3) => third.d3v,
             _ => {
-                return Err(
-                    "Geom_OffsetSurface::EvalD3: Geom_OffsetSurface.cxx:459".into(),
-                );
+                return Err("Geom_OffsetSurface::EvalD3: Geom_OffsetSurface.cxx:459".into());
             }
         })
     }

@@ -6069,3 +6069,19 @@ Do not grow the dual-pipeline / planar / volume-gate scaffold. Do not invent Fil
 
 (2) `zz_pave_cc` 在本轮完整跑通；该探针耗时约 9 分钟且仍为未跟踪定位产物，不入库。
 
+## T-525 `Geom_OffsetSurface` 基础语义收口：D2 / 异常 / Transform / Continuity / Closed（2026-11-11）
+
+| 任务卡 | 内容 | 状态 |
+|---|---|---|
+| T-525 A | `offset_surface.rs::d0/d1` 删除 `Geom_OffsetSurfaceUtils` 失败后的自造兜底（基面点沿 `(0,0,1)` 或单位法向偏移、沿用基面一阶导数），按 `Geom_OffsetSurface.cxx:338-388` 分别抛 `Geom_UndefinedValue` / `Geom_UndefinedDerivative`。 | 已完成 |
+| T-525 B | 新增 `offset_surface_eval_dn.rs::evaluate_d2`，逐支移植 `Geom_OffsetSurfaceUtils.pxx:1138-1404`：basis D3、无穷导数闸门、`CSLib::Normal`、osculating surface、`ComputeDerivatives(MaxOrder,3,...,2,2)`、`DNNormal` 的 point/D1/D2 修正，以及奇点 `ShiftPoint` 重试；`GeomOffsetSurface::d2` 不再走 `Surface` trait 的有限差分默认体。 | 已完成 |
+| T-525 C | `Transform` 按 `Geom_OffsetSurface.cxx:838-844` 变换 basis、以 `ScaleFactor` 缩放 offset，并为变换后的 basis 重建 `OsculatingSurface`；`Continuity` 对齐 `cxx:320-334` 的 `C2->C1 / C3->C2 / CN->CN / default C0`；`U/VPeriod` 与 `IsU/VClosed` 对齐 `cxx:714-834` 的 basis、trimmed elementary、extrusion circle/ellipse、revolution 分支。 | 已完成 |
+| T-525 D | 审计订正：`Geom_BezierSurface::Resolution` 早已位于 `bezier_surface/degree.rs:13-51`，且 `surface_impl.rs::uv_resolution` 已接线；删除“Bezier Resolution 未移植”的过期结论。 | 已完成 |
+| T-525 E | 既有门禁：`cargo check -p occt-geom --lib`、`cargo check -p occt-topo --lib` 0 error / 0 warning；`occt-geom --lib` **143 passed**；`occt-topo --lib` **980 passed**；`step_obj_gates` **4 passed**；`export_data_obj` 15 个 STEP 全 ok（`Offset 712/892`、`OffsetPlaneHoleEdge 48/32` 不变）；`offset_surface_probe data/Offset.step 1.0` 26 面均 `status=0`；`hlr_poly_probe` 保持 `bi_pnt_vis=4 bi_pnt_hid=4`、V/H compound 各 4 边。 | 已通过 |
+
+**T-525 备注**
+
+(1) `Surface` trait 的 `d0/d1/d2` 返回值不是 `Result`，因此 OCCT 异常在该抽象层对应 Rust panic；这不是失败后继续返回伪几何。`try_eval_dn` / `try_eval_d3_uv` 仍按既有 `Result` 接口返回错误。
+
+(2) 本轮未新增测试或探针；只使用现有 `Offset.step` / `OffsetPlaneHoleEdge.step` 导出基线和既有 `offset_surface_probe`。
+
