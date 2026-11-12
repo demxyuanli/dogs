@@ -166,19 +166,14 @@ pub(super) fn discretise_corners(
     // approximates with `NumDec == 0`, so `mma2ce2_` takes its no-cut arm.
     let make_dec = if crit_absolute { 0 } else { num_dec };
     let step = super::make_approx::make_approx(
-        frame,
-        ctx,
-        u0,
-        u1,
-        v0,
-        v1,
-        make_dec,
-        &tables.0,
-        &tables.2,
-        &tables.1,
-        &tables.3,
+        frame, ctx, u0, u1, v0, v1, make_dec, &tables.0, &tables.2, &tables.1, &tables.3,
     )?;
-    Ok(CornerStep { step, u_dec, v_dec, num_dec })
+    Ok(CornerStep {
+        step,
+        u_dec,
+        v_dec,
+        num_dec,
+    })
 }
 
 /// `mma2cdi_` through `mma2cd1_` (`AdvApp2Var_ApproxF2var.cxx:3552-3686`).
@@ -326,7 +321,8 @@ fn mma2cd3(
     let soso_dim2 = nvroo + 1;
     let diso_dim1 = nuroo;
     let diso_dim2 = nvroo;
-    let border = |jj: i32, nd: i32, ii: i32| jj + (nd - 1) * border_dim + (ii - 1) * border_dim * ndimen;
+    let border =
+        |jj: i32, nd: i32, ii: i32| jj + (nd - 1) * border_dim + (ii - 1) * border_dim * ndimen;
     let soso = |kk: i32, jj: i32, nd: i32| kk + jj * soso_dim1 + (nd - 1) * soso_dim1 * soso_dim2;
     let diso = |kk: i32, jj: i32, nd: i32| {
         (kk - 1) + (jj - 1) * diso_dim1 + (nd - 1) * diso_dim1 * diso_dim2
@@ -348,22 +344,42 @@ fn mma2cd3(
                     let even_m = take(&fpntab, fp(kkm, ii << 1))?;
                     let soso_i = soso(kk, jj, nd);
                     let diso_i = diso(kk, jj, nd);
-                    store(sosotb, soso_i, take(sosotb, soso_i)? - bid1 * (odd_p + odd_m) - bid2 * (even_p + even_m))?;
-                    store(disotb, diso_i, take(disotb, diso_i)? - bid1 * (odd_p - odd_m) - bid2 * (even_p - even_m))?;
-                    store(soditb, diso_i, take(soditb, diso_i)? - bid3 * (odd_p + odd_m) - bid4 * (even_p + even_m))?;
-                    store(diditb, soso_i, take(diditb, soso_i)? - bid3 * (odd_p - odd_m) - bid4 * (even_p - even_m))?;
+                    store(
+                        sosotb,
+                        soso_i,
+                        take(sosotb, soso_i)? - bid1 * (odd_p + odd_m) - bid2 * (even_p + even_m),
+                    )?;
+                    store(
+                        disotb,
+                        diso_i,
+                        take(disotb, diso_i)? - bid1 * (odd_p - odd_m) - bid2 * (even_p - even_m),
+                    )?;
+                    store(
+                        soditb,
+                        diso_i,
+                        take(soditb, diso_i)? - bid3 * (odd_p + odd_m) - bid4 * (even_p + even_m),
+                    )?;
+                    store(
+                        diditb,
+                        soso_i,
+                        take(diditb, soso_i)? - bid3 * (odd_p - odd_m) - bid4 * (even_p - even_m),
+                    )?;
                 }
             }
         }
         if nbpnt_u % 2 == 1 {
             for ii in 1..=iordru + 1 {
                 for jj in 1..=nvroo {
-                    let bid1 = take(sotbu1, border(jj, nd, ii))? * take(&fpntab, fp(nuroo + 1, (ii << 1) - 1))?
-                        + take(sotbu2, border(jj, nd, ii))? * take(&fpntab, fp(nuroo + 1, ii << 1))?;
+                    let bid1 = take(sotbu1, border(jj, nd, ii))?
+                        * take(&fpntab, fp(nuroo + 1, (ii << 1) - 1))?
+                        + take(sotbu2, border(jj, nd, ii))?
+                            * take(&fpntab, fp(nuroo + 1, ii << 1))?;
                     let at = soso(0, jj, nd);
                     store(sosotb, at, take(sosotb, at)? - bid1)?;
-                    let bid2 = take(ditbu1, border(jj, nd, ii))? * take(&fpntab, fp(nuroo + 1, (ii << 1) - 1))?
-                        + take(ditbu2, border(jj, nd, ii))? * take(&fpntab, fp(nuroo + 1, ii << 1))?;
+                    let bid2 = take(ditbu1, border(jj, nd, ii))?
+                        * take(&fpntab, fp(nuroo + 1, (ii << 1) - 1))?
+                        + take(ditbu2, border(jj, nd, ii))?
+                            * take(&fpntab, fp(nuroo + 1, ii << 1))?;
                     store(diditb, at, take(diditb, at)? - bid2)?;
                 }
             }
@@ -390,7 +406,8 @@ fn mma2cd3(
         }
         if nbpnt_u % 2 == 1 && nbpnt_v % 2 == 1 {
             for ii in 1..=iordru + 1 {
-                let bid1 = take(sotbu1, border(0, nd, ii))? * take(&fpntab, fp(nuroo + 1, (ii << 1) - 1))?
+                let bid1 = take(sotbu1, border(0, nd, ii))?
+                    * take(&fpntab, fp(nuroo + 1, (ii << 1) - 1))?
                     + take(sotbu2, border(0, nd, ii))? * take(&fpntab, fp(nuroo + 1, ii << 1))?;
                 let at = soso(0, 0, nd);
                 store(sosotb, at, take(sosotb, at)? - bid1)?;
@@ -635,8 +652,10 @@ fn mma2cd1(
                         + take1(&fpntbv, fpv(kkm, (jj << 1) - 1))?;
                     let div1 = take1(&fpntbv, fpv(kkp, (jj << 1) - 1))?
                         - take1(&fpntbv, fpv(kkm, (jj << 1) - 1))?;
-                    let sov2 = take1(&fpntbv, fpv(kkp, jj << 1))? + take1(&fpntbv, fpv(kkm, jj << 1))?;
-                    let div2 = take1(&fpntbv, fpv(kkp, jj << 1))? - take1(&fpntbv, fpv(kkm, jj << 1))?;
+                    let sov2 =
+                        take1(&fpntbv, fpv(kkp, jj << 1))? + take1(&fpntbv, fpv(kkm, jj << 1))?;
+                    let div2 =
+                        take1(&fpntbv, fpv(kkp, jj << 1))? - take1(&fpntbv, fpv(kkm, jj << 1))?;
                     for ll in 1..=nuroo {
                         let llp = (nbpnt_u + 1) / 2 + ll;
                         let llm = nuroo - ll + 1;

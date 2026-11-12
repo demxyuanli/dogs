@@ -11,8 +11,8 @@ pub(crate) struct BorderCut {
     pub(crate) iercod: i32,
     pub(crate) contr1: Vec<f64>,
     pub(crate) contr2: Vec<f64>,
-    pub(crate) errmax: f64,
-    pub(crate) errmoy: f64,
+    pub(crate) errmax: Vec<f64>,
+    pub(crate) errmoy: Vec<f64>,
     pub(crate) somtab: Vec<f64>,
     pub(crate) diftab: Vec<f64>,
     pub(crate) courbe: Vec<f64>,
@@ -134,15 +134,20 @@ pub(crate) fn mma2fnc(
     let mut crvjac = mma1jak(ndimen, nbroot, iordre, ndgjac, &somtab, &diftab)?;
     if iordre >= 0 {
         let hermit = super::super::constraints::mma1her(iordre)?;
-        mma1cnt(ndimen, iordre, &contr1, &contr2, &hermit, ndgjac, &mut crvjac);
+        mma1cnt(
+            ndimen,
+            iordre,
+            &contr1,
+            &contr2,
+            &hermit,
+            ndgjac,
+            &mut crvjac,
+        );
     }
-    // `MakeApprox` passes one 3D subspace (`AdvApp2Var_Iso.cxx:121-122`).
-    if ctx.total_ssp() != 1 || ndimen != 3 {
-        return Err("UNPORTED AdvApp2Var_Iso::MakeApprox: AdvApp2Var_Iso.cxx:122".into());
-    }
+    let dimensions = ctx.subspace_dimensions();
     let (ier, ncoeff, errmax, errmoy) = super::super::border_error::mma1fer(
-        1,
-        &[ndimen],
+        ctx.total_ssp(),
+        &dimensions,
         iordre,
         ndgjac,
         &mut crvjac,
@@ -171,8 +176,24 @@ pub(crate) fn mma2fnc(
     if iordre >= 0 {
         for ii in 0..=iordre {
             let at = contr_at(ii, 1, ndimen);
-            super::super::param_normalize::mma1noc(uv11, ndimen, ii, uvpav, isofav, ideriv, &mut contr1[at..])?;
-            super::super::param_normalize::mma1noc(uv11, ndimen, ii, uvpav, isofav, ideriv, &mut contr2[at..])?;
+            super::super::param_normalize::mma1noc(
+                uv11,
+                ndimen,
+                ii,
+                uvpav,
+                isofav,
+                ideriv,
+                &mut contr1[at..],
+            )?;
+            super::super::param_normalize::mma1noc(
+                uv11,
+                ndimen,
+                ii,
+                uvpav,
+                isofav,
+                ideriv,
+                &mut contr2[at..],
+            )?;
         }
     }
     let span = (nbroot / 2 + 1) * ndimen;
@@ -180,7 +201,15 @@ pub(crate) fn mma2fnc(
     super::super::param_normalize::mma1noc(uv11, span, 0, uvpav, isofav, ideriv, &mut diftab)?;
     for nd in 1..=ndimen {
         let at = ((nd - 1) * ncflim) as usize;
-        super::super::param_normalize::mma1noc(uv11, ncoeff, 0, uvpav, isofav, ideriv, &mut courbe[at..])?;
+        super::super::param_normalize::mma1noc(
+            uv11,
+            ncoeff,
+            0,
+            uvpav,
+            isofav,
+            ideriv,
+            &mut courbe[at..],
+        )?;
     }
     let _ = (isz2, isz3, isz4, isz5, ier);
     Ok(BorderCut {

@@ -140,7 +140,9 @@ fn mmtrpj2(
     crvjac: &[f64],
     idim: i32,
 ) -> Result<(i32, f64), String> {
-    trunc_jacobi(2, ncofmx, ndimen, ncoeff, epsi3d, crvjac, idim, &XMAX2, 8544, 8548, 8578)
+    trunc_jacobi(
+        2, ncofmx, ndimen, ncoeff, epsi3d, crvjac, idim, &XMAX2, 8544, 8548, 8578,
+    )
 }
 
 /// `mmtrpj6_` (`AdvApp2Var_MathBase.cxx:8772-8939`).
@@ -152,7 +154,9 @@ fn mmtrpj6(
     crvjac: &[f64],
     idim: i32,
 ) -> Result<(i32, f64), String> {
-    trunc_jacobi(6, ncofmx, ndimen, ncoeff, epsi3d, crvjac, idim, &XMAX6, 8887, 8891, 8921)
+    trunc_jacobi(
+        6, ncofmx, ndimen, ncoeff, epsi3d, crvjac, idim, &XMAX6, 8887, 8891, 8921,
+    )
 }
 
 fn trunc_jacobi(
@@ -247,7 +251,9 @@ fn mmaper2(
     idim: i32,
     ncfnew: i32,
 ) -> Result<f64, String> {
-    max_error_jacobi(3, ncofmx, ndimen, ncoeff, crvjac, idim, ncfnew, &XMAX2, "mmaper2_", 711, 715)
+    max_error_jacobi(
+        3, ncofmx, ndimen, ncoeff, crvjac, idim, ncfnew, &XMAX2, "mmaper2_", 711, 715,
+    )
 }
 
 /// `mmaper6_` (`AdvApp2Var_MathBase.cxx:874-1005`).
@@ -259,7 +265,9 @@ fn mmaper6(
     idim: i32,
     ncfnew: i32,
 ) -> Result<f64, String> {
-    max_error_jacobi(7, ncofmx, ndimen, ncoeff, crvjac, idim, ncfnew, &XMAX6, "mmaper6_", 988, 992)
+    max_error_jacobi(
+        7, ncofmx, ndimen, ncoeff, crvjac, idim, ncfnew, &XMAX6, "mmaper6_", 988, 992,
+    )
 }
 
 fn max_error_jacobi(
@@ -359,14 +367,14 @@ pub(super) fn mma1fer(
     crvjac: &mut [f64],
     ncflim: i32,
     epsapr: &[f64],
-) -> Result<(i32, i32, f64, f64), String> {
+) -> Result<(i32, i32, Vec<f64>, Vec<f64>), String> {
     let ia = (iordre + 1) << 1;
     let ncfja = ndgjac + 1;
     let mut iercod = 0;
     let mut idim = 1;
     let mut ncoeff = 0;
-    let mut errmax = 0.0;
-    let mut errmoy = 0.0;
+    let mut errmax = vec![0.0; nbsesp.max(0) as usize];
+    let mut errmoy = vec![0.0; nbsesp.max(0) as usize];
     for ii in 1..=nbsesp {
         let ndses = *ndimse.get((ii - 1) as usize).ok_or_else(|| {
             "AdvApp2Var_ApproxF2var::mma1fer_: AdvApp2Var_ApproxF2var.cxx:1097".to_string()
@@ -385,9 +393,10 @@ pub(super) fn mma1fer(
             // `mmtrpjj_` else (`AdvApp2Var_MathBase.cxx:9018`).
             mmtrpj6(ncfja, ndses, ncfja, eps, crvjac, idim)?
         };
-        errmax = emax;
+        let error_slot = (ii - 1) as usize;
+        errmax[error_slot] = emax;
         if ncfnw <= ncflim {
-            errmoy = mmaperm(ncfja, ndses, ncfja, iordre, crvjac, idim, ncfnw);
+            errmoy[error_slot] = mmaperm(ncfja, ndses, ncfja, iordre, crvjac, idim, ncfnw);
             if ncfnw > ncoeff {
                 ncoeff = ncfnw;
             }
@@ -409,7 +418,7 @@ pub(super) fn mma1fer(
             }
         } else {
             iercod = -1;
-            errmax = if ia == 0 {
+            errmax[error_slot] = if ia == 0 {
                 // `mmaperx_` (`AdvApp2Var_MathBase.cxx:1074-1076`).
                 mmaper0(ncfja, ndses, ncfja, crvjac, idim, ncflim)?
             } else if ia == 2 {
@@ -422,7 +431,7 @@ pub(super) fn mma1fer(
                 return Err("AdvApp2Var_MathBase::mmaperx_: AdvApp2Var_MathBase.cxx:1092".into());
             };
             ncoeff = ncflim;
-            errmoy = mmaperm(ncfja, ndses, ncfja, iordre, crvjac, idim, ncflim);
+            errmoy[error_slot] = mmaperm(ncfja, ndses, ncfja, iordre, crvjac, idim, ncflim);
         }
         idim += ndses;
     }

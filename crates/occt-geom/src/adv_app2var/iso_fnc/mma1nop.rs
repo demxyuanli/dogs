@@ -1,6 +1,5 @@
 //! `mma1nop_` (`cxx:1627-1734`) and its index helpers.
 
-
 use super::*;
 
 /// `mma1nop_` (`AdvApp2Var_ApproxF2var.cxx:1627-1734`).

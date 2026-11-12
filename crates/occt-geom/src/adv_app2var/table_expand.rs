@@ -42,7 +42,9 @@ pub(super) fn mmfmca8(
                 let src = idx(i, j, k, ndimen, ncoefu);
                 let dst = idx(i, j, k, ndimax, ncfumx);
                 if src >= tabini.len() || dst >= tabres.len() {
-                    return Err("AdvApp2Var_MathBase::mmfmca8_: AdvApp2Var_MathBase.cxx:3830".into());
+                    return Err(
+                        "AdvApp2Var_MathBase::mmfmca8_: AdvApp2Var_MathBase.cxx:3830".into(),
+                    );
                 }
                 tabres[dst] = tabini[src];
             }

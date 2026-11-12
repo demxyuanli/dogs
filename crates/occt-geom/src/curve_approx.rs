@@ -1,19 +1,12 @@
 //! Curve approximation to polylines.
 //!
-//! **Provenance**: the previous header cited `GCPnts_UniformDeflection.hxx` and
-//! `GeomConvert_CurveToPolyline.hxx`; the latter class **does not exist** in
-//! OCCT 8.0.0 (no `*CurveToPolyline*` file in the source tree) and
-//! `GCPnts_UniformDeflection` is **UNPORTED** (`occt-core/src/gcpnts.rs` module
-//! docs). The polyline is therefore produced by the faithful
-//! `GCPnts_TangentialDeflection` engine with its angular term disabled
-//! (`angular_deflection = PI`, the same convention as
-//! `meshing::edge_discret::CurveTessellator::from_range`), which is what OCCT's
-//! mesh pipeline uses to tessellate curves.
+//! The adaptive polyline path is `GCPnts_UniformDeflection` with control
+//! enabled. `GeomConvert_CurveToPolyline` does not exist in OCCT 8.0.0.
 
 use crate::curve::Curve;
-use occt_core::gcpnts::{perform_tangential_curve, polyline_arc_length, CurveSample, CurveSecondDeriv, UniformPoints};
-use occt_core::gp::{GpPnt, GpVec};
-use occt_core::precision::{CONFUSION, PCONFUSION};
+use crate::gcpnts::UniformDeflection;
+use occt_core::gcpnts::{polyline_arc_length, CurveSample, UniformPoints};
+use occt_core::gp::GpPnt;
 
 /// Adapts `&dyn Curve` to the object-safe `CurveSample` sampler trait.
 struct CurveAdapter<'a>(&'a dyn Curve);
@@ -24,49 +17,26 @@ impl CurveSample for CurveAdapter<'_> {
     }
 }
 
-/// Adapts `&dyn Curve` to the `GCPnts_TangentialDeflection` engine.
-struct TdCurve<'a>(&'a dyn Curve);
-
-impl CurveSecondDeriv for TdCurve<'_> {
-    fn point(&self, u: f64) -> GpPnt {
-        self.0.value(u)
-    }
-    fn d2(&self, u: f64) -> (GpPnt, GpVec, GpVec) {
-        self.0.d2(u)
-    }
-}
-
 /// Adaptive polyline approximation of `c` over its parameter range so that
-/// every chord deviates from the curve by at most `tol`. Curves with a
-/// non-finite parameter range (e.g. lines) fall back to uniform sampling of
-/// `[0, 1]` of the natural parameter.
+/// every chord deviates from the curve by at most `tol`.
 pub fn curve_to_polyline(c: &dyn Curve, tol: f64) -> Vec<GpPnt> {
     let (a, b) = (c.first_parameter(), c.last_parameter());
     if !a.is_finite() || !b.is_finite() {
-        return curve_to_polyline_uniform(c, 64);
+        return Vec::new();
     }
-    let mut intervals = c.parameter_intervals(6);
-    if intervals.len() < 2 {
-        intervals = vec![a, b];
+    let mut sampler = UniformDeflection::new();
+    sampler.initialize(c, tol, a, b, true);
+    let Some(count) = sampler.nb_points() else {
+        return Vec::new();
+    };
+    let mut points = Vec::with_capacity(count as usize);
+    for index in 1..=count {
+        let Some(point) = sampler.value(index) else {
+            return Vec::new();
+        };
+        points.push(point);
     }
-    let degree_min_nb = c.nurbs_degree().map(|d| (d + 1).max(2)).unwrap_or(2);
-    let (_, points) = perform_tangential_curve(
-        &TdCurve(c),
-        a,
-        b,
-        std::f64::consts::PI,
-        tol,
-        2,
-        PCONFUSION,
-        CONFUSION,
-        &intervals,
-        degree_min_nb,
-    );
-    if points.len() >= 2 {
-        points
-    } else {
-        vec![c.value(a), c.value(b)]
-    }
+    points
 }
 
 /// `n` points sampled uniformly across the curve's parameter range
@@ -116,8 +86,8 @@ fn point_segment_dist(p: &GpPnt, a: &GpPnt, b: &GpPnt) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{GeomCircle, GeomLine};
     use crate::trimmed::GeomTrimmedCurve;
+    use crate::{GeomCircle, GeomLine};
     use occt_core::gp::{GpAx2, GpCirc, GpDir, GpPnt};
     use std::sync::Arc;
 
@@ -142,7 +112,8 @@ mod tests {
         let first = pl.first().unwrap();
         let last = pl.last().unwrap();
         let on_p = |p: &GpPnt| {
-            p.distance(&GpPnt::new(2., 0., 0.)) < 1e-6 || p.distance(&GpPnt::new(-2., 0., 0.)) < 1e-6
+            p.distance(&GpPnt::new(2., 0., 0.)) < 1e-6
+                || p.distance(&GpPnt::new(-2., 0., 0.)) < 1e-6
         };
         assert!(on_p(first), "first endpoint {first:?}");
         assert!(on_p(last), "last endpoint {last:?}");

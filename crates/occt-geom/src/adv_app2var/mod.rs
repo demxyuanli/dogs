@@ -9,25 +9,26 @@ use crate::bspline_surface::GeomBSplineSurface;
 mod border_error;
 mod compute_patches;
 mod constraints;
-mod convert_bs;
 mod context;
+mod convert_bs;
 mod criterion;
 mod degree_error;
 mod degree_reduce;
 mod discretise;
 mod eval_surface;
 mod framework;
-mod grid_polynomial;
 mod gauss;
+mod grid_polynomial;
 mod iso_fnc;
 mod jacobi_canon;
 mod jacobi_max;
+mod legendre_roots;
 mod make_approx;
 mod network;
-mod legendre_roots;
 mod node;
 mod param_normalize;
 mod square_disc;
+mod subspace_error;
 mod table_expand;
 mod xmaxj4;
 
@@ -48,6 +49,8 @@ pub use iso_fnc::{approximate_until_cdi, approximate_until_cdi_with_criterion};
 pub struct ApproxAFunc2VarResult {
     /// `Surface(1)` (`cxx:991-996`).
     pub surface: GeomBSplineSurface,
+    /// All `Surface(Index)` results in 3D subspace order.
+    pub surfaces: Vec<GeomBSplineSurface>,
     /// `IsDone()` (`cxx:998-1001`): `true` when every square met its
     /// tolerance and `Convert_GridPolynomialToPoles` succeeded.
     pub is_done: bool,

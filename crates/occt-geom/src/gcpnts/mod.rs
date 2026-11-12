@@ -58,14 +58,15 @@
 //! `GCPnts_QuasiUniformDeflection` is ported
 //! (`gcpnts/quasi_uniform_deflection.rs`, both the `Adaptor3d_Curve` and the
 //! `Adaptor2d_Curve2d` arms);
-//! `GCPnts_UniformDeflection` remains **UNPORTED** (see
-//! `occt-core/src/gcpnts.rs` module docs) — this module no longer exposes a
-//! fake "uniform deflection" accessor.
+//! `GCPnts_UniformDeflection` is ported in
+//! `gcpnts/uniform_deflection.rs`, including the 3D/2D adaptor arms and the
+//! `CPnts_UniformDeflection` derivative-driven iterator.
 
 mod abscissa;
 mod length;
 mod quasi_uniform_deflection;
 mod sampling;
+mod uniform_deflection;
 
 #[allow(unused_imports)]
 use self::length::{compute_abs_composite, compute_abs_composite_adv, compute_type};
@@ -77,6 +78,7 @@ pub use self::abscissa::{
 pub use self::length::{curve_length, curve_length_between, curve_length_range};
 pub use self::quasi_uniform_deflection::QuasiUniformDeflection;
 pub use self::sampling::{quasi_uniform_abscissa, tangential_deflection, uniform_abscissa};
+pub use self::uniform_deflection::UniformDeflection;
 
 #[cfg(test)]
 mod tests;

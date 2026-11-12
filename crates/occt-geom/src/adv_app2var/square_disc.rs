@@ -96,9 +96,9 @@ fn mmfmtb1(
             *slot = value;
         }
     }
-    let dest = table.get_mut(base..base + work_len).ok_or_else(|| {
-        "AdvApp2Var_MathBase::mmfmtb1_: AdvApp2Var_MathBase.cxx:4519".to_string()
-    })?;
+    let dest = table
+        .get_mut(base..base + work_len)
+        .ok_or_else(|| "AdvApp2Var_MathBase::mmfmtb1_: AdvApp2Var_MathBase.cxx:4519".to_string())?;
     dest.copy_from_slice(&work);
     Ok(())
 }
@@ -149,8 +149,7 @@ fn mma2ds2(
     let soso_dim2 = nvroo + 1;
     let diso_dim1 = nuroo;
     let diso_dim2 = nvroo;
-    let soso =
-        |iu: i32, iv: i32, id: i32| iu + iv * soso_dim1 + (id - 1) * soso_dim1 * soso_dim2;
+    let soso = |iu: i32, iv: i32, id: i32| iu + iv * soso_dim1 + (id - 1) * soso_dim1 * soso_dim2;
     let diso = |iu: i32, iv: i32, id: i32| {
         (iu - 1) + (iv - 1) * diso_dim1 + (id - 1) * diso_dim1 * diso_dim2
     };
@@ -161,10 +160,7 @@ fn mma2ds2(
         ttable[(iu - 1) as usize] = blinu + alinu * root;
     }
     let mut fpntab = vec![0.0; (ndimen * nbpnt_u.max(0)) as usize];
-    let eval = |surf: &dyn Surface,
-                tcons: f64,
-                fpntab: &mut [f64]|
-     -> Result<(), String> {
+    let eval = |surf: &dyn Surface, tcons: f64, fpntab: &mut [f64]| -> Result<(), String> {
         let code = evaluate(
             surf, ndimen, dbfn1, dbfn2, iiuouv, tcons, &ttable, 0, 0, fpntab,
         )?;

@@ -116,7 +116,11 @@ impl Framework {
     }
 
     fn iso(&self, u_side: bool, index_iso: i32, index_strip: i32) -> &GridIso {
-        let strips = if u_side { &self.u_strips } else { &self.v_strips };
+        let strips = if u_side {
+            &self.u_strips
+        } else {
+            &self.v_strips
+        };
         &strips[(index_strip - 1) as usize][(index_iso - 1) as usize]
     }
 
@@ -154,9 +158,7 @@ impl Framework {
             let n2 = self.last_node(iso.isofav, index_iso, index_strip);
             if n1 < 1 || n2 < 1 || n1 as usize > self.nodes.len() || n2 as usize > self.nodes.len()
             {
-                return Err(
-                    "AdvApp2Var_Framework::FirstNode: AdvApp2Var_Framework.cxx:111".into(),
-                );
+                return Err("AdvApp2Var_Framework::FirstNode: AdvApp2Var_Framework.cxx:111".into());
             }
             let mut begin = self.nodes[(n1 - 1) as usize].clone();
             let mut end = self.nodes[(n2 - 1) as usize].clone();
@@ -195,9 +197,7 @@ impl Framework {
                     // `OverwriteApprox` (`AdvApp2Var_Iso.cxx:428-433`).
                     self.store_iso(u_side, index_iso, index_strip, iso, status, begin, end);
                 } else {
-                    return Err(
-                        "AdvApp2Var_ApproxAFunc2Var : Curve Approximation Error".into(),
-                    );
+                    return Err("AdvApp2Var_ApproxAFunc2Var : Curve Approximation Error".into());
                 }
             }
         }
@@ -240,11 +240,19 @@ impl Framework {
     }
 
     fn t0(iso: &GridIso) -> f64 {
-        if iso.isofav == 1 { iso.v0 } else { iso.u0 }
+        if iso.isofav == 1 {
+            iso.v0
+        } else {
+            iso.u0
+        }
     }
 
     fn t1(iso: &GridIso) -> f64 {
-        if iso.isofav == 1 { iso.v1 } else { iso.u1 }
+        if iso.isofav == 1 {
+            iso.v1
+        } else {
+            iso.u1
+        }
     }
 
     /// `findStripByBounds` (`AdvApp2Var_Framework.cxx:31-44`).
@@ -270,27 +278,25 @@ impl Framework {
     /// `IsoU` (`AdvApp2Var_Framework.cxx:168-177`).
     pub(super) fn iso_u(&self, u: f64, v0: f64, v1: f64) -> Result<&GridIso, String> {
         let strip_index = Self::find_strip(&self.v_strips, v0, v1);
-        let strip = self
-            .v_strips
-            .get(strip_index)
-            .ok_or_else(|| "AdvApp2Var_Framework::IsoU: AdvApp2Var_Framework.cxx:172".to_string())?;
+        let strip = self.v_strips.get(strip_index).ok_or_else(|| {
+            "AdvApp2Var_Framework::IsoU: AdvApp2Var_Framework.cxx:172".to_string()
+        })?;
         let iso_index = Self::find_iso(strip, self.u_strips.len(), u);
-        strip.get(iso_index).ok_or_else(|| {
-            "AdvApp2Var_Framework::IsoU: AdvApp2Var_Framework.cxx:176".to_string()
-        })
+        strip
+            .get(iso_index)
+            .ok_or_else(|| "AdvApp2Var_Framework::IsoU: AdvApp2Var_Framework.cxx:176".to_string())
     }
 
     /// `IsoV` (`AdvApp2Var_Framework.cxx:181-189`).
     pub(super) fn iso_v(&self, u0: f64, u1: f64, v: f64) -> Result<&GridIso, String> {
         let strip_index = Self::find_strip(&self.u_strips, u0, u1);
-        let strip = self
-            .u_strips
-            .get(strip_index)
-            .ok_or_else(|| "AdvApp2Var_Framework::IsoV: AdvApp2Var_Framework.cxx:185".to_string())?;
+        let strip = self.u_strips.get(strip_index).ok_or_else(|| {
+            "AdvApp2Var_Framework::IsoV: AdvApp2Var_Framework.cxx:185".to_string()
+        })?;
         let iso_index = Self::find_iso(strip, self.v_strips.len(), v);
-        strip.get(iso_index).ok_or_else(|| {
-            "AdvApp2Var_Framework::IsoV: AdvApp2Var_Framework.cxx:188".to_string()
-        })
+        strip
+            .get(iso_index)
+            .ok_or_else(|| "AdvApp2Var_Framework::IsoV: AdvApp2Var_Framework.cxx:188".to_string())
     }
 
     /// `UpdateInU` (`AdvApp2Var_Framework.cxx:194-288`).
@@ -434,7 +440,12 @@ impl Framework {
             }
             self.nodes.insert(
                 insert_at,
-                App2VarNode::at(source.order_u(), source.order_v(), source.coord()[0], cutting),
+                App2VarNode::at(
+                    source.order_u(),
+                    source.order_v(),
+                    source.coord()[0],
+                    cutting,
+                ),
             );
         }
         Ok(())

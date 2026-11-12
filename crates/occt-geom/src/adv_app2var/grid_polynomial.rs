@@ -136,7 +136,8 @@ fn perform(
     }
     for ii in 1..=u_params.len() as i32 {
         let mut u_span = 1i32;
-        while u_params[(ii - 1) as usize] > true_u[u_span as usize] && u_span < true_u.len() as i32 - 1
+        while u_params[(ii - 1) as usize] > true_u[u_span as usize]
+            && u_span < true_u.len() as i32 - 1
         {
             u_span += 1;
         }
@@ -151,32 +152,31 @@ fn perform(
             let v_value = span_to_poly(v_params[(jj - 1) as usize], true_v, v_span, polynomial_v)?;
             let index = u_span + (true_u.len() as i32 - 1) * (v_span - 1);
             if patch_index != index {
-                patch_coeffs = extract_patch(
-                    index,
-                    num_coeff,
-                    coefficients,
-                    max_u_degree,
-                    max_v_degree,
-                )?;
+                patch_coeffs =
+                    extract_patch(index, num_coeff, coefficients, max_u_degree, max_v_degree)?;
                 patch_index = index;
             }
-            let (nu, nv) = *num_coeff.get((index - 1) as usize).ok_or_else(|| convert_line(217))?;
+            let (nu, nv) = *num_coeff
+                .get((index - 1) as usize)
+                .ok_or_else(|| convert_line(217))?;
             if nu < 1 || nv < 1 {
                 return Err(convert_line(235));
             }
             let mut digit = [0.0; 3];
-            eval_poly2var(u_value, v_value, nu - 1, nv - 1, 3, &patch_coeffs, &mut digit);
+            eval_poly2var(
+                u_value,
+                v_value,
+                nu - 1,
+                nv - 1,
+                3,
+                &patch_coeffs,
+                &mut digit,
+            );
             poles[(ii - 1) as usize][(jj - 1) as usize] = GpPnt::new(digit[0], digit[1], digit[2]);
         }
     }
     if !interpolate_surface(
-        u_degree,
-        v_degree,
-        &u_flat,
-        &v_flat,
-        &u_params,
-        &v_params,
-        &mut poles,
+        u_degree, v_degree, &u_flat, &v_flat, &u_params, &v_params, &mut poles,
     ) {
         return Err("GridPolynomialToPoles".into());
     }
@@ -198,7 +198,9 @@ fn extract_patch(
     max_u_degree: i32,
     max_v_degree: i32,
 ) -> Result<Vec<f64>, String> {
-    let (nu, nv) = *num_coeff.get((index - 1) as usize).ok_or_else(|| convert_line(217))?;
+    let (nu, nv) = *num_coeff
+        .get((index - 1) as usize)
+        .ok_or_else(|| convert_line(217))?;
     let siz = checked_len(&[3, max_u_degree + 1, max_v_degree + 1], 176)?;
     let v_stride = checked_len(&[3, max_v_degree + 1], 219)?;
     let mut packed = Vec::new();
@@ -222,7 +224,9 @@ fn extract_patch(
 }
 
 fn span_to_poly(parameter: f64, knots: &[f64], span: i32, poly: &[f64]) -> Result<f64, String> {
-    let left = *knots.get((span - 1) as usize).ok_or_else(|| convert_line(193))?;
+    let left = *knots
+        .get((span - 1) as usize)
+        .ok_or_else(|| convert_line(193))?;
     let right = *knots.get(span as usize).ok_or_else(|| convert_line(194))?;
     let width = right - left;
     if width == 0.0 {

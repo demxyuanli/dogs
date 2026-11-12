@@ -20,17 +20,13 @@ pub(super) fn mmjacan(
             let idx = iptt + j + ideriv * 992 + 991;
             let src = j as usize;
             if idx < 0 || idx as usize >= PLGCAN.len() || src >= poljac.len() {
-                return Err(
-                    "AdvApp2Var_MathBase::mmjacan_: AdvApp2Var_MathBase.cxx:5750".into(),
-                );
+                return Err("AdvApp2Var_MathBase::mmjacan_: AdvApp2Var_MathBase.cxx:5750".into());
             }
             bid += PLGCAN[idx as usize] * poljac[src];
         }
         let dst = (i * 2) as usize;
         if dst >= polcan.len() {
-            return Err(
-                "AdvApp2Var_MathBase::mmjacan_: AdvApp2Var_MathBase.cxx:5753".into(),
-            );
+            return Err("AdvApp2Var_MathBase::mmjacan_: AdvApp2Var_MathBase.cxx:5753".into());
         }
         polcan[dst] = bid;
     }
@@ -46,17 +42,13 @@ pub(super) fn mmjacan(
             let idx = iptt + j + ((ideriv << 1) + 1) * 496 + 991;
             let src = (j + dim1) as usize;
             if idx < 0 || idx as usize >= PLGCAN.len() || src >= poljac.len() {
-                return Err(
-                    "AdvApp2Var_MathBase::mmjacan_: AdvApp2Var_MathBase.cxx:5772".into(),
-                );
+                return Err("AdvApp2Var_MathBase::mmjacan_: AdvApp2Var_MathBase.cxx:5772".into());
             }
             bid += PLGCAN[idx as usize] * poljac[src];
         }
         let dst = ((i << 1) + 1) as usize;
         if dst >= polcan.len() {
-            return Err(
-                "AdvApp2Var_MathBase::mmjacan_: AdvApp2Var_MathBase.cxx:5776".into(),
-            );
+            return Err("AdvApp2Var_MathBase::mmjacan_: AdvApp2Var_MathBase.cxx:5776".into());
         }
         polcan[dst] = bid;
     }

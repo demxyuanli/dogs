@@ -162,7 +162,10 @@ pub(super) fn evaluate(
     Ok(error)
 }
 
-fn map_missing(r: Result<occt_core::gp::GpVec, String>, cite: &str) -> Result<occt_core::gp::GpVec, String> {
+fn map_missing(
+    r: Result<occt_core::gp::GpVec, String>,
+    cite: &str,
+) -> Result<occt_core::gp::GpVec, String> {
     match r {
         Ok(v) => Ok(v),
         Err(e) if e == "UNPORTED Geom_Surface::EvalDN" => Err(cite.to_string()),

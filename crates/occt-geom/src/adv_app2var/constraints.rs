@@ -77,7 +77,13 @@ pub(super) fn mma1her(iordre: i32) -> Result<Vec<f64>, String> {
     Ok(hermit)
 }
 
-fn herm(table: &[f64], dim1: i32, coeff: i32, poly: i32, oob: fn() -> String) -> Result<f64, String> {
+fn herm(
+    table: &[f64],
+    dim1: i32,
+    coeff: i32,
+    poly: i32,
+    oob: fn() -> String,
+) -> Result<f64, String> {
     let at = ((poly - 1) * dim1 + coeff) as usize;
     table.get(at).copied().ok_or_else(oob)
 }
@@ -204,7 +210,16 @@ fn mma2ac3(
     Ok(())
 }
 
-fn contr(coins: &[f64], corner: i32, nd: i32, ii: i32, jj: i32, ndimen: i32, dim2: i32, size: i32) -> Result<f64, String> {
+fn contr(
+    coins: &[f64],
+    corner: i32,
+    nd: i32,
+    ii: i32,
+    jj: i32,
+    ndimen: i32,
+    dim2: i32,
+    size: i32,
+) -> Result<f64, String> {
     let at = ((corner * size) + (nd - 1) + (ii - 1) * ndimen + (jj - 1) * ndimen * dim2) as usize;
     coins.get(at).copied().ok_or_else(ac1_oob)
 }
@@ -308,7 +323,9 @@ fn mmdrc11(
         let base = ((nd - 1) * span) as usize;
         let row0 = ((nd - 1) * ncoeff) as usize;
         for ndeg in 1..ncoeff {
-            let coeff = *courbe.get(row0 + (ncoeff - 1 - ndeg) as usize).ok_or_else(drc_oob)?;
+            let coeff = *courbe
+                .get(row0 + (ncoeff - 1 - ndeg) as usize)
+                .ok_or_else(drc_oob)?;
             if iordre >= 1 {
                 for i in (1..=iordre).rev() {
                     let hi = base + (2 * i) as usize;
@@ -368,7 +385,15 @@ fn scale_block(iso: &mut [f64], order: i32, size: i32, half: f64) -> Result<(), 
     Ok(())
 }
 
-fn coin_at(corner: i32, idim: i32, iu: i32, iv: i32, ndimen: i32, span_u: i32, size: i32) -> Result<usize, String> {
+fn coin_at(
+    corner: i32,
+    idim: i32,
+    iu: i32,
+    iv: i32,
+    ndimen: i32,
+    span_u: i32,
+    size: i32,
+) -> Result<usize, String> {
     let at = (corner * size) + (idim - 1) + ndimen * iu + ndimen * span_u * iv;
     usize::try_from(at).map_err(|_| coin_oob())
 }
@@ -553,11 +578,24 @@ fn hmax(order: i32) -> Result<f64, String> {
         .ok_or_else(err_oob)
 }
 
-fn peak(iso: &super::framework::GridIso, order: i32, moy: bool) -> Result<f64, String> {
+fn peak(
+    iso: &super::framework::GridIso,
+    subspace: i32,
+    nbsesp: i32,
+    order: i32,
+    moy: bool,
+) -> Result<f64, String> {
     let mut err: f64 = 0.0;
     if order >= 0 {
-        for iv in 1..=(order + 1) {
-            let pair = iso.errors.get((iv - 1) as usize).ok_or_else(err_oob)?;
+        for derivative in 0..=order {
+            let at = derivative
+                .checked_mul(nbsesp)
+                .and_then(|base| base.checked_add(subspace))
+                .ok_or_else(err_oob)?;
+            let pair = iso
+                .errors
+                .get(usize::try_from(at).map_err(|_| err_oob())?)
+                .ok_or_else(err_oob)?;
             let error = if moy { pair.1 } else { pair.0 };
             err = err.max(error);
         }
@@ -565,11 +603,14 @@ fn peak(iso: &super::framework::GridIso, order: i32, moy: bool) -> Result<f64, S
     Ok(err)
 }
 
-fn column1(iso: &super::framework::GridIso) -> Result<f64, String> {
-    iso.errors.first().map(|pair| pair.0).ok_or_else(err_oob)
+fn column1(iso: &super::framework::GridIso, subspace: i32) -> Result<f64, String> {
+    iso.errors
+        .get(usize::try_from(subspace).map_err(|_| err_oob())?)
+        .map(|pair| pair.0)
+        .ok_or_else(err_oob)
 }
 
-/// `AddErrors` (`AdvApp2Var_Patch.cxx:655-760`). `NBSESP` is 1.
+/// `AddErrors` (`AdvApp2Var_Patch.cxx:655-760`).
 pub(super) fn add_errors(
     frame: &Framework,
     u0: f64,
@@ -578,27 +619,19 @@ pub(super) fn add_errors(
     v1: f64,
     iordru: i32,
     iordrv: i32,
-    errmax: f64,
-    errmoy: f64,
-) -> Result<(f64, f64, [f64; 4]), String> {
+    errmax: &[f64],
+    errmoy: &[f64],
+) -> Result<(Vec<f64>, Vec<f64>, Vec<[f64; 4]>), String> {
+    if errmax.len() != errmoy.len() {
+        return Err(err_oob());
+    }
+    let nbsesp = errmax.len() as i32;
     let iso_v0 = frame.iso_v(u0, u1, v0)?;
     let iso_v1 = frame.iso_v(u0, u1, v1)?;
     let iso_u0 = frame.iso_u(u0, v0, v1)?;
     let iso_u1 = frame.iso_u(u1, v0, v1)?;
     let hu = hmax(iordru)?;
     let hv = hmax(iordrv)?;
-    let err_u = peak(iso_v0, iordrv, false)?.max(peak(iso_v1, iordrv, false)?);
-    let err_v = peak(iso_u0, iordru, false)?.max(peak(iso_u1, iordru, false)?);
-    let max_out = errmax + err_u * hv + err_v * hu;
-    let moy_u = peak(iso_v0, iordrv, true)?.max(peak(iso_v1, iordrv, true)?);
-    let moy_v = peak(iso_u0, iordru, true)?.max(peak(iso_u1, iordru, true)?);
-    let moy_out = (errmoy * errmoy + moy_u * hv * moy_u * hv + moy_v * hu * moy_v * hu).sqrt();
-    let mut heriso = [
-        column1(iso_v0)?,
-        column1(iso_v1)?,
-        column1(iso_u0)?,
-        column1(iso_u1)?,
-    ];
     let mut emax: [f64; 4] = [0.0; 4];
     if iordru >= 0 && iordrv >= 0 {
         for iu in 0..=iordru {
@@ -619,17 +652,41 @@ pub(super) fn add_errors(
     let err2 = emax[2].max(emax[3]);
     let err3 = emax[0].max(emax[2]);
     let err4 = emax[1].max(emax[3]);
-    if iso_v0.position == 0 {
-        heriso[0] += err1 * hu;
+    let mut max_out = Vec::with_capacity(errmax.len());
+    let mut moy_out = Vec::with_capacity(errmax.len());
+    let mut iso_out = Vec::with_capacity(errmax.len());
+    for subspace in 0..nbsesp {
+        let err_u = peak(iso_v0, subspace, nbsesp, iordrv, false)?
+            .max(peak(iso_v1, subspace, nbsesp, iordrv, false)?);
+        let err_v = peak(iso_u0, subspace, nbsesp, iordru, false)?
+            .max(peak(iso_u1, subspace, nbsesp, iordru, false)?);
+        max_out.push(errmax[subspace as usize] + err_u * hv + err_v * hu);
+        let moy_u = peak(iso_v0, subspace, nbsesp, iordrv, true)?
+            .max(peak(iso_v1, subspace, nbsesp, iordrv, true)?);
+        let moy_v = peak(iso_u0, subspace, nbsesp, iordru, true)?
+            .max(peak(iso_u1, subspace, nbsesp, iordru, true)?);
+        let base_moy = errmoy[subspace as usize];
+        moy_out
+            .push((base_moy * base_moy + moy_u * hv * moy_u * hv + moy_v * hu * moy_v * hu).sqrt());
+        let mut borders = [
+            column1(iso_v0, subspace)?,
+            column1(iso_v1, subspace)?,
+            column1(iso_u0, subspace)?,
+            column1(iso_u1, subspace)?,
+        ];
+        if iso_v0.position == 0 {
+            borders[0] += err1 * hu;
+        }
+        if iso_v1.position == 0 {
+            borders[1] += err2 * hu;
+        }
+        if iso_u0.position == 0 {
+            borders[2] += err3 * hv;
+        }
+        if iso_u1.position == 0 {
+            borders[3] += err4 * hv;
+        }
+        iso_out.push(borders);
     }
-    if iso_v1.position == 0 {
-        heriso[1] += err2 * hu;
-    }
-    if iso_u0.position == 0 {
-        heriso[2] += err3 * hv;
-    }
-    if iso_u1.position == 0 {
-        heriso[3] += err4 * hv;
-    }
-    Ok((max_out, moy_out, heriso))
+    Ok((max_out, moy_out, iso_out))
 }

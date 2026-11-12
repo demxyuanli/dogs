@@ -52,8 +52,15 @@ fn init_grid(
     v1: f64,
     ctx: &App2VarContext,
     nb_int: i32,
-) -> Result<(super::super::framework::Framework, super::super::network::Network), String> {
-    let mut frame = super::super::framework::Framework::init_grid(u0, u1, v0, v1, ctx.ord_u, ctx.ord_v);
+) -> Result<
+    (
+        super::super::framework::Framework,
+        super::super::network::Network,
+    ),
+    String,
+> {
+    let mut frame =
+        super::super::framework::Framework::init_grid(u0, u1, v0, v1, ctx.ord_u, ctx.ord_v);
     let mut net = super::super::network::Network::init(u0, u1, v0, v1, ctx.ord_u, ctx.ord_v);
     let deltu = (u1 - u0) / f64::from(nb_int);
     let deltv = (v1 - v0) / f64::from(nb_int);
@@ -101,10 +108,12 @@ fn compute_patches(
 ) -> Result<super::super::ApproxAFunc2VarResult, String> {
     // `GeomConvert_ApproxSurface.cxx:381-398`: C2 breaks are recommended,
     // C3 breaks are preferred, and `Weight` stays 5.
-    let u_choice = crate::adv_approx::PrefAndRec::new(surf.u_intervals(4), surf.u_intervals(5), 5.0)
-        .map_err(|_| "PrefAndRec : Weight is too small".to_string())?;
-    let v_choice = crate::adv_approx::PrefAndRec::new(surf.v_intervals(4), surf.v_intervals(5), 5.0)
-        .map_err(|_| "PrefAndRec : Weight is too small".to_string())?;
+    let u_choice =
+        crate::adv_approx::PrefAndRec::new(surf.u_intervals(4), surf.u_intervals(5), 5.0)
+            .map_err(|_| "PrefAndRec : Weight is too small".to_string())?;
+    let v_choice =
+        crate::adv_approx::PrefAndRec::new(surf.v_intervals(4), surf.v_intervals(5), 5.0)
+            .map_err(|_| "PrefAndRec : Weight is too small".to_string())?;
     // `AdvApp2Var_ApproxAFunc2Var.cxx:589-594` restarts the grid with
     // `InitGrid(++NbInt)`; `NbInt` starts at 1 (`:234`).
     let mut nb_int = 1;
@@ -123,15 +132,25 @@ fn compute_patches(
                 |iso, begin, end| approx_iso(surf, ctx, iso, begin, end),
             )?;
             let Some(index) = net.first_not_approx() else {
-                let errors = net.compute_3d_errors(ctx.nb_3d, &ctx.tol_3d, &ctx.tol_3d_front)?;
-                let surface = super::super::convert_bs::convert_bs(&mut net, ctx)?;
+                let errors = net.compute_3d_errors(
+                    ctx.nb_1d + ctx.nb_2d,
+                    ctx.nb_3d,
+                    &ctx.tol_3d,
+                    &ctx.tol_3d_front,
+                )?;
+                let surfaces = super::super::convert_bs::convert_bs(&mut net, ctx)?;
+                let surface = surfaces.first().cloned().ok_or_else(|| {
+                    "AdvApp2Var_ApproxAFunc2Var::ConvertBS: AdvApp2Var_ApproxAFunc2Var.cxx:899"
+                        .to_string()
+                })?;
                 return Ok(super::super::ApproxAFunc2VarResult {
                     surface,
+                    surfaces,
                     is_done: errors.done,
-                    max_error: errors.max_error,
-                    average_error: errors.average_error,
-                    u_front_error: errors.u_front_error,
-                    v_front_error: errors.v_front_error,
+                    max_error: errors.max_errors.first().copied().unwrap_or(0.0),
+                    average_error: errors.average_errors.first().copied().unwrap_or(0.0),
+                    u_front_error: errors.u_front_errors.first().copied().unwrap_or(0.0),
+                    v_front_error: errors.v_front_errors.first().copied().unwrap_or(0.0),
                     criterion_error: crit_max,
                 });
             };
@@ -271,7 +290,12 @@ fn approx_iso(
             &cut.contr1,
             &cut.contr2,
         )?;
-        errors.push((cut.errmax, cut.errmoy));
+        if cut.errmax.len() != ctx.total_ssp() as usize
+            || cut.errmoy.len() != ctx.total_ssp() as usize
+        {
+            return Err("AdvApp2Var_Iso::MakeApprox: AdvApp2Var_Iso.cxx:287".into());
+        }
+        errors.extend(cut.errmax.into_iter().zip(cut.errmoy));
         somtab.extend_from_slice(&cut.somtab);
         diftab.extend_from_slice(&cut.diftab);
         polynom.extend_from_slice(&cut.courbe);

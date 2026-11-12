@@ -12,7 +12,6 @@
 //! then stores a finished square. `Compute3DErrors` runs when every square
 //! is approximated, and `ConvertBS` returns the B-spline.
 
-
 pub(super) use super::constraints::mma1her;
 
 mod helpers;

@@ -21,9 +21,7 @@ pub(super) fn jacobi_max(ndgjac: i32, iordre: i32) -> Result<Vec<f64>, String> {
         1 => &XMAX4,
         2 => &XMAX6,
         _ => {
-            return Err(
-                "AdvApp2Var_ApproxF2var::mma2jmx_: AdvApp2Var_ApproxF2var.cxx:7717".into(),
-            );
+            return Err("AdvApp2Var_ApproxF2var::mma2jmx_: AdvApp2Var_ApproxF2var.cxx:7717".into());
         }
     };
     let last = numax as usize;

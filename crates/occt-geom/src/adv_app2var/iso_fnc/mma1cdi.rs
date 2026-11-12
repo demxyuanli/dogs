@@ -1,6 +1,5 @@
 //! `mma1cdi_` (`cxx:233-465`), `mma1cnt_`, `mma1jak_`, `mmmapcoe_`, `mmmpocur_`.
 
-
 use super::*;
 
 /// `GeomConvert_ApproxSurface_Eval::Evaluate`

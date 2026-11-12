@@ -30,7 +30,11 @@ pub(super) fn authorize_cuts(
     let mut v_dec = 0.0;
     let u_more = u_choice.value(u0, u1, &mut u_dec);
     let v_more = v_choice.value(v0, v1, &mut v_dec);
-    Ok((num_dec(nb_u, nb_v, max_patches, u_more, v_more), u_dec, v_dec))
+    Ok((
+        num_dec(nb_u, nb_v, max_patches, u_more, v_more),
+        u_dec,
+        v_dec,
+    ))
 }
 
 fn num_dec(nb_u: i32, nb_v: i32, max_patches: i32, u_more: bool, v_more: bool) -> i32 {

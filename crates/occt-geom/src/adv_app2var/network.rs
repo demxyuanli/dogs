@@ -12,9 +12,9 @@ struct NetPatch {
     equation: Vec<f64>,
     nb_coeff_u: i32,
     nb_coeff_v: i32,
-    max_error: f64,
-    moy_error: f64,
-    iso_errors: [f64; 4],
+    max_errors: Vec<f64>,
+    moy_errors: Vec<f64>,
+    iso_errors: Vec<[f64; 4]>,
 }
 
 pub(super) struct Network {
@@ -27,10 +27,10 @@ pub(super) struct Network {
 /// (`AdvApp2Var_ApproxAFunc2Var.cxx:826-859`) plus `myDone`.
 pub(super) struct Errors3d {
     pub done: bool,
-    pub max_error: f64,
-    pub average_error: f64,
-    pub u_front_error: f64,
-    pub v_front_error: f64,
+    pub max_errors: Vec<f64>,
+    pub average_errors: Vec<f64>,
+    pub u_front_errors: Vec<f64>,
+    pub v_front_errors: Vec<f64>,
 }
 
 impl Network {
@@ -47,9 +47,9 @@ impl Network {
                 equation: Vec::new(),
                 nb_coeff_u: 0,
                 nb_coeff_v: 0,
-                max_error: 0.0,
-                moy_error: 0.0,
-                iso_errors: [0.0; 4],
+                max_errors: Vec::new(),
+                moy_errors: Vec::new(),
+                iso_errors: Vec::new(),
             }],
             u_params: vec![u0, u1],
             v_params: vec![v0, v1],
@@ -70,9 +70,12 @@ impl Network {
     }
 
     pub(super) fn domain(&self, index: usize) -> Result<(f64, f64, f64, f64), String> {
-        self.patches.get(index).map(|patch| (patch.u0, patch.u1, patch.v0, patch.v1)).ok_or_else(
-            || "AdvApp2Var_Network::FirstNotApprox: AdvApp2Var_Network.cxx:50".to_string(),
-        )
+        self.patches
+            .get(index)
+            .map(|patch| (patch.u0, patch.u1, patch.v0, patch.v1))
+            .ok_or_else(|| {
+                "AdvApp2Var_Network::FirstNotApprox: AdvApp2Var_Network.cxx:50".to_string()
+            })
     }
 
     /// `UpdateInU` (`AdvApp2Var_Network.cxx:62-91`).
@@ -90,10 +93,9 @@ impl Network {
         while j < self.v_params.len() as i32 {
             let patch_index = nb_u * (j - 1) + i - 1;
             let at = (patch_index - 1) as usize;
-            let patch = self
-                .patches
-                .get(at)
-                .ok_or_else(|| "AdvApp2Var_Network::UpdateInU: AdvApp2Var_Network.cxx:77".to_string())?;
+            let patch = self.patches.get(at).ok_or_else(|| {
+                "AdvApp2Var_Network::UpdateInU: AdvApp2Var_Network.cxx:77".to_string()
+            })?;
             let (ord_u, ord_v) = (patch.ord_u, patch.ord_v);
             self.patches[at].u1 = cutting;
             self.patches[at].approximated = false;
@@ -116,12 +118,12 @@ impl Network {
                     ord_u,
                     ord_v,
                     approximated: false,
-                equation: Vec::new(),
-                nb_coeff_u: 0,
-                nb_coeff_v: 0,
-                max_error: 0.0,
-                moy_error: 0.0,
-                iso_errors: [0.0; 4],
+                    equation: Vec::new(),
+                    nb_coeff_u: 0,
+                    nb_coeff_v: 0,
+                    max_errors: Vec::new(),
+                    moy_errors: Vec::new(),
+                    iso_errors: Vec::new(),
                 },
             );
             j += 1;
@@ -177,12 +179,12 @@ impl Network {
                     ord_u,
                     ord_v,
                     approximated: false,
-                equation: Vec::new(),
-                nb_coeff_u: 0,
-                nb_coeff_v: 0,
-                max_error: 0.0,
-                moy_error: 0.0,
-                iso_errors: [0.0; 4],
+                    equation: Vec::new(),
+                    nb_coeff_u: 0,
+                    nb_coeff_v: 0,
+                    max_errors: Vec::new(),
+                    moy_errors: Vec::new(),
+                    iso_errors: Vec::new(),
                 },
             );
         }
@@ -202,8 +204,8 @@ impl Network {
         patch.equation = done.equation;
         patch.nb_coeff_u = done.nb_coeff_u;
         patch.nb_coeff_v = done.nb_coeff_v;
-        patch.max_error = done.max_error;
-        patch.moy_error = done.moy_error;
+        patch.max_errors = done.max_errors;
+        patch.moy_errors = done.moy_errors;
         patch.iso_errors = done.iso_errors;
         Ok(())
     }
@@ -213,16 +215,17 @@ impl Network {
     /// with the four stored error tables (`:852-859`).
     pub(super) fn compute_3d_errors(
         &self,
+        first_3d: i32,
         nb3: i32,
         tol3: &[f64],
         front3: &[[f64; 4]],
     ) -> Result<Errors3d, String> {
         let mut stored = Errors3d {
             done: true,
-            max_error: 0.0,
-            average_error: 0.0,
-            u_front_error: 0.0,
-            v_front_error: 0.0,
+            max_errors: Vec::with_capacity(nb3.max(0) as usize),
+            average_errors: Vec::with_capacity(nb3.max(0) as usize),
+            u_front_errors: Vec::with_capacity(nb3.max(0) as usize),
+            v_front_errors: Vec::with_capacity(nb3.max(0) as usize),
         };
         if nb3 < 1 {
             return Ok(stored);
@@ -235,12 +238,10 @@ impl Network {
             );
         }
         for iesp in 1..=nb3 {
-            if iesp != 1 {
-                return Err(
-                    "AdvApp2Var_ApproxAFunc2Var::Compute3DErrors: AdvApp2Var_ApproxAFunc2Var.cxx:845"
-                        .into(),
-                );
-            }
+            let subspace = usize::try_from(first_3d + iesp - 1).map_err(|_| {
+                "AdvApp2Var_ApproxAFunc2Var::Compute3DErrors: AdvApp2Var_ApproxAFunc2Var.cxx:845"
+                    .to_string()
+            })?;
             let mut error_max: f64 = 0.0;
             let mut error_moy: f64 = 0.0;
             let mut error_u0: f64 = 0.0;
@@ -256,20 +257,30 @@ impl Network {
                     .to_string()
             })?;
             for patch in &self.patches {
-                error_max = error_max.max(patch.max_error);
-                error_u0 = error_u0.max(patch.iso_errors[2]);
-                error_u1 = error_u1.max(patch.iso_errors[3]);
-                error_v0 = error_v0.max(patch.iso_errors[0]);
-                error_v1 = error_v1.max(patch.iso_errors[1]);
-                error_moy += patch.moy_error;
+                error_max = error_max.max(*patch.max_errors.get(subspace).ok_or_else(|| {
+                    "AdvApp2Var_ApproxAFunc2Var::Compute3DErrors: AdvApp2Var_ApproxAFunc2Var.cxx:845"
+                        .to_string()
+                })?);
+                let borders = patch.iso_errors.get(subspace).ok_or_else(|| {
+                    "AdvApp2Var_ApproxAFunc2Var::Compute3DErrors: AdvApp2Var_ApproxAFunc2Var.cxx:845"
+                        .to_string()
+                })?;
+                error_u0 = error_u0.max(borders[2]);
+                error_u1 = error_u1.max(borders[3]);
+                error_v0 = error_v0.max(borders[0]);
+                error_v1 = error_v1.max(borders[1]);
+                error_moy += *patch.moy_errors.get(subspace).ok_or_else(|| {
+                    "AdvApp2Var_ApproxAFunc2Var::Compute3DErrors: AdvApp2Var_ApproxAFunc2Var.cxx:845"
+                        .to_string()
+                })?;
             }
             let u_front = error_u0.max(error_u1);
             let v_front = error_v0.max(error_v1);
             error_moy /= npatch as f64;
-            stored.max_error = error_max;
-            stored.average_error = error_moy;
-            stored.u_front_error = u_front;
-            stored.v_front_error = v_front;
+            stored.max_errors.push(error_max);
+            stored.average_errors.push(error_moy);
+            stored.u_front_errors.push(u_front);
+            stored.v_front_errors.push(v_front);
             if error_max > tol
                 || error_u0 > front[2]
                 || error_u1 > front[3]

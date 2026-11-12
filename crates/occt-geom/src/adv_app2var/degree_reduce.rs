@@ -152,11 +152,19 @@ fn subspaces_ok(
         for ns in 1..=nbsesp {
             let mut tol = *epsapr.get((ns - 1) as usize).ok_or_else(|| fx6(7423))?;
             for k in [9, 10, 11, 12] {
-                tol = tol.min(*epsfro.get(fro_index(ns, k, nbsesp)?).ok_or_else(|| fx6(7425))?);
+                tol = tol.min(
+                    *epsfro
+                        .get(fro_index(ns, k, nbsesp)?)
+                        .ok_or_else(|| fx6(7425))?,
+                );
             }
             if ii == 1 || ii == nbupat || jj == 1 || jj == nbvpat {
                 for k in [5, 6, 7, 8] {
-                    tol = tol.min(*epsfro.get(fro_index(ns, k, nbsesp)?).ok_or_else(|| fx6(7439))?);
+                    tol = tol.min(
+                        *epsfro
+                            .get(fro_index(ns, k, nbsesp)?)
+                            .ok_or_else(|| fx6(7439))?,
+                    );
                 }
             }
             let mut bid = 0.0;
@@ -231,7 +239,14 @@ fn fro_index(ns: i32, k: i32, nbsesp: i32) -> Result<usize, String> {
     usize::try_from(at).map_err(|_| fx6(7425))
 }
 
-fn err_index(ns: i32, ii: i32, jj: i32, nbsesp: i32, nbupat: i32, line: i32) -> Result<usize, String> {
+fn err_index(
+    ns: i32,
+    ii: i32,
+    jj: i32,
+    nbsesp: i32,
+    nbupat: i32,
+    line: i32,
+) -> Result<usize, String> {
     let at = (ns - 1)
         .checked_add((ii - 1).checked_mul(nbsesp).ok_or_else(|| fx6(line))?)
         .ok_or_else(|| fx6(line))?
@@ -252,4 +267,3 @@ fn coef_index(ii: i32, jj: i32, nbupat: i32) -> Result<usize, String> {
         .ok_or_else(|| fx6(7408))?;
     usize::try_from(at).map_err(|_| fx6(7408))
 }
-

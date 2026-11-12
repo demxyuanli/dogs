@@ -82,6 +82,16 @@ impl App2VarContext {
     pub fn total_ssp(&self) -> i32 {
         self.nb_1d + self.nb_2d + self.nb_3d
     }
+
+    /// `NDIMSE`, ordered exactly as the evaluator result:
+    /// all 1D subspaces, then all 2D subspaces, then all 3D subspaces.
+    pub fn subspace_dimensions(&self) -> Vec<i32> {
+        let mut dimensions = Vec::with_capacity(self.total_ssp().max(0) as usize);
+        dimensions.extend(std::iter::repeat_n(1, self.nb_1d.max(0) as usize));
+        dimensions.extend(std::iter::repeat_n(2, self.nb_2d.max(0) as usize));
+        dimensions.extend(std::iter::repeat_n(3, self.nb_3d.max(0) as usize));
+        dimensions
+    }
 }
 
 fn h_max_factor(order: i32) -> f64 {
@@ -131,6 +141,18 @@ pub fn context_until_roots(
     tof2: &[[f64; 4]],
     tof3: &[[f64; 4]],
 ) -> Result<App2VarContext, String> {
+    if nb1 < 0
+        || nb2 < 0
+        || nb3 < 0
+        || tol1.len() < nb1 as usize
+        || tol2.len() < nb2 as usize
+        || tol3.len() < nb3 as usize
+        || tof1.len() < nb1 as usize
+        || tof2.len() < nb2 as usize
+        || tof3.len() < nb3 as usize
+    {
+        return Err("AdvApp2Var_Context: AdvApp2Var_Context.cxx:143".into());
+    }
     let mut coeff_u = nlimu;
     if coeff_u < 2 * iu + 2 {
         coeff_u = 2 * iu + 2;

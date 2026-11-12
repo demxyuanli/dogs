@@ -2,7 +2,6 @@
 
 use super::super::context::App2VarContext;
 
-
 pub(crate) fn incoherent() -> String {
     "AdvApp2Var_ApproxF2var::mma2fnc_: AdvApp2Var_ApproxF2var.cxx:7251".into()
 }

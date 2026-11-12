@@ -2,7 +2,6 @@
 
 use crate::Surface;
 
-
 use super::super::eval_surface::evaluate;
 
 use super::*;
@@ -32,10 +31,18 @@ pub(crate) fn mma1fdi(
     let nroo2 = nbroot / 2;
     let (ideru, iderv, renor) = if isofav == 1 {
         let half = (uvfonc[1] - uvfonc[0]) / 2.0;
-        (ideriv, 0, super::super::param_normalize::pow_di(half, ideriv))
+        (
+            ideriv,
+            0,
+            super::super::param_normalize::pow_di(half, ideriv),
+        )
     } else {
         let half = (uvfonc[3] - uvfonc[2]) / 2.0;
-        (0, ideriv, super::super::param_normalize::pow_di(half, ideriv))
+        (
+            0,
+            ideriv,
+            super::super::param_normalize::pow_di(half, ideriv),
+        )
     };
 
     let mut fpntab = vec![0.0; (nbp * ndimen) as usize];

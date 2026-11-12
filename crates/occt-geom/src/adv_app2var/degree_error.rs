@@ -24,9 +24,7 @@ pub(super) fn mma2er1(
     let minv = (iordrv + 1) << 1;
     let pat_dim1 = ndjacu + 1;
     let pat_dim2 = ndjacv + 1;
-    let pat = |ii: i32, jj: i32, nd: i32| {
-        ii + jj * pat_dim1 + (nd - 1) * pat_dim1 * pat_dim2
-    };
+    let pat = |ii: i32, jj: i32, nd: i32| ii + jj * pat_dim1 + (nd - 1) * pat_dim1 * pat_dim2;
     let mut work = vec![0.0; ndimen.max(0) as usize];
     for nd in 1..=ndimen {
         let mut bid1 = 0.0;
@@ -39,11 +37,17 @@ pub(super) fn mma2er1(
                             .get(pat(ii, jj, nd) as usize)
                             .copied()
                             .ok_or_else(er1_oob)?;
-                        let scale = xmaxju.get((ii - minu) as usize).copied().ok_or_else(er1_oob)?;
+                        let scale = xmaxju
+                            .get((ii - minu) as usize)
+                            .copied()
+                            .ok_or_else(er1_oob)?;
                         bid0 += coeff.abs() * scale;
                     }
                 }
-                let scale = xmaxjv.get((jj - minv) as usize).copied().ok_or_else(er1_oob)?;
+                let scale = xmaxjv
+                    .get((jj - minv) as usize)
+                    .copied()
+                    .ok_or_else(er1_oob)?;
                 bid1 += bid0 * scale;
             }
         }
@@ -231,9 +235,9 @@ pub(super) struct FinishedPatch {
     pub equation: Vec<f64>,
     pub nb_coeff_u: i32,
     pub nb_coeff_v: i32,
-    pub max_error: f64,
-    pub moy_error: f64,
-    pub iso_errors: [f64; 4],
+    pub max_errors: Vec<f64>,
+    pub moy_errors: Vec<f64>,
+    pub iso_errors: Vec<[f64; 4]>,
 }
 
 /// Degree reduction (`AdvApp2Var_ApproxF2var.cxx:4639-4714` and `:4828-4915`),
@@ -251,11 +255,11 @@ pub(super) fn canon_stop(
     ndmin_v: i32,
     ndguli: i32,
     ndgvli: i32,
-    reduce: bool,
-    erreur: f64,
+    reduce: &[bool],
+    errors: &[f64],
     nu_keep: i32,
     nv_keep: i32,
-    eps: f64,
+    ndimse: &[i32],
     xmaxju: &[f64],
     xmaxjv: &[f64],
     patjac: &mut [f64],
@@ -270,29 +274,63 @@ pub(super) fn canon_stop(
 ) -> Result<FinishedPatch, String> {
     let i2rdu = (iordru + 1) << 1;
     let i2rdv = (iordrv + 1) << 1;
-    let (nu, nv, kept) = if reduce && ndguli >= i2rdu && ndgvli >= i2rdv {
-        let floor_u = 1.max((iordru << 1) + 1).max(ndmin_u);
-        let floor_v = 1.max((iordrv << 1) + 1).max(ndmin_v);
-        mma2er2(
-            ndjacu, ndjacv, ndimen, floor_u, ndguli, floor_v, ndgvli, iordru, iordrv, xmaxju,
-            xmaxjv, patjac, eps, erreur,
-        )?
-    } else {
-        (nu_keep, nv_keep, erreur)
-    };
-    let errmoy = mma2moy(
-        ndjacu,
-        ndjacv,
-        ndimen,
-        nu + 1,
-        ndjacu,
-        nv + 1,
-        ndjacv,
-        iordru,
-        iordrv,
-        patjac,
-    )?;
-    zero_rejected(patjac, nu + 1, nv + 1, ndjacu, ndjacv, ndimen)?;
+    if ndimse.len() != errors.len() || errors.len() != epsapr.len() || reduce.len() != errors.len()
+    {
+        return Err("AdvApp2Var_ApproxF2var::mma2ce2_: AdvApp2Var_ApproxF2var.cxx:4650".into());
+    }
+    let plane = ((ndjacu + 1) * (ndjacv + 1)) as usize;
+    let mut offset = 0usize;
+    let mut nu = ndmin_u;
+    let mut nv = ndmin_v;
+    let mut kept_errors = Vec::with_capacity(ndimse.len());
+    let mut average_errors = Vec::with_capacity(ndimse.len());
+    for (subspace, &width) in ndimse.iter().enumerate() {
+        let len = usize::try_from(width)
+            .ok()
+            .and_then(|n| n.checked_mul(plane))
+            .ok_or_else(er1_oob)?;
+        let end = offset.checked_add(len).ok_or_else(er1_oob)?;
+        let coefficients = patjac.get_mut(offset..end).ok_or_else(er1_oob)?;
+        let (sub_u, sub_v, kept) = if reduce[subspace] && ndguli >= i2rdu && ndgvli >= i2rdv {
+            let floor_u = 1.max((iordru << 1) + 1).max(ndmin_u);
+            let floor_v = 1.max((iordrv << 1) + 1).max(ndmin_v);
+            mma2er2(
+                ndjacu,
+                ndjacv,
+                width,
+                floor_u,
+                ndguli,
+                floor_v,
+                ndgvli,
+                iordru,
+                iordrv,
+                xmaxju,
+                xmaxjv,
+                coefficients,
+                epsapr[subspace],
+                errors[subspace],
+            )?
+        } else {
+            (nu_keep, nv_keep, errors[subspace])
+        };
+        average_errors.push(mma2moy(
+            ndjacu,
+            ndjacv,
+            width,
+            sub_u + 1,
+            ndjacu,
+            sub_v + 1,
+            ndjacv,
+            iordru,
+            iordrv,
+            coefficients,
+        )?);
+        zero_rejected(coefficients, sub_u + 1, sub_v + 1, ndjacu, ndjacv, width)?;
+        nu = nu.max(sub_u);
+        nv = nv.max(sub_v);
+        kept_errors.push(kept);
+        offset = end;
+    }
     mmfmca9(ndjacu + 1, ndjacv + 1, nu + 1, nv + 1, ndimen, patjac)?;
     let mut patcan = mma2can(
         ndguli + 1,
@@ -318,7 +356,15 @@ pub(super) fn canon_stop(
         &mut patcan,
     )?;
     let (errmax, errmoy, iso_err) = super::constraints::add_errors(
-        frame, u0, u1, v0, v1, iordru, iordrv, kept, errmoy,
+        frame,
+        u0,
+        u1,
+        v0,
+        v1,
+        iordru,
+        iordrv,
+        &kept_errors,
+        &average_errors,
     )?;
     let ncfmxu = ndguli + 1;
     let ncfmxv = ndgvli + 1;
@@ -330,7 +376,7 @@ pub(super) fn canon_stop(
         ncfmxv,
         ndimen,
         nbsesp,
-        &[3],
+        ndimse,
         1,
         1,
         iordru,
@@ -338,7 +384,7 @@ pub(super) fn canon_stop(
         epsapr,
         epsfro,
         &patcan,
-        &[errmax],
+        &errmax,
         &mut ncoef_u,
         &mut ncoef_v,
     )?;
@@ -346,10 +392,14 @@ pub(super) fn canon_stop(
     super::degree_reduce::transpose_can(ndimen, ncfmxu, ncfmxv, &patcan, &mut equation)?;
     Ok(FinishedPatch {
         equation,
-        nb_coeff_u: *ncoef_u.first().ok_or_else(|| super::degree_reduce::fx6(7556))?,
-        nb_coeff_v: *ncoef_v.first().ok_or_else(|| super::degree_reduce::fx6(7557))?,
-        max_error: errmax,
-        moy_error: errmoy,
+        nb_coeff_u: *ncoef_u
+            .first()
+            .ok_or_else(|| super::degree_reduce::fx6(7556))?,
+        nb_coeff_v: *ncoef_v
+            .first()
+            .ok_or_else(|| super::degree_reduce::fx6(7557))?,
+        max_errors: errmax,
+        moy_errors: errmoy,
         iso_errors: iso_err,
     })
 }

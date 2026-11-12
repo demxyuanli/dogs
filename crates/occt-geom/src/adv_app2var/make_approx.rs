@@ -6,6 +6,7 @@
 use super::context::App2VarContext;
 use super::degree_error::FinishedPatch;
 use super::framework::Framework;
+use super::subspace_error::{exceeds, subspace_errors};
 
 pub(super) struct MakeApprox {
     pub sense: i32,
@@ -78,6 +79,7 @@ pub(super) fn make_approx(
         &j_max_v,
         &epsapr,
         &epsfro,
+        &ctx.subspace_dimensions(),
         frame,
         u0,
         u1,
@@ -111,6 +113,7 @@ fn mma2ce2(
     xmaxjv: &[f64],
     epsapr: &[f64],
     epsfro: &[f64],
+    dimensions: &[i32],
     frame: &Framework,
     u0: f64,
     u1: f64,
@@ -130,7 +133,10 @@ fn mma2ce2(
     let itydec = 0;
     let ndegpu = ndmin_u;
     let ndegpv = ndmin_v;
-    let errmax = vec![0.0; nbsesp.max(0) as usize];
+    if dimensions.len() != nbsesp.max(0) as usize {
+        return Err("AdvApp2Var_ApproxF2var::mma2ce2_: AdvApp2Var_ApproxF2var.cxx:4100".into());
+    }
+    let mut errmax = vec![0.0; dimensions.len()];
     let vecerr = vec![0.0; (ndimen << 2).max(0) as usize];
     let mut patjac = vec![0.0; ((ndjacu + 1) * (ndjacv + 1) * ndimen).max(0) as usize];
     let i2rdu = (iordru + 1) << 1;
@@ -149,145 +155,306 @@ fn mma2ce2(
             return Err("AdvApp2Var_ApproxF2var::mma2ce2_: AdvApp2Var_ApproxF2var.cxx:4926".into());
         }
         fill_u(
-            minu, maxu, ndimen, nbpnt_u, nbpnt_v, i2rdu, cols, sosotb, disotb, soditb, diditb,
-            gssutb, &mut chpair, &mut chimpr,
+            minu,
+            maxu,
+            ndimen,
+            nbpnt_u,
+            nbpnt_v,
+            i2rdu,
+            cols,
+            sosotb,
+            disotb,
+            soditb,
+            diditb,
+            gssutb,
+            &mut chpair,
+            &mut chimpr,
         )?;
-        // `mma2ce2_` loops over the `nbsesp` subspaces filling `errmax(nd)`
-        // (`AdvApp2Var_ApproxF2var.cxx:4560-4600`). Only the single 3D
-        // subspace used by `GeomConvert_ApproxSurface` is ported.
-        if nbsesp != 1 {
-            return Err(format!(
-                "AdvApp2Var_ApproxF2var::mma2ce2_: AdvApp2Var_ApproxF2var.cxx:4560 ({nbsesp})"
-            ));
-        }
-        let eps = *epsapr.first().ok_or_else(|| {
-            "AdvApp2Var_ApproxF2var::mma2ce2_: AdvApp2Var_ApproxF2var.cxx:4387".to_string()
-        })?;
-        let mut zone4 = 0.0;
+        let mut zone4 = vec![0.0; dimensions.len()];
         for jj in minv..=maxv {
             let igsv = jj - i2rdv;
             for nd in 1..=ndimen {
                 mma2cfv(
-                    jj, minu, maxu, nbpnt_v, igsv, nd, i2rdu, cols, ndjacu, ndjacv, gssvtb,
-                    &chpair, &chimpr, &mut patjac,
+                    jj,
+                    minu,
+                    maxu,
+                    nbpnt_v,
+                    igsv,
+                    nd,
+                    i2rdu,
+                    cols,
+                    ndjacu,
+                    ndjacv,
+                    gssvtb,
+                    &chpair,
+                    &chimpr,
+                    &mut patjac,
                 )?;
             }
-            zone4 = super::degree_error::mma2er1(
-                ndjacu, ndjacv, ndimen, minu, maxu, jj, jj, iordru, iordrv, xmaxju, xmaxjv,
-                &patjac, zone4,
+            zone4 = subspace_errors(
+                ndjacu,
+                ndjacv,
+                &dimensions,
+                minu,
+                maxu,
+                jj,
+                jj,
+                iordru,
+                iordrv,
+                xmaxju,
+                xmaxjv,
+                &patjac,
+                &zone4,
             )?;
-            if zone4 > eps {
+            if exceeds(&zone4, epsapr)? {
                 let itydec = cut_sense(num_dec, 3)?;
                 let _ = (
                     itydec, ndegpu, ndegpv, errmax, vecerr, patjac, chpair, chimpr, epsfro,
                 );
-                return Ok(MakeApprox { sense: itydec, finished: None });
+                return Ok(MakeApprox {
+                    sense: itydec,
+                    finished: None,
+                });
             }
         }
         let minu2 = i2rdu;
         let maxu2 = ndguli;
-        let mut zone2 = 0.0;
+        let mut zone2 = vec![0.0; dimensions.len()];
         if minu2 <= maxu2 {
             fill_u(
-                minu2, maxu2, ndimen, nbpnt_u, nbpnt_v, i2rdu, cols, sosotb, disotb, soditb, diditb,
-                gssutb, &mut chpair, &mut chimpr,
+                minu2,
+                maxu2,
+                ndimen,
+                nbpnt_u,
+                nbpnt_v,
+                i2rdu,
+                cols,
+                sosotb,
+                disotb,
+                soditb,
+                diditb,
+                gssutb,
+                &mut chpair,
+                &mut chimpr,
             )?;
             for jj in minv..=maxv {
                 let igsv = jj - i2rdv;
                 for nd in 1..=ndimen {
                     mma2cfv(
-                        jj, minu2, maxu2, nbpnt_v, igsv, nd, i2rdu, cols, ndjacu, ndjacv, gssvtb,
-                        &chpair, &chimpr, &mut patjac,
+                        jj,
+                        minu2,
+                        maxu2,
+                        nbpnt_v,
+                        igsv,
+                        nd,
+                        i2rdu,
+                        cols,
+                        ndjacu,
+                        ndjacv,
+                        gssvtb,
+                        &chpair,
+                        &chimpr,
+                        &mut patjac,
                     )?;
                 }
             }
-            zone2 = super::degree_error::mma2er1(
-                ndjacu, ndjacv, ndimen, minu2, maxu2, minv, maxv, iordru, iordrv, xmaxju, xmaxjv,
-                &patjac, 0.0,
+            zone2 = subspace_errors(
+                ndjacu,
+                ndjacv,
+                &dimensions,
+                minu2,
+                maxu2,
+                minv,
+                maxv,
+                iordru,
+                iordrv,
+                xmaxju,
+                xmaxjv,
+                &patjac,
+                &zone2,
             )?;
         }
         let minv3 = i2rdv;
         let maxv3 = ndgvli;
-        let mut zone3 = 0.0;
+        let mut zone3 = vec![0.0; dimensions.len()];
         if minv3 <= maxv3 {
             for jj in minv3..=maxv3 {
                 let igsv = jj - i2rdv;
                 for nd in 1..=ndimen {
                     mma2cfv(
-                        jj, minu, maxu, nbpnt_v, igsv, nd, i2rdu, cols, ndjacu, ndjacv, gssvtb,
-                        &chpair, &chimpr, &mut patjac,
+                        jj,
+                        minu,
+                        maxu,
+                        nbpnt_v,
+                        igsv,
+                        nd,
+                        i2rdu,
+                        cols,
+                        ndjacu,
+                        ndjacv,
+                        gssvtb,
+                        &chpair,
+                        &chimpr,
+                        &mut patjac,
                     )?;
                 }
             }
-            zone3 = super::degree_error::mma2er1(
-                ndjacu, ndjacv, ndimen, minu, maxu, minv3, maxv3, iordru, iordrv, xmaxju, xmaxjv,
-                &patjac, 0.0,
+            zone3 = subspace_errors(
+                ndjacu,
+                ndjacv,
+                &dimensions,
+                minu,
+                maxu,
+                minv3,
+                maxv3,
+                iordru,
+                iordrv,
+                xmaxju,
+                xmaxjv,
+                &patjac,
+                &zone3,
             )?;
         }
-        let vaux = [zone2, zone4, zone3];
-        let err = super::border_error::mzsnorm(&vaux);
-        if err > eps {
-            let zv = super::border_error::mzsnorm(&vaux[..2]);
-            let zu = super::border_error::mzsnorm(&vaux[1..]);
-            let which = if zu > eps && zv > eps {
-                3
-            } else if zu > zv {
-                1
-            } else {
-                2
-            };
-            let itydec = cut_sense(num_dec, which)?;
-            let _ = (ndegpu, ndegpv, errmax, vecerr, patjac, chpair, chimpr, err);
-            return Ok(MakeApprox { sense: itydec, finished: None });
+        let mut cut = None;
+        for subspace in 0..dimensions.len() {
+            let vaux = [zone2[subspace], zone4[subspace], zone3[subspace]];
+            errmax[subspace] = super::border_error::mzsnorm(&vaux);
+            let eps = epsapr[subspace];
+            if errmax[subspace] > eps {
+                let zv = super::border_error::mzsnorm(&vaux[..2]);
+                let zu = super::border_error::mzsnorm(&vaux[1..]);
+                cut = Some(if zu > eps && zv > eps {
+                    3
+                } else if zu > zv {
+                    1
+                } else {
+                    2
+                });
+                break;
+            }
         }
-        let _ = (ndegpu, ndegpv, errmax, vecerr, chpair, chimpr);
+        if let Some(which) = cut {
+            let itydec = cut_sense(num_dec, which)?;
+            let _ = (ndegpu, ndegpv, errmax, vecerr, patjac, chpair, chimpr);
+            return Ok(MakeApprox {
+                sense: itydec,
+                finished: None,
+            });
+        }
+        let _ = (ndegpu, ndegpv, vecerr, chpair, chimpr);
+        let reduce = vec![true; dimensions.len()];
         let finished = super::degree_error::canon_stop(
-            ndjacu, ndjacv, ndimen, iordru, iordrv, ndmin_u, ndmin_v, ndguli, ndgvli, true, err,
-            ndguli, ndgvli, eps, xmaxju, xmaxjv, &mut patjac, frame, u0, u1, v0, v1, nbsesp,
-            epsapr, epsfro,
+            ndjacu,
+            ndjacv,
+            ndimen,
+            iordru,
+            iordrv,
+            ndmin_u,
+            ndmin_v,
+            ndguli,
+            ndgvli,
+            &reduce,
+            &errmax,
+            ndguli,
+            ndgvli,
+            &dimensions,
+            xmaxju,
+            xmaxjv,
+            &mut patjac,
+            frame,
+            u0,
+            u1,
+            v0,
+            v1,
+            nbsesp,
+            epsapr,
+            epsfro,
         )?;
-        return Ok(MakeApprox { sense: 0, finished: Some(finished) });
+        return Ok(MakeApprox {
+            sense: 0,
+            finished: Some(finished),
+        });
     }
     let minu = i2rdu;
     let maxu = ndjacu;
     let minv = i2rdv;
     let maxv = ndjacv;
     fill_u(
-        minu, maxu, ndimen, nbpnt_u, nbpnt_v, i2rdu, cols, sosotb, disotb, soditb, diditb, gssutb,
-        &mut chpair, &mut chimpr,
+        minu,
+        maxu,
+        ndimen,
+        nbpnt_u,
+        nbpnt_v,
+        i2rdu,
+        cols,
+        sosotb,
+        disotb,
+        soditb,
+        diditb,
+        gssutb,
+        &mut chpair,
+        &mut chimpr,
     )?;
     if minv <= maxv {
         for nd in 1..=ndimen {
             for jj in minv..=maxv {
                 mma2cfv(
-                    jj, minu, maxu, nbpnt_v, jj - i2rdv, nd, i2rdu, cols, ndjacu, ndjacv, gssvtb,
-                    &chpair, &chimpr, &mut patjac,
+                    jj,
+                    minu,
+                    maxu,
+                    nbpnt_v,
+                    jj - i2rdv,
+                    nd,
+                    i2rdu,
+                    cols,
+                    ndjacu,
+                    ndjacv,
+                    gssvtb,
+                    &chpair,
+                    &chimpr,
+                    &mut patjac,
                 )?;
             }
         }
     }
-    // `mma2ce2_` loops over the `nbsesp` subspaces filling `errmax(nd)`
-    // (`AdvApp2Var_ApproxF2var.cxx:4560-4600`). Only the single 3D subspace
-    // used by `GeomConvert_ApproxSurface` is ported.
-    if nbsesp != 1 {
-        return Err(format!(
-            "AdvApp2Var_ApproxF2var::mma2ce2_: AdvApp2Var_ApproxF2var.cxx:4560 ({nbsesp})"
-        ));
-    }
-    let eps = *epsapr.first().ok_or_else(|| {
-        "AdvApp2Var_ApproxF2var::mma2ce2_: AdvApp2Var_ApproxF2var.cxx:4828".to_string()
-    })?;
-    let mut errmax_v = super::degree_error::mma2er1(
-        ndjacu, ndjacv, ndimen, i2rdu, ndjacu, ndgvli + 1, ndjacv, iordru, iordrv, xmaxju, xmaxjv,
-        &patjac, 0.0,
+    errmax = subspace_errors(
+        ndjacu,
+        ndjacv,
+        &dimensions,
+        i2rdu,
+        ndjacu,
+        ndgvli + 1,
+        ndjacv,
+        iordru,
+        iordrv,
+        xmaxju,
+        xmaxjv,
+        &patjac,
+        &errmax,
     )?;
     if i2rdv <= ndgvli {
-        errmax_v = super::degree_error::mma2er1(
-            ndjacu, ndjacv, ndimen, ndguli + 1, ndjacu, i2rdv, ndgvli, iordru, iordrv, xmaxju,
-            xmaxjv, &patjac, errmax_v,
+        errmax = subspace_errors(
+            ndjacu,
+            ndjacv,
+            &dimensions,
+            ndguli + 1,
+            ndjacu,
+            i2rdv,
+            ndgvli,
+            iordru,
+            iordrv,
+            xmaxju,
+            xmaxjv,
+            &patjac,
+            &errmax,
         )?;
     }
-    let _ = (itydec, ndegpu, ndegpv, errmax, vecerr, chpair, chimpr);
+    let _ = (itydec, ndegpu, ndegpv, vecerr, chpair, chimpr);
+    let reduce: Vec<bool> = errmax
+        .iter()
+        .zip(epsapr)
+        .map(|(error, tolerance)| error <= tolerance)
+        .collect();
     let finished = super::degree_error::canon_stop(
         ndjacu,
         ndjacv,
@@ -298,11 +465,11 @@ fn mma2ce2(
         ndmin_v,
         ndguli,
         ndgvli,
-        errmax_v <= eps,
-        errmax_v,
+        &reduce,
+        &errmax,
         ndguli,
         ndgvli,
-        eps,
+        &dimensions,
         xmaxju,
         xmaxjv,
         &mut patjac,
@@ -315,7 +482,10 @@ fn mma2ce2(
         epsapr,
         epsfro,
     )?;
-    Ok(MakeApprox { sense: 0, finished: Some(finished) })
+    Ok(MakeApprox {
+        sense: 0,
+        finished: Some(finished),
+    })
 }
 
 fn cut_sense(num_dec: i32, which: i32) -> Result<i32, String> {
@@ -528,9 +698,7 @@ fn mma2cfv(
     let pat_dim2 = ndjacv + 1;
     let gss = |jj: i32| igsv * pair_dim + jj;
     let pair = |ii: i32, jj: i32| jj + (ii - i2rdu) * pair_dim + (nd - 1) * pair_dim * cols;
-    let impr = |ii: i32, jj: i32| {
-        (ii - i2rdu) * impr_dim + (nd - 1) * impr_dim * cols + (jj - 1)
-    };
+    let impr = |ii: i32, jj: i32| (ii - i2rdu) * impr_dim + (nd - 1) * impr_dim * cols + (jj - 1);
     let pat = |ii: i32| ii + ndvjac * pat_dim1 + (nd - 1) * pat_dim1 * pat_dim2;
     if mindgu <= maxdgu && nptv2 >= 1 {
         if ndvjac % 2 == 0 {
@@ -560,7 +728,6 @@ fn mma2cfv(
     }
     Ok(())
 }
-
 
 fn degree_floor(order: i32, first_coeff: i32, second_coeff: i32) -> i32 {
     let mut ndmin = 1.max(2 * order + 1);
