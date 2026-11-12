@@ -334,7 +334,8 @@ impl GeometryRegistry {
     ///
     /// Unlike [`GeometryRegistry::set_edge_pcurve`] the key is the surface
     /// pointer itself, so a surface that no face has registered yet still
-    /// anchors the representation.
+    /// anchors the representation. Location defaults to identity (the L =
+    /// identity short-cut of `L.Predivided(E.Location())`).
     pub fn update_edge_pcurve_on_surface(
         &self,
         edge: &TopoShape,
@@ -342,16 +343,45 @@ impl GeometryRegistry {
         curve: Option<Arc<dyn Curve2d>>,
         tol: f64,
     ) {
+        self.update_edge_pcurve_on_surface_at(
+            edge,
+            surface,
+            curve,
+            TopLocLocation::identity(),
+            tol,
+        );
+    }
+
+    /// `UpdateEdge(E, C, S, L, Tol)` with an absolute location `L`
+    /// (`cxx:655-672`): stores `L.Predivided(E.Location())` on the
+    /// representation.
+    pub fn update_edge_pcurve_on_surface_at(
+        &self,
+        edge: &TopoShape,
+        surface: &Arc<dyn Surface>,
+        curve: Option<Arc<dyn Curve2d>>,
+        location: TopLocLocation,
+        tol: f64,
+    ) {
         let key = Arc::as_ptr(surface) as *const () as usize;
         let (first, last) = self.edge_parameters(edge);
+        let relative = location.predivided(edge.location());
+        // Keep the surface recoverable for later Transfert / Continuity walks.
+        self.surface_by_ptr
+            .write()
+            .unwrap()
+            .insert(key, surface.clone());
         let mut ts = edge.tshape.write().unwrap();
         match curve {
-            Some(c) => ts.edge_pcurves_mut().set_pcurve(key, c, first, last),
+            Some(c) => ts
+                .edge_pcurves_mut()
+                .set_pcurve_at(key, relative, c, first, last),
             None => {
                 let g = ts.edge_pcurves_mut();
                 g.curves.remove(&key);
                 g.ranges.remove(&key);
                 g.locations.remove(&key);
+                g.continuities.remove(&key);
             }
         }
         let c = ts.edge_core_mut();
@@ -361,7 +391,7 @@ impl GeometryRegistry {
     }
 
     /// The seam overload `BRep_Builder::UpdateEdge(E, C1, C2, S, L, Tol)`
-    /// (`BRep_Builder.cxx:1194-1204`): both pcurves of a seam edge attached to
+    /// (`BRep_Builder.cxx:702-720`): both pcurves of a seam edge attached to
     /// the same `Geom_Surface` handle, keyed by that surface's pointer.
     pub fn set_edge_pcurves_on_surface(
         &self,
@@ -370,10 +400,34 @@ impl GeometryRegistry {
         curves: Vec<Arc<dyn Curve2d>>,
         tol: f64,
     ) {
+        self.set_edge_pcurves_on_surface_at(
+            edge,
+            surface,
+            curves,
+            TopLocLocation::identity(),
+            tol,
+        );
+    }
+
+    /// Seam `UpdateEdge` with absolute location `L` (`cxx:702-720`).
+    pub fn set_edge_pcurves_on_surface_at(
+        &self,
+        edge: &TopoShape,
+        surface: &Arc<dyn Surface>,
+        curves: Vec<Arc<dyn Curve2d>>,
+        location: TopLocLocation,
+        tol: f64,
+    ) {
         let key = Arc::as_ptr(surface) as *const () as usize;
         let (first, last) = self.edge_parameters(edge);
+        let relative = location.predivided(edge.location());
+        self.surface_by_ptr
+            .write()
+            .unwrap()
+            .insert(key, surface.clone());
         let mut ts = edge.tshape.write().unwrap();
-        ts.edge_pcurves_mut().set_pcurves(key, curves, first, last);
+        ts.edge_pcurves_mut()
+            .set_pcurves_at(key, relative, curves, first, last);
         let c = ts.edge_core_mut();
         if c.tolerance < tol {
             c.tolerance = tol;
@@ -392,6 +446,7 @@ impl GeometryRegistry {
             g.curves.remove(&want_key);
             g.ranges.remove(&want_key);
             g.locations.remove(&want_key);
+            g.continuities.remove(&want_key);
         }
     }
 

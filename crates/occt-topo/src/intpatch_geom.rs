@@ -27,10 +27,26 @@ pub fn sample_bounds(s: &dyn Surface) -> (f64, f64, f64, f64) {
 /// ported analytic surfaces only implement `d0` and return zero `d1` vectors).
 /// Returns `(u, v, s(u, v))`.
 pub fn refine_point_on_surface(s: &dyn Surface, p: GpPnt, u0: f64, v0: f64, iters: usize) -> (f64, f64, GpPnt) {
+    // Order the adaptor ends the way `sample_bounds` does: a rectangular
+    // trim can report `(First, Last)` with `First > Last` after a reverse,
+    // and `f64::clamp` panics on that pair.
     let (umin, umax) = s.u_range();
     let (vmin, vmax) = s.v_range();
-    let clamp_u = |x: f64| if umin.is_finite() && umax.is_finite() { x.clamp(umin, umax) } else { x };
-    let clamp_v = |x: f64| if vmin.is_finite() && vmax.is_finite() { x.clamp(vmin, vmax) } else { x };
+    let ordered = |a: f64, b: f64| {
+        if a.is_finite() && b.is_finite() {
+            Some((a.min(b), a.max(b)))
+        } else {
+            None
+        }
+    };
+    let clamp_u = |x: f64| match ordered(umin, umax) {
+        Some((lo, hi)) => x.clamp(lo, hi),
+        None => x,
+    };
+    let clamp_v = |x: f64| match ordered(vmin, vmax) {
+        Some((lo, hi)) => x.clamp(lo, hi),
+        None => x,
+    };
     let (mut u, mut v) = (clamp_u(u0), clamp_v(v0));
     let h = 1e-6;
     for _ in 0..iters {

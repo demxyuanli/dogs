@@ -9,15 +9,21 @@ pub struct FeatResult {
     pub volume: f64,
 }
 
-/// Draft one planar face of `solid`: rotate the face's supporting plane about
-/// the hinge (the intersection line of the face plane and the pivot plane) by
-/// `angle_deg`, replacing the face's surface geometry in a copy of the solid.
+/// Draft one planar face of `solid` through `BRepOffsetAPI_DraftAngle`
+/// (`BRepOffsetAPI_DraftAngle.cxx:91-105` `Add`, `:254-268` `Build`).
 ///
-/// The face is located by `face_pts[0]` (the planar face whose surface passes
-/// nearest that point). `angle_deg = 0` returns the solid unchanged. The
-/// boundary wire is kept as-is, so the result is the "drafted" solid only in
-/// the sense that the face now leans by the draft angle.
-pub fn draft(solid: &Solid, face_pts: &[GpPnt], angle_deg: f64, pivot: &GpPln, tol: f64) -> Result<FeatResult, String> {
+/// The face is located by `face_pts[0]` (nearest planar face). `angle_deg = 0`
+/// returns a copy unchanged (and matches `Add`'s `|Angle| <= 1e-4` no-op).
+/// `NeutralPlane` is `pivot`; `Direction` is the neutral-plane normal (the
+/// mold pull of `Draft_Modification::Add` / `FindRotation`, `_1.cxx:2403-2453`)
+/// — not the face normal, which collapses `FindRotation` toward a bad tilt.
+pub fn draft(
+    solid: &Solid,
+    face_pts: &[GpPnt],
+    angle_deg: f64,
+    pivot: &GpPln,
+    tol: f64,
+) -> Result<FeatResult, String> {
     if face_pts.is_empty() {
         return Err("draft: face_pts must contain the point on the face to draft".into());
     }
@@ -29,17 +35,42 @@ pub fn draft(solid: &Solid, face_pts: &[GpPnt], angle_deg: f64, pivot: &GpPln, t
         return Ok(FeatResult { shape: copy, volume });
     }
     let p0 = face_pts[0];
-    let face = face_containing_point(&Solid::wrap(copy.clone()).ok_or("draft: result is not a solid")?, &p0, tol)
+    let solid_copy =
+        Solid::wrap(copy.clone()).ok_or_else(|| "draft: result is not a solid".to_string())?;
+    let face = face_containing_point(&solid_copy, &p0, tol).map_err(|e| format!("draft: {e}"))?;
+    let _ = crate::brep_surface::face_plane(&face)
+        .ok_or_else(|| "draft: the target face is not planar".to_string())?;
+    // `Direction` of `Add` = pull = normal of the neutral plane.
+    let direction = *pivot.axis().direction();
+
+    let mut da = crate::brep_offset_api_draft_angle::BRepOffsetApiDraftAngle::with_shape(&copy);
+    // `Flag = true` (`hxx` default of `Add`).
+    da.add(&face, &direction, angle, pivot, true)
         .map_err(|e| format!("draft: {e}"))?;
-    let fpln = crate::brep_surface::face_plane(&face).ok_or("draft: the target face is not planar")?;
-    let hinge = draft_hinge_axis(&fpln, pivot)?;
-    let rotated = fpln.rotated(&hinge, angle);
-    GeometryRegistry::global().set_face(
-        &face.0,
-        FaceGeom { surface: Arc::new(GeomPlane::new(rotated)), tolerance: 0.0, natural_restriction: true },
-    );
-    let volume = crate::brep_gprop::volume(&copy, tol.max(1e-4));
-    Ok(FeatResult { shape: copy, volume })
+    if !da
+        .add_done()
+        .map_err(|e| format!("draft: {e}"))?
+    {
+        let st = da
+            .status()
+            .map(|s| format!("{s:?}"))
+            .unwrap_or_else(|_| "unknown".into());
+        return Err(format!("draft: DraftAngle::Add not done ({st})"));
+    }
+    da.build().map_err(|e| format!("draft: {e}"))?;
+    if !da.is_done() {
+        let st = da
+            .status()
+            .map(|s| format!("{s:?}"))
+            .unwrap_or_else(|_| "unknown".into());
+        return Err(format!("draft: DraftAngle::Build not done ({st})"));
+    }
+    let shape = da
+        .shape()
+        .cloned()
+        .ok_or_else(|| "draft: DraftAngle returned no shape".to_string())?;
+    let volume = crate::brep_gprop::volume(&shape, tol.max(1e-4));
+    Ok(FeatResult { shape, volume })
 }
 
 /// How far a `BRepFeat_MakeRevol` feature travels: one variant per `Perform`
@@ -228,72 +259,71 @@ fn finish_hole(
     Ok(FeatResult { shape, volume })
 }
 
-/// Rib: a thin plate feature standing `height` above `plane`. The profile's
-/// in-plane bounding rectangle is the footprint; a dimension thinner than
-/// `thickness` is padded (centered) so a line-like profile becomes a plate of
-/// the rib's wall thickness. The plate is fused onto `solid`.
-pub fn rib(solid: &Solid, profile: &[GpPnt2d], plane: &GpPln, thickness: f64, height: f64, tol: f64) -> Result<FeatResult, String> {
-    require_min_profile(profile, "rib")?;
-    require_positive(thickness, "thickness", "rib")?;
-    require_positive(height, "height", "rib")?;
-    let (origin, xd, yd, nd) = plane_frame(plane);
-    let (umin, umax, vmin, vmax) =
-        profile_bounds(profile).ok_or("rib: degenerate profile footprint")?;
-    // Pad a footprint that is thinner than the rib wall thickness.
-    let (du, dv) = (umax - umin, vmax - vmin);
-    let (du, dv) = (du.max(thickness), dv.max(thickness));
-    let u0 = if du > umax - umin { (umin + umax - du) / 2.0 } else { umin };
-    let v0 = if dv > vmax - vmin { (vmin + vmax - dv) / 2.0 } else { vmin };
-
-    let box_s = crate::primitives::BRepPrimBox::make_box(du, dv, height);
-    let mut t = GpTrsf::identity();
-    t.matrix = GpMat::from_cols(xd.xyz(), yd.xyz(), nd.xyz());
-    t.shape = TrsfForm::CompoundTrsf;
-    t.loc = origin
-        .translated_vec(&xd.multiplied_scalar(u0))
-        .translated_vec(&yd.multiplied_scalar(v0))
-        .coord;
-    let tool = crate::shape_ops::transformed_copy(&box_s.solid.0, &t)?;
-    boolean_feature(solid, &tool, BoolOp::Fuse, tol)
+/// Rib: `BRepFeat_MakeLinearForm` (`Init` `cxx:84-857` + `Perform` `cxx:905-1028`).
+///
+/// Product params are the OCCT `Init` arguments (T-511 note (2) / T-536 note (2)):
+/// - `wire`: sketch wire on `plane`; its endpoints must meet extreme faces of
+///   `solid` (`ExtremeFaces`, `BRepFeat_RibSlot.cxx`);
+/// - `plane`: sketch plane of the wire;
+/// - `direc` / `direc1`: thickness vectors for the prism of the planar profile
+///   (`Perform` sweeps `myPbase` along `|direc|+|direc1|`). They must leave the
+///   sketch plane (OCCT demo uses the plane normal); a null `direc1` centres
+///   the rib (`cxx:181-196`);
+/// - `sliding`: `Modify` — try sliding faces on planar / cylindrical supports
+///   (`cxx:280-353`). Fuse mode is fixed (`Mode = 1`).
+pub fn rib(
+    solid: &Solid,
+    wire: &crate::shape::Wire,
+    plane: &GpPln,
+    direc: &GpVec,
+    direc1: &GpVec,
+    sliding: bool,
+) -> Result<FeatResult, String> {
+    let nulldir = GpVec::zero();
+    let tol = occt_core::precision::CONFUSION;
+    if direc.is_equal_tol(&nulldir, tol, tol) && direc1.is_equal_tol(&nulldir, tol, tol) {
+        return Err("rib: Direc and Direc1 are both null".into());
+    }
+    let mut feat = crate::brep_feat::MakeLinearForm::with_shapes(
+        &solid.0, wire, plane, direc, direc1, 1, sliding,
+    )
+    .map_err(|e| format!("rib: {e}"))?;
+    if !feat.is_done() {
+        return Err(format!("rib: {:?}", feat.current_status_error()));
+    }
+    feat.perform().map_err(|e| format!("rib: {e}"))?;
+    if !feat.is_done() {
+        return Err(format!("rib: {:?}", feat.current_status_error()));
+    }
+    let shape = feat
+        .shape()
+        .cloned()
+        .ok_or_else(|| "rib: NotDone (no myShape)".to_string())?;
+    let volume = solid_volume(&shape);
+    Ok(FeatResult { shape, volume })
 }
 
-/// Boss through all: fuse a cylinder of `radius` whose axis passes through
-/// `center` (axis +Z) and whose height spans the solid's bounding-box height,
-/// so it pierces the solid from below to above.
-pub fn boss_thru_all(solid: &Solid, center: &GpPnt, radius: f64, tol: f64) -> Result<FeatResult, String> {
+/// Boss through all: `BRepFeat_MakePrism::PerformThruAll` (`cxx:849-897`) over
+/// a circular generating face on the solid's mid-height plane, fused into the
+/// basis. The prism spans the bounding box, so the boss pierces the solid.
+pub fn boss_thru_all(solid: &Solid, center: &GpPnt, radius: f64, _tol: f64) -> Result<FeatResult, String> {
     require_positive(radius, "radius", "boss_thru_all")?;
     let (z0, z1) = solid_z_span(&solid.0).map_err(|e| format!("boss_thru_all: {e}"))?;
-    let margin = (z1 - z0).max(radius).max(1.0);
-    let height = (z1 - z0) + 2.0 * margin;
-    let tool = translated_cylinder(center, radius, height, z0 - margin)?;
-    boolean_feature(solid, &tool, BoolOp::Fuse, tol)
+    let z_mid = 0.5 * (z0 + z1);
+    let pbase = disk_face_at(center, z_mid, radius).map_err(|e| format!("boss_thru_all: {e}"))?;
+    prism_feature(solid, &pbase, true, PrismLimit::ThruAll, "boss_thru_all")
 }
 
-/// Boss: fuse a cylindrical boss of `radius` and `height` onto `solid`. The
-/// cylinder's axis is +Z through `center`, with its base at the solid's top
-/// face (`center`'s height). Source: `BRepFeat_MakePrism` boss family.
-pub fn boss(solid: &Solid, center: &GpPnt, radius: f64, height: f64, tol: f64) -> Result<FeatResult, String> {
+/// Boss: `BRepFeat_MakePrism::Perform(Length)` (`cxx:210-319`) over a circular
+/// generating face on the solid's top plane. The cylinder's axis is +Z through
+/// `center`; the base sits at the top z so the fuse adds material outside the
+/// solid instead of swallowing an interior tool.
+pub fn boss(solid: &Solid, center: &GpPnt, radius: f64, height: f64, _tol: f64) -> Result<FeatResult, String> {
     require_positive(radius, "radius", "boss")?;
     require_positive(height, "height", "boss")?;
-    // Base the boss on the solid's top face (the cylinder axis passes through
-    // `center`'s x/y, the base sits at the top z). Placing it at the bottom z
-    // hid the cylinder inside the solid, so a fuse swallowed it entirely.
     let (_, z1) = solid_z_span(&solid.0).map_err(|e| format!("boss: {e}"))?;
-    let tool = translated_cylinder(center, radius, height, z1)?;
-    boolean_feature(solid, &tool, BoolOp::Fuse, tol)
-}
-
-/// Analytic volume of the rib plate a [`rib`] call would build from `profile`
-/// on a plane with the given `thickness` and `height`: the padded in-plane
-/// footprint times the standing height.
-pub fn rib_volume(profile: &[GpPnt2d], thickness: f64, height: f64) -> Result<f64, String> {
-    require_min_profile(profile, "rib_volume")?;
-    require_positive(thickness, "thickness", "rib_volume")?;
-    require_positive(height, "height", "rib_volume")?;
-    let (umin, umax, vmin, vmax) = profile_bounds(profile).ok_or("rib_volume: degenerate profile")?;
-    let du = (umax - umin).max(thickness);
-    let dv = (vmax - vmin).max(thickness);
-    Ok(du * dv * height)
+    let pbase = disk_face_at(center, z1, radius).map_err(|e| format!("boss: {e}"))?;
+    prism_feature(solid, &pbase, true, PrismLimit::Length(height), "boss")
 }
 
 /// `|after.volume − volume(before)|`, the material added or removed by the
@@ -372,8 +402,8 @@ pub fn revolved_profile_volume(profile: &[GpPnt2d], steps: usize) -> Result<f64,
 /// operation, returning the feature result. The public face of [`boolean_feature`]:
 /// useful for feature types built from a custom tool (a `BRepFeat_MakePrism`
 /// profile, for example).
-pub fn feature_apply(solid: &Solid, tool: &TopoShape, op: BoolOp, tol: f64) -> Result<FeatResult, String> {
-    boolean_feature(solid, tool, op, tol)
+pub fn feature_apply(solid: &Solid, tool: &TopoShape, op: BoolOp, _tol: f64) -> Result<FeatResult, String> {
+    boolean_feature(solid, tool, op)
 }
 
 /// Validate a revolve `profile` for `groove`/`neck`: enough points, non-negative
@@ -421,47 +451,99 @@ pub(super) fn require_positive(value: f64, name: &str, feature: &str) -> Result<
     }
 }
 
-/// The right-handed frame of a plane: `(origin, x_dir, y_dir, normal)`, each
-/// direction as a unit vector.
-pub(super) fn plane_frame(plane: &GpPln) -> (GpPnt, GpVec, GpVec, GpVec) {
-    let pos = plane.position();
-    (
-        plane.location(),
-        GpVec::from_xyz(pos.x_direction().xyz()),
-        GpVec::from_xyz(pos.y_direction().xyz()),
-        GpVec::from_xyz(pos.direction().xyz()),
+/// How far a [`prism_feature`] boss travels: one variant per the
+/// `BRepFeat_MakePrism` overload used by the product entry points.
+enum PrismLimit {
+    /// `Perform(Length)` (`BRepFeat_MakePrism.cxx:210-319`).
+    Length(f64),
+    /// `PerformThruAll()` (`cxx:849-897`).
+    ThruAll,
+}
+
+/// Circular generating face of a boss, built as the top cap of
+/// `BRepPrimAPI_MakeCylinder` (shared seam vertex, cap pcurve) and translated
+/// so its plane sits at `z`. Reusing the primitive avoids a hand-rolled disk
+/// that would re-open the FirstShape / WireSplitter issues T-511 hit on Revol.
+fn disk_face_at(center: &GpPnt, z: f64, radius: f64) -> Result<TopoShape, String> {
+    let cyl = crate::primitives::BRepPrimCylinder::make_cylinder(radius, 1.0);
+    let top = faces_of(&cyl.solid.0)
+        .into_iter()
+        .max_by(|a, b| {
+            face_avg_z(a)
+                .partial_cmp(&face_avg_z(b))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .ok_or_else(|| "disk_face_at: cylinder has no faces".to_string())?;
+    let dz = z - face_avg_z(&top);
+    crate::shape_ops::translated_copy(
+        &top.0,
+        &GpVec::new(center.x(), center.y(), dz),
     )
 }
 
-/// Axis-aligned bounds of a 2D profile: `(u_min, u_max, v_min, v_max)`.
-pub(super) fn profile_bounds(profile: &[GpPnt2d]) -> Option<(f64, f64, f64, f64)> {
-    let mut umin = f64::INFINITY;
-    let mut umax = f64::NEG_INFINITY;
-    let mut vmin = f64::INFINITY;
-    let mut vmax = f64::NEG_INFINITY;
-    for p in profile {
-        umin = umin.min(p.x());
-        umax = umax.max(p.x());
-        vmin = vmin.min(p.y());
-        vmax = vmax.max(p.y());
+fn face_avg_z(face: &crate::shape::Face) -> f64 {
+    let vs = crate::topo_tools::vertices_of(&face.0);
+    if vs.is_empty() {
+        return 0.0;
     }
-    if umin.is_finite() && umax > umin && vmax > vmin {
-        Some((umin, umax, vmin, vmax))
-    } else {
-        None
-    }
+    vs.iter()
+        .map(|v| crate::topo_tools::vertex_position(v).z())
+        .sum::<f64>()
+        / vs.len() as f64
 }
 
-/// Combine `solid` with the `tool` solid.
-///
-/// T-41: OCCT's only boolean is `BRepAlgoAPI_*` / `BOPAlgo_BOP` (audit A5: the
-/// port's `bop_curved` voxel/mesh boolean has no counterpart). Both the planar
-/// and the curved case run the exact `BOPAlgo_BOP` path.
-pub(super) fn boolean_feature(solid: &Solid, tool: &TopoShape, op: BoolOp, tol: f64) -> Result<FeatResult, String> {
-    let r = crate::bop_builder::boolean(&solid.0, tool, op, tol.max(1e-9))
+/// [`boss`] / [`boss_thru_all`]: `BRepFeat_MakePrism` over a circular
+/// `myPbase`, fuse mode, `Modify = false` (the length / thru-all arms that do
+/// not hit `GlobalPerform` still keep the Boolean history via
+/// [`crate::brep_feat::algo_api`]; thru-all with fuse does call
+/// `GlobalPerform`).
+fn prism_feature(
+    solid: &Solid,
+    pbase: &TopoShape,
+    fuse: bool,
+    limit: PrismLimit,
+    feature: &str,
+) -> Result<FeatResult, String> {
+    let skface = crate::shape::Face::wrap(pbase.clone())
+        .ok_or_else(|| format!("{feature}: the generating face is not a face"))?;
+    let dir = GpDir::new(0.0, 0.0, 1.0).map_err(|e| format!("{feature}: {e}"))?;
+    let mut feat = crate::brep_feat::MakePrism::with_shapes(
+        &solid.0,
+        pbase,
+        &skface,
+        &dir,
+        if fuse { 1 } else { 0 },
+        false,
+    );
+    match limit {
+        PrismLimit::Length(length) => feat.perform_length(length),
+        PrismLimit::ThruAll => feat.perform_thru_all(),
+    }
+    .map_err(|e| format!("{feature}: {e}"))?;
+    let shape = feat
+        .form
+        .shape()
+        .cloned()
+        .ok_or_else(|| format!("{feature}: NotDone (no myShape)"))?;
+    let volume = solid_volume(&shape);
+    Ok(FeatResult { shape, volume })
+}
+
+/// Combine `solid` with the `tool` solid through the history-preserving
+/// `BRepAlgoAPI_*` facade (`brep_feat::algo_api`), the same door
+/// `BRepFeat_Form::UpdateDescendants` uses after `GlobalPerform`.
+pub(super) fn boolean_feature(solid: &Solid, tool: &TopoShape, op: BoolOp) -> Result<FeatResult, String> {
+    let mut bop = match op {
+        BoolOp::Fuse => crate::brep_feat::algo_api::fuse(&solid.0, tool),
+        BoolOp::Cut => crate::brep_feat::algo_api::cut(&solid.0, tool),
+        BoolOp::Common => crate::brep_feat::algo_api::common(&solid.0, tool),
+    };
+    bop.build()
         .map_err(|e| format!("feature boolean: {e}"))?;
-    let shape = r.solid.map(|s| s.0).unwrap_or(r.shape);
-    // `BRepGProp::VolumeProperties` over the boolean's own faces.
+    let shape = bop
+        .shape()
+        .cloned()
+        .ok_or_else(|| "feature boolean: NotDone (no Shape)".to_string())?;
     let volume = solid_volume(&shape);
     Ok(FeatResult { shape, volume })
 }
@@ -554,19 +636,6 @@ fn revolve_feature(
     // `BRepGProp::VolumeProperties` over the feature's own faces.
     let volume = solid_volume(&shape);
     Ok(FeatResult { shape, volume })
-}
-
-/// Analytic cylinder of `radius` × `height` (axis +Z) translated so its base
-/// sits at `z_base` and its axis passes through `center`.
-/// Source: `BRepPrimAPI_MakeCylinder`.
-pub(super) fn translated_cylinder(
-    center: &GpPnt,
-    radius: f64,
-    height: f64,
-    z_base: f64,
-) -> Result<TopoShape, String> {
-    let cyl = crate::primitives::BRepPrimCylinder::make_cylinder(radius, height);
-    crate::shape_ops::translated_copy(&cyl.solid.0, &GpVec::new(center.x(), center.y(), z_base))
 }
 
 /// Transform mapping the +Z axis through the origin onto the line `axis`

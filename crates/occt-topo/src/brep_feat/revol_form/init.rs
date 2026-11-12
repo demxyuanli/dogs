@@ -25,7 +25,7 @@ use occt_geom::circle::GeomCircle;
 use occt_geom::curve::Curve;
 use occt_geom::geom_api::to_2d;
 use occt_geom::line::GeomLine;
-use occt_geom::trimmed::GeomTrimmedCurve;
+use occt_geom::trimmed::GeomTrimmedCurveBasis;
 use occt_geom::GeomPlane;
 use occt_geom2d::extrema2d::ExtremaExtCC2d;
 
@@ -85,14 +85,17 @@ fn edge_from_vertex_pair(v1: &Vertex, v2: &Vertex) -> Option<Edge> {
     Some(e)
 }
 
-/// `new Geom_TrimmedCurve(ccc, f, l)` with `cc->Reverse()` applied when `edg`
-/// is reversed (`cxx:740-746`).
+/// `new Geom_TrimmedCurve(ccc, f, l)` with `cc->Reverse()` when `edg` is
+/// reversed (`cxx:740-746`).
+///
+/// Uses [`GeomTrimmedCurveBasis`] and a real `Reverse` — constructing with
+/// `(l, f)` cannot replace `cc->Reverse()` because min/max collapses.
 pub(super) fn trimmed_of(edg: &Edge, ccc: &Arc<dyn Curve>, f: f64, l: f64) -> Arc<dyn Curve> {
+    let mut cc = GeomTrimmedCurveBasis::new(ccc.clone(), f, l);
     if edg.0.orientation() == Orientation::Reversed {
-        Arc::new(GeomTrimmedCurve::new(ccc.clone(), l, f))
-    } else {
-        Arc::new(GeomTrimmedCurve::new(ccc.clone(), f, l))
+        cc.reverse();
     }
+    Arc::new(cc)
 }
 
 /// `BRep_Tool::Surface(F)` after the `Geom_RectangularTrimmedSurface` unwrap

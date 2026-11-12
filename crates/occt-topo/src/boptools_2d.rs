@@ -7,7 +7,10 @@
 //! * **Construction** — [`make_2d`] builds the edge→face p-curve (delegating to
 //!   [`crate::pcurve_full::make_pcurve_full`]); [`build_pcurve_for_edge_on_face`]
 //!   builds it *and* attaches it to the edge; [`attach_existing_pcurve`] registers
-//!   an already-built curve.
+//!   an already-built curve (`UpdateEdge` only). The full
+//!   `BOPTools_AlgoTools2D::AttachExistingPCurve` copy path (temp edge +
+//!   SameParameter + `Transfert`) is
+//!   [`crate::boptools_attach_pcurve::attach_existing_pcurve_edges`].
 //! * **Storage access** — [`curve_on_surface`] reads the stored p-curve of an
 //!   edge on a face from the [`crate::tgeometry::GeometryRegistry`] side-table;
 //!   [`has_curve_on_surface`] reports whether one exists.
@@ -243,6 +246,11 @@ pub fn intermediate_point(t1: f64, t2: f64) -> f64 {
 
 /// Attach the already-built p-curve `curve` of `edge` on `face` to the edge's
 /// geometry entry (`BRep_Builder::UpdateEdge(edge, curve2d, face, tol)`).
+///
+/// This is only the registry write. The full
+/// `BOPTools_AlgoTools2D::AttachExistingPCurve` (copy from a coincident edge,
+/// SameParameter, closed seam, `Transfert`) is
+/// [`crate::boptools_attach_pcurve::attach_existing_pcurve_edges`].
 ///
 /// The curve is stored in the [`GeometryRegistry`] side-table keyed by the
 /// face's pointer identity, so a later [`curve_on_surface`] /

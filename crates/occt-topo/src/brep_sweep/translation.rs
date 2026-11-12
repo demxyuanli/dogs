@@ -24,7 +24,6 @@ use crate::topexp::Explorer;
 
 use super::grid::{SweepOps, SweepTables};
 use super::num_shape::{NumShape, NumShapeIterator};
-use super::quilt::Quilt;
 use super::rotation::{is_really_closed, set_the_pcurve, set_vertex_param, vertex_parameter};
 
 const PI: f64 = std::f64::consts::PI;
@@ -398,9 +397,15 @@ impl SweepOps for Translation {
         false
     }
     fn split_shell(&self, shell: &TopoShape) -> TopoShape {
-        let mut quilt = Quilt::new();
-        quilt.add(shell);
-        quilt.shells()
+        // `BRepSweep_NumLinearRegularSweep::SplitShell` (`cxx:547-552`): the
+        // translation path does **not** override this (unlike
+        // `BRepSweep_Rotation::SplitShell`, which quilts). Wrap the shell in a
+        // compound so the Face+Edge solid assembly keeps every face, including
+        // the first/last caps that Quilt would drop when edge sewing fails.
+        let builder = TopoBuilder::new();
+        let mut comp = TopoShape::new(ShapeType::Compound);
+        builder.add(&mut comp, shell);
+        comp
     }
     fn set_continuity(&self, gen: &TopoShape, dir: NumShape) {
         super::continuity::set_continuity(self, gen, dir);

@@ -25,6 +25,11 @@ pub trait PaveFillerLike {
     fn section_pcurve_on(&self) -> (bool, bool) {
         (true, true)
     }
+    /// `IntTools_Context` for `AttachExistingPCurve` / split-to-reverse.
+    /// Isolation stubs return `None` and skip the On common-block attach arm.
+    fn int_tools_context(&self) -> Option<&crate::int_tools_full::IntToolsContext> {
+        None
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -437,13 +442,13 @@ pub fn blocks_make_split_edges<F: PaveFillerLike>(f: &mut F) -> Result<(), Strin
 ///    new p-curve is built. When a section edge has no p-curve yet (a
 ///    degenerate pipeline state), it is built first, as OCCT does.
 ///
-/// Translation boundaries: the common-block p-curve copy of the OCCT `On`
-/// branch (`BOPTools_AlgoTools2D::AttachExistingPCurve`, reusing a coincident
-/// edge's p-curve) is not ported — recomputation via [`pcurve_full`] is
-/// geometrically equivalent for coincident edges and the Rust common block
-/// stores edge indices + ranges rather than pave-block handles. The periodic
-/// p-curve adjustment (`AdjustPCurveOnSurf`) of the `MPC::Perform` fast path
-/// is likewise left to the F/F solver / trim step.
+/// The `On` common-block arm mirrors
+/// [`crate::pave_pcurves::make_p_curves`]: a sibling with Cos supplies
+/// `MakeSplitEdge` + [`crate::boptools_attach_pcurve::attach_existing_pcurve_edges`]
+/// when [`PaveFillerLike::int_tools_context`] is present; otherwise missing Cos
+/// is rebuilt via [`crate::pcurve_full`]. The periodic p-curve adjustment
+/// (`AdjustPCurveOnSurf`) of the `MPC::Perform` fast path for section edges
+/// that already carry a Cos is handled in `pave_pcurves::adjust_existing_pcurve`.
 pub fn make_pcurves<F: PaveFillerLike>(f: &mut F) -> Result<(), String> {
     if f.avoid_build_pcurve() {
         return Ok(());
@@ -455,29 +460,17 @@ pub fn make_pcurves<F: PaveFillerLike>(f: &mut F) -> Result<(), String> {
     let fi_pool = f.ds().face_info_pool().to_vec();
     for fi in fi_pool {
         let Some(face_shape) = f.ds().shape(fi.face_index).cloned() else { continue };
-        let face = Face(face_shape);
+        let mut face = Face(face_shape);
+        face.0.set_orientation(Orientation::Forward);
         let face_key = GeometryRegistry::shape_key(&face.0);
+        let face_idx = fi.face_index;
 
-        // 1. IN + ON pave blocks: build a p-curve for every edge that does not
-        //    carry one on this face yet.
-        let mut edges: Vec<usize> = fi.paves_in().iter().map(|&(e, _, _)| e).collect();
-        for &(e, _, _) in fi.paves_on() {
-            // OCCT skips the On blocks whose edge already has a curve on the face.
-            let has_pc = f
-                .ds()
-                .shape(e)
-                .map(|s| boptools_2d::curve_on_surface(&Edge(s.clone()), &face).is_some())
-                .unwrap_or(false);
-            if !has_pc {
-                edges.push(e);
-            }
-        }
-        edges.sort_unstable();
-        edges.dedup();
-        for edge_idx in edges {
+        // 1a. IN pave blocks — always project when Cos is missing
+        //     (`BOPAlgo_PaveFiller_7.cxx` In arm).
+        for &(edge_idx, _, _) in fi.paves_in() {
             let Some(edge_shape) = f.ds().shape(edge_idx).cloned() else { continue };
             let edge = Edge(edge_shape);
-            if boptools_2d::curve_on_surface(&edge, &face).is_some() {
+            if boptools_2d::has_curve_on_surface(&edge, &face) {
                 continue;
             }
             match pcurve_full::make_pcurve_full(&edge, &face) {
@@ -485,11 +478,89 @@ pub fn make_pcurves<F: PaveFillerLike>(f: &mut F) -> Result<(), String> {
                     GeometryRegistry::global().set_edge_pcurve(&edge.0, face_key, pc);
                 }
                 Err(e) => {
-                    let msg = format!(
-                        "make_pcurves: pcurve failed for edge {edge_idx} on face {}: {e}",
-                        fi.face_index
-                    );
-                    f.add_warning(msg);
+                    f.add_warning(format!(
+                        "make_pcurves: pcurve failed for edge {edge_idx} on face {face_idx}: {e}"
+                    ));
+                }
+            }
+        }
+
+        // 1b. ON pave blocks — `cxx:617-683` + `MPC::Perform` (`cxx:229-247`):
+        //     skip when Cos already present; else AttachExistingPCurve from a
+        //     common-block sibling; else BuildPCurveForEdgeOnFace.
+        for &(edge_idx, t1, t2) in fi.paves_on() {
+            let Some(edge_shape) = f.ds().shape(edge_idx).cloned() else { continue };
+            let edge = Edge(edge_shape);
+            if boptools_2d::has_curve_on_surface(&edge, &face) {
+                continue;
+            }
+            let mut attached = false;
+            if let Some(ctx) = f.int_tools_context() {
+                if let Some(pb) = f.ds().pave_blocks(edge_idx).iter().find(|p| {
+                    let (a, b) = p.range();
+                    (a - t1).abs() <= PCONFUSION && (b - t2).abs() <= PCONFUSION
+                }) {
+                    if let Some(cb) = f.ds().common_block(pb) {
+                        if cb.pave_blocks().len() >= 2 {
+                            for pbx in cb.pave_blocks() {
+                                if crate::pave_ff_exist::pb_key(pbx)
+                                    == crate::pave_ff_exist::pb_key(pb)
+                                {
+                                    continue;
+                                }
+                                let n_ex = pbx.original_edge();
+                                let Some(exs) = f.ds().shape(n_ex).cloned() else {
+                                    continue;
+                                };
+                                let a_ez = Edge(exs.oriented(Orientation::Forward));
+                                if !boptools_2d::has_curve_on_surface(&a_ez, &face) {
+                                    continue;
+                                }
+                                let (n_v1x, n_v2x) = pbx.indices();
+                                let (a_t1x, a_t2x) = pbx.range();
+                                let Some(v1s) = f.ds().shape(n_v1x).cloned() else {
+                                    continue;
+                                };
+                                let Some(v2s) = f.ds().shape(n_v2x).cloned() else {
+                                    continue;
+                                };
+                                let v1x = v1s.oriented(Orientation::Forward);
+                                let v2x = v2s.oriented(Orientation::Reversed);
+                                let Ok(a_spz) = AlgoTools::make_split_edge(
+                                    &a_ez,
+                                    Some(&v1x),
+                                    a_t1x,
+                                    Some(&v2x),
+                                    a_t2x,
+                                ) else {
+                                    continue;
+                                };
+                                if crate::boptools_attach_pcurve::attach_existing_pcurve_edges(
+                                    &a_spz, &edge, &face, ctx,
+                                ) == 0
+                                {
+                                    attached = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if attached {
+                if let Some(pc) = boptools_2d::curve_on_surface(&edge, &face) {
+                    update_vertices(&edge, &face, &pc);
+                }
+                continue;
+            }
+            match pcurve_full::make_pcurve_full(&edge, &face) {
+                Ok(pc) => {
+                    GeometryRegistry::global().set_edge_pcurve(&edge.0, face_key, pc);
+                }
+                Err(e) => {
+                    f.add_warning(format!(
+                        "make_pcurves: pcurve failed for edge {edge_idx} on face {face_idx}: {e}"
+                    ));
                 }
             }
         }
@@ -516,11 +587,9 @@ pub fn make_pcurves<F: PaveFillerLike>(f: &mut F) -> Result<(), String> {
                             pc
                         }
                         Err(e) => {
-                            let msg = format!(
-                                "make_pcurves: pcurve failed for edge {edge_idx} on face {}: {e}",
-                                fi.face_index
-                            );
-                            f.add_warning(msg);
+                            f.add_warning(format!(
+                                "make_pcurves: pcurve failed for edge {edge_idx} on face {face_idx}: {e}"
+                            ));
                             continue;
                         }
                     },

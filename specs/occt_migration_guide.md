@@ -9,7 +9,9 @@
 > - 板真相：`docs/goals/drift-and-gap-autofix/state.yaml`（`goal.oracle` 四道基线）
 > - 门禁基线冻结记录：`docs/goals/drift-and-gap-autofix/notes/T002-gate-baseline.md`
 >
-> **本文所有数字为 2026-11-08 在本机实测**（PowerShell + `cargo`），不是引用画板旧数；
+> **本文 §1 体量数字仍以 2026-11-08 快照为主**；**现行画板**（`occt-migration-audit-and-100k-roadmap.canvas.tsx`）
+> 已于 **2026-11-12** 刷新：非 S7 产品缺口收口（`rib`→`MakeLinearForm`、`draft`→`DraftAngle` 且
+> `Direction`=中性面法向、`SimplifyResult`、`Geom_TrimmedCurve::Reverse`），体量读数 85.2 万行 / 3369 文件。
 > 与画板不一致处在 §7 逐条订正。
 
 ---

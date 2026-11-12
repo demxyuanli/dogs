@@ -265,8 +265,11 @@ fn map_splits(b: &BopBuilder, sources: &[TopoShape]) -> (HashSet<ShapeMapKey>, H
     (keys, sets)
 }
 
-fn expand_lower(parts: &[TopoShape], dim_min: i32) -> HashSet<ShapeMapKey> {
-    let mut out: HashSet<ShapeMapKey> = HashSet::new();
+/// `aMItExp` / `aMCheckExp` fill (`BOPAlgo_BOP.cxx:731-764`): every building
+/// split, plus its sub-shapes of dimension in `[dim_min, dim_max)`.
+fn expand_lower_shapes(parts: &[TopoShape], dim_min: i32) -> Vec<TopoShape> {
+    let mut out: Vec<TopoShape> = Vec::new();
+    let mut fence: HashSet<ShapeMapKey> = HashSet::new();
     for s in parts {
         let d_max = dimension(s);
         if d_max < 0 {
@@ -276,14 +279,50 @@ fn expand_lower(parts: &[TopoShape], dim_min: i32) -> HashSet<ShapeMapKey> {
         while d < d_max {
             if let Some(ty) = type_to_explore(d) {
                 for sub in explore(s, ty) {
-                    out.insert(shape_key(&sub));
+                    if fence.insert(shape_key(&sub)) {
+                        out.push(sub);
+                    }
                 }
             }
             d += 1;
         }
-        out.insert(shape_key(s));
+        if fence.insert(shape_key(s)) {
+            out.push(s.clone());
+        }
     }
     out
+}
+
+fn expand_lower_keys(parts: &[TopoShape], dim_min: i32) -> HashSet<ShapeMapKey> {
+    expand_lower_shapes(parts, dim_min)
+        .into_iter()
+        .map(|s| shape_key(&s))
+        .collect()
+}
+
+/// `BOPAlgo_BOP.cxx:796-817`: COMMON keeps the highest-dimension pieces and
+/// fences their full sub-shape trees so lower-dim duplicates drop out.
+fn filter_common_result(rc: &TopoShape, dim_min: i32) -> TopoShape {
+    let bb = TopoBuilder::new();
+    let mut fence: HashSet<ShapeMapKey> = HashSet::new();
+    let mut kept: Vec<TopoShape> = Vec::new();
+    let mut dim = 3;
+    while dim >= dim_min {
+        if let Some(ty) = type_to_explore(dim) {
+            for s in explore(rc, ty) {
+                if !fence.insert(shape_key(&s)) {
+                    continue;
+                }
+                kept.push(s.clone());
+                // `TopExp::MapShapes(aS, aMFence)` — root already inserted.
+                for sub in crate::topo_tools::all_subshapes(&s) {
+                    fence.insert(shape_key(&sub));
+                }
+            }
+        }
+        dim -= 1;
+    }
+    bb.make_compound_of(&kept).0
 }
 
 /// `BOPAlgo_BOP::BuildRC`.
@@ -317,19 +356,20 @@ pub fn build_rc(b: &BopBuilder, op: BoolOp2, dim0: i32, dim1: i32) -> TopoShape 
 
     let dim_min = dim0.min(dim1);
     let it_shapes: Vec<TopoShape> = it_src.iter().flat_map(|s| splits_of(b, s)).collect();
-    let check_keys = expand_lower(
-        &check_src.iter().flat_map(|s| splits_of(b, s)).collect::<Vec<_>>(),
-        dim_min,
-    );
-    let it_exp = if common { expand_lower(&it_shapes, dim_min) } else { HashSet::new() };
+    let check_parts: Vec<TopoShape> = check_src.iter().flat_map(|s| splits_of(b, s)).collect();
+    let check_keys = expand_lower_keys(&check_parts, dim_min);
+    // COMMON iterates `aMItExp` (splits expanded to `dim_min`); Cut/Cut21
+    // iterate the unexpanded image map (`cxx:733-751`).
+    let it_exp: Vec<TopoShape> = if common {
+        expand_lower_shapes(&it_shapes, dim_min)
+    } else {
+        it_shapes
+    };
 
     let mut kept: Vec<TopoShape> = Vec::new();
     let mut fence: HashSet<ShapeMapKey> = HashSet::new();
-    for s in &it_shapes {
+    for s in &it_exp {
         let k = shape_key(s);
-        if common && !it_exp.contains(&k) {
-            continue;
-        }
         let mut contains = check_keys.contains(&k);
         if !contains && s.shape_type() == ShapeType::Solid {
             let st = BopToolsSet::from_shape(s, ShapeType::Face);
@@ -340,7 +380,12 @@ pub fn build_rc(b: &BopBuilder, op: BoolOp2, dim0: i32, dim1: i32) -> TopoShape 
             kept.push(s.clone());
         }
     }
-    bb.make_compound_of(&kept).0
+    let rc = bb.make_compound_of(&kept).0;
+    if common {
+        filter_common_result(&rc, dim_min)
+    } else {
+        rc
+    }
 }
 
 /// `TopExp::MapShapesAndAncestors(sol, FACE, SOLID)` for the aMTSols scan.

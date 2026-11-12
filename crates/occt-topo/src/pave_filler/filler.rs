@@ -664,4 +664,7 @@ impl PaveFillerLike for PaveFiller {
     fn add_warning(&mut self, msg: String) {
         self.warnings.push(msg);
     }
+    fn int_tools_context(&self) -> Option<&crate::int_tools_full::IntToolsContext> {
+        Some(&self.context)
+    }
 }

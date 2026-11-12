@@ -22,7 +22,11 @@ use occt_geom2d::curve::Curve2d;
 
 use crate::abs::{Orientation, ShapeType};
 use crate::algo_tools::D_TOLERANCE;
-use crate::boptools_2d::{attach_existing_pcurve, build_pcurve_for_edge_on_face, has_curve_on_surface};
+use crate::algo_tools::AlgoTools;
+use crate::boptools_2d::{
+    attach_existing_pcurve, build_pcurve_for_edge_on_face, has_curve_on_surface,
+};
+use crate::boptools_attach_pcurve::attach_existing_pcurve_edges;
 use crate::brep_surface::face_is_plane_type;
 use crate::brep_tool::BRepTool;
 use crate::iterator::ShapeIterator;
@@ -142,7 +146,11 @@ pub fn make_p_curves(f: &mut PaveFiller) -> Result<(), String> {
             if has_curve_on_surface(&e, &f1f) {
                 continue;
             }
-            let mut copied = false;
+            // `BOPAlgo_PaveFiller_7.cxx:617-683` On arm + `BOPAlgo_MPC::Perform`
+            // (`cxx:229-247`): sibling common-block member with a Cos supplies
+            // `MakeSplitEdge` + `AttachExistingPCurve`; failure falls back to
+            // `BuildPCurveForEdgeOnFace`.
+            let mut attached = false;
             if let Some(pb) = f.ds().pave_blocks(n_e).iter().find(|p| {
                 let (a, b) = p.range();
                 (a - t1).abs() <= PCONFUSION && (b - t2).abs() <= PCONFUSION
@@ -157,20 +165,41 @@ pub fn make_p_curves(f: &mut PaveFiller) -> Result<(), String> {
                             let Some(exs) = f.ds().shape(n_ex).cloned() else {
                                 continue;
                             };
-                            let ex = Edge(exs);
-                            if !has_curve_on_surface(&ex, &f1f) {
+                            let a_ez = Edge(exs.oriented(Orientation::Forward));
+                            if !has_curve_on_surface(&a_ez, &f1f) {
                                 continue;
                             }
-                            if let Ok(pc) = crate::boptools_2d::make_2d(&ex, &f1f) {
-                                let _ = attach_existing_pcurve(&e, &f1f, pc);
-                                copied = true;
+                            let (n_v1x, n_v2x) = pbx.indices();
+                            let (a_t1x, a_t2x) = pbx.range();
+                            let Some(v1s) = f.ds().shape(n_v1x).cloned() else {
+                                continue;
+                            };
+                            let Some(v2s) = f.ds().shape(n_v2x).cloned() else {
+                                continue;
+                            };
+                            let v1x = v1s.oriented(Orientation::Forward);
+                            let v2x = v2s.oriented(Orientation::Reversed);
+                            let Ok(a_spz) = AlgoTools::make_split_edge(
+                                &a_ez,
+                                Some(&v1x),
+                                a_t1x,
+                                Some(&v2x),
+                                a_t2x,
+                            ) else {
+                                continue;
+                            };
+                            // Serial stand-in for `CopyEdge` + Attach +
+                            // `UpdateEdge` (`cxx:236-247`, `:774-778`): Attach
+                            // writes Cos onto `e` via `Transfert`.
+                            if attach_existing_pcurve_edges(&a_spz, &e, &f1f, f.context()) == 0 {
+                                attached = true;
                                 break;
                             }
                         }
                     }
                 }
             }
-            if !copied {
+            if !attached {
                 build_or_warn(f, &e, &f1f, n_e, n_f1);
             } else {
                 update_vertices_pcurve(&e, &f1f);

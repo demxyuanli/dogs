@@ -6,7 +6,8 @@
 //! (`L.Predivided(E.Location())`), not by face shape ids. The public face-pair
 //! API resolves each face to its surface handle and shape location
 //! (`BRep_Tool::Surface(F, L)` ≈ face location; the port keeps no separate
-//! `BRep_TFace` location).
+//! `BRep_TFace` location). A null surface handle is still a valid Continuity
+//! key — OCCT does not early-return when `Surface(F)` is null.
 //!
 //! Source: `BRep_Builder.cxx:1012-1043` (`Continuity`),
 //! `BRep_Builder.cxx:376-405` (`UpdateCurves` regularity arm),
@@ -25,9 +26,12 @@ use crate::tshape::{CurveOn2SurfacesRepr, EdgePcurves};
 
 /// Face surface + shape location used as the Continuity key
 /// (`BRep_Tool::Surface(F, L)`, `BRep_Tool.cxx:76-81`).
-fn face_surface_location(face: &Face) -> Option<(Arc<dyn Surface>, TopLocLocation)> {
-    let surf = GeometryRegistry::global().face_surface(&face.0)?;
-    Some((surf, face.0.location().clone()))
+/// `L` is always filled from the face location; the surface may be null.
+fn face_surface_location(face: &Face) -> (Option<Arc<dyn Surface>>, TopLocLocation) {
+    (
+        GeometryRegistry::global().face_surface(&face.0),
+        face.0.location().clone(),
+    )
 }
 
 /// Locations relative to the edge (`L.Predivided(E.Location())`).
@@ -45,13 +49,19 @@ fn surface_repr_key(s: &Arc<dyn Surface>) -> usize {
 }
 
 /// `BRep_CurveOnClosedSurface::IsRegularity(S1,S2,L1,L2)` (`.cxx:57-63`).
+/// Requires non-null identical surfaces; a null handle cannot match a closed
+/// pcurve slot.
 fn closed_slot_key(
     pcs: &EdgePcurves,
-    s1: &Arc<dyn Surface>,
-    s2: &Arc<dyn Surface>,
+    s1: Option<&Arc<dyn Surface>>,
+    s2: Option<&Arc<dyn Surface>>,
     rl1: &TopLocLocation,
     rl2: &TopLocLocation,
 ) -> Option<usize> {
+    let (s1, s2) = match (s1, s2) {
+        (Some(a), Some(b)) => (a, b),
+        _ => return None,
+    };
     if !Arc::ptr_eq(s1, s2) || !rl1.is_equal(rl2) {
         return None;
     }
@@ -68,20 +78,16 @@ fn closed_slot_key(
 /// `BRep_Tool::Continuity(E, F1, F2)` (`BRep_Tool.cxx:1180-1188` / `:1223-1246`):
 /// stored regularity, or `GeomAbs_C0` when no matching representation exists.
 pub fn stored_continuity(edge: &Edge, f1: &Face, f2: &Face) -> u8 {
-    let Some((s1, l1)) = face_surface_location(f1) else {
-        return 0;
-    };
-    let Some((s2, l2)) = face_surface_location(f2) else {
-        return 0;
-    };
-    continuity_on_surfaces(edge, &s1, &s2, &l1, &l2)
+    let (s1, l1) = face_surface_location(f1);
+    let (s2, l2) = face_surface_location(f2);
+    continuity_on_surfaces(edge, s1.as_ref(), s2.as_ref(), &l1, &l2)
 }
 
 /// `BRep_Tool::Continuity(E, S1, S2, L1, L2)` (`BRep_Tool.cxx:1223-1246`).
 pub fn continuity_on_surfaces(
     edge: &Edge,
-    s1: &Arc<dyn Surface>,
-    s2: &Arc<dyn Surface>,
+    s1: Option<&Arc<dyn Surface>>,
+    s2: Option<&Arc<dyn Surface>>,
     l1: &TopLocLocation,
     l2: &TopLocLocation,
 ) -> u8 {
@@ -105,20 +111,16 @@ pub fn continuity_on_surfaces(
 
 /// `BRep_Tool::HasContinuity(E, F1, F2)` (`BRep_Tool.cxx:1170-1176`).
 pub fn has_continuity_faces(edge: &Edge, f1: &Face, f2: &Face) -> bool {
-    let Some((s1, l1)) = face_surface_location(f1) else {
-        return false;
-    };
-    let Some((s2, l2)) = face_surface_location(f2) else {
-        return false;
-    };
-    has_continuity_on_surfaces(edge, &s1, &s2, &l1, &l2)
+    let (s1, l1) = face_surface_location(f1);
+    let (s2, l2) = face_surface_location(f2);
+    has_continuity_on_surfaces(edge, s1.as_ref(), s2.as_ref(), &l1, &l2)
 }
 
 /// `BRep_Tool::HasContinuity(E, S1, S2, L1, L2)` (`BRep_Tool.cxx:1195-1218`).
 pub fn has_continuity_on_surfaces(
     edge: &Edge,
-    s1: &Arc<dyn Surface>,
-    s2: &Arc<dyn Surface>,
+    s1: Option<&Arc<dyn Surface>>,
+    s2: Option<&Arc<dyn Surface>>,
     l1: &TopLocLocation,
     l2: &TopLocLocation,
 ) -> bool {
@@ -183,13 +185,11 @@ pub fn set_stored_continuity(edge: &Edge, f1: &Face, f2: &Face, cont: u8) {
 }
 
 /// Store the `GeomAbs_Shape` code directly (`GeomAbs_C0 = 0` .. `GeomAbs_CN = 6`).
+/// Always forwards to `Continuity(E,S1,S2,L1,L2,C)` even when a face surface is
+/// null (`BRep_Builder.cxx:1012-1021`).
 pub fn write_continuity(edge: &Edge, f1: &Face, f2: &Face, cont: u8) {
-    let Some((s1, l1)) = face_surface_location(f1) else {
-        return;
-    };
-    let Some((s2, l2)) = face_surface_location(f2) else {
-        return;
-    };
+    let (s1, l1) = face_surface_location(f1);
+    let (s2, l2) = face_surface_location(f2);
     write_continuity_on_surfaces(edge, s1, s2, l1, l2, cont);
 }
 
@@ -198,11 +198,12 @@ pub fn write_continuity(edge: &Edge, f1: &Face, f2: &Face, cont: u8) {
 ///
 /// Walk order matches `myCurves`: a matching `BRep_CurveOnClosedSurface`
 /// (`IsRegularity` `.cxx:57-63`) is updated in place; otherwise a
-/// `BRep_CurveOn2Surfaces` entry is appended / updated.
+/// `BRep_CurveOn2Surfaces` entry is appended / updated. Null surface handles
+/// are stored as `None`.
 pub fn write_continuity_on_surfaces(
     edge: &Edge,
-    s1: Arc<dyn Surface>,
-    s2: Arc<dyn Surface>,
+    s1: Option<Arc<dyn Surface>>,
+    s2: Option<Arc<dyn Surface>>,
     l1: TopLocLocation,
     l2: TopLocLocation,
     cont: u8,
@@ -211,7 +212,7 @@ pub fn write_continuity_on_surfaces(
     let mut ts = edge.0.tshape.write().expect("poisoned TShape lock");
     let closed_key = ts
         .edge_pcurves()
-        .and_then(|pcs| closed_slot_key(pcs, &s1, &s2, &rl1, &rl2));
+        .and_then(|pcs| closed_slot_key(pcs, s1.as_ref(), s2.as_ref(), &rl1, &rl2));
     if let Some(key) = closed_key {
         ts.edge_pcurves_mut().continuities.insert(key, cont);
         return;
@@ -220,7 +221,7 @@ pub fn write_continuity_on_surfaces(
     if let Some(existing) = core
         .regularities
         .iter_mut()
-        .find(|r| r.is_regularity(&s1, &s2, &rl1, &rl2))
+        .find(|r| r.is_regularity(s1.as_ref(), s2.as_ref(), &rl1, &rl2))
     {
         existing.continuity = cont;
         return;

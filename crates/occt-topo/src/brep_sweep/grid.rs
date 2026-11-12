@@ -44,10 +44,7 @@ impl GenTool {
     }
 
     pub fn index(&self, shape: &TopoShape) -> usize {
-        self.map
-            .iter()
-            .position(|s| is_same(s, shape))
-            .unwrap_or(0)
+        self.map.iter().position(|s| is_same(s, shape)).unwrap_or(0)
     }
 
     pub fn shape(&self, index: usize) -> TopoShape {
@@ -342,7 +339,14 @@ pub fn shape_of(host: &dyn SweepOps, gen: &TopoShape, dir: NumShape) -> Option<T
                     mark_used(tables, i_new_gen, i_dir);
                 }
             } else if gen_ty == ShapeType::Shell || gen_ty == ShapeType::Compound {
-                add_into_cell(&builder, tables, i_gen, i_dir, &new_shape, Orientation::Forward);
+                add_into_cell(
+                    &builder,
+                    tables,
+                    i_gen,
+                    i_dir,
+                    &new_shape,
+                    Orientation::Forward,
+                );
                 mark_used(tables, i_new_gen, i_dir);
             } else {
                 let or = sub.orientation();
@@ -351,10 +355,6 @@ pub fn shape_of(host: &dyn SweepOps, gen: &TopoShape, dir: NumShape) -> Option<T
             }
         }
         let mut kt = NumShapeIterator::new(dir);
-        eprintln!(
-            "[sweep-dbg] after gen-children: shell faces={}",
-            crate::topo_tools::faces_of(&new_shell).len()
-        );
         while kt.more() {
             let sub_dir = kt.value();
             if host.has_shape(gen, sub_dir) {
@@ -392,16 +392,6 @@ pub fn shape_of(host: &dyn SweepOps, gen: &TopoShape, dir: NumShape) -> Option<T
                             );
                         } else if gen_ty == ShapeType::Face {
                             let or = kt.orientation();
-                            eprintln!(
-                                "[sweep-dbg] floor gen={:?} sub_dir idx={} ty={:?} ori={:?} faces={} tsh={:?} loc={:?}",
-                                gen.shape_type(),
-                                sub_dir.index,
-                                sub_dir.ty,
-                                or,
-                                crate::topo_tools::faces_of(&new_shape).len(),
-                                std::sync::Arc::as_ptr(&new_shape.tshape) as usize,
-                                new_shape.location().transformation(),
-                            );
                             add_oriented(&builder, &mut new_shell, &new_shape, or);
                             mark_used(tables, i_gen, i_new_dir);
                         }
@@ -417,7 +407,14 @@ pub fn shape_of(host: &dyn SweepOps, gen: &TopoShape, dir: NumShape) -> Option<T
                 }
             } else {
                 new_wire.set_closed(shape_is_closed(&new_wire));
-                add_into_cell(&builder, tables, i_gen, i_dir, &new_wire, new_wire.orientation());
+                add_into_cell(
+                    &builder,
+                    tables,
+                    i_gen,
+                    i_dir,
+                    &new_wire,
+                    new_wire.orientation(),
+                );
             }
             tables.built.borrow_mut()[i_gen][i_dir] = true;
             host.set_continuity(gen, dir);
@@ -430,19 +427,6 @@ pub fn shape_of(host: &dyn SweepOps, gen: &TopoShape, dir: NumShape) -> Option<T
             let temp = host.split_shell(&new_shell);
             let shell_ori = host.direct_solid(gen, dir);
             let kids = cumulated_children(&temp);
-            eprintln!(
-                "[sweep-dbg] walls+floors shell faces={} split kids={} ori={:?}",
-                crate::topo_tools::faces_of(&new_shell).len(),
-                kids.len(),
-                shell_ori
-            );
-            for k in &kids {
-                eprintln!(
-                    "[sweep-dbg]   kid {:?} faces={}",
-                    k.shape_type(),
-                    crate::topo_tools::faces_of(k).len()
-                );
-            }
             if kids.len() > 1 {
                 for lt in &kids {
                     add_into_cell(&builder, tables, i_gen, i_dir, lt, shell_ori);
@@ -528,7 +512,12 @@ fn add_into_cell(
     add_oriented(builder, &mut parent, child, orien);
 }
 
-fn add_oriented(builder: &TopoBuilder, parent: &mut TopoShape, child: &TopoShape, orien: Orientation) {
+fn add_oriented(
+    builder: &TopoBuilder,
+    parent: &mut TopoShape,
+    child: &TopoShape,
+    orien: Orientation,
+) {
     let mut c = child.clone();
     c.set_orientation(orien);
     builder.add(parent, &c);
@@ -541,7 +530,10 @@ pub fn shape_is_closed(s: &TopoShape) -> bool {
     match s.shape_type() {
         ShapeType::Wire => {
             for v in crate::topo_tools::vertices_of(s) {
-                if matches!(v.0.orientation(), Orientation::Internal | Orientation::External) {
+                if matches!(
+                    v.0.orientation(),
+                    Orientation::Internal | Orientation::External
+                ) {
                     continue;
                 }
                 has_bound = true;
@@ -551,7 +543,10 @@ pub fn shape_is_closed(s: &TopoShape) -> bool {
         ShapeType::Shell => {
             for e in crate::topo_tools::edges_of(s) {
                 if crate::brep_tool::BRepTool::is_degenerated(&e)
-                    || matches!(e.0.orientation(), Orientation::Internal | Orientation::External)
+                    || matches!(
+                        e.0.orientation(),
+                        Orientation::Internal | Orientation::External
+                    )
                 {
                     continue;
                 }

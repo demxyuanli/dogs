@@ -19,7 +19,7 @@ use occt_core::gp::{GpPln, GpPnt, GpPnt2d};
 use occt_core::precision::CONFUSION;
 use occt_geom::curve::Curve;
 use occt_geom::geom_api::to_2d;
-use occt_geom::trimmed::GeomTrimmedCurve;
+use occt_geom::trimmed::GeomTrimmedCurveBasis;
 use occt_geom::GeomPlane;
 use occt_geom2d::curve::Curve2d;
 use occt_geom2d::geom2d_api_inter_curve_curve::InterCurveCurve2d;
@@ -108,11 +108,13 @@ impl MakeRevolutionForm {
                     let last_pnt = self.base.my_last_pnt;
                     let fpar = int_par(Some(ccc.as_ref()), &first_pnt);
                     let lpar = int_par(Some(ccc.as_ref()), &last_pnt);
-                    let cc: Arc<dyn Curve> = if fpar > lpar {
-                        Arc::new(GeomTrimmedCurve::new(ccc.clone(), l, f))
-                    } else {
-                        Arc::new(GeomTrimmedCurve::new(ccc.clone(), f, l))
-                    };
+                    // `cxx:437-442` family: Reverse when params run the other
+                    // way — not `new(..., l, f)` (min/max collapses).
+                    let mut trimmed = GeomTrimmedCurveBasis::new(ccc.clone(), f, l);
+                    if fpar > lpar {
+                        trimmed.reverse();
+                    }
+                    let cc: Arc<dyn Curve> = Arc::new(trimmed);
                     let v2 = make_vertex(&last_pnt);
                     match &the_previous_edge {
                         None => {
@@ -209,7 +211,8 @@ impl MakeRevolutionForm {
                             "Standard_NullObject: LastVertex".to_string()
                         })?;
                         let v2 = make_vertex(&pl);
-                        let cc: Arc<dyn Curve> = Arc::new(GeomTrimmedCurve::new(ccc.clone(), f, l));
+                        let cc: Arc<dyn Curve> =
+                            Arc::new(GeomTrimmedCurveBasis::new(ccc.clone(), f, l));
                         edge_from_vertices(&cc, &v1, &v2)
                             .ok_or_else(|| "BRepLib_LineThroughIdenticPoints".to_string())
                     }
@@ -266,7 +269,10 @@ impl MakeRevolutionForm {
                 if dist <= self.my_tol {
                     sens = 2;
                     last_ok_w = true;
-                    cc = Arc::new(GeomTrimmedCurve::new(ccc.clone(), l, f));
+                    // `cc->Reverse()` (`cxx:749`); not `new(..., l, f)`.
+                    let mut c = cc.clone_dyn();
+                    c.reverse();
+                    cc = Arc::from(c);
                 }
             }
 

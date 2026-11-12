@@ -19,7 +19,7 @@ use std::sync::Arc;
 use occt_core::gp::{GpPln, GpPnt, GpTrsf, GpVec};
 use occt_core::precision;
 use occt_geom::curve::Curve;
-use occt_geom::trimmed::GeomTrimmedCurve;
+use occt_geom::trimmed::GeomTrimmedCurveBasis;
 use occt_geom::GeomPlane;
 
 use crate::abs::{Orientation, ShapeType};
@@ -91,14 +91,25 @@ fn sweep_hits(p: &GpPnt, v: &GpVec, f: &Face) -> bool {
     ext.nb_ext() == 1 && ext.square_distance(1) <= tol * tol
 }
 
-/// `new Geom_TrimmedCurve(ccc, f, l)` with `cc->Reverse()` applied when
-/// `edg` is reversed (`cxx:438-442`, `cxx:578-585`).
+/// `new Geom_TrimmedCurve(ccc, f, l)` with `cc->Reverse()` when `edg` is
+/// reversed (`cxx:438-442`, `cxx:578-585`).
+///
+/// Uses [`GeomTrimmedCurveBasis`] (basis parameters, like OCCT) and a real
+/// `Reverse` — `GeomTrimmedCurve::new(l, f)` min/max-collapses and cannot
+/// stand in for `cc->Reverse()`.
 fn trimmed_of(edg: &Edge, ccc: &Arc<dyn Curve>, f: f64, l: f64) -> Arc<dyn Curve> {
+    let mut cc = GeomTrimmedCurveBasis::new(ccc.clone(), f, l);
     if edg.0.orientation() == Orientation::Reversed {
-        Arc::new(GeomTrimmedCurve::new(ccc.clone(), l, f))
-    } else {
-        Arc::new(GeomTrimmedCurve::new(ccc.clone(), f, l))
+        cc.reverse();
     }
+    Arc::new(cc)
+}
+
+/// `cc->Reverse()` on a trimmed curve (`Geom_TrimmedCurve.cxx:78-83`).
+fn reverse_curve(cc: &Arc<dyn Curve>) -> Arc<dyn Curve> {
+    let mut c = cc.clone_dyn();
+    c.reverse();
+    Arc::from(c)
 }
 
 impl MakeLinearForm {
@@ -379,11 +390,14 @@ impl MakeLinearForm {
                         let lpar = int_par(Some(ccc.as_ref()), &last_pnt);
                         (last_pnt, fpar > lpar)
                     };
-                    let cc = if reversed {
-                        Arc::new(GeomTrimmedCurve::new(ccc.clone(), l, f)) as Arc<dyn Curve>
-                    } else {
-                        Arc::new(GeomTrimmedCurve::new(ccc.clone(), f, l)) as Arc<dyn Curve>
-                    };
+                    // `cxx:437-442`: `new Geom_TrimmedCurve(ccc,f,l)` then
+                    // `cc->Reverse()` when the one-edge parameters run the
+                    // other way — not `new(..., l, f)` (min/max collapses).
+                    let mut trimmed = GeomTrimmedCurveBasis::new(ccc.clone(), f, l);
+                    if reversed {
+                        trimmed.reverse();
+                    }
+                    let cc: Arc<dyn Curve> = Arc::new(trimmed);
                     // `cxx:457-469`.
                     let v2 = make_vertex(&pt);
                     let built = match &the_previous_edge {
@@ -464,7 +478,8 @@ impl MakeLinearForm {
                     // `cxx:530-559`: the last edge of the sketch.
                     let ccc = BRepTool::edge_curve_world(&e)
                         .ok_or_else(|| "Standard_NullObject: BRep_Tool::Curve".to_string())?;
-                    let cc: Arc<dyn Curve> = Arc::new(GeomTrimmedCurve::new(ccc.clone(), f, l));
+                    let cc: Arc<dyn Curve> =
+                        Arc::new(GeomTrimmedCurveBasis::new(ccc.clone(), f, l));
                     let pf = crate::shhealing::first_vertex(&e)
                         .map(|v| BRepTool::vertex_point(&v))
                         .ok_or_else(|| "Standard_NullObject: FirstVertex".to_string())?;
@@ -529,8 +544,8 @@ impl MakeLinearForm {
                     if dist <= self.my_tol {
                         sens = 2;
                         last_ok = true;
-                        // `cc->Reverse()`.
-                        cc = Arc::new(GeomTrimmedCurve::new(ccc.clone(), l, f));
+                        // `cc->Reverse()` (`cxx:588`); not `new(..., l, f)`.
+                        cc = reverse_curve(&cc);
                     }
                 }
 
@@ -602,9 +617,11 @@ impl MakeLinearForm {
                     the_l_edge = the_edge.clone();
                 }
 
-                // `cxx:680-697`.
+                // `cxx:641-655`: after a consumed edge, re-initialize the
+                // iterator on the remaining list (`it.Initialize(myListOfEdges)`).
                 if last_ok {
                     self.my_list_of_edges.remove(it_idx);
+                    it_idx = 0;
                     last_ok = false;
                 } else if it_idx + 1 < self.my_list_of_edges.len() {
                     it_idx += 1;

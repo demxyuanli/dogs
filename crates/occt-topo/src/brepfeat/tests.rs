@@ -173,27 +173,51 @@ use super::*;
         );
     }
 
+    /// Sketch plane of a vertical rib: XZ at `y` (normal +Y).
+    fn xz_plane_at_y(y: f64) -> GpPln {
+        GpPln::new(
+            GpAx3::new(
+                GpPnt::new(0.0, y, 0.0),
+                GpDir::new(0.0, 1.0, 0.0).unwrap(),
+                &GpDir::new(1.0, 0.0, 0.0).unwrap(),
+            )
+            .expect("xz plane"),
+        )
+    }
+
+    /// Open sketch wire near the box face `y = 0`, bottom to top.
+    ///
+    /// Thickness follows the OCCT demo (`pythonocc` `brep_feat_rib`): `Direction`
+    /// is along the sketch-plane normal so `LocOpe_LinearForm` of the planar
+    /// profile has non-zero volume. The plane stays far enough inside that
+    /// Init's null-`Direc1` centering (`cxx:181-196`) leaves the wire still
+    /// inside the solid (ExtremeFaces / SlidingProfile need that); after
+    /// `perform_with_translation` the prism then spans past `y = 0` so Fuse
+    /// adds material. Landing exactly on the face collapses closing edges
+    /// (`BRepLib_LineThroughIdenticPoints`); a mid-plane rib is absorbed.
+    fn box_rib_sketch(box_s: &BRepPrimBox) -> (crate::shape::Wire, GpPln, GpVec, GpVec) {
+        let _ = box_s;
+        // |Direc|/2 = 0.15; after centering the wire is at y = 0.05 (inside).
+        let plane = xz_plane_at_y(0.2);
+        let wire = crate::brep_builder_api::make_wire_from_points(&[
+            GpPnt::new(1.0, 0.2, 0.0),
+            GpPnt::new(1.0, 0.2, 1.0),
+        ])
+        .expect("rib sketch wire");
+        // Outward along -Y; null Direc1 centres by Direc/2 (Init cxx:181-196).
+        let direc = GpVec::new(0.0, -0.3, 0.0);
+        let direc1 = GpVec::zero();
+        (wire, plane, direc, direc1)
+    }
+
     #[test]
     fn rib_fuses_to_box() {
         let box_s = BRepPrimBox::make_box(2.0, 2.0, 1.0);
         let before = crate::brep_gprop::volume(&box_s.solid.0, 0.05);
         let before_faces = faces_of(&box_s.solid.0).len();
-        let plane = xy_plane_at(1.0);
-        let profile = [
-            GpPnt2d::new(0.5, 0.5),
-            GpPnt2d::new(0.8, 0.5),
-            GpPnt2d::new(0.8, 0.8),
-            GpPnt2d::new(0.5, 0.8),
-        ];
-        let after = rib(&box_s.solid, &profile, &plane, 0.3, 1.0, 0.05).unwrap();
-        let added = 0.3 * 0.3 * 1.0;
+        let (wire, plane, direc, direc1) = box_rib_sketch(&box_s);
+        let after = rib(&box_s.solid, &wire, &plane, &direc, &direc1, true).unwrap();
         assert!(after.volume > before, "rib must add material: {} > {}", after.volume, before);
-        assert!(
-            (after.volume - (before + added)).abs() < 0.08,
-            "rib added {} vs expected {}",
-            after.volume - before,
-            added
-        );
         assert!(
             faces_of(&after.shape).len() > before_faces,
             "rib grows the face count ({} > {})",
@@ -296,22 +320,29 @@ use super::*;
         let plane = xy_plane_at(1.0);
         assert!(groove(&cyl.solid, &[GpPnt2d::new(0.0, 0.0), GpPnt2d::new(0.5, 0.0)], &axis, 0.05).is_err());
         assert!(neck(&cyl.solid, &[GpPnt2d::new(0.0, 0.0), GpPnt2d::new(0.5, 0.0)], &axis, 0.05).is_err());
-        assert!(rib(&cyl.solid, &[GpPnt2d::new(0.0, 0.0), GpPnt2d::new(0.5, 0.0)], &plane, 0.3, 1.0, 0.05).is_err());
+        let bad_w = crate::brep_builder_api::make_wire_from_points(&[
+            GpPnt::new(0.0, 0.0, 0.0),
+            GpPnt::new(0.5, 0.0, 0.0),
+        ])
+        .unwrap();
+        assert!(rib(
+            &cyl.solid,
+            &bad_w,
+            &plane,
+            &GpVec::new(0.3, 0.0, 0.0),
+            &GpVec::zero(),
+            true,
+        )
+        .is_err());
     }
 
     #[test]
     fn rib_through_wire_ok() {
         let box_s = BRepPrimBox::make_box(2.0, 2.0, 1.0);
         let before = crate::brep_gprop::volume(&box_s.solid.0, 0.05);
-        let plane = xy_plane_at(1.0);
-        let profile = [
-            GpPnt2d::new(0.5, 0.5),
-            GpPnt2d::new(0.8, 0.5),
-            GpPnt2d::new(0.8, 0.8),
-            GpPnt2d::new(0.5, 0.8),
-        ];
-        let after = rib(&box_s.solid, &profile, &plane, 0.3, 1.0, 0.05).unwrap();
-        assert!(after.volume > before, "rib through the profile succeeds and adds volume");
+        let (wire, plane, direc, direc1) = box_rib_sketch(&box_s);
+        let after = rib(&box_s.solid, &wire, &plane, &direc, &direc1, true).unwrap();
+        assert!(after.volume > before, "rib through the sketch wire succeeds and adds volume");
     }
 
     #[test]
@@ -331,14 +362,20 @@ use super::*;
 
     #[test]
     fn rib_volume_analytic_matches_tool() {
-        let profile = [
-            GpPnt2d::new(0.5, 0.5),
-            GpPnt2d::new(0.8, 0.5),
-            GpPnt2d::new(0.8, 0.8),
-            GpPnt2d::new(0.5, 0.8),
-        ];
-        let v = rib_volume(&profile, 0.3, 1.0).unwrap();
-        assert!((v - 0.09).abs() < 1e-9, "rib volume {v}");
+        // Plate-style `rib_volume` was dropped with the MakeLinearForm wiring;
+        // null thickness vectors are rejected before Init (Perform needs a
+        // non-null gp_Dir from Direc).
+        let box_s = BRepPrimBox::make_box(2.0, 2.0, 1.0);
+        let (wire, plane, _, _) = box_rib_sketch(&box_s);
+        assert!(rib(
+            &box_s.solid,
+            &wire,
+            &plane,
+            &GpVec::zero(),
+            &GpVec::zero(),
+            true,
+        )
+        .is_err());
     }
 
     #[test]

@@ -49,7 +49,8 @@ use crate::brep_tool::BRepTool;
 use crate::builder::TopoBuilder;
 use crate::shape::{Edge, Face, TopoShape, Vertex};
 use crate::tgeometry::{FaceGeom, GeometryRegistry};
-use crate::topo_tools::{children_keep_orientation, explorer_shapes, is_same};use crate::topopebrep::tool::geom_tool::GeomTool;
+use crate::topo_tools::{children_keep_orientation, explorer_shapes, is_same};
+use crate::topopebrep::tool::geom_tool::GeomTool;
 use crate::topopebrep::tool::out_curve_type::OutCurveType;
 use crate::topopebrep::tool::shape_tool::adjust_on_periodic;
 
@@ -215,12 +216,24 @@ impl BuildTool {
     }
 
     /// `AddEdgeVertex(E, V)` (`cxx:915-919`).
-    ///
-    /// The three-argument overload `AddEdgeVertex(Ein, Eou, V)`
-    /// (`cxx:902-911`, which also runs `BRep_Builder::Transfert`) has no
-    /// caller in the ported `TopOpeBRepBuild` sources.
     pub fn add_edge_vertex(&self, e: &mut TopoShape, v: &TopoShape) {
         TopoBuilder::new().add(e, v);
+    }
+
+    /// `AddEdgeVertex(Ein, Eou, V)` (`cxx:902-911`): copy Ein onto Eou then
+    /// add `V` and `BRep_Builder::Transfert(Ein, Eou, V, V)`.
+    pub fn add_edge_vertex_copied(&self, ein: &TopoShape, eou: &mut TopoShape, v: &TopoShape) {
+        occt_topology::brep_builder_transfert::transfert_edge_shapes(ein, eou);
+        TopoBuilder::new().add(eou, v);
+        if let (Some(ein_e), Some(eou_e), Some(vert)) = (
+            Edge::wrap(ein.clone()),
+            Edge::wrap(eou.clone()),
+            Vertex::wrap(v.clone()),
+        ) {
+            occt_topology::brep_builder_transfert::transfert_edge_vertex(
+                &ein_e, &eou_e, &vert, &vert,
+            );
+        }
     }
 
     /// `AddWireEdge(W, E)` (`cxx:922-925`).

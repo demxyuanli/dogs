@@ -32,13 +32,13 @@ fn set_edge(host: &dyn SweepOps, gen: &TopoShape, dir: NumShape) {
         if same_located(&d, &f) {
             let tol3d = CONFUSION.max(2.0 * BRepTool::vertex_tolerance(&crate::shape::Vertex(d.clone())));
             let (ud, uf) = end_parameters(gen, &d, &f);
+            // `BRepLProp::Continuity` in OCCT always returns a `GeomAbs_Shape`
+            // (`BRepSweep_Trsf.cxx:120-128`); a failed probe is C0 and is skipped,
+            // it must not poison `tables.error` or later `Shape(Face, Vertex)`
+            // cap lookups return `None` and the solid loses its end faces.
             match pair_continuity(gen, &d, ud, gen, &f, uf, tol3d) {
                 Ok(cont) if cont >= 1 => {
                     write_same_face(host, &d, dir, gen, dir, cont);
-                }
-                Err(()) => {
-                    host.tables().fail("BRepLProp::Continuity");
-                    return;
                 }
                 _ => {}
             }
@@ -81,6 +81,8 @@ fn set_wire(host: &dyn SweepOps, gen: &TopoShape, dir: NumShape) {
                 let u2 = vertex_parameter(&vertex, e2);
                 let tol3d =
                     CONFUSION.max(2.0 * BRepTool::vertex_tolerance(&crate::shape::Vertex(vertex.clone())));
+                // Same as the edge arm (`cxx:164-178`): Continuity failure is C0,
+                // never a sweep-wide abort.
                 match pair_continuity(e1, &vertex, u1, e2, &vertex, u2, tol3d) {
                     Ok(cont) if cont >= 1 => {
                         let Some(swept_v) = shape_of(host, &vertex, dir) else {
@@ -96,8 +98,7 @@ fn set_wire(host: &dyn SweepOps, gen: &TopoShape, dir: NumShape) {
                             || f1.shape_type() != ShapeType::Face
                             || f2.shape_type() != ShapeType::Face
                         {
-                            host.tables().fail("BRepSweep_Trsf::SetContinuity");
-                            return;
+                            continue;
                         }
                         set_stored_continuity(
                             &Edge(swept_v),
@@ -105,10 +106,6 @@ fn set_wire(host: &dyn SweepOps, gen: &TopoShape, dir: NumShape) {
                             &Face(f2),
                             cont,
                         );
-                    }
-                    Err(()) => {
-                        host.tables().fail("BRepLProp::Continuity");
-                        return;
                     }
                     _ => {}
                 }

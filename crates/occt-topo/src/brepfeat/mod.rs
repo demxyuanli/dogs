@@ -5,44 +5,37 @@
 //! A "feature" modifies an existing solid by adding or removing material in a
 //! locally parametrized way. This module ports the common TKFeat classes:
 //!
-//! - `BRepFeat_MakeDPrism` (tapered draft) → [`draft`];
+//! - `BRepOffsetAPI_DraftAngle` (face draft) → [`draft`];
 //! - `BRepFeat_MakeRevol` (revolved feature) → [`groove`] (cut) and [`neck`]
 //!   (fuse);
-//! - `BRepFeat_MakeLinearForm` (rib / slot) → [`rib`];
-//! - a through-boss (a `BRepPrimAPI_MakeCylinder` fused across the solid) →
-//!   [`boss_thru_all`];
+//! - `BRepFeat_MakeLinearForm` (rib / slot) → [`rib`] (`Init` + `Perform`);
+//! - `BRepFeat_MakePrism` → [`boss`] (`Perform(Length)`) and
+//!   [`boss_thru_all`] (`PerformThruAll`);
 //! - `BRepFeat_MakeCylindricalHole` to [`through_hole`] (`Perform(Radius)`) and
 //!   [`blind_hole`] (`PerformBlind`).
 //!
 //! Each operation builds a tool solid and combines it with the target:
-//! - `draft` rotates the target face's supporting plane about the hinge (the
-//!   intersection line of the face plane and the pivot plane) and swaps the
-//!   face's surface geometry in a deep copy of the solid;
-//! - `groove` revolves a 2D `(r, z)` profile into an annular tool and cuts it
-//!   out of the solid;
-//! - `neck` revolves a 2D profile into a solid tool and fuses it on;
-//! - `rib` extrudes the profile's in-plane footprint into a thin plate of the
-//!   requested wall `thickness` and standing `height`, fused on;
-//! - `boss_thru_all` fuses a cylinder tall enough to pass through the solid's
-//!   bounding-box height;
+//! - `draft` runs `BRepOffsetAPI_DraftAngle::Add` / `Build` on the selected
+//!   face (`Direction` = face normal, `NeutralPlane` = pivot);
+//! - `groove` / `neck` run `BRepFeat_MakeRevol` over the cross-section face;
+//! - `rib` runs `BRepFeat_MakeLinearForm` over a sketch wire, plane, and the
+//!   pair of opposite in-plane thickness vectors (`Direc` / `Direc1`);
+//! - `boss` / `boss_thru_all` run `BRepFeat_MakePrism` over a circular
+//!   generating face;
 //! - `through_hole` / `blind_hole` cut a cylinder along an axis through
 //!   `BRepFeat_MakeCylindricalHole`.
 //!
 //! # Geometry strategy
 //!
-//! `BRepFeat_*` takes the tool `TopoDS_Shape` as given and hands it to
-//! `BOPAlgo_BOP`. The through-boss/neck cylinder tool is the analytic
-//! `BRepPrimAPI_MakeCylinder` (`translated_cylinder`); the revolved tool is
-//! `BRepFeat_MakeRevol::Perform(2*M_PI)` over the cross-section face
-//! ([`revolve_feature`] / [`profile_face`]).
-//! Audit A12 / T-125.
+//! Faithful TKFeat entry points keep the Boolean algorithm alive for
+//! `Modified` / `IsDeleted` (`brep_feat::algo_api`). [`feature_apply`] uses the
+//! same facade when a caller still builds a tool solid by hand.
 //!
 //! # Booleans
 //!
-//! Every feature runs [`crate::bop_builder::boolean`] (`BOPAlgo_BOP`) on the
-//! target solid and the tool; volumes are computed with
-//! [`solid_volume`] (`BRepGProp::VolumeProperties` / `BRepGProp_Vinert`), the
-//! divergence-theorem surface integral over each face of the result.
+//! Feature Booleans go through [`crate::brep_feat::algo_api`] (`BRepAlgoAPI_*`
+//! over `BOPAlgo_BOP` with history). Volumes use [`solid_volume`]
+//! (`BRepGProp::VolumeProperties` / `BRepGProp_Vinert`).
 //!
 //! # Example
 //! ```ignore
@@ -56,14 +49,10 @@
 //! ```
 mod prelude {
 
-pub(crate) use std::sync::Arc;
-
-pub(crate) use occt_core::gp::{GpAx1, GpDir, GpMat, GpPln, GpPnt, GpPnt2d, GpTrsf, GpVec, TrsfForm};
-pub(crate) use occt_geom::GeomPlane;
+pub(crate) use occt_core::gp::{GpAx1, GpDir, GpPln, GpPnt, GpPnt2d, GpTrsf, GpVec};
 
 pub(crate) use crate::bop_builder::BoolOp;
 pub(crate) use crate::shape::{Solid, TopoShape};
-pub(crate) use crate::tgeometry::{FaceGeom, GeometryRegistry};
 pub(crate) use crate::topo_tools::faces_of;
 
 }

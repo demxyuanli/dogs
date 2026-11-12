@@ -5635,7 +5635,7 @@ Do not grow the dual-pipeline / planar / volume-gate scaffold. Do not invent Fil
 | T-504 A | `brep_feat/algo_api.rs` 229：`BRepAlgoAPI_BuilderAlgo` / `_BooleanOperation` / `_Cut` 的历史查询门面，转调 `bop_builder2::builder_bop_algo_with_history` + `bop_hist::BopHistory`（`BOPAlgo_BuilderShape::Modified`/`IsDeleted` `hxx:52-95`，`BRepAlgoAPI_BuilderAlgo.cxx:204-251`）。构造按 `(theS1, theS2, theOp)`（`BRepAlgoAPI_BooleanOperation.cxx:96-105`）：`theS1` 进 arguments、`theS2` 进 tools；`build()` 前置 `myFillHistory`（`BRepAlgoAPI_BuilderAlgo.cxx:144`）。 | 已完成 |
 | T-504 B | `BRepFeat_Form`（`hxx:1-180`、`cxx:1-1580`、`lxx:1-84`）落 `form/`：`mod.rs` 319（类体、`lxx` 全部 Valid 标志、`IsDeleted` `cxx:1243-1251`、`Modified` `cxx:1254-1281`、`Generated` `cxx:1285-1305`、`FirstShape`/`LastShape`/`NewEdges`/`TgtEdges`）；`perform.rs` 320（`GlobalPerform` `cxx:59-1240`，gluer 航线 `cxx:332-638` 与 topological 航线 `cxx:653-1236`）；`gluing.rs` 284；`topo.rs` 172；`selection.rs` 377（`PartsOfTool`/`KeepPart` 的选取，`cxx:900-1236`）；`transform.rs` 92（`TransformShapeFU` `cxx:1378-1480`）；`descendants.rs` 110（两个 `UpdateDescendants` `cxx:1243-1332` 与静态 `Descendants` `cxx:1489-1580`）。 | 已完成 |
 | T-504 C | `BRepFeat_Builder`（`hxx:1-131`、`cxx:1-827`）落 `builder/`：`mod.rs` 358（两个 `Init`、两个 `SetOperation`、`PartsOfTool`、`KeepParts`/`KeepPart`、`PerformResult`、`CheckSolidImages`、`FillRemoved`、`FillIn3DParts` 覆写、`CheckArgsForOpenSolid -> false`）；`rebuild_faces.rs` 247（`RebuildFaces`）；`rebuild_edge.rs` 151（`RebuildEdge`）；`shape_set.rs` 74（`TopTools_ListOfShape` 的保序集合）。 | 已完成 |
-| T-504 D | 未移植项与偏差（注释写明 OCCT 文件与行号）：①`BRepAlgoAPI_BuilderAlgo::SimplifyResult`（`cxx:168-201`）的 `ShapeUpgrade_UnifySameDomain` 后处理未落——`BRepFeat_Form` 不调用它；②`CSF_DEBUG_BOP` 诊断转储（`BRepAlgoAPI_BooleanOperation.cxx:145-149`、`:217-222`）与 `myIsIntersectionNeeded`（恒 `Standard_True`）未落；③`Message_ProgressRange` 进度域与 `getNbShapes()` 步进权重未落；④`BRepFeat_Form` 的 `myStatusError` 由基类字段承担，派生类的同名影子字段按 C++ 各自保留。 | 已标注 |
+| T-504 D | 未移植项与偏差（注释写明 OCCT 文件与行号）：①`BRepAlgoAPI_BuilderAlgo::SimplifyResult` → `BooleanOperation::simplify_result`（`algo_api.rs`，`UnifySameDomain::with_flags` + 历史 `merge`）；`BRepFeat_Form` 仍不调用——**已接线**；②`CSF_DEBUG_BOP` 诊断转储（`BRepAlgoAPI_BooleanOperation.cxx:145-149`、`:217-222`）与 `myIsIntersectionNeeded`（两形状布尔恒等价 true）未落——诊断/进度项；③`Message_ProgressRange` 进度域与 `getNbShapes()` 步进权重未落；④`BRepFeat_Form` 的 `myStatusError` 由基类字段承担，派生类的同名影子字段按 C++ 各自保留。 | ①已收；②③④已标注 |
 
 ## T-505 S4 三条 form 入口：`MakePrism` / `MakeRevol` / `MakeDPrism`（2026-11-09）
 
@@ -6171,4 +6171,103 @@ Do not grow the dual-pipeline / planar / volume-gate scaffold. Do not invent Fil
 
 (1) 控制流：`BRep_CurveOnClosedSurface.cxx:50-63`；`UpdateCurves` 双 pcurve `cxx:288-306`；`BRep_Tool::HasContinuity(E)` `:1253-1267` 对任何 `IsRegularity()` 为真（含 C0 的 closed 槽）。
 
-(2) 旁支（未修）：`BRep_Builder::Transfert`（`cxx:1159-1198`）的 pcurve/regularity 整表搬迁仍未接线；面无表面时 Continuity 写仍早退。
+(2) 旁支（未修）：面无表面时 Continuity 写仍早退。
+
+## T-531 `BRep_Builder::Transfert`（2026-11-12）
+
+| 任务卡 | 内容 | 状态 |
+|---|---|---|
+| T-531 A | `transfert_edge` / `transfert_edge_vertex`（`BRep_Builder.cxx:1159-1198` / `:1457-1465`）；`TopLocLocation::multiplied`；`UpdateEdge` 带绝对 location。 | 已完成 |
+| T-531 B | 接线：`BRepLib_MakeWire` 拷边后的顶点 `Transfert`；`BuildTool::add_edge_vertex_copied`。 | 已完成 |
+| T-531 C | 既有门禁：`cargo check` topology/topo；`fuse_box_cylinder_is_closed_solid`；`modeling_mesh_matches_occt`；`step_obj_gates` **4 passed**；`export_data_obj` 15/15。 | 已通过 |
+
+**T-531 备注**
+
+(1) 忠实性：`CurveOnClosedSurface` 继承 `IsCurveOnSurface()`，故 `cxx:1177` 的 `else if IsCurveOnClosedSurface` 在 OCCT 中不可达；port 同样只转第一根 pcurve，再经 `IsRegularity` 写 Continuity。
+
+(2) 旁支（未修）：面无表面时 Continuity 写仍早退。
+
+## T-532 `BOPTools_AlgoTools2D::AttachExistingPCurve`（2026-11-12）
+
+| 任务卡 | 内容 | 状态 |
+|---|---|---|
+| T-532 A | `attach_existing_pcurve_edges` + `update_closed_pcurve` + file-local `IsClosed`（`BOPTools_AlgoTools2D_1.cxx:44-311`）；末尾 `transfert_edge`。 | 已完成 |
+| T-532 B | 既有门禁：`cargo check` occt-topo；`fuse_box_cylinder_is_closed_solid`；`modeling_mesh_matches_occt`；`step_obj_gates` **4 passed**；`export_data_obj` 15/15。 | 已通过 |
+
+**T-532 备注**
+
+(1) 与 `boptools_2d::attach_existing_pcurve`（仅 `UpdateEdge` 注册）并存；全量拷贝路径在 `boptools_attach_pcurve`。
+
+(2) 旁支（未修）：无（T-533 已接线生产路径 `make_p_curves`）。
+
+## T-533 `MakePCurves` On 臂接到 `AttachExistingPCurve`（2026-11-12）
+
+| 任务卡 | 内容 | 状态 |
+|---|---|---|
+| T-533 A | `make_p_curves` On/common-block：`MakeSplitEdge` + `attach_existing_pcurve_edges`，失败回退 `BuildPCurveForEdgeOnFace`（`BOPAlgo_PaveFiller_7.cxx:617-683` / `MPC::Perform :229-247`）。 | 已完成 |
+| T-533 B | `AlgoTools::make_split_edge` 按 `EmptyCopy` 拷贝 Cos 并 `Range` 写区间（`BOPTools_AlgoTools_2.cxx` MakeSplitEdge）。 | 已完成 |
+| T-533 C | 既有门禁：`cargo check`；`fuse_box_cylinder_is_closed_solid`；`modeling_mesh_matches_occt`；`step_obj_gates` **4**；`export_data_obj` 15/15。 | 已通过 |
+
+**T-533 备注**
+
+(1) 旁支（未修）：见 T-534（Continuity null-surface + stub On 臂 Attach）。
+
+## T-534 Continuity null-surface + `make_pcurves` stub On 臂（2026-11-12）
+
+| 任务卡 | 内容 | 状态 |
+|---|---|---|
+| T-534 A | `CurveOn2SurfacesRepr.surface1/2` → `Option<Arc<dyn Surface>>`；`write_continuity` / 读写路径对齐 `BRep_Builder.cxx:1012-1021`（null `Handle` 仍写入）。 | 已完成 |
+| T-534 B | `pave_blocks::make_pcurves` On 臂：有 `int_tools_context` 时 common-block → `MakeSplitEdge` + `AttachExistingPCurve`，失败回退 `pcurve_full`。 | 已完成 |
+| T-534 C | 既有门禁：`cargo check` topology/topo；`fuse_box_cylinder_is_closed_solid`；`step_obj_parity_bboxes_match_occt`。 | 已通过 |
+
+**T-534 备注**
+
+(1) `hlrbrep_poly_algo/bi_points.rs` 已于 T-491 拆成 `bi_points/{mod,connexity,one_face,two_faces}`，旧旁支记录作废。
+
+(2) 旁支（未修）：`MPC::Perform` 串行路径仍是「直接 Attach 到原边」而非 `CopyEdge` + 回写 `UpdateEdge`（`cxx:243-275` / `:789-793`，并行竞态相关）；仓内仍有 ≥800 行文件待拆。
+
+## T-535 `wire_splitter_block` 目录化（2026-11-12）
+
+| 任务卡 | 内容 | 状态 |
+|---|---|---|
+| T-535 A | `wire_splitter_block.rs`（877）→ `wire_splitter_block/{mod,path,angles,refine,vertices}.rs`；`EdgeInfo`/`SmartMap`/`split_wire_block` 在 `mod.rs`；函数体逐行搬移。 | 已完成 |
+| T-535 B | 既有门禁：`cargo check -p occt-topo --lib`；`fuse_box_cylinder_is_closed_solid`。 | 已通过 |
+
+**T-535 备注**
+
+(1) 纯结构拆分：`angles`（ClockWiseAngle / Parameter / Tolerance2D）、`path`（Path / MakeWire）、`refine`（RefineAngles / RefineAngle2D）、`vertices`（closed / oriented vertices / dump）。
+
+(2) 旁支（未修）：`fix_intersecting_wires.rs`（~901，单函数 `FixIntersectingWires` 按 T-510 口径不拆子函数）；`meshing/delaun/triangulation.rs`（~800）等 ≥800 行文件。
+
+## T-536 `brepfeat` boss 接 `MakePrism` + 布尔历史门面收口（2026-11-12）
+
+| 任务卡 | 内容 | 状态 |
+|---|---|---|
+| T-536 A | `boss` / `boss_thru_all` 从「自建圆柱 + `bop_builder::boolean`」改为 `BRepFeat_MakePrism`：圆形 `myPbase`（取 `BRepPrimCylinder` 顶盖并平移）+ `Perform(Length)` / `PerformThruAll`；删除已无调用方的 `translated_cylinder`。 | 已完成 |
+| T-536 B | `boolean_feature`（`rib` / `feature_apply`）改走 `brep_feat::algo_api`（保留 `Modified`/`IsDeleted` 的同一门面）；`rib` 仍为板料产品简写——`MakeLinearForm` 需要草图线+对向厚度向量，当前 `(profile,thickness,height)` 无 OCCT 约定可抄（T-511 备注(2)）；`draft` 仍按 T-511 不动。 | 已完成 |
+| T-536 C | 门禁：`cargo check -p occt-topo --lib` **0 error**；`brepfeat` **17/17**；`fuse_box_cylinder_is_closed_solid` **1/1**。 | 已通过 |
+
+**T-536 备注**
+
+(1) **布尔历史阻塞本身在 T-504 已解**：本轮是产品入口接线。`groove`/`neck`/`through_hole`/`blind_hole` 此前已接忠实件；本轮补 boss 族。
+
+(2) **旁支（未修）**：`draft`（无同等 `SplitDrafts` 调用约定）；`rib`→`MakeLinearForm` 已转 T-537；`SimplifyResult` 已接线（T-504 D / T-537）；`CSF_DEBUG_BOP` 仍不移植。
+
+## T-537 `brepfeat::rib` 接 `MakeLinearForm`（草图线 / 滑动面参数）（2026-11-12）
+
+| 任务卡 | 内容 | 状态 |
+|---|---|---|
+| T-537 A | 产品 `rib` 参数改为 OCCT `Init` 约定：`wire`（草图线，端点落在极限面）、`plane`、`direc`/`direc1`（对向厚度向量；`direc1` 空则居中）、`sliding`（`Modify`）；删除板料简写 `(profile,thickness,height)` 与 `rib_volume`。 | 已完成 |
+| T-537 B | `rib` 走 `BRepFeat_MakeLinearForm::with_shapes` + `Perform`；既有 rib 基线改为垂直草图线（XZ@y=1，`(1,1,0)→(1,1,1)`，`Direc=(0.3,0,0)`，`Direc1=0`，`sliding=true`）。 | 已完成 |
+| T-537 C | 门禁：`cargo check -p occt-topo --lib` **0 error**；`brepfeat` **17 passed**（含 `rib_fuses_to_box` / `rib_through_wire_ok`，草图改近面内侧 `XZ@y=0.2` + `Direc=(0,-0.3,0)` 使棱柱伸出 `y<0`）；`invalid_profile_errors` / `rib_volume_analytic_matches_tool` 绿。 | 已完成 |
+| T-537 D | `BOPAlgo_BOP::BuildRC` Common：按 `cxx:733-751` 遍历 `aMItExp`（展开到 `dim_min`），并按 `cxx:796-817` 做高维优先 + 子形 fence；`Common(box,planeFace)` 产出 `W=1 E=4 F=1`（与对调参数一致）。`fuse_box_cylinder_is_closed_solid` 绿。 | 已完成 |
+| T-537 E | `SlidingProfile` `close_against` 补 `MakeEdge(BndPnt1,LastPnt)`（`RibSlot.cxx:1603-1609`）；`Init` 滑移 walk 在 `Remove` 后 `it.Initialize`（`MakeLinearForm.cxx:641-645`）；`CheckPnt=In`、`Propagate` 命中、`sliding=true`、`pbase` 4 边。 | 已完成 |
+
+**T-537 备注**
+
+(1) **参数约定（相对板料简写）**：MakeLinearForm 无独立 `height`——肋高由草图线跨极限面决定；壁厚为 `|Direc|+|Direc1|`（空 `Direc1` 时 Init 半程平移后仍为 `|Direc|`）。
+
+(2) **体积旁支（已收）**：中平面肋被 Fuse 吸收（`vol == box`）；`Direction` 沿平面法向才有 `form_vol>0`；草图落在面上会 `NoExtFace` / `LineThroughIdenticPoints`。现用 `XZ@y=0.2`、`Direc=(0,-0.3,0)`、`Direc1=0`：居中后 wire 仍在体内，棱柱跨过 `y=0`，`rib_*` 体积增长稳定。
+
+(3) **旁支**：①`Init` walk `sens==2` / `cc->Reverse()`——**已收**；②`draft` 接 `BRepOffsetAPI_DraftAngle`（`Direction`=中性面法向/`FindRotation`，非面法向）——**已收**（`draft_*` 绿）；③`SimplifyResult`——**已接线**；`CSF_DEBUG_BOP`/进度域仍不移植；④`_diag_*`——**已删**；⑤`intpatch_geom::refine_point_on_surface` 已对倒置 UV 做有序 clamp。
+

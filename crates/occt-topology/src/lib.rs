@@ -21,6 +21,7 @@
 pub mod abs;
 pub mod adaptor;
 pub mod brep_bnd_lib;
+pub mod brep_builder_transfert;
 pub mod brep_builder_update_vertex;
 pub mod brep_tool_curve_on_surface;
 pub mod brep_lprop;

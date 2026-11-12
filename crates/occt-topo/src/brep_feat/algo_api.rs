@@ -19,9 +19,22 @@
 //! - `Build()` raises in the reference (`StdFail_NotDone` through `Shape()`);
 //!   here the failure comes back as the `Err` of [`BooleanOperation::build`],
 //!   and `HasErrors` stays observable through [`BooleanOperation::has_errors`].
+//!
+//! Not ported (T-504 D):
+//! - `CSF_DEBUG_BOP` dumps (`BRepAlgoAPI_BooleanOperation.cxx:145-149`,
+//!   `:217-222`) — OCCT diagnostic I/O;
+//! - `Message_ProgressRange` / `getNbShapes()` progress weights;
+//! - `myIsIntersectionNeeded` stays effectively true for two-shape Booleans.
+//!
+//! [`BooleanOperation::simplify_result`] is
+//! `BRepAlgoAPI_BuilderAlgo::SimplifyResult`
+//! (`BRepAlgoAPI_BuilderAlgo.cxx` / `.hxx`); `BRepFeat_Form` does not call it.
+
+use occt_core::precision::ANGULAR;
 
 use crate::bop_builder2::{builder_bop_algo_with_history, BoolOp2, BopBuilder};
 use crate::shape::TopoShape;
+use crate::shhealing::UnifySameDomain;
 
 /// `BRepAlgoAPI_BooleanOperation` (`BRepAlgoAPI_BooleanOperation.hxx`).
 #[derive(Debug, Clone)]
@@ -40,6 +53,9 @@ pub struct BooleanOperation {
     run: Option<BopBuilder>,
     /// `myReport` errors of the last run.
     errors: Vec<String>,
+    /// `myFillHistory` (`BRepAlgoAPI_BuilderAlgo.hxx`); this facade always
+    /// fills history on `Build`, matching `BRepFeat` consumers.
+    fill_history: bool,
 }
 
 impl BooleanOperation {
@@ -53,6 +69,7 @@ impl BooleanOperation {
             result: None,
             run: None,
             errors: Vec::new(),
+            fill_history: true,
         }
     }
 
@@ -84,7 +101,8 @@ impl BooleanOperation {
         // `BRepAlgoAPI_BuilderAlgo::BuildResult`: `SetToFillHistory(true)` on
         // the builder, then the run. `BOPAlgo_BOP::Perform` is the inherited
         // perform that the two-shape Booleans use.
-        let run = builder_bop_algo_with_history(&self.objects, &self.tools, self.op, true);
+        let run =
+            builder_bop_algo_with_history(&self.objects, &self.tools, self.op, self.fill_history);
         if run.has_errors() {
             self.errors = run.errors().to_vec();
             self.run = Some(run);
@@ -133,6 +151,56 @@ impl BooleanOperation {
     /// The errors of the last run.
     pub fn errors(&self) -> &[String] {
         &self.errors
+    }
+
+    /// `BRepAlgoAPI_BuilderAlgo::SimplifyResult`
+    /// (`BRepAlgoAPI_BuilderAlgo.cxx` / `.hxx`).
+    ///
+    /// Overwrites `myShape` with `ShapeUpgrade_UnifySameDomain` and merges the
+    /// unifier history into the operation history when `myFillHistory` is set.
+    /// Defaults match the reference: unify edges and faces, angular tolerance
+    /// `Precision::Angular()`.
+    pub fn simplify_result(
+        &mut self,
+        unify_edges: bool,
+        unify_faces: bool,
+        angular_tol: f64,
+    ) -> Result<(), String> {
+        // `cxx`: early return on errors / both flags false.
+        if self.has_errors() || (!unify_edges && !unify_faces) {
+            return Ok(());
+        }
+        let Some(shape) = self.result.clone() else {
+            return Ok(());
+        };
+
+        // `ShapeUpgrade_UnifySameDomain(myShape, UnifyEdges, UnifyFaces, true)`.
+        let mut unifier = UnifySameDomain::with_flags(shape, unify_edges, unify_faces, true);
+        let (fuzzy, non_destructive) = match &self.run {
+            Some(run) => (run.fuzzy_value(), run.non_destructive()),
+            None => (1e-7, false),
+        };
+        // Fuzzy tolerance of the operation -> linear tolerance; non-destructive
+        // -> safe input mode (`hxx` SimplifyResult notes).
+        unifier.set_linear_tolerance(fuzzy);
+        unifier.set_angular_tolerance(angular_tol);
+        unifier.set_safe_input_mode(non_destructive);
+        unifier.set_allow_internal(false);
+        unifier.build()?;
+
+        self.result = Some(unifier.shape().clone());
+        if self.fill_history {
+            if let Some(run) = &mut self.run {
+                run.history_mut().merge(unifier.history());
+            }
+        }
+        Ok(())
+    }
+
+    /// `SimplifyResult()` with the reference defaults
+    /// (`UnifyEdges=true`, `UnifyFaces=true`, `Precision::Angular()`).
+    pub fn simplify_result_default(&mut self) -> Result<(), String> {
+        self.simplify_result(true, true, ANGULAR)
     }
 }
 

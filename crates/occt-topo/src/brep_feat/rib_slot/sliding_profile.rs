@@ -207,8 +207,9 @@ impl RibSlot {
         self.append_profile_wire(args, &mut ww)?;
 
         // `cxx:1733-1746`.
+        let ww_wire = ww.wire();
         let fac =
-            brep_lib_make_face::make_face_from_plane_and_wire(args.pln, &ww.wire(), true);
+            brep_lib_make_face::make_face_from_plane_and_wire(args.pln, &ww_wire, true);
         if !brep_check::is_valid(&fac.0) {
             return Err(RibProfileError::InvalidFace);
         }
@@ -219,11 +220,13 @@ impl RibSlot {
         } else {
             let cl = BrepTopAdaptorFClass2d::new(&fac, BRepTool::face_tolerance(&fac));
             let (u, v) = slib::plane_parameters(&args.pln.position(), args.check_pnt);
-            if cl.perform(GpPnt2d::new(u, v), true) == FaceState::Out {
+            let st = cl.perform(GpPnt2d::new(u, v), true);
+            if st == FaceState::Out {
                 // `cxx:1761-1768`: the complementary part of `BndFace`.
                 let cut = brep_algo_api::cut(&args.bnd_face.0, &fac.0)
                     .map_err(|_| RibProfileError::CutFailed)?;
-                let w = wires_of(&cut)
+                let wires = wires_of(&cut);
+                let w = wires
                     .into_iter()
                     .next()
                     .ok_or(RibProfileError::CutFailed)?;
@@ -325,7 +328,13 @@ impl RibSlot {
             return Ok(());
         }
 
-        // `cxx:1592-1615`: the path starts at the end of `BndEdge1`.
+        // `cxx:1592-1615`: join `BndPnt1` to the end of `BndEdge1`, then walk.
+        // `LastPnt` starts as `BndPnt1`; when the oriented last vertex of
+        // `BndEdge1` is farther than the edge tolerance, it becomes that
+        // corner and `MakeEdge(BndPnt1, LastPnt)` (`cxx:1603-1609`) bridges
+        // the hit point to the wire. When they coincide the reference leaves
+        // `LastPnt` untouched (commented FirstVertex arm); the port keeps
+        // `BndPnt1` so the bridge is a null edge and is skipped.
         let mut last_pnt = bnd_pnt1;
         explo = WireExplorer::of_wire(&bnd_wire);
         while explo.more() {
@@ -333,7 +342,12 @@ impl RibSlot {
             if is_same(&e.0, &bnd_edge1.0) {
                 if let Some(lv) = crate::shhealing::last_vertex(&e) {
                     let pp = BRepTool::vertex_point_world(&lv);
-                    last_pnt = pp;
+                    if pp.distance(&bnd_pnt1) >= BRepTool::edge_tolerance(&e) {
+                        last_pnt = pp;
+                    }
+                }
+                if let Some(e2) = make_edges::edge_from_points(&bnd_pnt1, &last_pnt) {
+                    let _ = ww.add(&e2);
                 }
                 break;
             }

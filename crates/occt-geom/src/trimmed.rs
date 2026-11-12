@@ -449,7 +449,8 @@ impl Curve for GeomTrimmedCurveBasis {
     fn transformed_parameter(&self, u: f64, t: &GpTrsf) -> f64 {
         self.basis.transformed_parameter(u, t)
     }
-    fn reverse(&mut self) { std::mem::swap(&mut self.first, &mut self.last); }
+    /// `Geom_TrimmedCurve::Reverse` (`Geom_TrimmedCurve.cxx:78-83`).
+    fn reverse(&mut self) { self.reverse_trim(); }
     /// `Geom_TrimmedCurve::ReversedParameter` (`Geom_TrimmedCurve.cxx:88-91`):
     /// the basis curve's. This view evaluates in the basis parameters, so the
     /// mapping is the basis curve's own.

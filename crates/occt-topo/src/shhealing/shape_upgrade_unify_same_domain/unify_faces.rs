@@ -44,16 +44,29 @@ pub(crate) struct UnifySameDomain {
 
 impl UnifySameDomain {
     pub(crate) fn new(shape: TopoShape) -> Self {
+        // `ShapeUpgrade_UnifySameDomain(shape)` defaults: unify edges+faces,
+        // `ConcatBSplines = false` (`ShapeUpgrade_UnifySameDomain.cxx`).
+        Self::with_flags(shape, true, true, false)
+    }
+
+    /// `ShapeUpgrade_UnifySameDomain(shape, UnifyEdges, UnifyFaces, ConcatBSplines)`
+    /// (`ShapeUpgrade_UnifySameDomain.hxx`).
+    pub(crate) fn with_flags(
+        shape: TopoShape,
+        unify_edges: bool,
+        unify_faces: bool,
+        concat_bsplines: bool,
+    ) -> Self {
         Self {
             initial_shape: shape.clone(),
             shape,
             context: UnifyContext::new(),
             history: BopHistory::new(),
-            unify_faces_enabled: true,
-            unify_edges_enabled: true,
+            unify_faces_enabled: unify_faces,
+            unify_edges_enabled: unify_edges,
             linear_tolerance: CONFUSION,
             angular_tolerance: ANGULAR,
-            concat_bsplines: false,
+            concat_bsplines,
             allow_internal: false,
             safe_input_mode: true,
             keep_shapes: HashSet::new(),

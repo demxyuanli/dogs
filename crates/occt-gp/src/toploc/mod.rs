@@ -142,6 +142,20 @@ impl TopLocLocation {
         }
     }
 
+    /// `TopLoc_Location::Multiplied` / `operator*` (`TopLoc_Location.cxx:88-121`):
+    /// `this * Other` — Other is applied first. Identity short-cuts match the
+    /// reference; non-identity chains are flattened to one datum holding the
+    /// product (same cumulative transform as the reference's prepended chain).
+    pub fn multiplied(&self, other: &Self) -> Self {
+        if self.is_identity() {
+            return other.clone();
+        }
+        if other.is_identity() {
+            return self.clone();
+        }
+        Self::composed(&self.transformation(), other.clone())
+    }
+
     /// `TopLoc_Location::Predivided` (`TopLoc_Location.cxx:138-153`):
     /// `Other.Inverted() * this`.
     ///

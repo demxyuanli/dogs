@@ -28,7 +28,10 @@ const GEOMABS_C1: u8 = 2;
 /// `Geom2dInt_Geom2dCurveTool::GetType` (`lxx:32-35`) =
 /// `Geom2dAdaptor_Curve::GetType()`.
 pub fn geom2d_curve_type(c: &dyn Curve2d) -> GeomAbsCurveType2d {
-    if c.is_line() {
+    // Match `Geom2dAdaptor_Curve::GetType` then `Line()`: a curve that only
+    // answers `is_line` without an extractable `gp_Lin2d` must not enter the
+    // analytic Line row (`ginter` would `expect` on `Line()`).
+    if c.gp_lin2d().is_some() {
         GeomAbsCurveType2d::Line
     } else if c.gp_circ2d().is_some() {
         GeomAbsCurveType2d::Circle

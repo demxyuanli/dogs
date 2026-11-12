@@ -594,10 +594,13 @@ impl AlgoTools {
 
     /// Make a new edge from the base `edge`'s curve bounded by the optional
     /// vertices `v1` / `v2` at parameters `t1` / `t2`
-    /// (`BOPTools_AlgoTools::MakeSplitEdge`).
+    /// (`BOPTools_AlgoTools::MakeSplitEdge`, `BOPTools_AlgoTools_2.cxx`).
     ///
-    /// The stored range is `(min(t1,t2), max(t1,t2))`; a reversed parameter
-    /// order adds `v1` reversed / `v2` forward, mirroring the OCCT convention.
+    /// OCCT builds the split via `EmptyCopy` (`BRep_TEdge.cxx:105-128`), which
+    /// copies every CurveOnSurface representation, then `BRep_Builder::Range`
+    /// writes `[min(t1,t2), max(t1,t2)]` onto the 3D curve and every Cos. The
+    /// port mirrors that: Cos slots are cloned and their ranges reset with the
+    /// 3D range. A reversed parameter order adds `v1` reversed / `v2` forward.
     pub fn make_split_edge(
         edge: &Edge,
         v1: Option<&TopoShape>,
@@ -617,6 +620,11 @@ impl AlgoTools {
             g.same_parameter = geom.same_parameter;
             g.same_range = geom.same_range;
             g.degenerated = geom.degenerated;
+            // `BRep_TEdge::EmptyCopy` copies `myCurves`; Cos ranges follow
+            // `BRep_Builder::Range(E, First, Last)` (`BRep_Builder.cxx:1091-1117`).
+            g.pcurves = geom.pcurves.clone();
+            g.pcurve_ranges = geom.pcurve_ranges.clone();
+            g.pcurve_ranges.for_each_mut(|_, r| *r = (lo, hi));
             reg.set_edge(&e.0, g);
         }
         if let Some(v) = v1 {

@@ -480,31 +480,45 @@ pub struct EdgeGeomCore {
 /// `BRep_CurveOn2Surfaces` (`BRep_CurveOn2Surfaces.hxx` / `.cxx:29-109`):
 /// regularity between two surfaces on an edge. Locations are relative to the
 /// edge (`L.Predivided(E.Location())` at write time).
+///
+/// `None` matches a null `Handle(Geom_Surface)` — `BRep_Builder::Continuity(E,F1,F2,C)`
+/// still calls `Continuity(E,S1,S2,...)` when `BRep_Tool::Surface` returns null
+/// (`BRep_Builder.cxx:1012-1021`), and `UpdateCurves` appends the representation
+/// with those null handles (`cxx:376-405`).
 #[derive(Clone)]
 pub struct CurveOn2SurfacesRepr {
-    pub surface1: Arc<dyn Surface>,
-    pub surface2: Arc<dyn Surface>,
+    pub surface1: Option<Arc<dyn Surface>>,
+    pub surface2: Option<Arc<dyn Surface>>,
     pub location1: TopLocLocation,
     pub location2: TopLocLocation,
     /// `GeomAbs_Shape` ordinal (`GeomAbs_C0 = 0` .. `GeomAbs_CN = 6`).
     pub continuity: u8,
 }
 
+fn same_opt_surface(stored: &Option<Arc<dyn Surface>>, query: Option<&Arc<dyn Surface>>) -> bool {
+    match (stored, query) {
+        (None, None) => true,
+        (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+        _ => false,
+    }
+}
+
 impl CurveOn2SurfacesRepr {
     /// `BRep_CurveOn2Surfaces::IsRegularity(S1,S2,L1,L2)` (`.cxx:58-65`).
+    /// Null handles compare equal to null (`None`); non-null by pointer identity.
     pub fn is_regularity(
         &self,
-        s1: &Arc<dyn Surface>,
-        s2: &Arc<dyn Surface>,
+        s1: Option<&Arc<dyn Surface>>,
+        s2: Option<&Arc<dyn Surface>>,
         l1: &TopLocLocation,
         l2: &TopLocLocation,
     ) -> bool {
-        (Arc::ptr_eq(&self.surface1, s1)
-            && Arc::ptr_eq(&self.surface2, s2)
+        (same_opt_surface(&self.surface1, s1)
+            && same_opt_surface(&self.surface2, s2)
             && self.location1.is_equal(l1)
             && self.location2.is_equal(l2))
-            || (Arc::ptr_eq(&self.surface1, s2)
-                && Arc::ptr_eq(&self.surface2, s1)
+            || (same_opt_surface(&self.surface1, s2)
+                && same_opt_surface(&self.surface2, s1)
                 && self.location1.is_equal(l2)
                 && self.location2.is_equal(l1))
     }

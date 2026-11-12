@@ -282,6 +282,7 @@ pub mod algo_tools;
 // Phase 18b — full IntTools_Context + AlgoTools2D.
 pub mod int_tools_full;
 pub mod boptools_2d;
+pub mod boptools_attach_pcurve;
 // Phase 18c — IntTools_Curve data class.
 pub mod int_curve;
 // Phase 19 modules (precise NURBS boolean — wave C2b: PaveFiller core).

@@ -55,7 +55,11 @@ pub fn select_forward_seam(c1: &dyn Curve2d, c2: &dyn Curve2d) -> usize {
     // a bounded curve uses the Start→End chord (same signs for an isoline).
     let line_of = |c: &dyn Curve2d| -> Option<(GpPnt2d, GpVec2d)> {
         let (a, b) = (c.first_parameter(), c.last_parameter());
-        let (a, b) = if a.is_finite() && b.is_finite() { (a, b) } else { (0.0, 1.0) };
+        let (a, b) = if a.is_finite() && b.is_finite() {
+            (a, b)
+        } else {
+            (0.0, 1.0)
+        };
         let p0 = c.d0(a);
         let p1 = c.d0(b);
         let v = GpVec2d::new(p1.x() - p0.x(), p1.y() - p0.y());
@@ -73,13 +77,29 @@ pub fn select_forward_seam(c1: &dyn Curve2d, c2: &dyn Curve2d) -> usize {
     let ux = d1.x();
     let uy = d1.y();
     if ux > 0.0 {
-        if loc1.y() < loc2.y() { 1 } else { 2 }
+        if loc1.y() < loc2.y() {
+            1
+        } else {
+            2
+        }
     } else if ux < 0.0 {
-        if loc1.y() < loc2.y() { 2 } else { 1 }
+        if loc1.y() < loc2.y() {
+            2
+        } else {
+            1
+        }
     } else if uy > 0.0 {
-        if loc1.x() > loc2.x() { 1 } else { 2 }
+        if loc1.x() > loc2.x() {
+            1
+        } else {
+            2
+        }
     } else if uy < 0.0 {
-        if loc1.x() > loc2.x() { 2 } else { 1 }
+        if loc1.x() > loc2.x() {
+            2
+        } else {
+            1
+        }
     } else {
         0
     }
@@ -105,23 +125,12 @@ pub fn select_forward_seam(c1: &dyn Curve2d, c2: &dyn Curve2d) -> usize {
 /// instead. Sampling at `-inf` is what produced the retracted "d0 is all NaN"
 /// reading (see `specs/_a3n00_gap_analysis.md` §9.313 / D14).
 pub fn make_pcurve_full(edge: &Edge, face: &Face) -> Result<Arc<dyn Curve2d>, String> {
-    // A STEP-imported pcurve (BRep_TEdge's stored `(face -> Geom2d_Curve)`)
-    // wins over projection: it is the exact trimming curve of the face, so a
-    // B-spline face whose 3D trimming curve does not lie on the surface still
-    // gets the correct 2D boundary. A seam edge stores two (forward/reversed
-    // sides); pick the one matching the edge's traversal orientation.
-    let face_key = GeometryRegistry::shape_key(&face.0);
-    let pcs = GeometryRegistry::global().edge_pcurves(&edge.0, face_key);
-    if pcs.len() >= 2 {
-        // `BRep_Tool::CurveOnSurface(E, F)` (`BRep_Tool.cxx:310-314`, `:354-357`):
-        // a REVERSED face flips the edge before the closed-surface arm picks
-        // `PCurve2`.
-        let edge_rev = edge.0.orientation().is_reversed();
-        let face_rev = face.0.orientation().is_reversed();
-        let idx = usize::from(edge_rev != face_rev);
-        return Ok(pcs[idx].clone());
-    }
-    if let Some(pc) = pcs.first() {
+    // `BRep_Tool::CurveOnSurface(E, F)` matches `(surface, location)`, selects
+    // the seam side from the oriented edge/face pair, and performs OCCT's
+    // location-aware `CurveOnPlane` fallback when no representation is stored.
+    if let Some((pc, _, _)) =
+        occt_topology::brep_tool_curve_on_surface::curve_on_surface_range(edge, face)
+    {
         return Ok(pc.clone());
     }
     let Some(curve) = GeometryRegistry::global().edge_curve(&edge.0) else {
@@ -221,7 +230,9 @@ pub fn pc_curve_orientation(edge: &Edge, face: &Face, curve: &dyn Curve2d) -> f6
     let q = curve.d0(tm);
     let (_, du, dv) = surf.d1(q.x(), q.y());
     let d2d = curve.d1(tm).1;
-    let mapped = du.multiplied_scalar(d2d.x()).add(&dv.multiplied_scalar(d2d.y()));
+    let mapped = du
+        .multiplied_scalar(d2d.x())
+        .add(&dv.multiplied_scalar(d2d.y()));
     let dot = d3d.dot(&mapped);
     if dot.abs() < 1e-12 {
         // Degenerate surface tangent (analytic `d1` may be zero): compare the
@@ -237,7 +248,11 @@ pub fn pc_curve_orientation(edge: &Edge, face: &Face, curve: &dyn Curve2d) -> f6
         let suv0 = surf.d0(q0.x(), q0.y());
         let suv1 = surf.d0(q1.x(), q1.y());
         let disp_uv = GpVec::from_pnts(&suv0, &suv1);
-        return if disp3.dot(&disp_uv) >= 0.0 { 1.0 } else { -1.0 };
+        return if disp3.dot(&disp_uv) >= 0.0 {
+            1.0
+        } else {
+            -1.0
+        };
     }
     if dot > 0.0 {
         1.0
@@ -294,15 +309,27 @@ pub(super) fn v_period(s: &dyn Surface) -> f64 {
 /// callers that explicitly want the pcurve clipped to the face rectangle; do not
 /// use it in an `AdjustPCurveOnFace` position.
 /// dimension, it is trimmed to the in-bounds parameter subrange.
-pub fn trim_pcurve_to_face(curve: &Arc<dyn Curve2d>, face: &Face, _tol: f64) -> Result<Arc<dyn Curve2d>, String> {
+pub fn trim_pcurve_to_face(
+    curve: &Arc<dyn Curve2d>,
+    face: &Face,
+    _tol: f64,
+) -> Result<Arc<dyn Curve2d>, String> {
     let (umin, umax, vmin, vmax) = face_uv_bounds(face);
     let surf = GeometryRegistry::global()
         .face_surface(&face.0)
         .ok_or("trim_pcurve_to_face: face has no surface")?;
     let u_periodic = surf.is_u_periodic();
     let v_periodic = surf.is_v_periodic();
-    let up = if u_periodic { u_period(surf.as_ref()) } else { 0.0 };
-    let vp = if v_periodic { v_period(surf.as_ref()) } else { 0.0 };
+    let up = if u_periodic {
+        u_period(surf.as_ref())
+    } else {
+        0.0
+    };
+    let vp = if v_periodic {
+        v_period(surf.as_ref())
+    } else {
+        0.0
+    };
 
     let (mut c0, mut c1) = (curve.first_parameter(), curve.last_parameter());
     if !c0.is_finite() || !c1.is_finite() || c1 - c0 < 1e-15 {
@@ -314,7 +341,9 @@ pub fn trim_pcurve_to_face(curve: &Arc<dyn Curve2d>, face: &Face, _tol: f64) -> 
     // Sample the curve and compute the whole-period shift that brings the
     // midpoint inside the periodic bounds.
     let n = 33;
-    let t_vals: Vec<f64> = (0..n).map(|i| c0 + (c1 - c0) * i as f64 / (n - 1) as f64).collect();
+    let t_vals: Vec<f64> = (0..n)
+        .map(|i| c0 + (c1 - c0) * i as f64 / (n - 1) as f64)
+        .collect();
     let qm = curve.d0(0.5 * (c0 + c1));
     let mut du = 0.0;
     let mut dv = 0.0;
@@ -330,10 +359,23 @@ pub fn trim_pcurve_to_face(curve: &Arc<dyn Curve2d>, face: &Face, _tol: f64) -> 
     let shifted: Arc<dyn Curve2d> = Arc::from(curve.transformed(&tr));
 
     let inside = |q: &GpPnt2d| {
-        (if umin.is_finite() { q.x() >= umin - 1e-7 } else { true })
-            && (if umax.is_finite() { q.x() <= umax + 1e-7 } else { true })
-            && (if vmin.is_finite() { q.y() >= vmin - 1e-7 } else { true })
-            && (if vmax.is_finite() { q.y() <= vmax + 1e-7 } else { true })
+        (if umin.is_finite() {
+            q.x() >= umin - 1e-7
+        } else {
+            true
+        }) && (if umax.is_finite() {
+            q.x() <= umax + 1e-7
+        } else {
+            true
+        }) && (if vmin.is_finite() {
+            q.y() >= vmin - 1e-7
+        } else {
+            true
+        }) && (if vmax.is_finite() {
+            q.y() <= vmax + 1e-7
+        } else {
+            true
+        })
     };
 
     let shifted_pts: Vec<GpPnt2d> = t_vals.iter().map(|&t| shifted.d0(t)).collect();

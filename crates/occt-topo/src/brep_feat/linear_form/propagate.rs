@@ -65,6 +65,7 @@ impl MakeLinearForm {
         // [`crate::brep_algo_api_section`].
         let mut sect = SectionAlgo::with_shapes(&fac.0, &current_face.0, false);
         let _ = sect.build();
+        let sect_edges = explorer_shapes(sect.shape(), ShapeType::Edge);
 
         // `cxx:1063-1106`.
         let mut p1 = GpPnt::zero();
@@ -72,7 +73,7 @@ impl MakeLinearForm {
         let mut t1 = 0.0;
         let mut t2 = 0.0;
         let mut eb: Option<Edge> = None;
-        for ec in explorer_shapes(sect.shape(), ShapeType::Edge) {
+        for ec in sect_edges {
             let ec = Edge::wrap(ec)
                 .ok_or_else(|| "Standard_DomainError: section edge".to_string())?;
             v1 = crate::shhealing::first_vertex(&ec);

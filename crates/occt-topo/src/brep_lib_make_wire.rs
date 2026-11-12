@@ -440,14 +440,15 @@ impl MakeWire {
             }
             match merged {
                 Some(v) => {
+                    // `B.Add(myEdge, myVertex); B.Transfert(EE, myEdge, VE, myVertex);`
+                    // (`cxx:356-357`) — deferred until children are attached so
+                    // `UpdateVertex` can resolve orientation in the copy.
                     merged_vertex = Some(v.clone());
                     resolved.push(v);
                 }
                 // `myVertices.Add(VE); B.Add(myEdge, VE); B.Transfert(EE, myEdge, VE, VE);`
-                // (`cxx:361-366`). The port's geometry side table already holds
-                // `VE`'s data, so the vertex itself is reused; it still has to enter
-                // `myVertices` — immediately, as OCCT does, so that the *next*
-                // child of this same edge can match it.
+                // (`cxx:361-366`). The vertex itself is reused; it still has to
+                // enter `myVertices` immediately so the next child can match it.
                 None => {
                     self.push_vertex(ve.clone());
                     resolved.push(ve);
@@ -464,6 +465,12 @@ impl MakeWire {
             for v in &resolved {
                 builder.add(&mut copy.0, &v.0);
             }
+        }
+        // `B.Transfert(EE, myEdge, VE, Vout)` per child (`cxx:357`, `:365`).
+        for (ve, vout) in edge_forward_vertices(ee).into_iter().zip(resolved.iter()) {
+            occt_topology::brep_builder_transfert::transfert_edge_vertex(
+                ee, &copy, &ve, vout,
+            );
         }
         (copy, merged_vertex)
     }

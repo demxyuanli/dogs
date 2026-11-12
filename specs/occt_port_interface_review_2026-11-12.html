@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>OCCT → Rust 移植综合说明 — 忠实度审计 · 状态 · 路线图（2026-11-12）</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm; }
+  :root {
+    --ink: #1c2128; --muted: #5a6570; --line: #d5dde2; --bg: #fff; --soft: #f6f7f9;
+    --green: #0f6b3c; --green-bg: #eaf6ef; --blue: #1a567a; --blue-bg: #eaf3f8;
+    --amber: #8a5a00; --amber-bg: #fff7e8; --slate: #3d4a57;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; color: var(--ink); background: var(--bg);
+    font: 10.5pt/1.62 "Segoe UI", "Microsoft YaHei UI", "Noto Sans SC", sans-serif; }
+  .page { max-width: 820px; margin: 0 auto; padding: 2px 0 16px; }
+  h1 { font-size: 20pt; font-weight: 650; line-height: 1.25; margin: 0 0 6px; letter-spacing: -0.02em; }
+  .subtitle { font-size: 11pt; color: var(--muted); margin: 0 0 10px; }
+  .meta { font-size: 9pt; color: var(--muted); margin-bottom: 14px; }
+  h2 { font-size: 13pt; font-weight: 650; margin: 26px 0 10px; padding-bottom: 5px;
+    border-bottom: 1px solid var(--line); page-break-after: avoid; }
+  h3 { font-size: 11pt; font-weight: 650; margin: 16px 0 8px; color: var(--slate); page-break-after: avoid; }
+  p { margin: 0 0 10px; }
+  ul, ol { margin: 0 0 12px; padding-left: 1.25em; }
+  li { margin: 0 0 5px; }
+  .toc { background: var(--soft); border: 1px solid var(--line); padding: 12px 16px; margin: 0 0 18px; font-size: 9.5pt; }
+  .toc ol { margin: 6px 0 0; }
+  .callout { background: var(--soft); border-left: 4px solid var(--blue); padding: 12px 14px; margin: 0 0 14px; }
+  .callout.ok { border-left-color: var(--green); background: var(--green-bg); }
+  .callout.warn { border-left-color: var(--amber); background: var(--amber-bg); }
+  .callout strong { display: block; margin-bottom: 4px; }
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0 16px; }
+  .cards.four { grid-template-columns: repeat(4, 1fr); }
+  .card { border: 1px solid var(--line); padding: 10px 12px; background: #fff; page-break-inside: avoid; }
+  .card .k { font-size: 8.5pt; color: var(--muted); }
+  .card .v { font-size: 13pt; font-weight: 650; margin-top: 2px; }
+  .card .d { font-size: 9pt; color: var(--muted); margin-top: 5px; }
+  table { width: 100%; border-collapse: collapse; font-size: 9pt; margin: 6px 0 14px; }
+  th, td { border: 1px solid var(--line); padding: 6px 7px; text-align: left; vertical-align: top; }
+  th { background: var(--soft); font-weight: 650; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+  .tag { display: inline-block; font-size: 8pt; font-weight: 650; padding: 1px 6px; border-radius: 2px; }
+  .tag.ok { background: var(--green-bg); color: var(--green); }
+  .tag.warn { background: var(--amber-bg); color: var(--amber); }
+  .tag.info { background: var(--blue-bg); color: var(--blue); }
+  .tag.lite { background: #eee; color: #666; }
+  .fig { margin: 12px 0 16px; padding: 12px; border: 1px solid var(--line); background: #fafbfc; page-break-inside: avoid; }
+  .fig .cap { font-size: 8.5pt; color: var(--muted); text-align: center; margin-top: 8px; }
+  svg { display: block; width: 100%; height: auto; }
+  code { font-family: Consolas, "Cascadia Mono", monospace; font-size: 8.5pt; }
+  .bar-row { display: flex; align-items: center; gap: 8px; margin: 4px 0; font-size: 9pt; }
+  .bar-lab { width: 92px; flex-shrink: 0; color: var(--slate); }
+  .bar-track { flex: 1; height: 12px; background: #e8ecf0; position: relative; }
+  .bar-fill { height: 100%; background: #1a567a; }
+  .bar-fill.ok { background: #0f6b3c; }
+  .bar-fill.warn { background: #c48a20; }
+  .bar-pct { width: 42px; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .box { border: 1px solid var(--line); padding: 10px 12px; page-break-inside: avoid; }
+  .box h4 { margin: 0 0 6px; font-size: 10pt; }
+  .foot { margin-top: 22px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 8.5pt; color: var(--muted); }
+  .appendix h2 { font-size: 12pt; }
+  @media print {
+    .page { max-width: none; }
+    a { color: inherit; text-decoration: none; }
+    h2, h3 { page-break-after: avoid; }
+    .fig, .card, table, .callout, .box { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>OCCT → Rust 移植综合说明</h1>
+  <p class="subtitle">忠实度审计 · 移植状态 · 下一轮路线图（面向未参与移植的读者）</p>
+  <p class="meta">
+    日期：2026-11-12 · 仓库 dogs · 参照 OCCT 8.0.0<br />
+    资料来源：画板「OCCT 移植忠实度审计与下一轮路线图」「OCCT → Rust 移植状态」·
+    <code>specs/occt_migration_guide.md</code> · 本机实测体量
+  </p>
+
+  <div class="callout ok">
+    <strong>五句话读懂全文</strong>
+    ① 本仓用 Rust 忠实重写工业几何内核 OCCT，以官方 C++ 行为为准绳。<br />
+    ② 造型 / 布尔 / 偏置 / 特征 / 网格导出等主路径已可用，并用标准模型对拍。<br />
+    ③ 表上「类覆盖未满 100%」多半是宏、别名、调试代码，不是功能还没写完。<br />
+    ④ 2026-11-12 已收口产品侧肋、拔模、布尔收尾与曲线反向等缺口；特征检查 17/17。<br />
+    ⑤ 不值得为刷覆盖率堆空壳；下一优先是有业务约定时的产品封装与显示边序残差。
+  </div>
+
+  <div class="toc">
+    <strong>目录</strong>
+    <ol>
+      <li>这是什么工程</li>
+      <li>体量与分层架构（来自审计画板）</li>
+      <li>八波次路线图与依赖关系</li>
+      <li>功能域就绪度（来自状态画板）</li>
+      <li>「未满 100%」该怎么读</li>
+      <li>产品接口：完整 · 有效 · 可靠</li>
+      <li>对拍与门禁：如何证明没有自欺</li>
+      <li>本轮与近几轮推进故事</li>
+      <li>开放缺口与下一轮建议</li>
+      <li>附录：crate 表 · 包对照 · API 映射</li>
+    </ol>
+  </div>
+
+  <!-- ===== 1 ===== -->
+  <h2>1. 这是什么工程</h2>
+  <p>
+    Open CASCADE Technology（OCCT）是开源三维 CAD 几何内核：实体建模、布尔运算、圆角抽壳、
+    STEP/IGES 交换、三角网格等。dogs 的目标是用 Rust <strong>按 OCCT 控制流</strong>逐步搬迁，
+    而不是另写一套「看起来差不多」的几何库。
+  </p>
+  <div class="cards">
+    <div class="card">
+      <div class="k">标准答案</div>
+      <div class="v">OCCT 8.0.0 源码行为</div>
+      <div class="d">缺分支就标注文件:行号，禁止用启发式凑某一模型的数字</div>
+    </div>
+    <div class="card">
+      <div class="k">验收方式</div>
+      <div class="v">对拍既有基线</div>
+      <div class="d">网格 v/f、体积、拓扑；不为对齐新写测试</div>
+    </div>
+  </div>
+
+  <div class="fig">
+    <svg viewBox="0 0 760 175" xmlns="http://www.w3.org/2000/svg" aria-label="fidelity loop">
+      <text x="0" y="16" fill="#5a6570" font-size="11">图 1 · 忠实度工作环（审计画板门禁精神）</text>
+      <rect x="20" y="40" width="130" height="70" fill="#eaf3f8" stroke="#1a567a"/>
+      <text x="85" y="70" text-anchor="middle" font-size="11" font-weight="650" fill="#1a567a">读 .cxx 控制流</text>
+      <text x="85" y="90" text-anchor="middle" font-size="9" fill="#5a6570">同等分支才改</text>
+      <path d="M155 75 H185" stroke="#5a6570"/><polygon points="185,70 195,75 185,80" fill="#5a6570"/>
+      <rect x="200" y="40" width="130" height="70" fill="#eaf3f8" stroke="#1a567a"/>
+      <text x="265" y="70" text-anchor="middle" font-size="11" font-weight="650" fill="#1a567a">写 Rust 实现</text>
+      <text x="265" y="90" text-anchor="middle" font-size="9" fill="#5a6570">先编译通过</text>
+      <path d="M335 75 H365" stroke="#5a6570"/><polygon points="365,70 375,75 365,80" fill="#5a6570"/>
+      <rect x="380" y="40" width="140" height="70" fill="#eaf6ef" stroke="#0f6b3c"/>
+      <text x="450" y="70" text-anchor="middle" font-size="11" font-weight="650" fill="#0f6b3c">对拍真实几何</text>
+      <text x="450" y="90" text-anchor="middle" font-size="9" fill="#5a6570">既有基线 / 探针</text>
+      <path d="M525 75 H555" stroke="#5a6570"/><polygon points="555,70 565,75 555,80" fill="#5a6570"/>
+      <rect x="570" y="40" width="160" height="70" fill="#fff7e8" stroke="#8a5a00"/>
+      <text x="650" y="70" text-anchor="middle" font-size="11" font-weight="650" fill="#8a5a00">失配即停</text>
+      <text x="650" y="90" text-anchor="middle" font-size="9" fill="#5a6570">报告差异，不调参硬凑</text>
+      <text x="20" y="145" font-size="10" fill="#5a6570">完成当前缺口就停；旁支写入报告，不自创下一步。</text>
+    </svg>
+    <div class="cap">这套环解释了为何文档强调「对拍」而不是「测试通过率」。</div>
+  </div>
+
+  <!-- ===== 2 ===== -->
+  <h2>2. 体量与分层架构</h2>
+  <p>审计画板把仓库拆成 L0→L8 共 13 个分层 crate（自底向上依赖）。2026-11-12 实测：</p>
+  <div class="cards four">
+    <div class="card"><div class="k">Rust src 非空行</div><div class="v">851,773</div><div class="d">3,369 个 .rs</div></div>
+    <div class="card"><div class="k">OCCT .cxx+.hxx</div><div class="v">约 224 万行</div><div class="d">参照体量</div></div>
+    <div class="card"><div class="k">lib 单测</div><div class="v">1,960</div><div class="d">1 ignored / 13 suites</div></div>
+    <div class="card"><div class="k">UNPORTED 台账</div><div class="v">562 处</div><div class="d">400 文件 · 带行号</div></div>
+  </div>
+
+  <div class="fig">
+    <svg viewBox="0 0 760 285" xmlns="http://www.w3.org/2000/svg" aria-label="crate layers">
+      <text x="0" y="16" fill="#5a6570" font-size="11">图 2 · 分层 crate（自下而上：基础数学 → 拓扑造型 → 交换与可视化）</text>
+      <!-- layers as stacked bands -->
+      <rect x="40" y="240" width="680" height="28" fill="#e8ecf0" stroke="#9aa3ad"/>
+      <text x="50" y="258" font-size="10">L0/L1/L2 · foundation / gp / geombase / math — 点向量、基础几何、数值</text>
+      <rect x="40" y="204" width="680" height="28" fill="#eaf3f8" stroke="#1a567a"/>
+      <text x="50" y="222" font-size="10">L3 · geom / geom2d — 曲线曲面与 2D 几何（体量最大之一）</text>
+      <rect x="40" y="168" width="680" height="28" fill="#eaf3f8" stroke="#1a567a"/>
+      <text x="50" y="186" font-size="10">L4 · topology — 拓扑形状与 BRep 基础</text>
+      <rect x="40" y="118" width="680" height="42" fill="#eaf6ef" stroke="#0f6b3c"/>
+      <text x="50" y="140" font-size="10" font-weight="650" fill="#0f6b3c">L5 · occt-topo — 布尔 / 特征 / 网格 / 偏置 / 求交（约 51 万行，主战场）</text>
+      <text x="50" y="156" font-size="9" fill="#5a6570">UNPORTED 281 处集中于此层</text>
+      <rect x="40" y="82" width="680" height="28" fill="#eaf3f8" stroke="#1a567a"/>
+      <text x="50" y="100" font-size="10">L6 · hlr / exchange — 隐藏线与 STEP/IGES/网格交换</text>
+      <rect x="40" y="46" width="680" height="28" fill="#fff7e8" stroke="#8a5a00"/>
+      <text x="50" y="64" font-size="10">L7/L8 · visual / occt 门面 — 可视化与总导出；occt-core 退化为兼容门面</text>
+    </svg>
+    <div class="cap">读状态时：绝大多数算法进度发生在 L5；L0–L4 是地基。</div>
+  </div>
+
+  <h3>主要子系统：OCCT 原包 vs 本仓体量（审计「lite 缺口」表白话版）</h3>
+  <table>
+    <thead>
+      <tr><th>能力域</th><th class="n">OCCT 约行</th><th class="n">本仓约行</th><th>状态白话</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>圆角 / 倒角族</td><td class="n">85,017</td><td class="n">约 10.4 万</td><td><span class="tag ok">主算法齐</span> 余薄外壳</td></tr>
+      <tr><td>填充 / 扫掠</td><td class="n">29,942</td><td class="n">约 3.4 万</td><td><span class="tag ok">34/34 类收口</span></td></tr>
+      <tr><td>偏置 / 拔模 / 混合</td><td class="n">42,160</td><td class="n">约 4.4 万</td><td><span class="tag ok">38/38</span> 余进度表</td></tr>
+      <tr><td>局部操作 / 特征</td><td class="n">28,455</td><td class="n">约 2.9 万</td><td><span class="tag ok">72/73</span> 余诊断打印</td></tr>
+      <tr><td>隐藏线</td><td class="n">33,556</td><td class="n">约 3.1 万</td><td><span class="tag warn">算法通</span> 类名 80/100</td></tr>
+      <tr><td>2D 相切几何</td><td class="n">30,685</td><td class="n">约 2.2 万</td><td><span class="tag info">类全</span> 多数缺生产调用</td></tr>
+      <tr><td>扫掠填充 / 法则</td><td class="n">31,812</td><td class="n">约 2.7 万</td><td><span class="tag ok">72/72 收口</span></td></tr>
+    </tbody>
+  </table>
+
+  <!-- ===== 3 ===== -->
+  <h2>3. 八波次路线图与依赖关系</h2>
+  <p>工作按 S1…S7 波次推进。对局外人：波次 = 一批相关能力；箭头 = 必须先做完前置。</p>
+
+  <div class="fig">
+    <svg viewBox="0 0 760 230" xmlns="http://www.w3.org/2000/svg" aria-label="wave DAG">
+      <text x="0" y="16" fill="#5a6570" font-size="11">图 3 · 波次依赖（审计路线图）</text>
+      <rect x="40" y="50" width="100" height="44" fill="#eaf6ef" stroke="#0f6b3c"/>
+      <text x="90" y="70" text-anchor="middle" font-size="11" font-weight="650" fill="#0f6b3c">S1 填充/法则</text>
+      <text x="90" y="86" text-anchor="middle" font-size="9" fill="#5a6570">72/72 收口</text>
+
+      <rect x="40" y="130" width="100" height="44" fill="#eaf6ef" stroke="#0f6b3c"/>
+      <text x="90" y="150" text-anchor="middle" font-size="11" font-weight="650" fill="#0f6b3c">S2 布尔底座</text>
+      <text x="90" y="166" text-anchor="middle" font-size="9" fill="#5a6570">算法满</text>
+
+      <path d="M145 72 H190" stroke="#5a6570"/><path d="M145 152 H190" stroke="#5a6570"/>
+      <path d="M190 72 V100 H210" stroke="#5a6570"/><path d="M190 152 V120 H210" stroke="#5a6570"/>
+      <path d="M210 100 V120" stroke="#5a6570"/><path d="M210 110 H230" stroke="#5a6570"/>
+      <polygon points="230,105 240,110 230,115" fill="#5a6570"/>
+
+      <rect x="245" y="88" width="110" height="44" fill="#eaf3f8" stroke="#1a567a"/>
+      <text x="300" y="108" text-anchor="middle" font-size="11" font-weight="650" fill="#1a567a">S3 圆角</text>
+      <text x="300" y="124" text-anchor="middle" font-size="9" fill="#5a6570">需 S1+S2</text>
+
+      <path d="M145 72 H190 V40 H400" stroke="#5a6570" fill="none"/>
+      <path d="M400 40 H420" stroke="#5a6570"/><polygon points="420,35 430,40 420,45" fill="#5a6570"/>
+      <rect x="435" y="20" width="110" height="40" fill="#eaf6ef" stroke="#0f6b3c"/>
+      <text x="490" y="38" text-anchor="middle" font-size="11" font-weight="650" fill="#0f6b3c">S4 特征/填充</text>
+      <text x="490" y="52" text-anchor="middle" font-size="9" fill="#5a6570">前置偏 S1</text>
+
+      <rect x="435" y="78" width="90" height="36" fill="#eaf6ef" stroke="#0f6b3c"/>
+      <text x="480" y="100" text-anchor="middle" font-size="10" fill="#0f6b3c">S5 2D 相切</text>
+      <rect x="545" y="78" width="90" height="36" fill="#eaf6ef" stroke="#0f6b3c"/>
+      <text x="590" y="100" text-anchor="middle" font-size="10" fill="#0f6b3c">S6 偏置/拔模</text>
+      <rect x="655" y="78" width="90" height="36" fill="#fff7e8" stroke="#8a5a00"/>
+      <text x="700" y="100" text-anchor="middle" font-size="10" fill="#8a5a00">S7 隐藏线</text>
+
+      <rect x="435" y="140" width="110" height="40" fill="#eaf3f8" stroke="#1a567a"/>
+      <text x="490" y="158" text-anchor="middle" font-size="10" fill="#1a567a">S2i 曲面求交</text>
+      <text x="490" y="172" text-anchor="middle" font-size="9" fill="#5a6570">服务布尔/偏置</text>
+
+      <text x="40" y="210" font-size="10" fill="#5a6570">绿色：类覆盖或实质收口 · 蓝色：算法齐、统计口径未满 · 橙色：显示侧仍有命名残差</text>
+    </svg>
+    <div class="cap">S5/S6/S7 可与底座并行；S3 必须等 S1 与 S2。</div>
+  </div>
+
+  <h3>各类覆盖率（状态画板数据）</h3>
+  <div class="fig">
+    <div class="bar-row"><div class="bar-lab">S1 填充/法则</div><div class="bar-track"><div class="bar-fill ok" style="width:100%"></div></div><div class="bar-pct">100%</div></div>
+    <div class="bar-row"><div class="bar-lab">S2 布尔底座</div><div class="bar-track"><div class="bar-fill" style="width:90.2%"></div></div><div class="bar-pct">90.2%</div></div>
+    <div class="bar-row"><div class="bar-lab">S2i 求交</div><div class="bar-track"><div class="bar-fill" style="width:95%"></div></div><div class="bar-pct">95%</div></div>
+    <div class="bar-row"><div class="bar-lab">S3 圆角</div><div class="bar-track"><div class="bar-fill" style="width:94.6%"></div></div><div class="bar-pct">94.6%</div></div>
+    <div class="bar-row"><div class="bar-lab">S4 特征</div><div class="bar-track"><div class="bar-fill ok" style="width:98.6%"></div></div><div class="bar-pct">98.6%</div></div>
+    <div class="bar-row"><div class="bar-lab">S5 2D 相切</div><div class="bar-track"><div class="bar-fill ok" style="width:100%"></div></div><div class="bar-pct">100%</div></div>
+    <div class="bar-row"><div class="bar-lab">S6 偏置/拔模</div><div class="bar-track"><div class="bar-fill ok" style="width:100%"></div></div><div class="bar-pct">100%</div></div>
+    <div class="bar-row"><div class="bar-lab">S7 隐藏线</div><div class="bar-track"><div class="bar-fill warn" style="width:80%"></div></div><div class="bar-pct">80%</div></div>
+    <div class="cap">图 4 · 类名命中率。计划内合计约 645/692 类（约 93%）。</div>
+  </div>
+
+  <!-- ===== 4 ===== -->
+  <h2>4. 功能域就绪度</h2>
+  <p>状态画板按「生产路径」而不是「有多少文件」打标签：</p>
+  <table>
+    <thead><tr><th>功能域</th><th>状态</th><th>读者可读的含义</th></tr></thead>
+    <tbody>
+      <tr><td>布尔运算</td><td><span class="tag ok">已收口</span></td><td>曲面布尔走正式建造器；旧体素引擎已删除</td></tr>
+      <tr><td>网格化</td><td><span class="tag info">已接线</span></td><td>增量网格 + Delaunay；15 模型顶/面数与 OCCT 一致</td></tr>
+      <tr><td>STEP / IGES</td><td><span class="tag info">已接线</span></td><td>可读可写链路在用；工业模型有已登记小残差</td></tr>
+      <tr><td>偏置 / 抽壳</td><td><span class="tag ok">已收口</span></td><td>主链落地；只剩进度权重表不移植</td></tr>
+      <tr><td>圆角</td><td><span class="tag info">已接线</span></td><td>角点族齐；少量转发外壳未单独建名</td></tr>
+      <tr><td>特征（孔槽肋拔模）</td><td><span class="tag info">已接线</span></td><td>产品入口已接；部分高级特征类尚无一键 API</td></tr>
+      <tr><td>隐藏线</td><td><span class="tag info">已接线</span></td><td>精确链通；立方体多边形对拍 0 差</td></tr>
+      <tr><td>可视化 / Draw lite</td><td><span class="tag lite">Lite</span></td><td>占位，非生产级完整工具包</td></tr>
+    </tbody>
+  </table>
+
+  <div class="fig">
+    <svg viewBox="0 0 760 160" xmlns="http://www.w3.org/2000/svg" aria-label="capability pipeline">
+      <text x="0" y="16" fill="#5a6570" font-size="11">图 5 · 能力流水线（从计算到交付）</text>
+      <rect x="15" y="45" width="100" height="55" fill="#eaf3f8" stroke="#1a567a"/><text x="65" y="70" text-anchor="middle" font-size="10" fill="#1a567a">数学几何</text><text x="65" y="86" text-anchor="middle" font-size="8" fill="#5a6570">L0–L3</text>
+      <rect x="130" y="45" width="100" height="55" fill="#eaf3f8" stroke="#1a567a"/><text x="180" y="70" text-anchor="middle" font-size="10" fill="#1a567a">拓扑实体</text><text x="180" y="86" text-anchor="middle" font-size="8" fill="#5a6570">L4–L5</text>
+      <rect x="245" y="45" width="100" height="55" fill="#eaf6ef" stroke="#0f6b3c"/><text x="295" y="70" text-anchor="middle" font-size="10" fill="#0f6b3c">布尔求交</text><text x="295" y="86" text-anchor="middle" font-size="8" fill="#5a6570">已收口</text>
+      <rect x="360" y="45" width="100" height="55" fill="#eaf6ef" stroke="#0f6b3c"/><text x="410" y="70" text-anchor="middle" font-size="10" fill="#0f6b3c">特征偏置</text><text x="410" y="86" text-anchor="middle" font-size="8" fill="#5a6570">已接线</text>
+      <rect x="475" y="45" width="100" height="55" fill="#eaf6ef" stroke="#0f6b3c"/><text x="525" y="70" text-anchor="middle" font-size="10" fill="#0f6b3c">网格导出</text><text x="525" y="86" text-anchor="middle" font-size="8" fill="#5a6570">15/15</text>
+      <rect x="590" y="45" width="140" height="55" fill="#fff7e8" stroke="#8a5a00"/><text x="660" y="70" text-anchor="middle" font-size="10" fill="#8a5a00">交换 / 显示</text><text x="660" y="86" text-anchor="middle" font-size="8" fill="#5a6570">可用·有残差</text>
+      <text x="15" y="135" font-size="10" fill="#5a6570">绿色环节已具备「对照证据」；橙色环节能工作，但个别模型显示边序仍与 OCCT 不完全一致。</text>
+    </svg>
+  </div>
+
+  <!-- ===== 5 ===== -->
+  <h2>5. 「未满 100%」该怎么读</h2>
+  <div class="callout warn">
+    <strong>不要把类覆盖率当成完成度百分比</strong>
+    统计口径是「OCCT 类型全名是否出现在 Rust 文本里」。宏头、句柄别名、仅调试编译存在的打印模块也会进分母；
+    Rust 用 const / Arc / 日志惯用法表达同一语义，不必再造同名空类。
+  </div>
+
+  <div class="fig">
+    <svg viewBox="0 0 760 200" xmlns="http://www.w3.org/2000/svg" aria-label="coverage myth">
+      <text x="0" y="16" fill="#5a6570" font-size="11">图 6 · 统计缺口 vs 功能缺口</text>
+      <rect x="40" y="40" width="300" height="130" fill="#fff" stroke="#d5dde2"/>
+      <text x="190" y="64" text-anchor="middle" font-size="11" font-weight="650">分母里的「类」</text>
+      <rect x="60" y="80" width="260" height="26" fill="#eaf6ef" stroke="#0f6b3c"/>
+      <text x="190" y="97" text-anchor="middle" font-size="10">真正算法 / 数据结构</text>
+      <rect x="60" y="116" width="260" height="36" fill="#fff7e8" stroke="#8a5a00"/>
+      <text x="190" y="132" text-anchor="middle" font-size="9">宏 · 别名 · DEBUG · DRAW 诊断</text>
+      <text x="190" y="146" text-anchor="middle" font-size="9">→ 表上「缺」的主要来源</text>
+      <rect x="400" y="40" width="320" height="130" fill="#fff" stroke="#d5dde2"/>
+      <text x="560" y="64" text-anchor="middle" font-size="11" font-weight="650">本仓态度</text>
+      <text x="420" y="95" font-size="10">算法：按控制流移植并对照</text>
+      <text x="420" y="115" font-size="10">非算法：不堆空壳刷命中率</text>
+      <text x="420" y="135" font-size="10">未移植分支：登记 UNPORTED + 行号</text>
+      <text x="420" y="155" font-size="10">UNPORTED 上升 ≠ 回归</text>
+    </svg>
+  </div>
+
+  <table>
+    <thead><tr><th>波次</th><th>表上数字</th><th>白话缺口</th><th>要不要补空壳</th></tr></thead>
+    <tbody>
+      <tr><td>S2</td><td>157/174 · 777 行</td><td>宏 / 句柄别名 / 调试死码</td><td>否</td></tr>
+      <tr><td>S2i</td><td>38/40</td><td>typedef / 枚举命名差异</td><td>否</td></tr>
+      <tr><td>S3</td><td>122/129 · 136 行</td><td>7 个薄转发外壳</td><td>无调用方则否</td></tr>
+      <tr><td>S4</td><td>72/73 · 75 行</td><td>DRAW 诊断打印</td><td>否（不移植）</td></tr>
+      <tr><td>S6</td><td>38/38 · 32 行</td><td>进度条权重表</td><td>否</td></tr>
+      <tr><td>S7</td><td>80/100 · 1,485 行</td><td>模板实例名；泛型已覆盖算法</td><td>按显示需求决定</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ===== 6 ===== -->
+  <h2>6. 产品接口：完整 · 有效 · 可靠</h2>
+  <p>审计关注「类是否存在」；状态画板关注「应用能否调用」。评审接口应优先看产品层。</p>
+
+  <div class="fig">
+    <svg viewBox="0 0 760 210" xmlns="http://www.w3.org/2000/svg" aria-label="three layers">
+      <text x="0" y="16" fill="#5a6570" font-size="11">图 7 · 三层接口模型（状态画板 + 审计口径）</text>
+      <rect x="30" y="35" width="700" height="48" fill="#eaf6ef" stroke="#0f6b3c"/>
+      <text x="45" y="55" font-size="11" font-weight="650" fill="#0f6b3c">L1 产品 API</text>
+      <text x="45" y="72" font-size="9.5" fill="#2a3540">开槽/颈部 · 通孔盲孔 · 凸台 · 加强肋 · 拔模 · 通用布尔 — 特征套件 17/17</text>
+      <rect x="30" y="92" width="700" height="48" fill="#eaf3f8" stroke="#1a567a"/>
+      <text x="45" y="112" font-size="11" font-weight="650" fill="#1a567a">L2 OCCT 类门面</text>
+      <text x="45" y="129" font-size="9.5" fill="#2a3540">MakeRevol / Prism / LinearForm / CylindricalHole / DraftAngle / Form / BOPAlgo…</text>
+      <rect x="30" y="149" width="700" height="44" fill="#f6f7f9" stroke="#9aa3ad"/>
+      <text x="45" y="169" font-size="11" font-weight="650" fill="#5a6570">L3 非算法残差</text>
+      <text x="45" y="185" font-size="9.5" fill="#5a6570">define · P* · OCCT_DEBUG · BRepFeat_trace · analyzeProgress · CSF_DEBUG_BOP</text>
+    </svg>
+  </div>
+
+  <table>
+    <thead><tr><th>产品入口</th><th>底层路径</th><th>完整</th><th>有效</th><th>可靠依据</th></tr></thead>
+    <tbody>
+      <tr><td>开槽 / 颈部</td><td>MakeRevol</td><td>是</td><td>是</td><td>体积增减方向对</td></tr>
+      <tr><td>通孔 / 盲孔</td><td>MakeCylindricalHole</td><td>是</td><td>是</td><td>与 OCCT 探针五入口对拍</td></tr>
+      <tr><td>凸台</td><td>MakePrism</td><td>是</td><td>是</td><td>体积 / 贯穿</td></tr>
+      <tr><td>加强肋</td><td>MakeLinearForm</td><td>是</td><td>是</td><td>草图约定 + rib 检查</td></tr>
+      <tr><td>拔模</td><td>DraftAngle</td><td>是</td><td>是</td><td>Direction=中性面法向</td></tr>
+      <tr><td>通用布尔</td><td>algo 门面</td><td>是</td><td>是</td><td>与 Form 同路径</td></tr>
+    </tbody>
+  </table>
+
+  <div class="two">
+    <div class="box">
+      <h4>使用契约（可靠的前提）</h4>
+      <ul>
+        <li>拔模方向取中性面法向，不是面法向</li>
+        <li>肋使用 OCCT 草图线约定，不是旧板料三参</li>
+        <li>部分 tol 仅为签名兼容，不驱动布尔 fuzzy</li>
+        <li>失败返回错误，可带状态名</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h4>类已落、产品未包</h4>
+      <ul>
+        <li>MakeDPrism / MakePipe / MakeRevolutionForm</li>
+        <li>RibSlot 边表查询未回填到产品 API</li>
+        <li>有真实几何约定后再加一键入口</li>
+        <li>不等于算法没移植</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ===== 7 ===== -->
+  <h2>7. 对拍与门禁：如何证明没有自欺</h2>
+  <table>
+    <thead><tr><th>门禁 / 探针</th><th>验证什么</th><th>结果</th></tr></thead>
+    <tbody>
+      <tr><td>编译检查</td><td>库可构建</td><td>相关 crate 0 error</td></tr>
+      <tr><td>export_data_obj</td><td>15 模型网格 v/f vs OCCT OBJ</td><td><strong>15/15 逐位一致</strong></td></tr>
+      <tr><td>step_obj_gates</td><td>包围盒 / 面积</td><td>4/4；工业模型残差 ≤0.15% 已登记</td></tr>
+      <tr><td>特征套件</td><td>孔槽肋拔模等</td><td><strong>17/17</strong></td></tr>
+      <tr><td>fuse_box_cylinder</td><td>融合后闭合实体</td><td>通过</td></tr>
+      <tr><td>曲面布尔探针</td><td>Fuse/Cut/Common 体积</td><td>对齐 OCCT 真值</td></tr>
+      <tr><td>质量属性</td><td>原始体体积/面积</td><td>相对误差约 1e-9</td></tr>
+      <tr><td>多边形隐藏线</td><td>可见边 vs OCCT</td><td>Cube 0 差；曲面模型有边序差</td></tr>
+    </tbody>
+  </table>
+
+  <div class="fig">
+    <svg viewBox="0 0 760 150" xmlns="http://www.w3.org/2000/svg" aria-label="parity samples">
+      <text x="0" y="16" fill="#5a6570" font-size="11">图 8 · 网格对拍抽样（导出自指南：OCCT 与本仓 v/f 相同）</text>
+      <g font-size="9">
+        <rect x="20" y="40" width="85" height="70" fill="#eaf6ef" stroke="#0f6b3c"/><text x="62" y="70" text-anchor="middle">Cube</text><text x="62" y="90" text-anchor="middle">24/12</text>
+        <rect x="115" y="40" width="85" height="70" fill="#eaf6ef" stroke="#0f6b3c"/><text x="157" y="70" text-anchor="middle">Cylinder</text><text x="157" y="90" text-anchor="middle">146/140</text>
+        <rect x="210" y="40" width="85" height="70" fill="#eaf6ef" stroke="#0f6b3c"/><text x="252" y="70" text-anchor="middle">Sphere</text><text x="252" y="90" text-anchor="middle">642/1244</text>
+        <rect x="305" y="40" width="85" height="70" fill="#eaf6ef" stroke="#0f6b3c"/><text x="347" y="70" text-anchor="middle">Torus</text><text x="347" y="90" text-anchor="middle">1369/2592</text>
+        <rect x="400" y="40" width="85" height="70" fill="#eaf6ef" stroke="#0f6b3c"/><text x="442" y="70" text-anchor="middle">screw</text><text x="442" y="90" text-anchor="middle">600/790</text>
+        <rect x="495" y="40" width="100" height="70" fill="#eaf6ef" stroke="#0f6b3c"/><text x="545" y="70" text-anchor="middle">Shape</text><text x="545" y="90" text-anchor="middle">6150/11372</text>
+        <rect x="610" y="40" width="120" height="70" fill="#eaf3f8" stroke="#1a567a"/><text x="670" y="70" text-anchor="middle">…共 15 个</text><text x="670" y="90" text-anchor="middle">全部一致</text>
+      </g>
+    </svg>
+  </div>
+
+  <!-- ===== 8 ===== -->
+  <h2>8. 本轮与近几轮推进故事</h2>
+  <div class="callout">
+    <strong>2026-11-12（本轮）· 非 S7 产品缺口收口</strong>
+    肋改走线性成型；拔模改走官方 DraftAngle（方向=中性面法向）；布尔收尾 SimplifyResult 接线；
+    裁剪曲线真正 Reverse。门禁：编译通过 + 特征 17/17。故意不搬：调试转储、进度表、DRAW 诊断。
+  </div>
+
+  <div class="fig">
+    <svg viewBox="0 0 760 200" xmlns="http://www.w3.org/2000/svg" aria-label="timeline">
+      <text x="0" y="16" fill="#5a6570" font-size="11">图 9 · 近几轮时间线（审计画板摘要）</text>
+      <line x1="40" y1="100" x2="720" y2="100" stroke="#d5dde2" stroke-width="3"/>
+      <circle cx="90" cy="100" r="8" fill="#0f6b3c"/>
+      <text x="90" y="60" text-anchor="middle" font-size="9" font-weight="650">T-426..491</text>
+      <text x="90" y="74" text-anchor="middle" font-size="8">S5/S6 收口</text>
+      <text x="90" y="130" text-anchor="middle" font-size="8">11-06→08</text>
+
+      <circle cx="250" cy="100" r="8" fill="#0f6b3c"/>
+      <text x="250" y="60" text-anchor="middle" font-size="9" font-weight="650">T-492..512</text>
+      <text x="250" y="74" text-anchor="middle" font-size="8">S4 72/73 · 分层拆分</text>
+      <text x="250" y="130" text-anchor="middle" font-size="8">11-08→10</text>
+
+      <circle cx="430" cy="100" r="8" fill="#1a567a"/>
+      <text x="430" y="50" text-anchor="middle" font-size="9" font-weight="650">T-513..521</text>
+      <text x="430" y="64" text-anchor="middle" font-size="8">文件拆分 · 孔口对拍</text>
+      <text x="430" y="78" text-anchor="middle" font-size="8">圆柱面布尔收敛</text>
+      <text x="430" y="130" text-anchor="middle" font-size="8">11-10→11</text>
+
+      <circle cx="610" cy="100" r="10" fill="#0f6b3c"/>
+      <text x="610" y="50" text-anchor="middle" font-size="9" font-weight="650">T-537 + 旁支</text>
+      <text x="610" y="64" text-anchor="middle" font-size="8">肋 · 拔模 · 收尾</text>
+      <text x="610" y="78" text-anchor="middle" font-size="8">Reverse · 17/17</text>
+      <text x="610" y="130" text-anchor="middle" font-size="8">11-12</text>
+    </svg>
+  </div>
+
+  <h3>上一轮值得记住的技术故事（白话）</h3>
+  <p>
+    圆柱被另一个圆柱贯穿时，曾出现「根本没切 → 切了但不互相裁 → 多出一层闭合壳」三段读数。
+    团队沿官方源码逐层定位：连通块与走线、周期面参数曲线整周期重定位、面集合判等语义
+    （朝向是否参与比较）。最终收敛到与 OCCT 同面数、体量差约 3×10⁻⁴ 量级——这是忠实度审计的典型工作方式。
+  </p>
+
+  <!-- ===== 9 ===== -->
+  <h2>9. 开放缺口与下一轮建议</h2>
+  <table>
+    <thead><tr><th>缺口</th><th>类型</th><th>建议</th></tr></thead>
+    <tbody>
+      <tr><td>部分高级特征无一键 API</td><td>产品封装</td><td>有业务几何约定再接线</td></tr>
+      <tr><td>隐藏线模板类名 / 多边形边序</td><td>显示对拍</td><td>查三角化输入与边序，不重写求交</td></tr>
+      <tr><td>调试转储 / 进度表 / DRAW 诊断</td><td>不移植</td><td>保持登记即可</td></tr>
+      <tr><td>UNPORTED 台账 562 处</td><td>已定位分支</td><td>按行号消化；不是回归信号</td></tr>
+      <tr><td>S2 宏与 DEBUG 残差</td><td>非算法</td><td>不堆空壳</td></tr>
+      <tr><td>2D 相切多数缺调用方</td><td>类全未数值证</td><td>有生产链再做数值对齐</td></tr>
+    </tbody>
+  </table>
+
+  <div class="cards">
+    <div class="card">
+      <div class="k">优先做</div>
+      <div class="v">有约定的产品封装</div>
+      <div class="d">DPrism / Pipe / RevolutionForm 等，带着真实参数几何接入</div>
+    </div>
+    <div class="card">
+      <div class="k">按需做</div>
+      <div class="v">显示边序残差</div>
+      <div class="d">若隐藏线逐字节对齐是硬需求</div>
+    </div>
+    <div class="card">
+      <div class="k">不要做</div>
+      <div class="v">为空壳刷 100%</div>
+      <div class="d">宏 / typedef / DEBUG 同名空模块</div>
+    </div>
+    <div class="card">
+      <div class="k">继续遵守</div>
+      <div class="v">五道移植门禁</div>
+      <div class="d">编译 → cxx 控制流 → 既有基线 → 完成即停 → 不堆新测试</div>
+    </div>
+  </div>
+
+  <!-- ===== appendix ===== -->
+  <div class="appendix">
+    <h2>附录 A · 分层 crate 体量（2026-11-12）</h2>
+    <table>
+      <thead><tr><th>层</th><th>crate</th><th class="n">文件</th><th class="n">非空行</th><th class="n">UNPORTED</th></tr></thead>
+      <tbody>
+        <tr><td>L0</td><td>occt-foundation</td><td class="n">16</td><td class="n">1,178</td><td class="n">1</td></tr>
+        <tr><td>L1</td><td>occt-gp</td><td class="n">163</td><td class="n">33,998</td><td class="n">13</td></tr>
+        <tr><td>L2</td><td>occt-geombase</td><td class="n">74</td><td class="n">14,387</td><td class="n">13</td></tr>
+        <tr><td>L2</td><td>occt-math</td><td class="n">84</td><td class="n">20,672</td><td class="n">9</td></tr>
+        <tr><td>L3</td><td>occt-geom2d</td><td class="n">221</td><td class="n">54,646</td><td class="n">58</td></tr>
+        <tr><td>L3</td><td>occt-geom</td><td class="n">492</td><td class="n">122,104</td><td class="n">88</td></tr>
+        <tr><td>L4</td><td>occt-topology</td><td class="n">53</td><td class="n">10,579</td><td class="n">25</td></tr>
+        <tr><td>L5</td><td>occt-topo</td><td class="n">1,956</td><td class="n">512,040</td><td class="n">281</td></tr>
+        <tr><td>L6</td><td>occt-hlr</td><td class="n">115</td><td class="n">30,641</td><td class="n">26</td></tr>
+        <tr><td>L6</td><td>occt-exchange</td><td class="n">175</td><td class="n">44,588</td><td class="n">45</td></tr>
+        <tr><td>L7</td><td>occt-visual</td><td class="n">13</td><td class="n">4,338</td><td class="n">2</td></tr>
+        <tr><td>L8</td><td>occt</td><td class="n">6</td><td class="n">2,579</td><td class="n">1</td></tr>
+        <tr><td>—</td><td>occt-core（门面）</td><td class="n">1</td><td class="n">23</td><td class="n">0</td></tr>
+        <tr><td></td><td><strong>合计</strong></td><td class="n"><strong>3,369</strong></td><td class="n"><strong>851,773</strong></td><td class="n"><strong>562</strong></td></tr>
+      </tbody>
+    </table>
+
+    <h2>附录 B · 产品 API ↔ 底层类</h2>
+    <table>
+      <thead><tr><th>产品入口</th><th>底层</th></tr></thead>
+      <tbody>
+        <tr><td>groove / neck</td><td>BRepFeat_MakeRevol</td></tr>
+        <tr><td>through_hole / blind_hole</td><td>BRepFeat_MakeCylindricalHole</td></tr>
+        <tr><td>boss / boss_thru_all</td><td>BRepFeat_MakePrism</td></tr>
+        <tr><td>rib</td><td>BRepFeat_MakeLinearForm</td></tr>
+        <tr><td>draft</td><td>BRepOffsetAPI_DraftAngle + Draft_Modification</td></tr>
+        <tr><td>feature_apply</td><td>BRepAlgoAPI / BOPAlgo 门面</td></tr>
+      </tbody>
+    </table>
+
+    <h2>附录 C · 继续阅读</h2>
+    <ul>
+      <li>画板：<code>occt-migration-audit-and-100k-roadmap.canvas.tsx</code>（审计与路线图）</li>
+      <li>画板：<code>occt-port-status-overview.canvas.tsx</code>（移植状态总览）</li>
+      <li>指南：<code>specs/occt_migration_guide.md</code></li>
+      <li>任务台账：<code>specs/_tasks.md</code>（含 T-537）</li>
+    </ul>
+  </div>
+
+  <p class="foot">
+    本文综合两份 Cursor 画板与迁移指南，面向未参与移植的读者；不参与自动门禁。
+    PDF 由本 HTML 经 Chrome 打印生成。快速阅读建议：开篇五句话 + 第 4、6、7、9 节。
+  </p>
+
+</div>
+</body>
+</html>

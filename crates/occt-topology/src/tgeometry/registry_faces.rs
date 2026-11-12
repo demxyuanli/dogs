@@ -49,6 +49,12 @@ impl GeometryRegistry {
             .collect()
     }
 
+    /// The `Geom_Surface` handle registered under a surface-pointer key
+    /// (`repr_key` / `BRep_GCurve` CurveOnSurface key).
+    pub fn surface_at_ptr(&self, ptr: usize) -> Option<Arc<dyn Surface>> {
+        self.surface_by_ptr.read().unwrap().get(&ptr).cloned()
+    }
+
     /// Kind + u/v range of the surface registered under `ptr`.
     pub fn debug_surface_desc(&self, ptr: usize) -> String {
         let by_ptr = self.surface_by_ptr.read().unwrap();
