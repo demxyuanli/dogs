@@ -21,15 +21,14 @@ use super::wline_helpers::{
 /// Increment, LOfPnts)` (`cxx:1827-2172`).
 ///
 /// `lof_pnts` is the start-point list. OCCT appends the extra points it needs
-/// for closed surfaces (`cxx:1866-1960`) to that same list; the port works on a
-/// local copy so the caller's list keeps its own points.
+/// for closed surfaces (`cxx:1866-1960`) to that same list.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn perform_from_points(
     s1: &dyn Surface,
     d1: &TopolTool,
     s2: &dyn Surface,
     d2: &TopolTool,
-    lof_pnts: &[PntOn2S],
+    lof_pnts: &mut Vec<PntOn2S>,
     tol_tangency: f64,
     epsilon: f64,
     deflection: f64,
@@ -54,12 +53,26 @@ pub(crate) fn perform_from_points(
     let (mut umin_lig2, mut vmin_lig2, mut umax_lig2, mut vmax_lig2) = (u2a, v2a, u2b, v2b);
 
     let mut periods = [0.0f64; 4];
-    periods[0] = if s1.is_u_periodic() { s1.u_period() } else { 0.0 };
-    periods[1] = if s1.is_v_periodic() { s1.v_period() } else { 0.0 };
-    periods[2] = if s2.is_u_periodic() { s2.u_period() } else { 0.0 };
-    periods[3] = if s2.is_v_periodic() { s2.v_period() } else { 0.0 };
-
-    let mut points: Vec<PntOn2S> = lof_pnts.to_vec();
+    periods[0] = if s1.is_u_periodic() {
+        s1.u_period()
+    } else {
+        0.0
+    };
+    periods[1] = if s1.is_v_periodic() {
+        s1.v_period()
+    } else {
+        0.0
+    };
+    periods[2] = if s2.is_u_periodic() {
+        s2.u_period()
+    } else {
+        0.0
+    };
+    periods[3] = if s2.is_v_periodic() {
+        s2.v_period()
+    } else {
+        0.0
+    };
 
     if s1.is_u_closed() || s1.is_v_closed() || s2.is_u_closed() || s2.is_v_closed() {
         // `cxx:1866-1960`: duplicate every start point that sits exactly on a
@@ -131,11 +144,11 @@ pub(crate) fn perform_from_points(
                 }
             }
         }
-        points.extend(additional);
+        lof_pnts.extend(additional);
     }
 
     // `cxx:1962-1999`: the UV box of all start points.
-    for pnt in points.iter() {
+    for pnt in lof_pnts.iter() {
         let (u1, v1, u2, v2) = pnt.parameters();
         if u1 > umax_lig1 {
             umax_lig1 = u1;
@@ -169,8 +182,9 @@ pub(crate) fn perform_from_points(
     let mut d1m = d1.brep_tool(s1);
     let mut d2m = d2.brep_tool(s2);
 
-    for c_pnt in points.iter() {
-        let (u1, v1, u2, v2) = c_pnt.parameters();        let start_params = [u1, v1, u2, v2];
+    for c_pnt in lof_pnts.iter() {
+        let (u1, v1, u2, v2) = c_pnt.parameters();
+        let start_params = [u1, v1, u2, v2];
 
         let Some(start_p_on_2s) = pw.perform_first_point(start_params) else {
             continue;

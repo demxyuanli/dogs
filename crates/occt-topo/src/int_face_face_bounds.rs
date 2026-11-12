@@ -7,9 +7,9 @@ use std::sync::Arc;
 
 use occt_core::bnd::BndBox2d;
 use occt_core::gp::{GpPnt2d, GpTrsf, GpVec};
-use occt_core::precision::{ANGULAR, CONFUSION, Precision};
-use occt_geom::{Curve, Surface};
+use occt_core::precision::{Precision, ANGULAR, CONFUSION};
 use occt_geom::geom_api::project_point_on_surface;
+use occt_geom::{Curve, Surface};
 
 use crate::abs::{Orientation, ShapeType};
 use crate::bop_split_seam::is_closed_on_face;
@@ -51,6 +51,9 @@ impl Surface for BoundedSurface {
     fn d1(&self, u: f64, v: f64) -> (occt_core::gp::GpPnt, GpVec, GpVec) {
         self.inner.d1(u, v)
     }
+    fn d2(&self, u: f64, v: f64) -> (occt_core::gp::GpPnt, GpVec, GpVec, GpVec, GpVec, GpVec) {
+        self.inner.d2(u, v)
+    }
     fn u_range(&self) -> (f64, f64) {
         (self.umin, self.umax)
     }
@@ -73,12 +76,7 @@ impl Surface for BoundedSurface {
 }
 
 /// `CorrectPlaneBoundaries` — grow a finite UV box by 10% on each side.
-pub fn correct_plane_boundaries(
-    umin: &mut f64,
-    umax: &mut f64,
-    vmin: &mut f64,
-    vmax: &mut f64,
-) {
+pub fn correct_plane_boundaries(umin: &mut f64, umax: &mut f64, vmin: &mut f64, vmax: &mut f64) {
     if !(Precision::is_infinite(*umin) || Precision::is_infinite(*umax)) {
         let d_u = 0.1 * (*umax - *umin);
         *umin -= d_u;
@@ -93,10 +91,7 @@ pub fn correct_plane_boundaries(
 
 /// Whether the surface kind is enlarged by `CorrectSurfaceBoundaries`.
 fn enlarge_kind(kind: SurfaceKind) -> bool {
-    matches!(
-        kind,
-        SurfaceKind::Cylinder | SurfaceKind::Other
-    )
+    matches!(kind, SurfaceKind::Cylinder | SurfaceKind::Other)
 }
 
 /// `CorrectSurfaceBoundaries` (`IntTools_FaceFace.cxx:2017`).
@@ -255,7 +250,11 @@ pub fn parameter_out_of_boundary(
     let mut iter = 0i32;
     let asumtol = tol;
     let mut adelta = asumtol * 0.1;
-    adelta = if adelta < CONFUSION { CONFUSION } else { adelta };
+    adelta = if adelta < CONFUSION {
+        CONFUSION
+    } else {
+        adelta
+    };
     let Some(surf1) = BRepTool::face_surface(face1) else {
         return None;
     };

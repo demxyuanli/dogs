@@ -65,38 +65,38 @@ use crate::intpatch_interference_polyhedron::IntPatchInterferencePolyhedron;
 use crate::intpatch_polyhedron::IntPatchPolyhedron;
 use crate::intwalk::PWalking;
 
-#[path = "intpatch_prmprm_t3bits.rs"]
-mod prmprm_t3bits;
-#[path = "intpatch_prmprm_depart.rs"]
-#[allow(dead_code)]
-mod prmprm_depart;
-#[path = "intpatch_prmprm_section_point.rs"]
-mod section_point;
-#[path = "intpatch_prmprm_self.rs"]
-mod self_intersection;
-#[path = "intpatch_prmprm_start.rs"]
-mod start_point;
-#[path = "intpatch_prmprm_newline.rs"]
-mod new_line_sampling;
-#[path = "intpatch_prmprm_wline.rs"]
-mod wline_helpers;
-#[path = "intpatch_prmprm_periodic.rs"]
-#[allow(dead_code)]
-mod periodic;
-#[path = "intpatch_prmprm_several.rs"]
-#[allow(dead_code)]
-mod several;
-#[path = "intpatch_prmprm_lofpnts.rs"]
-#[allow(dead_code)]
-mod lofpnts;
 #[path = "intpatch_prmprm_clearflag.rs"]
 mod clearflag;
+#[path = "intpatch_prmprm_clearflag_depart.rs"]
+mod clearflag_depart;
 #[path = "intpatch_prmprm_clearflag_lines.rs"]
 mod clearflag_lines;
 #[path = "intpatch_prmprm_clearflag_zones.rs"]
 mod clearflag_zones;
-#[path = "intpatch_prmprm_clearflag_depart.rs"]
-mod clearflag_depart;
+#[path = "intpatch_prmprm_lofpnts.rs"]
+#[allow(dead_code)]
+mod lofpnts;
+#[path = "intpatch_prmprm_newline.rs"]
+mod new_line_sampling;
+#[path = "intpatch_prmprm_periodic.rs"]
+#[allow(dead_code)]
+mod periodic;
+#[path = "intpatch_prmprm_depart.rs"]
+#[allow(dead_code)]
+mod prmprm_depart;
+#[path = "intpatch_prmprm_t3bits.rs"]
+mod prmprm_t3bits;
+#[path = "intpatch_prmprm_section_point.rs"]
+mod section_point;
+#[path = "intpatch_prmprm_self.rs"]
+mod self_intersection;
+#[path = "intpatch_prmprm_several.rs"]
+#[allow(dead_code)]
+mod several;
+#[path = "intpatch_prmprm_start.rs"]
+mod start_point;
+#[path = "intpatch_prmprm_wline.rs"]
+mod wline_helpers;
 
 use section_point::section_point_to_parameters;
 use wline_helpers::{
@@ -231,9 +231,7 @@ impl PrmPrmIntersection {
                         vmin2 = v2;
                     }
                 }
-                let bounds = [
-                    umin1, vmin1, umin2, vmin2, umax1, vmax1, umax2, vmax2,
-                ];
+                let bounds = [umin1, vmin1, umin2, vmin2, umax1, vmax1, umax2, vmax2];
 
                 // `cxx:503-576`: which point of the section line to start from.
                 let mut nbps2: i32 = if nbp > 3 { (nbp / 2) as i32 } else { 1 };
@@ -326,8 +324,7 @@ impl PrmPrmIntersection {
                     // !lignetrouvee) && ((NombreDePoints... - 3 < nbp) ||
                     // lignetrouvee)))` (`cxx:721-723`).
                     let cont = nbp_i > 5
-                        && ((n_dep < 3 || !lignetrouvee)
-                            && (n_dep - 3 < nbp_i || lignetrouvee));
+                        && ((n_dep < 3 || !lignetrouvee) && (n_dep - 3 < nbp_i || lignetrouvee));
                     if !cont {
                         break;
                     }
@@ -384,9 +381,7 @@ impl PrmPrmIntersection {
                 }
             }
         }
-        let bounds = [
-            umin1, vmin1, umin2, vmin2, umax1, vmax1, umax2, vmax2,
-        ];
+        let bounds = [umin1, vmin1, umin2, vmin2, umax1, vmax1, umax2, vmax2];
 
         // `cxx:781-926`.
         for z in 0..nb_tan_zon {
@@ -464,9 +459,8 @@ impl PrmPrmIntersection {
     /// Increment, LOfPnts)` (`cxx:1827-2172`): walks one line from every given
     /// start point.
     ///
-    /// `lof_pnts` are the start points (`IntSurf_PntOn2S` list). The
-    /// `NCollection_List` is passed as a slice: OCCT appends the seam duplicates
-    /// of closed surfaces to it (`cxx:1959`), which only feeds the loop below.
+    /// `lof_pnts` are the start points (`IntSurf_PntOn2S` list). OCCT appends
+    /// seam duplicates of closed surfaces to the same list (`cxx:1959`).
     #[allow(clippy::too_many_arguments)]
     pub fn perform_from_points(
         &mut self,
@@ -474,7 +468,7 @@ impl PrmPrmIntersection {
         d1: &TopolTool,
         s2: &dyn Surface,
         d2: &TopolTool,
-        lof_pnts: &[PntOn2S],
+        lof_pnts: &mut Vec<PntOn2S>,
         tol_tangency: f64,
         epsilon: f64,
         deflection: f64,
@@ -510,7 +504,8 @@ impl PrmPrmIntersection {
         deflection: f64,
         increment: f64,
     ) {
-        let poly = IntPatchPolyhedron::with_sizes(surf, d1.nb_samples_u(surf), d1.nb_samples_v(surf));
+        let poly =
+            IntPatchPolyhedron::with_sizes(surf, d1.nb_samples_u(surf), d1.nb_samples_v(surf));
         self.perform_self_polyhedron(
             surf,
             &poly,
@@ -724,12 +719,10 @@ fn try_walking(
         let v_fin = vwl.point(vwl.nb_pnts()).value();
         let hit = match end_match {
             EndMatch::Both => {
-                p_debut.distance(&v_debut) <= tol_tangency
-                    && p_fin.distance(&v_fin) <= tol_tangency
+                p_debut.distance(&v_debut) <= tol_tangency && p_fin.distance(&v_fin) <= tol_tangency
             }
             EndMatch::Either => {
-                p_debut.distance(&v_debut) < tol_tangency
-                    || p_fin.distance(&v_fin) < tol_tangency
+                p_debut.distance(&v_debut) < tol_tangency || p_fin.distance(&v_fin) < tol_tangency
             }
         };
         if hit {

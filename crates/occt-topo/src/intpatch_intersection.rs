@@ -7,8 +7,8 @@ use occt_geom::Surface;
 
 use crate::brep_surface::{classify_surface, SurfaceKind};
 use crate::geom_bnd_lib_surface3d::{surface_kind, GeomAbsSurfaceType};
-use crate::geom_int::{GeomIntLine, GLine, GLineKind, TopolTool};
-use crate::int_tools_wline::PatchPoint;
+use crate::geom_int::{GLine, GLineKind, GeomIntLine, TopolTool};
+use crate::int_tools_wline::{PatchPoint, PntOn2S};
 use crate::intpatch::aline_to_wline::ALineToWLine;
 use crate::intpatch::impimp::{try_set_quad, ImpImpIntersection};
 use crate::intpatch::wline_tool;
@@ -84,6 +84,56 @@ impl PatchIntersection {
         tol_tang: f64,
         post_wl_proc: bool,
     ) {
+        let mut start_points = Vec::new();
+        self.perform_with_start_points_and_options(
+            s1,
+            d1,
+            s2,
+            d2,
+            tol_arc,
+            tol_tang,
+            &mut start_points,
+            post_wl_proc,
+        );
+    }
+
+    /// `Perform(S1, D1, S2, D2, TolArc, TolTang, LOfPnts, ...)`
+    /// (`IntPatch_Intersection.hxx:109-118`, `cxx:1382-1655`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn perform_with_start_points(
+        &mut self,
+        s1: &dyn Surface,
+        d1: &TopolTool,
+        s2: &dyn Surface,
+        d2: &TopolTool,
+        tol_arc: f64,
+        tol_tang: f64,
+        start_points: &mut Vec<PntOn2S>,
+    ) {
+        self.perform_with_start_points_and_options(
+            s1,
+            d1,
+            s2,
+            d2,
+            tol_arc,
+            tol_tang,
+            start_points,
+            true,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn perform_with_start_points_and_options(
+        &mut self,
+        s1: &dyn Surface,
+        d1: &TopolTool,
+        s2: &dyn Surface,
+        d2: &TopolTool,
+        tol_arc: f64,
+        tol_tang: f64,
+        start_points: &mut Vec<PntOn2S>,
+        post_wl_proc: bool,
+    ) {
         self.done = false;
         self.empty = true;
         self.tangent_faces = false;
@@ -102,7 +152,7 @@ impl PatchIntersection {
             if imp.is_done() {
                 self.take_impimp(&imp, s1, s2);
             } else {
-                self.run_prmprm(s1, d1, s2, d2, tol_arc, tol_tang);
+                self.run_prmprm(s1, d1, s2, d2, tol_arc, tol_tang, start_points);
             }
         } else if ip1 != ip2 {
             let mut ip = ImpPrmIntersection::new();
@@ -112,10 +162,10 @@ impl PatchIntersection {
                 self.empty = ip.is_empty();
                 self.slin.extend(ip.lines().iter().cloned());
             } else {
-                self.run_prmprm(s1, d1, s2, d2, tol_arc, tol_tang);
+                self.run_prmprm(s1, d1, s2, d2, tol_arc, tol_tang, start_points);
             }
         } else {
-            self.run_prmprm(s1, d1, s2, d2, tol_arc, tol_tang);
+            self.run_prmprm(s1, d1, s2, d2, tol_arc, tol_tang, start_points);
         }
 
         // `if (!theIsReqToPostWLProc) return;` (`cxx:1341-1344`).
@@ -161,8 +211,7 @@ impl PatchIntersection {
         self.empty = imp.is_empty();
         self.tangent_faces = imp.tangent_faces();
         self.opposite = imp.opposite_faces();
-        self.slin
-            .extend(convert_alines(imp.lines(), s1, s2));
+        self.slin.extend(convert_alines(imp.lines(), s1, s2));
         for i in 1..=imp.nb_pnts() {
             if let Some(p) = imp.point(i) {
                 self.spnt.push(p.clone());
@@ -173,9 +222,9 @@ impl PatchIntersection {
     /// `ParamParamPerfom(S1, D1, S2, D2, TolArc, TolTang, ListOfPnts, typs1,
     /// typs2)` (`IntPatch_Intersection.cxx:1658-1768`).
     ///
-    /// Both domains finite: the `ClearFlag` overload with `ClearFlag = true`
-    /// (`:1680`); `ListOfPnts` is empty on every call of this port, so the
-    /// `LOfPnts` branch at `:1676-1679` does not run.
+    /// Both domains finite: the `LOfPnts` overload when the supplied list is
+    /// non-empty (`:1674-1679`), otherwise the `ClearFlag` overload with
+    /// `ClearFlag = true` (`:1680`).
     ///
     /// Exactly one domain infinite: `FUN_GetMinMaxXYZPnt` on the finite surface,
     /// `FUN_TrimInfSurf` on the infinite one (`:1685-1708`), then the
@@ -195,22 +244,37 @@ impl PatchIntersection {
         d2: &TopolTool,
         tol_arc: f64,
         tol_tang: f64,
+        start_points: &mut Vec<PntOn2S>,
     ) {
         let mut pp = PrmPrmIntersection::new();
         let d1_inf = d1.domain_is_infinite();
         let d2_inf = d2.domain_is_infinite();
         if !d1_inf && !d2_inf {
-            pp.perform_clear_flag(
-                s1,
-                d1,
-                s2,
-                d2,
-                tol_tang,
-                tol_arc,
-                self.fleche,
-                self.uv_max_step,
-                true,
-            );
+            if start_points.is_empty() {
+                pp.perform_clear_flag(
+                    s1,
+                    d1,
+                    s2,
+                    d2,
+                    tol_tang,
+                    tol_arc,
+                    self.fleche,
+                    self.uv_max_step,
+                    true,
+                );
+            } else {
+                pp.perform_from_points(
+                    s1,
+                    d1,
+                    s2,
+                    d2,
+                    start_points,
+                    tol_tang,
+                    tol_arc,
+                    self.fleche,
+                    self.uv_max_step,
+                );
+            }
         } else if d1_inf ^ d2_inf {
             // `:1685-1708`: `AP = max(MU, MV)` of the *finite* surface, and the
             // infinite one is trimmed against the finite one's point cloud.
