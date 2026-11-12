@@ -64,13 +64,20 @@ impl GeometryRegistry {
         let mut ts = s.tshape.write().unwrap();
         if !(geom.pcurves.is_empty() && geom.pcurve_ranges.is_empty()) {
             let mut locations = OrderedSlots::default();
-            for (face_key, _) in geom.pcurves.iter() {
+            let mut continuities = OrderedSlots::default();
+            for (face_key, cs) in geom.pcurves.iter() {
                 locations.insert(*face_key, TopLocLocation::identity());
+                // Closed-surface slots start at GeomAbs_C0
+                // (`BRep_CurveOnClosedSurface.cxx:290-291`).
+                if cs.len() >= 2 {
+                    continuities.insert(*face_key, 0);
+                }
             }
             ts.edge_pcurves = Some(EdgePcurves {
                 curves: geom.pcurves.clone(),
                 ranges: geom.pcurve_ranges.clone(),
                 locations,
+                continuities,
             });
         }
         let c = ts.edge_core_mut();

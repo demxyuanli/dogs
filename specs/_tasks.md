@@ -6157,3 +6157,18 @@ Do not grow the dual-pipeline / planar / volume-gate scaffold. Do not invent Fil
 (2) UNPORTED：`BRep_CurveOnClosedSurface` 的 `IsRegularity`（seam 上的连续性表示，`BRep_CurveOnClosedSurface.cxx:50-63`）仍未进 `regularities`；`HasContinuity(E)` 只看 `CurveOn2Surfaces` 列表。
 
 (3) 旁支（未修）：`hlrbrep_poly_algo/bi_points.rs` 超千行待拆；面尚无表面时 `write_continuity` 直接返回（旧 side-table 可按面键写入）。
+
+## T-530 `BRep_CurveOnClosedSurface` 连续性接到 pcurve 槽（2026-11-12）
+
+| 任务卡 | 内容 | 状态 |
+|---|---|---|
+| T-530 A | `EdgePcurves.continuities`；`set_pcurves_at` 对双 pcurve 槽默认 `GeomAbs_C0`；单 pcurve 清掉连续性。 | 已完成 |
+| T-530 B | `HasContinuity(E)` / pair 查询 / `MaxContinuity` / `Continuity` 写：先匹配 closed `IsRegularity(S,S,L,L)`，再 `CurveOn2Surfaces`。 | 已完成 |
+| T-530 C | `copy_edge_pcurve_slots` 与 `set_edge` 的 `EdgePcurves` 构造带上 `continuities`。 | 已完成 |
+| T-530 D | 既有门禁：`cargo check` topology/topo/hlr；`fuse_box_cylinder_is_closed_solid`；`modeling_mesh_matches_occt`；`step_obj_gates` **4 passed**；`export_data_obj` 15/15。 | 已通过 |
+
+**T-530 备注**
+
+(1) 控制流：`BRep_CurveOnClosedSurface.cxx:50-63`；`UpdateCurves` 双 pcurve `cxx:288-306`；`BRep_Tool::HasContinuity(E)` `:1253-1267` 对任何 `IsRegularity()` 为真（含 C0 的 closed 槽）。
+
+(2) 旁支（未修）：`BRep_Builder::Transfert`（`cxx:1159-1198`）的 pcurve/regularity 整表搬迁仍未接线；面无表面时 Continuity 写仍早退。

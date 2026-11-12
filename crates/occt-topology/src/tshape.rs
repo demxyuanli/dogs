@@ -589,6 +589,10 @@ pub struct EdgePcurves {
     pub ranges: OrderedSlots<(f64, f64)>,
     /// `BRep_CurveRepresentation::Location` relative to the owning edge.
     pub locations: OrderedSlots<TopLocLocation>,
+    /// `BRep_CurveOnClosedSurface::myContinuity` for slots with two pcurves
+    /// (`BRep_CurveOnClosedSurface.cxx:29-39`, default `GeomAbs_C0`). Absent
+    /// for single-pcurve `BRep_CurveOnSurface` representations.
+    pub continuities: OrderedSlots<u8>,
 }
 
 impl EdgePcurves {
@@ -608,6 +612,8 @@ impl EdgePcurves {
     ) {
         self.curves.set(face_key, vec![c.clone()]);
         self.locations.set(face_key, location);
+        // Single-pcurve COS is not a regularity representation.
+        self.continuities.remove(&face_key);
         self.init_range(face_key, Some(c.as_ref()), first, last);
     }
 
@@ -632,9 +638,37 @@ impl EdgePcurves {
         last: f64,
     ) {
         let head = cs.first().cloned();
+        let closed = cs.len() >= 2;
         self.curves.set(face_key, cs);
         self.locations.set(face_key, location);
+        if closed {
+            // `BRep_CurveOnClosedSurface(..., GeomAbs_C0)` (`cxx:290-291`); keep
+            // an existing Continuity() write across pcurve rebuilds.
+            if !self.continuities.contains_key(&face_key) {
+                self.continuities.insert(face_key, 0);
+            }
+        } else {
+            self.continuities.remove(&face_key);
+        }
         self.init_range(face_key, head.as_deref(), first, last);
+    }
+
+    /// `BRep_CurveOnClosedSurface::IsRegularity()` — true when this slot holds
+    /// two pcurves (`BRep_CurveOnClosedSurface.cxx:50-53`).
+    pub fn is_closed_regularity(&self, face_key: usize) -> bool {
+        self.curves
+            .get(&face_key)
+            .map(|cs| cs.len() >= 2)
+            .unwrap_or(false)
+    }
+
+    /// Continuity of a closed-surface slot, or `None` when the slot is not a
+    /// `BRep_CurveOnClosedSurface`.
+    pub fn closed_continuity(&self, face_key: usize) -> Option<u8> {
+        if !self.is_closed_regularity(face_key) {
+            return None;
+        }
+        Some(self.continuities.get(&face_key).copied().unwrap_or(0))
     }
 
     /// `UpdateCurves` (`BRep_Builder.cxx:149-164`): the new COS range is the
@@ -674,6 +708,7 @@ impl fmt::Debug for EdgePcurves {
             .field("curves", &self.curves.len())
             .field("ranges", &self.ranges.len())
             .field("locations", &self.locations.len())
+            .field("continuities", &self.continuities.len())
             .finish()
     }
 }

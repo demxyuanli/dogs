@@ -160,10 +160,15 @@ impl GeometryRegistry {
         if Arc::ptr_eq(&from.tshape, &to.tshape) {
             return;
         }
-        let (curves, ranges, locations) = {
+        let (curves, ranges, locations, continuities) = {
             let fts = from.tshape.read().expect("poisoned TShape lock");
             match fts.edge_pcurves() {
-                Some(g) => (g.curves.clone(), g.ranges.clone(), g.locations.clone()),
+                Some(g) => (
+                    g.curves.clone(),
+                    g.ranges.clone(),
+                    g.locations.clone(),
+                    g.continuities.clone(),
+                ),
                 None => return,
             }
         };
@@ -180,6 +185,9 @@ impl GeometryRegistry {
         }
         for (k, v) in locations.iter() {
             slot.locations.insert(*k, v.clone());
+        }
+        for (k, v) in continuities.iter() {
+            slot.continuities.insert(*k, *v);
         }
     }
 
