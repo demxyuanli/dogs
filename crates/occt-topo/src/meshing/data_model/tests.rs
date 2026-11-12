@@ -149,7 +149,7 @@ use super::*;
         c.set_deflection(0.01);
         assert_eq!(c.deflection(), 0.01);
 
-        let mut pc = MeshPCurve::new(3, Orientation::Reversed);
+        let mut pc = MeshPCurve::new(3, Orientation::Reversed, Edge::new());
         pc.add_point(GpPnt2d::new(0.0, 0.0), 0.0);
         pc.add_point(GpPnt2d::new(1.0, 1.0), 1.0);
         assert_eq!(pc.parameters_nb(), 2);
@@ -166,7 +166,7 @@ use super::*;
         pc.set_deflection(0.02);
         assert_eq!(pc.deflection(), 0.02);
 
-        let fwd = MeshPCurve::new(0, Orientation::Forward);
+        let fwd = MeshPCurve::new(0, Orientation::Forward, Edge::new());
         assert!(fwd.is_forward());
     }
 
