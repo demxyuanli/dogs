@@ -22,8 +22,7 @@
 //! every edge of the face with the default flag / algorithm
 //! (`Extrema_ExtFlag_MIN`, `Extrema_ExtAlgo_Grad`) and rejects a solution that
 //! lands *on* the other edge or on a vertex that is neither end of `theEdge`.
-//! `GetUnifiedWire` replays the `ShapeUpgrade_UnifySameDomain` history, which
-//! is UNPORTED - see [`get_unified_wire`].
+//! `GetUnifiedWire` replays the `ShapeUpgrade_UnifySameDomain` history.
 
 use std::sync::Arc;
 
@@ -34,6 +33,7 @@ use occt_geom::{Curve, Surface};
 use occt_geom2d::Curve2d;
 
 use crate::abs::{Orientation, ShapeType};
+use crate::bop_hist::BopHistory;
 use crate::brep_extrema_dist_shape_shape::DistShapeShape;
 use crate::brep_extrema_solution_elem::SupportType;
 use crate::brep_lib_build_curves3d::build_curve3d;
@@ -43,9 +43,9 @@ use crate::brep_tool::BRepTool;
 use crate::brep_tools_wire_explorer::WireExplorer;
 use crate::builder::TopoBuilder;
 use crate::geom_abs_curve_type::{curve_kind, GeomAbsCurveType};
-use crate::tgeometry::GeometryRegistry;
 use crate::shape::{Edge, Face, TopoShape, Vertex, Wire};
-use crate::topo_tools::{edge_vertices, is_same};
+use crate::tgeometry::GeometryRegistry;
+use crate::topo_tools::{edge_vertices, is_same, shape_map_key};
 
 /// `static bool IsLinear(const TopoDS_Edge& anEdge, gp_Lin& aLine)`
 /// (`cxx:60-99`).
@@ -176,22 +176,31 @@ pub(super) fn is_valid_edge(the_edge: &Edge, the_face: &Face) -> bool {
 /// `static TopoDS_Wire GetUnifiedWire(const TopoDS_Wire& theWire,
 /// ShapeUpgrade_UnifySameDomain& theUnifier)` (`cxx:266-293`).
 ///
-/// UNPORTED: `theUnifier.History()` belongs to `ShapeUpgrade_UnifySameDomain`
-/// (`cxx:270`: `theUnifier.History()->Modified(anEdge)`), which has no port.
-/// With an empty history every edge takes the `aLS.IsEmpty()` arm
-/// (`cxx:287-291`) and is added unchanged, which is what this function does.
-pub(super) fn get_unified_wire(the_wire: &Wire) -> Result<Wire, String> {
+pub(super) fn get_unified_wire(the_wire: &Wire, history: &BopHistory) -> Result<Wire, String> {
     let mut a_w_maker = MakeWire::new();
+    let mut generated_edges = std::collections::HashSet::new();
     let mut wexp = WireExplorer::of_wire(the_wire);
     // `cxx:269-292`.
     while wexp.more() {
         let Some(an_edge) = wexp.current_edge() else {
             break;
         };
-        // `cxx:287-291`: `aWMaker.Add(TopoDS::Edge(anEdge))`.
-        a_w_maker
-            .add(&an_edge)
-            .map_err(|e| format!("BRepLib_MakeWire: {e:?}"))?;
+        if let Some(modified) = history.modified(&an_edge.0) {
+            for shape in modified {
+                if !generated_edges.insert(shape_map_key(shape)) {
+                    continue;
+                }
+                let edge = Edge::wrap(shape.clone())
+                    .ok_or_else(|| "Standard_TypeMismatch: TopoDS::Edge".to_string())?;
+                a_w_maker
+                    .add(&edge)
+                    .map_err(|e| format!("BRepLib_MakeWire: {e:?}"))?;
+            }
+        } else {
+            a_w_maker
+                .add(&an_edge)
+                .map_err(|e| format!("BRepLib_MakeWire: {e:?}"))?;
+        }
         wexp.next();
     }
     // `cxx:293`.

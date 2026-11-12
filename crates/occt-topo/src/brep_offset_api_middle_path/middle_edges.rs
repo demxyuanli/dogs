@@ -226,8 +226,8 @@ fn mid_edge_circle(
 
 /// `gp_Ax2(theCenterOfCirc, theAxis.Direction(), Vec1)` (`cxx:1002`, `:1009`).
 fn make_ax2(center: &GpPnt, axis: &GpAx1, vx: &GpVec) -> Result<GpAx2, String> {
-    let x_dir = GpDir::from_vec(vx)
-        .map_err(|e| format!("Standard_ConstructionError: gp_Dir({e})"))?;
+    let x_dir =
+        GpDir::from_vec(vx).map_err(|e| format!("Standard_ConstructionError: gp_Dir({e})"))?;
     GpAx2::new(*center, *axis.direction(), x_dir)
         .map_err(|e| format!("Standard_ConstructionError: gp_Ax2({e})"))
 }
@@ -365,11 +365,10 @@ pub(super) fn build_middle_path(
 
         if type_of_mid_edge == GeomAbsCurveType::Line {
             // `cxx:921-924`.
-            mid_edges[i - 1] = Some(
-                make_edge_pp(&centers[i - 1], &centers[i]).ok_or_else(|| {
+            mid_edges[i - 1] =
+                Some(make_edge_pp(&centers[i - 1], &centers[i]).ok_or_else(|| {
                     "BRepLib_LineThroughIdenticPoints: BRepLib_MakeEdge".to_string()
-                })?,
-            );
+                })?);
         } else if type_of_mid_edge == GeomAbsCurveType::Circle {
             mid_edges[i - 1] = mid_edge_circle(mp, &centers, i, lin_tol, ang_tol)?;
         }
@@ -402,12 +401,15 @@ pub(super) fn build_middle_path(
             let the_flags = vec![true; the_points.len()];
 
             // `cxx:1092-1101`.
-            let mut interpol =
-                occt_geom::geom_api_interpolate::GeomAPIInterpolate::new(the_points, false, lin_tol)
-                    .map_err(|e| format!("Standard_ConstructionError: GeomAPI_Interpolate({e})"))?;
+            let mut interpol = occt_geom::geom_api_interpolate::GeomAPIInterpolate::new(
+                the_points, false, lin_tol,
+            )
+            .map_err(|e| format!("Standard_ConstructionError: GeomAPI_Interpolate({e})"))?;
             interpol
                 .load_tangents(the_tangents, the_flags, true)
-                .map_err(|e| format!("Standard_ConstructionError: GeomAPI_Interpolate::Load({e})"))?;
+                .map_err(|e| {
+                    format!("Standard_ConstructionError: GeomAPI_Interpolate::Load({e})")
+                })?;
             interpol.perform();
             // `cxx:1094-1098`: the "Interpolation failed" console write is
             // UNPORTED; `Curve()` raises when the interpolation is not done.

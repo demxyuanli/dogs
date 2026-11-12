@@ -14,15 +14,8 @@
 //!
 //! # Translation notes
 //!
-//! * The constructor is `ShapeUpgrade_UnifySameDomain`-driven in the reference
-//!   (`cxx:301-303`): the input shape is unified first and every start/end wire
-//!   edge is replaced by its `History()->Modified` images (`GetUnifiedWire`,
-//!   `cxx:266-293`). `ShapeUpgrade_UnifySameDomain` is **UNPORTED**
-//!   (`ModelingAlgorithms/TKShHealing/ShapeUpgrade/ShapeUpgrade_UnifySameDomain.cxx`,
-//!   4,687 lines + `.hxx` 227), so `myInitialShape` is the given shape and
-//!   [`statics::get_unified_wire`] takes the "no modified edge" arm
-//!   (`cxx:287-291`) for every edge. Any input whose same-domain faces would be
-//!   merged therefore walks a different (finer) edge graph than in OCCT.
+//! * The constructor unifies the input shape before replacing every start/end
+//!   wire edge by its `History()->Modified` images (`cxx:266-303`).
 //! * `myClosedSection = myStartWire.Closed()` (`cxx:329`) and
 //!   `myClosedRing = myStartWire.IsSame(myEndWire)` (`cxx:330`) are stored
 //!   verbatim; `myClosedRing` is never read by OCCT.
@@ -34,12 +27,8 @@
 //!   casts inside it raise on a non-edge. The port returns `Result` and keeps
 //!   both silent-return arms as `Ok` without `Done()`.
 //!
-//! UNPORTED, with the OCCT lines that keep it out:
+//! UNPORTED:
 //!
-//! * `ShapeUpgrade_UnifySameDomain(aShape)` / `Unifier.Build()` /
-//!   `myInitialShape = Unifier.Shape()` (`cxx:301-303`) and the
-//!   `History()->Modified` substitution of `GetUnifiedWire` (`cxx:266-293`, the
-//!   `aLS.IsEmpty()` else-arm `cxx:287-291` is what runs).
 //! * `Message_ProgressRange` (`cxx:336`) - there is no progress port.
 //! * The `std::cout << "Interpolation failed"` (`cxx:1097`) and the two
 //!   commented-out "Temporary" debug blocks (`cxx:500-519`, `cxx:1117-1145`).
@@ -53,6 +42,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::brep_offset_api_middle_path::statics::get_unified_wire;
 use crate::shape::{Face, TopoShape, Wire};
+use crate::shhealing::UnifySameDomain;
 use crate::topo_tools::{is_same, AncestorMap, ShapeMapKey};
 /// The locals of `Build` that more than one phase reads. Everything else stays
 /// inside the phase that uses it.
@@ -107,17 +97,18 @@ impl BRepOffsetApiMiddlePath {
         start_shape: &TopoShape,
         end_shape: &TopoShape,
     ) -> Result<Self, String> {
-        // `cxx:301-303`: `ShapeUpgrade_UnifySameDomain` is UNPORTED, so the
-        // unified shape is the given shape.
-        let my_initial_shape = a_shape.clone();
+        // `cxx:301-303`.
+        let mut unifier = UnifySameDomain::new(a_shape.clone());
+        unifier.build()?;
+        let my_initial_shape = unifier.shape().clone();
 
         // `cxx:305-325`.
         let a_start_wire = wire_of(start_shape)?;
         let an_end_wire = wire_of(end_shape)?;
 
         // `cxx:327-328`.
-        let my_start_wire = get_unified_wire(&a_start_wire)?;
-        let my_end_wire = get_unified_wire(&an_end_wire)?;
+        let my_start_wire = get_unified_wire(&a_start_wire, unifier.history())?;
+        let my_end_wire = get_unified_wire(&an_end_wire, unifier.history())?;
 
         // `cxx:329-330`.
         let my_closed_section = my_start_wire.0.is_closed();

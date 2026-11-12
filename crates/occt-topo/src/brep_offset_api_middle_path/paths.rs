@@ -5,10 +5,8 @@
 //! `cxx:390-421`, `myPaths` filling `cxx:424-497`.
 
 use crate::abs::ShapeType;
-use crate::brep_offset_api_middle_path::{Ctx, BRepOffsetApiMiddlePath};
-use crate::brep_tools_wire_explorer::{
-    edge_vertices_cum_ori, last_vertex_cum_ori, WireExplorer,
-};
+use crate::brep_offset_api_middle_path::{BRepOffsetApiMiddlePath, Ctx};
+use crate::brep_tools_wire_explorer::{edge_vertices_cum_ori, last_vertex_cum_ori, WireExplorer};
 use crate::iterator::cumulated_children;
 use crate::shape::{Edge, TopoShape, Vertex};
 use crate::topo_tools::{map_shapes_and_ancestors, shape_map_key, AncestorMap};
@@ -135,8 +133,7 @@ fn fill_paths(mp: &mut BRepOffsetApiMiddlePath, ctx: &mut Ctx) {
             let (the_edge, the_vertex): (Option<Edge>, Option<Vertex>) =
                 if the_shape.shape_type() == ShapeType::Edge {
                     // `cxx:433-436`.
-                    let e = Edge::wrap(the_shape)
-                        .expect("path element cast to edge");
+                    let e = Edge::wrap(the_shape).expect("path element cast to edge");
                     let v = last_vertex_cum_ori(&e);
                     (Some(e), v)
                 } else {

@@ -31,9 +31,7 @@ use crate::brep_offset_api_middle_path::statics::{
     build_curve3d_default, is_valid_edge, make_edge_2d, make_line_2d, pcurve_on_face, type_of_edge,
 };
 use crate::brep_offset_api_middle_path::{BRepOffsetApiMiddlePath, Ctx};
-use crate::brep_tools_wire_explorer::{
-    first_vertex_cum_ori, last_vertex_cum_ori,
-};
+use crate::brep_tools_wire_explorer::{first_vertex_cum_ori, last_vertex_cum_ori};
 use crate::geom_abs_curve_type::GeomAbsCurveType;
 use crate::shape::{Edge, Face, TopoShape, Vertex};
 use crate::topo_tools::{edge_vertices, explorer_shapes, is_same, shape_map_key};
@@ -105,8 +103,8 @@ pub(super) fn build_sections(
                         .get(i - 2)
                         .ok_or_else(|| "Standard_OutOfRange: myPaths".to_string())?,
                 )?;
-                let last_ver = last_vertex_cum_ori(&a_e1)
-                    .ok_or_else(|| null_object("TopExp::LastVertex"))?;
+                let last_ver =
+                    last_vertex_cum_ori(&a_e1).ok_or_else(|| null_object("TopExp::LastVertex"))?;
                 mp.my_paths[p1].push(last_ver.0);
             }
             if mp.my_paths[p2].len() < i {
@@ -115,8 +113,8 @@ pub(super) fn build_sections(
                         .get(i - 2)
                         .ok_or_else(|| "Standard_OutOfRange: myPaths".to_string())?,
                 )?;
-                let last_ver = last_vertex_cum_ori(&a_e2)
-                    .ok_or_else(|| null_object("TopExp::LastVertex"))?;
+                let last_ver =
+                    last_vertex_cum_ori(&a_e2).ok_or_else(|| null_object("TopExp::LastVertex"))?;
                 mp.my_paths[p2].push(last_ver.0);
             }
 
@@ -199,11 +197,10 @@ pub(super) fn build_sections(
             };
 
             // `cxx:626-642`: the edge of the face that joins the two vertices.
-            let edges_of_the_face: HashSet<_> =
-                explorer_shapes(&the_face.0, ShapeType::Edge)
-                    .iter()
-                    .map(shape_map_key)
-                    .collect();
+            let edges_of_the_face: HashSet<_> = explorer_shapes(&the_face.0, ShapeType::Edge)
+                .iter()
+                .map(shape_map_key)
+                .collect();
             let mut proper_edge: Option<Edge> = None;
             if let Some(pv) = &prev_vertex {
                 let le: Vec<TopoShape> = ctx
@@ -214,10 +211,8 @@ pub(super) fn build_sections(
                 for it in le {
                     let an_edge = as_edge(&it)?;
                     let (v1, v2) = edge_vertices(&an_edge);
-                    let joined = (same_vertex(&v1, &prev_vertex)
-                        && same_vertex(&v2, &cur_vertex))
-                        || (same_vertex(&v1, &cur_vertex)
-                            && same_vertex(&v2, &prev_vertex));
+                    let joined = (same_vertex(&v1, &prev_vertex) && same_vertex(&v2, &cur_vertex))
+                        || (same_vertex(&v1, &cur_vertex) && same_vertex(&v2, &prev_vertex));
                     if !joined {
                         continue;
                     }
@@ -226,10 +221,7 @@ pub(super) fn build_sections(
                         continue;
                     }
                     // `!anEdge.IsSame(E1)`.
-                    if e1
-                        .as_ref()
-                        .map_or(false, |e| is_same(&an_edge.0, &e.0))
-                    {
+                    if e1.as_ref().map_or(false, |e| is_same(&an_edge.0, &e.0)) {
                         continue;
                     }
                     proper_edge = Some(an_edge);
