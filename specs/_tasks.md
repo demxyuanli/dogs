@@ -6108,3 +6108,18 @@ Do not grow the dual-pipeline / planar / volume-gate scaffold. Do not invent Fil
 
 (4) 未跟踪定位产物 `examples/zz_pave_cc.rs`、`specs/occt_probe/zz_cc_gf_out.txt`、`specs/occt_probe/zz_ch_out.txt` 不入库。
 
+## T-527 清除 `Surface` trait 默认有限差分 D2（2026-11-12）
+
+| 任务卡 | 内容 | 状态 |
+|---|---|---|
+| T-527 A | 删除 `Surface::d2` 的有限差分默认体：OCCT `Geom_Surface::D2` 是纯虚函数，trait 不再提供回退。 | 已完成 |
+| T-527 B | `BilinearPatchSurface` / `BsplineSurfaceWrapper` 的 `d1`/`d2` 改走 `BSplSLib` 非有理臂（`eval_surface_d1` / `eval_surface_d2`）。 | 已完成 |
+| T-527 C | `ReparamSurface::d2` 对底层曲面 jet 做线性重参数链式法则；port-only `surface_fit::GridSurface` 用双线性单元解析 jet（`D2uu=D2vv=0`，`D2uv` 为单元常数）。 | 已完成 |
+| T-527 D | 既有门禁：`occt-geom --lib` **143 passed**；`modeling_mesh_matches_occt` 通过；`step_obj_gates` **4 passed**；`export_data_obj` 15 个 STEP 全 ok。 | 已通过 |
+
+**T-527 备注**
+
+(1) 首轮旁支「mesh `MeshPCurve.indices` 全 0」已在生产 `DelaunayNodeInsertionMeshAlgo::init_data_structure`（`node_insertion/build.rs`）写回节点号；`collect_polygon` 读的是该路径。本轮不再重复移植。
+
+(2) `HlrBRepSurfaceView` / `BoundedSurface` / 初等面 / `GeomBSplineSurface` / `GeomOffsetSurface` 等原先已有精确 `d2`，本轮只清默认体与余下四个实现。
+

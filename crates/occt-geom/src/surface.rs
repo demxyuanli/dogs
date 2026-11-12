@@ -8,30 +8,13 @@ use crate::curve::Curve;
 pub trait Surface: Send + Sync {
     fn d0(&self, u: f64, v: f64) -> GpPnt;
     fn d1(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec);
-    /// Default D2 by central difference of D1.
+    /// `Geom_Surface::D2` — pure virtual in OCCT (`Geom_Surface.hxx`).
     ///
-    /// **UNPORTED (audit A15)**: OCCT's `Geom_Surface::D2` is pure virtual — every
-    /// concrete class computes it analytically (`ElSLib::*D2` for the elementary
-    /// surfaces, `BSplSLib::D2` for B-spline/Bezier, `Geom_OffsetSurfaceUtils`
-    /// for offsets) and no finite-difference fallback exists anywhere in OCCT.
-    /// The five elementary surfaces (plane / cylinder / cone / sphere / torus),
-    /// `GeomBSplineSurface`, `GeomRectangularTrimmedSurface`,
-    /// `GeomSurfaceOfRevolution` and `GeomSurfaceOfLinearExtrusion` override this
-    /// (`Geom_RevolutionUtils::CalculateD2` / `Geom_ExtrusionUtils::CalculateD2`);
-    /// the remaining implementors are `GeomBezierSurface`, `GeomOffsetSurface` and
-    /// the port-only `surface_fit::GridSurface` (audit A15; the abandoned
-    /// `surface_to_grid` module was deleted in batch 65 as a dead non-OCCT type).
-    fn d2(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec, GpVec, GpVec, GpVec) {
-        let h = 1e-6;
-        let (p, du, dv) = self.d1(u, v);
-        let (_, du_u, dv_u) = self.d1(u + h, v);
-        let (_, du_v, dv_v) = self.d1(u, v + h);
-        let d2u = du_u.subtracted(&du).divided(h);
-        let d2v = dv_v.subtracted(&dv).divided(h);
-        let d2uv = dv_u.subtracted(&dv).divided(h);
-        let _ = du_v;
-        (p, du, dv, d2u, d2v, d2uv)
-    }
+    /// Every concrete class supplies an analytic jet (`ElSLib::*D2`,
+    /// `BSplSLib::D2`, `Geom_OffsetSurfaceUtils`, trimmed / reparam
+    /// delegation). There is no finite-difference fallback in OCCT, so this
+    /// trait method has no default body either.
+    fn d2(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec, GpVec, GpVec, GpVec);
     fn value(&self, u: f64, v: f64) -> GpPnt { self.d0(u, v) }
     fn u_range(&self) -> (f64, f64);
     fn v_range(&self) -> (f64, f64);

@@ -51,17 +51,60 @@ impl BsplineSurfaceWrapper {
     }
 }
 
+impl BsplineSurfaceWrapper {
+    /// Flatten `poles[i][j]` to the row-major layout `BSplSLib` expects.
+    fn flat_poles(&self) -> Vec<GpPnt> {
+        let mut out = Vec::with_capacity(
+            self.patch.bs.poles.len()
+                * self.patch.bs.poles.first().map(|r| r.len()).unwrap_or(0),
+        );
+        for row in &self.patch.bs.poles {
+            for pole in row {
+                out.push(GpPnt::new(pole[0], pole[1], pole[2]));
+            }
+        }
+        out
+    }
+}
+
 impl Surface for BsplineSurfaceWrapper {
     fn d0(&self, u: f64, v: f64) -> GpPnt {
         let a = bspline_surface_d0(&self.patch.bs, u, v);
         GpPnt::new(a[0], a[1], a[2])
     }
     fn d1(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec) {
-        let p0 = self.patch.d0(u, v);
-        let h = 1e-6;
-        let pu = GpVec::from_pnts(&p0, &self.patch.d0(u + h, v)).divided(h);
-        let pv = GpVec::from_pnts(&p0, &self.patch.d0(u, v + h)).divided(h);
-        (p0, pu, pv)
+        // `BSplSLib::D1` non-rational arm on the wrapper pole grid.
+        let poles = self.flat_poles();
+        let n_u = self.patch.bs.poles.len();
+        let n_v = self.patch.bs.poles.first().map(|r| r.len()).unwrap_or(0);
+        occt_core::bspl::surface::eval_surface_d1(
+            &poles,
+            n_u,
+            n_v,
+            &self.patch.bs.knots_u,
+            &self.patch.bs.knots_v,
+            self.patch.bs.deg_u,
+            self.patch.bs.deg_v,
+            u,
+            v,
+        )
+    }
+    fn d2(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec, GpVec, GpVec, GpVec) {
+        // `BSplSLib::D2` non-rational arm (`BSplSLib.cxx:1063-1247`).
+        let poles = self.flat_poles();
+        let n_u = self.patch.bs.poles.len();
+        let n_v = self.patch.bs.poles.first().map(|r| r.len()).unwrap_or(0);
+        occt_core::bspl::eval::eval_surface_d2(
+            &poles,
+            n_u,
+            n_v,
+            &self.patch.bs.knots_u,
+            &self.patch.bs.knots_v,
+            self.patch.bs.deg_u,
+            self.patch.bs.deg_v,
+            u,
+            v,
+        )
     }
     fn u_range(&self) -> (f64, f64) { (0.0, 1.0) }
     fn v_range(&self) -> (f64, f64) { (0.0, 1.0) }

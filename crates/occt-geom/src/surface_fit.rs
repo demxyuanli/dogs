@@ -143,15 +143,14 @@ impl Surface for GridSurface {
         lerp(&a, &b, tv)
     }
     fn d1(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec) {
-        let eps = 1e-6;
-        let (u0, u1) = self.u_range();
-        let (v0, v1) = self.v_range();
-        let hu = if u1 > u0 { (u1 - u0) * 1e-4 } else { eps };
-        let hv = if v1 > v0 { (v1 - v0) * 1e-4 } else { eps };
-        let p = self.d0(u, v);
-        let pu = self.d0(u + hu, v);
-        let pv = self.d0(u, v + hv);
-        (p, GpVec::from_pnts(&p, &pu), GpVec::from_pnts(&p, &pv))
+        // Analytic jet of the bilinear cell used by `d0` (port-only grid).
+        let (p, du, dv, _, _, _) = self.bilinear_jet(u, v);
+        (p, du, dv)
+    }
+    fn d2(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec, GpVec, GpVec, GpVec) {
+        // Bilinear patch: pure second derivatives vanish; mixed is constant
+        // on the cell (`BSplSLib::D2` on a degree-1 tensor product).
+        self.bilinear_jet(u, v)
     }
     fn u_range(&self) -> (f64, f64) {
         (*self.us.first().unwrap_or(&0.0), *self.us.last().unwrap_or(&1.0))
@@ -171,6 +170,90 @@ impl Surface for GridSurface {
     }
     fn clone_dyn(&self) -> Box<dyn Surface> {
         Box::new(self.clone())
+    }
+}
+
+impl GridSurface {
+    /// Point and derivatives of the bilinear cell containing `(u, v)`.
+    fn bilinear_jet(
+        &self,
+        u: f64,
+        v: f64,
+    ) -> (GpPnt, GpVec, GpVec, GpVec, GpVec, GpVec) {
+        let nu = self.us.len();
+        let nv = self.vs.len();
+        if nu < 2 || nv < 2 {
+            let p = self
+                .poles
+                .first()
+                .and_then(|r| r.first())
+                .copied()
+                .unwrap_or(GpPnt::zero());
+            return (
+                p,
+                GpVec::zero(),
+                GpVec::zero(),
+                GpVec::zero(),
+                GpVec::zero(),
+                GpVec::zero(),
+            );
+        }
+        let ui = index_of(&self.us, u).min(nu - 2);
+        let vi = index_of(&self.vs, v).min(nv - 2);
+        let du_span = (self.us[ui + 1] - self.us[ui]).max(1e-30);
+        let dv_span = (self.vs[vi + 1] - self.vs[vi]).max(1e-30);
+        let tu = ((u - self.us[ui]) / du_span).clamp(0.0, 1.0);
+        let tv = ((v - self.vs[vi]) / dv_span).clamp(0.0, 1.0);
+        let p00 = self.poles[ui][vi];
+        let p10 = self.poles[ui + 1][vi];
+        let p01 = self.poles[ui][vi + 1];
+        let p11 = self.poles[ui + 1][vi + 1];
+        let lerp = |a: &GpPnt, b: &GpPnt, t: f64| {
+            GpPnt::new(
+                a.x() + t * (b.x() - a.x()),
+                a.y() + t * (b.y() - a.y()),
+                a.z() + t * (b.z() - a.z()),
+            )
+        };
+        let a = lerp(&p00, &p10, tu);
+        let b = lerp(&p01, &p11, tu);
+        let p = lerp(&a, &b, tv);
+        let du_tv0 = GpVec::new(
+            (p10.x() - p00.x()) / du_span,
+            (p10.y() - p00.y()) / du_span,
+            (p10.z() - p00.z()) / du_span,
+        );
+        let du_tv1 = GpVec::new(
+            (p11.x() - p01.x()) / du_span,
+            (p11.y() - p01.y()) / du_span,
+            (p11.z() - p01.z()) / du_span,
+        );
+        let du = GpVec::new(
+            du_tv0.x() + tv * (du_tv1.x() - du_tv0.x()),
+            du_tv0.y() + tv * (du_tv1.y() - du_tv0.y()),
+            du_tv0.z() + tv * (du_tv1.z() - du_tv0.z()),
+        );
+        let dv_tu0 = GpVec::new(
+            (p01.x() - p00.x()) / dv_span,
+            (p01.y() - p00.y()) / dv_span,
+            (p01.z() - p00.z()) / dv_span,
+        );
+        let dv_tu1 = GpVec::new(
+            (p11.x() - p10.x()) / dv_span,
+            (p11.y() - p10.y()) / dv_span,
+            (p11.z() - p10.z()) / dv_span,
+        );
+        let dv = GpVec::new(
+            dv_tu0.x() + tu * (dv_tu1.x() - dv_tu0.x()),
+            dv_tu0.y() + tu * (dv_tu1.y() - dv_tu0.y()),
+            dv_tu0.z() + tu * (dv_tu1.z() - dv_tu0.z()),
+        );
+        let d2uv = GpVec::new(
+            ((p11.x() - p10.x()) - (p01.x() - p00.x())) / (du_span * dv_span),
+            ((p11.y() - p10.y()) - (p01.y() - p00.y())) / (du_span * dv_span),
+            ((p11.z() - p10.z()) - (p01.z() - p00.z())) / (du_span * dv_span),
+        );
+        (p, du, dv, GpVec::zero(), GpVec::zero(), d2uv)
     }
 }
 

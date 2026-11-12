@@ -63,13 +63,33 @@ impl Surface for BilinearPatchSurface {
     }
 
     fn d1(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec) {
-        // ponytail: central finite differences — robust for degree-1 surfaces
-        // (the BSplSLib D1 evaluator is still calibrated for degree >= 2).
-        let h = 1e-6;
-        let p0 = self.d0(u, v);
-        let du = GpVec::from_pnts(&p0, &self.d0(u + h, v)).divided(h);
-        let dv = GpVec::from_pnts(&p0, &self.d0(u, v + h)).divided(h);
-        (p0, du, dv)
+        // `BSplSLib::D1` via the non-rational surface evaluator used by `d0`.
+        occt_core::bspl::surface::eval_surface_d1(
+            &self.poles,
+            self.n_u,
+            self.n_v,
+            &self.knots_u,
+            &self.knots_v,
+            self.degree_u,
+            self.degree_v,
+            u,
+            v,
+        )
+    }
+
+    fn d2(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec, GpVec, GpVec, GpVec) {
+        // `BSplSLib::D2` non-rational arm (`BSplSLib.cxx:1063-1247`).
+        occt_core::bspl::eval::eval_surface_d2(
+            &self.poles,
+            self.n_u,
+            self.n_v,
+            &self.knots_u,
+            &self.knots_v,
+            self.degree_u,
+            self.degree_v,
+            u,
+            v,
+        )
     }
 
     fn u_range(&self) -> (f64, f64) { (0.0, 1.0) }
@@ -81,7 +101,7 @@ impl Surface for BilinearPatchSurface {
         }
     }
     fn clone_dyn(&self) -> Box<dyn Surface> { Box::new(self.clone()) }
-}
+    }
 
 /// The first (outer) boundary wire of a face, if any.
 pub fn face_outer_wire(face: &Face) -> Option<Wire> {

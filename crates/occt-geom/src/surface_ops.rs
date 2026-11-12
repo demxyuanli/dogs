@@ -219,6 +219,20 @@ impl Surface for ReparamSurface {
         let (p, du, dv) = self.surface.d1(self.map_u(u), self.map_v(v));
         (p, du.multiplied_scalar(su), dv.multiplied_scalar(sv))
     }
+    fn d2(&self, u: f64, v: f64) -> (GpPnt, GpVec, GpVec, GpVec, GpVec, GpVec) {
+        // Linear reparameterization: chain rule on the basis surface jet.
+        let su = (self.u1 - self.u0) / (self.new_u1 - self.new_u0);
+        let sv = (self.v1 - self.v0) / (self.new_v1 - self.new_v0);
+        let (p, du, dv, d2u, d2v, d2uv) = self.surface.d2(self.map_u(u), self.map_v(v));
+        (
+            p,
+            du.multiplied_scalar(su),
+            dv.multiplied_scalar(sv),
+            d2u.multiplied_scalar(su * su),
+            d2v.multiplied_scalar(sv * sv),
+            d2uv.multiplied_scalar(su * sv),
+        )
+    }
     fn u_range(&self) -> (f64, f64) { (self.new_u0, self.new_u1) }
     fn v_range(&self) -> (f64, f64) { (self.new_v0, self.new_v1) }
     fn is_u_periodic(&self) -> bool { self.surface.is_u_periodic() }
