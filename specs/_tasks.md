@@ -6140,3 +6140,20 @@ Do not grow the dual-pipeline / planar / volume-gate scaffold. Do not invent Fil
 (2) 旁支（未修）：`BRep_TEdge` 仍无 `BRep_Continuity` 表示列表；`hlrbrep_poly_algo/bi_points.rs` 超千行待拆。
 
 (3) `export_data_obj` 的 `Shape-2` 读数为 `v=3092 f=4766`（旧笔记曾记 `3098/4778`）；`step_obj_gates` 仍绿，本轮不据此改基线。
+
+## T-529 `BRep_CurveOn2Surfaces` 连续性落到 `EdgeGeomCore`（2026-11-12）
+
+| 任务卡 | 内容 | 状态 |
+|---|---|---|
+| T-529 A | `EdgeGeomCore.regularities: Vec<CurveOn2SurfacesRepr>`（`S1/S2/L1/L2/C`）；`IsRegularity` 按表面 handle + location（含对调）。 | 已完成 |
+| T-529 B | 重写 `tshape_continuity`：面 API 经 `face_surface` + `face.location().predivided(edge.location())`；去掉面键全局 side-table；补 `HasContinuity(E,F1,F2)` / `MaxContinuity`。 | 已完成 |
+| T-529 C | `copy_edge_geom` / `EmptyCopy` 拷贝 `regularities`（`BRep_TEdge.cxx:116-120`）。 | 已完成 |
+| T-529 D | 既有门禁：`cargo check -p occt-topology/occt-topo/occt-hlr --lib` 0 error；`fuse_box_cylinder_is_closed_solid`；`modeling_mesh_matches_occt`；`step_obj_gates` **4 passed**；`export_data_obj` 15/15 ok（`Shape-2` `v=3092 f=4766`）。 | 已通过 |
+
+**T-529 备注**
+
+(1) 控制流：`BRep_Builder::Continuity` `cxx:1012-1043` + `UpdateCurves` `:376-405`；`BRep_Tool` `:1170-1290`；`BRep_CurveOn2Surfaces::IsRegularity` `.cxx:58-65`。
+
+(2) UNPORTED：`BRep_CurveOnClosedSurface` 的 `IsRegularity`（seam 上的连续性表示，`BRep_CurveOnClosedSurface.cxx:50-63`）仍未进 `regularities`；`HasContinuity(E)` 只看 `CurveOn2Surfaces` 列表。
+
+(3) 旁支（未修）：`hlrbrep_poly_algo/bi_points.rs` 超千行待拆；面尚无表面时 `write_continuity` 直接返回（旧 side-table 可按面键写入）。

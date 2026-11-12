@@ -28,7 +28,9 @@ use crate::meshing::edge_discret::CurveOnSurface;
 use crate::shape::{Edge, Face, TopoShape, Wire};
 use crate::tgeometry::GeometryRegistry;
 
-pub use crate::tshape_continuity::{has_continuity, set_stored_continuity, stored_continuity};
+pub use crate::tshape_continuity::{
+    has_continuity, has_continuity_faces, max_continuity, set_stored_continuity, stored_continuity,
+};
 use crate::tshape_continuity::write_continuity as write_continuity_u8;
 use crate::topo_tools::{edges_of_wire, faces_of, is_equal, is_same, wires_of_face};
 

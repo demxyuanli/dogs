@@ -67,6 +67,9 @@ pub fn copy_edge_geom(dst: &TopoShape, src: &TopoShape) {
         d.same_parameter = c.same_parameter;
         d.same_range = c.same_range;
         d.degenerated = c.degenerated;
+        // `BRep_TEdge::EmptyCopy` copies `BRep_CurveOn2Surfaces` representations
+        // (`BRep_TEdge.cxx:116-120`); face-keyed side tables would drop them.
+        d.regularities = c.regularities;
     }
     if let Some(p) = pcs {
         *ts.edge_pcurves_mut() = p;
