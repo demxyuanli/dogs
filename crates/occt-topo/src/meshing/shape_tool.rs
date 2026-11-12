@@ -282,7 +282,7 @@ impl ShapeVisitor for ModelShapeVisitor {
                 let edge_index = self.ensure_edge(edge);
                 {
                     let model_edge = self.model.edge_mut(edge_index).expect("edge exists");
-                    model_edge.add_pcurve(face_index, edge.orientation());
+                    model_edge.add_pcurve(face_index, edge.orientation(), edge.clone());
                 }
                 {
                     let model_wire = self.model.wire_mut(wire_index).expect("wire exists");

@@ -13,6 +13,20 @@ use super::super::parameters::MeshParameters;
 use super::super::range_splitter::{mesh_surface_type, create_range_splitter};
 use super::*;
 use super::parametric::uv_bounds;
+use crate::shape::Edge;
+
+/// Map a local `MeshEdge` polyline point into `occurrence`'s world frame.
+///
+/// The discrete edge stores the registry curve without the first-seen
+/// occurrence's location (`MeshEdge::new`); each pcurve keeps the wire-edge
+/// TopoDS location. World = `T_occ * P_local` (`BRepAdaptor_Curve::D0`).
+fn occurrence_world_point(_mesh_edge: &Edge, occurrence: &Edge, p: &GpPnt) -> GpPnt {
+    let occ_loc = occurrence.0.location();
+    if occ_loc.is_identity() {
+        return *p;
+    }
+    p.transformed(&occ_loc.transformation())
+}
 
 
 impl DelaunayNodeInsertionMeshAlgo {
@@ -382,7 +396,11 @@ u=[{:.17e},{:.17e}] v=[{:.17e},{:.17e}]",
                     let mut prev = -1i32;
                     let mut pc_nodes: Vec<i32> = Vec::with_capacity(pts.len());
                     for (i, &uv) in pts.iter().enumerate() {
-                        let p3d = pts3d.get(i).copied().unwrap_or_else(GpPnt::zero);
+                        // MeshEdge stores the first-seen occurrence's world
+                        // polyline; transform into this pcurve's wire-occurrence
+                        // frame (prism top vs bottom profile edges).
+                        let p3d_raw = pts3d.get(i).copied().unwrap_or_else(GpPnt::zero);
+                        let p3d = occurrence_world_point(edge.edge(), pc.occurrence(), &p3d_raw);
                         let node = self.register_node(p3d, uv, VertexState::Frontier, false);
                         pc_nodes.push(node);
                         if prev != -1 && prev != node {

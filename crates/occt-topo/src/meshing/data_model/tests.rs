@@ -185,9 +185,10 @@ use super::*;
         assert_eq!(me.angular_deflection(), f64::MAX);
 
         // Add pcurves and look them up per face / orientation.
-        let fi0 = me.add_pcurve(0, Orientation::Forward);
-        me.add_pcurve(0, Orientation::Reversed);
-        me.add_pcurve(1, Orientation::Forward);
+        let occ = me.edge().clone();
+        let fi0 = me.add_pcurve(0, Orientation::Forward, occ.clone());
+        me.add_pcurve(0, Orientation::Reversed, occ.clone());
+        me.add_pcurve(1, Orientation::Forward, occ);
         assert_eq!(me.pcurves_nb(), 3);
         assert_eq!(me.pcurve(fi0).unwrap().orientation(), Orientation::Forward);
         assert_eq!(me.pcurve_for(0, Orientation::Reversed).unwrap().orientation(), Orientation::Reversed);

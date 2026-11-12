@@ -214,7 +214,11 @@ pub(super) fn add_wire(
             }
         };
         if let Ok(edge) = model.edge_mut(eidx) {
-            edge.add_pcurve(face_index, orientation);
+            // Keep the wire occurrence (location) on the pcurve: a prism side
+            // reuses the profile `TShape` for bottom and top under different
+            // locations (`BRep_Tool::CurveOnPlane` relative location).
+            let occurrence = Edge(e.0.oriented(orientation));
+            edge.add_pcurve(face_index, orientation, occurrence);
         }
         if let Ok(w) = model.wire_mut(wire_index) {
             w.add_edge_ordered(eidx, orientation, reverse_walk);

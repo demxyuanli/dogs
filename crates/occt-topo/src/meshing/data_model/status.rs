@@ -219,6 +219,12 @@ impl MeshCurve {
 pub struct MeshPCurve {
     pub(super) face: usize,
     pub(super) orientation: Orientation,
+    /// Wire-occurrence edge used for `CurveOnSurface` / `CurveOnPlane`.
+    /// A prism side reuses one `TShape` for the bottom and top profile edges
+    /// under different locations; `MeshEdge` keeps a single first-seen edge,
+    /// so each pcurve must remember the occurrence that produced it
+    /// (`BRep_Tool::CurveOnPlane` relative location).
+    pub(super) occurrence: Edge,
     pub(super) points: Vec<GpPnt2d>,
     pub(super) parameters: Vec<f64>,
     pub(super) indices: Vec<i32>,
@@ -228,15 +234,21 @@ pub struct MeshPCurve {
 impl MeshPCurve {
     /// Creates a pcurve for the face with the given model index and edge
     /// orientation. Deflection defaults to `RealLast()` (unset).
-    pub fn new(face: usize, orientation: Orientation) -> Self {
+    pub fn new(face: usize, orientation: Orientation, occurrence: Edge) -> Self {
         Self {
             face,
             orientation,
+            occurrence,
             points: Vec::new(),
             parameters: Vec::new(),
             indices: Vec::new(),
             deflection: REAL_LAST,
         }
+    }
+
+    /// Topological edge occurrence this pcurve was built for.
+    pub fn occurrence(&self) -> &Edge {
+        &self.occurrence
     }
 
     /// Inserts a discretization point at the given position.
@@ -409,16 +421,10 @@ impl MeshEdge {
     /// parameter range and `BRep_TEdge` flags from the geometry registry.
     pub fn new(edge: Edge) -> Self {
         let geom = GeometryRegistry::global().edge_geom(&edge.0);
-        // `BRepAdaptor_Curve(E, F)` (`BRepAdaptor_Curve.cxx:...`): its 3D curve is
-        // `BRep_Tool::Curve` when the edge has one, otherwise the
-        // `Adaptor3d_CurveOnSurface` built from the pcurve. `EdgeGeom::curve` is
-        // that adaptor, and `curve3d_null` is the `BRep_Tool::Curve` answer.
-        // `BRepAdaptor_Curve::D0` transforms every evaluated point by `myTrsf`
-        // (the edge's accumulated location), so the discrete model stores the
-        // **world** curve: a located edge (a swept prism's top wire carries the
-        // sweep translation) would otherwise discretize at its generating
-        // position and collapse the face's 3D mesh onto the generating plane.
-        let curve = BRepTool::edge_curve_adaptor_world(&edge);
+        // Local registry curve (no occurrence location). Partners of one
+        // `TShape` (prism top/bottom) share this polyline; frontier nodes
+        // apply each pcurve's wire-edge location in `occurrence_world_point`.
+        let curve = geom.as_ref().map(|g| g.curve.clone());
         let (first, last) = BRepTool::edge_parameters(&edge);
         Self {
             edge,
@@ -516,9 +522,16 @@ impl MeshEdge {
     }
 
     /// Adds a pcurve for the given discrete face and orientation; returns the
-    /// index of the added pcurve.
-    pub fn add_pcurve(&mut self, face: usize, orientation: Orientation) -> usize {
-        self.pcurves.push(MeshPCurve::new(face, orientation));
+    /// index of the added pcurve. `occurrence` is the wire-edge TopoDS with its
+    /// location (needed when one `TShape` appears under several locations).
+    pub fn add_pcurve(
+        &mut self,
+        face: usize,
+        orientation: Orientation,
+        occurrence: Edge,
+    ) -> usize {
+        self.pcurves
+            .push(MeshPCurve::new(face, orientation, occurrence));
         self.pcurves.len() - 1
     }
 

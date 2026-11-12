@@ -31,9 +31,10 @@ impl IncrementalMesh {
             }
             for p in 0..edge.pcurves_nb() {
                 let face_index = edge.pcurve(p)?.face();
-                let orientation = edge.pcurve(p)?.orientation();
                 let topo_face = model.face(face_index)?.face().clone();
-                let oriented_edge = Edge(edge.edge().0.oriented(orientation));
+                // Wire-occurrence location (not MeshEdge's first-seen edge): a
+                // prism side reuses one profile TShape for bottom and top.
+                let oriented_edge = edge.pcurve(p)?.occurrence().clone();
                 jobs.push((i, p, oriented_edge, topo_face, face_index, a, b));
             }
         }
@@ -96,14 +97,11 @@ impl IncrementalMesh {
                         std::sync::Arc<dyn occt_geom::Surface>,
                     )> = None;
                     let (tess_curve, tess_first, tess_last) = if !is_free && !same_param {
-                        let (face_index, orientation) = {
+                        let (face_index, oriented) = {
                             let pc = model.edge(edge_index)?.pcurve(0)?;
-                            (pc.face(), pc.orientation())
+                            (pc.face(), pc.occurrence().clone())
                         };
                         let topo_face = model.face(face_index)?.face().clone();
-                        let oriented = Edge(
-                            model.edge(edge_index)?.edge().0.oriented(orientation),
-                        );
                         match (
                             crate::pcurve_full::make_pcurve_full(&oriented, &topo_face),
                             BRepTool::face_surface_world(&topo_face),
@@ -244,14 +242,11 @@ impl IncrementalMesh {
                         let mut pcs = Vec::new();
                         let n_pc = model.edge(edge_index)?.pcurves_nb();
                         for p in 0..n_pc {
-                            let (face_index, orientation) = {
+                            let (face_index, oriented) = {
                                 let pc = model.edge(edge_index)?.pcurve(p)?;
-                                (pc.face(), pc.orientation())
+                                (pc.face(), pc.occurrence().clone())
                             };
                             let topo_face = model.face(face_index)?.face().clone();
-                            let oriented = Edge(
-                                model.edge(edge_index)?.edge().0.oriented(orientation),
-                            );
                             if let (Ok(c2), Some(s)) = (
                                 crate::pcurve_full::make_pcurve_full(&oriented, &topo_face),
                                 BRepTool::face_surface_world(&topo_face),

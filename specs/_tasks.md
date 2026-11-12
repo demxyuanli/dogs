@@ -6085,3 +6085,26 @@ Do not grow the dual-pipeline / planar / volume-gate scaffold. Do not invent Fil
 
 (2) 本轮未新增测试或探针；只使用现有 `Offset.step` / `OffsetPlaneHoleEdge.step` 导出基线和既有 `offset_surface_probe`。
 
+## T-526 七组 OCCT 余项收口（2026-11-12）
+
+| 任务卡 | 内容 | 状态 |
+|---|---|---|
+| T-526 A | `IntPatch_PrmPrmIntersection` 的 `AdjustOnPeriodic`、`MakeNewPoint`、`SeveralWlinesProcessing`、`LOfPnts` 与网格重载接入 `PatchIntersection`；`BoundedSurface::D2` 精确委托底层曲面。 | 已完成 |
+| T-526 B | `ShapeUpgrade_UnifySameDomain` 的同域判定、pcurve、周期/闭合面、seam/wire/face 重建、边合并、`Build` 与 `FillHistory` 完整接入 `BRepOffsetAPI_MiddlePath`；`GetUnifiedWire` 使用 `History()->Modified` 替换。 | 已完成 |
+| T-526 C | 复核 BRepBlend 的 7 个 `*Inv` 与 `CSCircular` / `CSConstRad` / `Ruled`：Rust 现有类型已直接承接 OCCT typedef 语义，无需重复包装。 | 已核对 |
+| T-526 D | `DE_ShapeFixParameters` 默认值与资源键映射接入 STEP/IGES healing；补齐 STEP 多壳 `CreateSolids`、`ShapeFix::FixVertexPosition`。底层尚未移植的 NonManifold 与四个 wire fixer 保留资源键，不伪灌入。 | 已完成 |
+| T-526 E | 移植 `GCPnts_UniformDeflection` 并接入 `curve_to_polyline`；AdvApp2Var 扩展多 1D/2D/3D 子空间误差、系数、降阶、Iso 聚合及精确 D3/DN 能力传播，不使用有限差分替代。 | 已完成 |
+| T-526 F | `BRepCheck_Edge::InContext` 与 `CheckPolygonOnTriangulation` 接入 Analyzer；补齐 pcurve representation location，并修正 `BOPTools_AlgoTools2D` 平面 fallback 对 edge occurrence location 的组合。 | 已完成 |
+| T-526 G | 既有门禁：`int_face_face::tests` **20 passed**；`shhealing::tests` **12 passed**；`occt-geom` **143 passed**；GCPnts **10 passed**、`curve_approx` **3 passed**、`edge_discret` **7 passed**；`step_obj_gates` **4 passed**；`modeling_topology_matches_occt`、`modeling_gprop_matches_occt`、`modeling_mesh_matches_occt`、`shell_orientation_and_shape_checks`、`step_obj_parity_bboxes_match_occt` 均通过；15 个 `data/*.step` 导出全部成功。 | 已通过 |
+| T-526 H | 网格：`MeshPCurve` 保留 wire-edge occurrence；`MeshEdge` 存 local 3D 折线；frontier 用 `T_occ * P_local`。修复 `prim-prism` 共享 TShape 顶/底边把 bbox `zmin` 打到 `-4` 的回归。 | 已完成 |
+
+**T-526 备注**
+
+(1) 仓内没有 MiddlePath、AdvApp2Var 多子空间或 PolygonOnTriangulation 的专用真实几何基线；这些分支的验证边界分别是生产接线静态对照、相关 crate 编译与现有回归。未为对齐新增测试。
+
+(2) BRepCheck 首轮在 `prim-prism` 暴露顶边侧面 pcurve 的固定 `Z=4` 偏差。根因不是容差，而是平面 fallback 绕过 location-aware `BRep_Tool::CurveOnSurface` 路径；组合 edge occurrence 与 face location 后，既有建模拓扑对拍恢复通过。
+
+(3) 网格侧曾用 `edge_curve_adaptor_world` 把首访 occurrence 的世界曲线写进 `MeshEdge`，同时保留其 location，再对另一 occurrence 做 `T_occ * T_mesh^{-1}`。当折线实际仍是 local 时，底面 remap 会得到 `z=-4`。现改为 local 折线 + 按 pcurve occurrence 施加 location。
+
+(4) 未跟踪定位产物 `examples/zz_pave_cc.rs`、`specs/occt_probe/zz_cc_gf_out.txt`、`specs/occt_probe/zz_ch_out.txt` 不入库。
+
