@@ -2,8 +2,11 @@ use super::prelude::*;
 
 
 /// Tolerance for the analytic path (exact solves).
-
-pub(super) const ANALYTIC_TOL: f64 = 1e-9;
+///
+/// Same value as `THE_TOLTANGENCY` (`IntCurveSurface_InterUtils.pxx:56`,
+/// `IntCurveSurface_Inter.pxx:49`): `1e-8`. The previous `1e-9` had no OCCT
+/// counterpart on this path (T-212 / T-213 / migration-guide §7.3).
+pub(super) const ANALYTIC_TOL: f64 = super::exact_inter::THE_TOLTANGENCY;
 /// Parameter-merge window: points closer than this are merged as a tangency.
 pub(super) const MERGE_TOL: f64 = 1e-7;
 /// Angular tolerance for transition classification (mirrors `Precision::Angular`).

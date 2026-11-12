@@ -90,7 +90,6 @@ pub mod shape_analysis_edge;
 pub mod brep_gprop;
 pub mod sweep;
 pub mod brep_sweep;
-pub mod boolean_ops;
 pub mod brep_measure;
 // Phase 4 modules.
 pub mod brep_builder_api;

@@ -43,8 +43,8 @@ pub fn boolean_planar_legacy(
     // Planarity gate. **UNPORTED (audit A5/T-41)**: OCCT has ONE
     // `BOPAlgo_BOP` for planar and curved inputs, so an empty or non-planar
     // operand goes to the same exact engine; the previous body fell back to a
-    // 32³ `boolean_ops::voxel_boolean` (mesh boolean), which has no OCCT
-    // counterpart. This module stays a leftover planar 2-D arrangement
+    // 32^3 voxel mesh boolean (deleted in T-528 with no production caller).
+    // This module stays a leftover planar 2-D arrangement
     // (`boolean_planar_legacy`).
     if fa.is_empty() || fb.is_empty() {
         let shape = crate::bop_builder2::builder_bop_with_fuzzy(

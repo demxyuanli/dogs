@@ -174,11 +174,11 @@
 | A2 | `is_inside` 7×7 采样网格 + 抖动射线 | ✅ 已修 | 实体走 `SolidClassifier::classify`；旧实现更名 `is_inside_mesh` 并标 `UNPORTED`（仅非实体形状） |
 | A3 | `step::classify_curve` 6 点采样 + 0.02 阈值 | ✅ 已修 | 分类器整体删除，写侧改走 `GeomToStep_MakeCurve.cxx:50-104` 的 `IsKind` 顺序 |
 | A4 | `AlgoTools::compute_state` 网格投影 | ✅ 已修 | F 分支走 `BRepClass_FaceClassifier::Perform` |
-| A5 | 曲面布尔体素/网格装配兜底 | ✅ 已摘除 | `bop_curved/` 已整目录删除、`voxel_fallback` 已删；曲面分支走 `boolean_via_bopalgo`（**残留见 §7.3**：`solid_union.rs` 仍留体素布尔） |
+| A5 | 曲面布尔体素/网格装配兜底 | ✅ 已摘除 | `bop_curved/` 已整目录删除、`voxel_fallback` 已删；曲面分支走 `boolean_via_bopalgo`；T-528 再删 `boolean_ops` 体素引擎与 `solid_union` 体素路径 |
 | A6 | `gcpnts` 伪 `UniformDeflection` 等（递归二分 + 深度截断） | ✅ 已修 | 改走 `CurveTessellator` / `GCPnts_TangentialDeflection`；三个伪结构体已删 |
 | A7 | 点-曲线/曲线-曲线网格+牛顿种子集 | ✅ 已修 | `Extrema_ExtPC` / `Extrema_ExtCC` / `GGenExtCC` 逐段移植，自创种子集与采样分类器全删 |
 | A8 | `CompCurveToBSplineCurve` 采样重拟 | ◐ 主体已修 | `GeomConvert::CurveToBSplineCurve` 已接；残留：修剪 Bezier 的 rational 子支（`convert_bspl/curve_convert.rs:247-248`） |
-| A9 | 7 处**假出处**（文件头 `Source:` 指向 OCCT 中不存在的物） | ✅ 已修（但仍有 1 处同类，见 §7.3） | `convert/`、`cslib/`、`gprop/`、`bnd/obb_pca.rs`、`bnd/intersect.rs`、`polyline_simplify.rs`、`int/curve_curve.rs` 文件头均已订正 |
+| A9 | 7 处**假出处**（文件头 `Source:` 指向 OCCT 中不存在的物） | ✅ 已修 | `convert/`、`cslib/`、`gprop/`、`bnd/obb_pca.rs`、`bnd/intersect.rs`、`polyline_simplify.rs`、`int/curve_curve.rs` 文件头均已订正；T-528 订正 `solid_union.rs` |
 | A10 | 静默默认值（球/环面零二阶导、缺「被包含」分支、凭空造交点、`choose_left_way` 只取首候选） | ✅ 已修 | `ElSLib::SphereD2/TorusD2`、`Bnd_Sphere.cxx:73-101`、`Poly_MakeLoops::chooseLeftWay` 均已补 |
 | A11 | 布尔退化分支（质心判定 / 采样解并入精确解） | ✅ 已修 | `boolean_degenerate` 整套删除；`edge_edge` 采样解并入段删除 |
 | A12 | `brepfeat` 解析覆盖体积 / 网格夹具冒充 `MakeCylinder` / 车削网格重建 / `clamp(16,64)` | ✅ 已修 | `boss_thru_all`/`boss` 改走解析 `translated_cylinder`（`BRepPrimAPI_MakeCylinder`），`revolve_profile_about` 改走 `brep_sweep::make_revol`（`BRepSweep_Revol`）；`mesh_cylinder` / `resolution_for` 已不存在（`rg` 零命中） |
@@ -306,7 +306,7 @@
 与三个迭代函数系统（`gcc/function_tan_cir_cu.rs`、`gcc/function_tan_cu_cu_cu.rs`、
 `gcc/function_tan_cu_cu.rs`）同样并入 `gcc/`，**不要新建 `gcc_ana/`**。开工前按本清单
 确认落点，不要新建重复模块。
-S1 的 `occt-geom/src/law/` 存在但**未接线**（见 §7.3）。
+S1 的 `occt-geom/src/law/` / `geom_fill/` 已接线到 `BRepFill_*` / `ChFi3d`（见 §7.3）。
 
 ### 5.4 逐包体量（29 个包）
 
@@ -417,29 +417,19 @@ S1 的 `occt-geom/src/law/` 存在但**未接线**（见 §7.3）。
 | BRepCheck | 「`InContext` / `Tolerance` / `CheckPolygonOnTriangulation`」 | 三项仍未移植；`Minimum` 已移植。`brep_check.rs` 无消费者、不被门禁覆盖 ⇒ 按规则不做无法验证的移植 |
 | ShapeFix | 「`CreateSolids` 臂、`DE_ShapeFixParameters` 灌入层未接线」 | **仍成立**，且 T-209–T-213 已把模式字段化落地；残留面缩小为：`DE_ShapeFixParameters` 灌入层 + STEP 侧多壳 `CreateSolids` |
 
-### 7.3 新发现的旁支问题（**本轮只记录，不动手修**）
+### 7.3 旁支问题（T-528 收口）
 
-1. **S1 的 Law + GeomFill 已进编译，但还没有消费者。**
-   `crates/occt-geom/src/law/` 已从 T-196 时的 2 个文件补到 7 个（`function` / `bspline` /
-   `interpolate` / `knot_split` / `composite` / `services`），`lib.rs:91` 已挂 `pub mod law;`。
-   `crates/occt-geom/src/geom_fill/` 现在覆盖 `Filling` / `Stretch` / `Coons` / `Curved` /
-   `BSplineCurves` / `BezierCurves` / `Profiler` / `Generator` / `Boundary`（`SimpleBound`、
-   `DegeneratedBound`、`BoundWithSurf`）/ `CoonsAlgPatch` / `CornerState` / `TgtField`
-   （`TgtOnCoons`）/ `ConstrainedFilling`，`lib.rs:88` 已挂 `pub mod geom_fill;`，
-   `occt-core` 侧补了 `AdvApprox_ApproxAFunction` 的 `Num3DSS = N` 形态
-   （`ApproxAFunction3dMulti`）。⇒ 这一波只做「翻译 + 编译」，**尚无调用方**：
-   `BRepFill_Filling` / `ChFi3d`（S3）接线前，几何基线（`step_obj_parity`、
-   `fuse_box_cylinder_is_closed_solid`）都不会经过它。
-   `GeomFill_ConstrainedFilling` 的 4 个 `Check*` 诊断臂（`cxx:1465-1710`，只往 `std::cout`
-   打印并调用 `Law_draw1dcurve`）按「无绘图」登记为未移植。
-2. **`solid_union.rs` 的文件头是 A9 同类的「假出处」。**
-   `crates/occt-topo/src/solid_union.rs:1-10` 声明 `Source: BRepAlgoAPI_Fuse / BRepAlgoAPI_BooleanOperation`，
-   但文件实现的是三角汤并集 + **体素布尔近似**（`voxel_union_grid` / `voxel_union`），OCCT
-   `BRepAlgoAPI_Fuse` 无对应分支（该文件自承 `ponytail:` 近似）。按 A9 口径应改为
-   「非 OCCT 翻译」或标 `UNPORTED` + 出处。
-3. **`intcurvesurface/types.rs:6` 的 `ANALYTIC_TOL = 1e-9` 与 OCCT 差一个数量级。**
-   OCCT 同用途常量为 `THE_TOLTANGENCY = 1e-8`（`IntCurveSurface_InterUtils.pxx:56`）。
-   T-212 / T-213 两次登记为旁支，仍未改。
+1. **S1 的 Law + GeomFill「无消费者」记载已过期。**
+   `GeomFill_ConstrainedFilling` 已由 `ChFi3d` 角点填充接线；`GeomFill_Sweep` /
+   `SectionLaw` / `Pipe` 等已由 `BRepFill_*` / offset pipe 接线。`GeomFill_ConstrainedFilling`
+   的 4 个 `Check*` 诊断臂（`cxx:1465-1710`，只往 `std::cout` 打印并调用 `Law_draw1dcurve`）
+   仍按「无绘图」登记为未移植。
+2. **`solid_union.rs` 假出处 + 体素布尔残留 — ✅ T-528 已修。**
+   文件头改为 A5/A9/A14 `UNPORTED`；`voxel_union*` / `point_in_shape` 删除；同族
+   `boolean_ops` 体素引擎整文件删除（无生产调用点）。保留 `union_meshes` / `bbox_union`。
+3. **`ANALYTIC_TOL` — ✅ T-528 已修。**
+   `intcurvesurface/types.rs` 现等于 `THE_TOLTANGENCY = 1e-8`
+   （`IntCurveSurface_InterUtils.pxx:56`）。
 
 ---
 
@@ -454,7 +444,7 @@ S1 的 `occt-geom/src/law/` 存在但**未接线**（见 §7.3）。
 | S7 隐藏线管线体量大且无 OCCT 几何基线 | 中 | `HLRBRep_ShapeToHLR` + 轮廓提取 + `Hider` 已按 T-415–T-421 落地；隐藏面判定对照 `examples/hlr_exact_probe.rs` 与 `specs/occt_probe/`；`hlr.rs` 画家算法保持 `UNPORTED` 状态不动（只服务 lite 渲染） |
 | IGES 曲线族采样与整球自造回转面等写侧偏离（A26） | 中 | 属 S4/S6 之外的独立收口项，按 `GeomToIGES_*` 实体逐条对齐，**不与本轮混做** |
 | `DE_ShapeFixParameters` 灌入层缺失导致模式预设硬编码 | 中 | S1–S7 都不触碰 ShapeHealing；如需接线，先做 `XSAlgo_ShapeProcessor.cxx:696-710` 单点移植 |
-| `intcurvesurface` 容差与 OCCT 差一个数量级 | 中 | 属数值级旁支，与本轮 7 波次无关；单独立项、单独对拍 |
+| `intcurvesurface` 容差与 OCCT 差一个数量级 | 中 | ✅ T-528：`ANALYTIC_TOL` = `THE_TOLTANGENCY`（`1e-8`） |
 
 ---
 

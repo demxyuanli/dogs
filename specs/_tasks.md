@@ -6123,3 +6123,20 @@ Do not grow the dual-pipeline / planar / volume-gate scaffold. Do not invent Fil
 
 (2) `HlrBRepSurfaceView` / `BoundedSurface` / 初等面 / `GeomBSplineSurface` / `GeomOffsetSurface` 等原先已有精确 `d2`，本轮只清默认体与余下四个实现。
 
+
+## T-528 收口 migration-guide §7.3（ANALYTIC_TOL + 体素假出处）（2026-11-12）
+
+| 任务卡 | 内容 | 状态 |
+|---|---|---|
+| T-528 A | intcurvesurface/types.rs 的 `ANALYTIC_TOL` 改为 `THE_TOLTANGENCY = 1e-8`（`IntCurveSurface_InterUtils.pxx:56`）。 | 已完成 |
+| T-528 B | `solid_union.rs`：删除体素射线分类与 `voxel_union*`；文件头改为 A5/A9/A14 `UNPORTED`；保留 `union_meshes` / `bbox_union`。 | 已完成 |
+| T-528 C | 删除无生产调用点的 `boolean_ops` 体素引擎整文件；`lib.rs` 摘除；`fuse_matches_voxel_union` 测试删除；`bop_builder_planar` 注释更新。 | 已完成 |
+| T-528 D | 既有门禁：`cargo check -p occt-topo --lib` 0 error；`solid_union` 2 / `intcurvesurface` 20 / `bop_builder::tests` 51；`modeling_mesh_matches_occt` 通过；`fuse_box_cylinder` 通过；`step_obj_gates` **4 passed**；`export_data_obj` 15/15 ok。`occt_migration_guide.md` §7.3 / A5 / A9 同步。 | 已通过 |
+
+**T-528 备注**
+
+(1) `geom/csg`（`occt-geombase`）仍按 A14 登记为非 OCCT 体素工具包，本轮不删。
+
+(2) 旁支（未修）：`BRep_TEdge` 仍无 `BRep_Continuity` 表示列表；`hlrbrep_poly_algo/bi_points.rs` 超千行待拆。
+
+(3) `export_data_obj` 的 `Shape-2` 读数为 `v=3092 f=4766`（旧笔记曾记 `3098/4778`）；`step_obj_gates` 仍绿，本轮不据此改基线。

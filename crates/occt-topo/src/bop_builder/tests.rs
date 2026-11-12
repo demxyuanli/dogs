@@ -166,20 +166,6 @@ use occt_core::gp::GpPnt;
         clear_tree(&b.solid.0);
     }
 
-    #[test]
-    fn fuse_matches_voxel_union() {
-        let (a, b) = overlapping_boxes();
-        let r = boolean(&a.0, &b.0, BoolOp::Fuse, 1e-6).expect("fuse ok");
-        let exact = box_vol(&r.shape);
-        let voxel = crate::solid_union::union_volume(&a.0, &b.0, 32);
-        assert!(voxel > 1e-9, "voxel volume should be non-zero");
-        let rel = (exact - voxel).abs() / voxel;
-        assert!(rel < 0.15, "fuse {exact} vs voxel {voxel} (rel {rel:.3})");
-        clear_tree(&r.shape);
-        clear_tree(&a.0);
-        clear_tree(&b.0);
-    }
-
     // ------------------------------------------------------------------
     // Full-topology tests
     // ------------------------------------------------------------------
