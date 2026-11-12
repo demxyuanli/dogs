@@ -30,12 +30,17 @@ impl GeometryRegistry {
         // only a fallback for shapes registered before this batch.
         // T-25 end phase: the vertex geometry comes off its own `TShape`.
         let c = s.tshape.read().unwrap().vertex_core().cloned()?;
-        Some(VertexGeom { point: c.point, tolerance: c.tolerance })
+        Some(VertexGeom {
+            point: c.point,
+            tolerance: c.tolerance,
+        })
     }
 
     /// The vertex point, or the origin when unregistered (placeholder fallback).
     pub fn vertex_point(&self, s: &TopoShape) -> GpPnt {
-        self.vertex_geom(s).map(|g| g.point).unwrap_or_else(GpPnt::zero)
+        self.vertex_geom(s)
+            .map(|g| g.point)
+            .unwrap_or_else(GpPnt::zero)
     }
 
     pub fn vertex_tolerance(&self, s: &TopoShape) -> f64 {
@@ -58,9 +63,14 @@ impl GeometryRegistry {
         // One guard covers both slots: they belong to the same `BRep_TEdge`.
         let mut ts = s.tshape.write().unwrap();
         if !(geom.pcurves.is_empty() && geom.pcurve_ranges.is_empty()) {
+            let mut locations = OrderedSlots::default();
+            for (face_key, _) in geom.pcurves.iter() {
+                locations.insert(*face_key, TopLocLocation::identity());
+            }
             ts.edge_pcurves = Some(EdgePcurves {
                 curves: geom.pcurves.clone(),
                 ranges: geom.pcurve_ranges.clone(),
+                locations,
             });
         }
         let c = ts.edge_core_mut();
@@ -144,7 +154,8 @@ impl GeometryRegistry {
     }
 
     /// `BRep_TEdge::UpdateTolerance(Tol)` (`BRep_TEdge.lxx:33-37`): raise only.
-    pub fn raise_edge_tolerance(&self, s: &TopoShape, tol: f64) {        let mut ts = s.tshape.write().unwrap();
+    pub fn raise_edge_tolerance(&self, s: &TopoShape, tol: f64) {
+        let mut ts = s.tshape.write().unwrap();
         let c = ts.edge_core_mut();
         if tol > c.tolerance {
             c.tolerance = tol;
@@ -178,8 +189,14 @@ impl GeometryRegistry {
             same_parameter: c.same_parameter,
             same_range: c.same_range,
             degenerated: c.degenerated,
-            pcurves: ts.edge_pcurves().map(|p| p.curves.clone()).unwrap_or_default(),
-            pcurve_ranges: ts.edge_pcurves().map(|p| p.ranges.clone()).unwrap_or_default(),
+            pcurves: ts
+                .edge_pcurves()
+                .map(|p| p.curves.clone())
+                .unwrap_or_default(),
+            pcurve_ranges: ts
+                .edge_pcurves()
+                .map(|p| p.ranges.clone())
+                .unwrap_or_default(),
         })
     }
 
@@ -220,13 +237,17 @@ impl GeometryRegistry {
     pub fn edge_tolerance(&self, s: &TopoShape) -> f64 {
         // `BRep_Tool::Tolerance(edge)` -> `BRep_TEdge::Tolerance()`, initial
         // value `RealEpsilon()` (`BRep_TEdge.cxx:33`).
-        self.edge_geom(s)
-            .map(|g| g.tolerance)
+        s.tshape
+            .read()
+            .unwrap()
+            .edge_core()
+            .map(|c| c.tolerance)
             .unwrap_or(occt_core::precision::REAL_EPSILON)
     }
 
     pub fn same_parameter(&self, s: &TopoShape) -> bool {
-        self.edge_geom(s).map(|g| g.same_parameter).unwrap_or(false)
+        let ts = s.tshape.read().unwrap();
+        ts.edge_core().map(|c| c.same_parameter).unwrap_or(false)
     }
 
     /// `BRep_Tool::SameRange(E)`: the flag, not the ranges themselves.
@@ -236,7 +257,8 @@ impl GeometryRegistry {
     }
 
     pub fn is_degenerated_edge(&self, s: &TopoShape) -> bool {
-        self.edge_geom(s).map(|g| g.degenerated).unwrap_or(false)
+        let ts = s.tshape.read().unwrap();
+        ts.edge_core().map(|c| c.degenerated).unwrap_or(false)
     }
 
     /// `BRep_TVertex::UpdateTolerance(T)` (`BRep_TVertex.cxx:29-35`): raise
@@ -307,5 +329,4 @@ impl GeometryRegistry {
             c.curve3d_null = true;
         }
     }
-
 }

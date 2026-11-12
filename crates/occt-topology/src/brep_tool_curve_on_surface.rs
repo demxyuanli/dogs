@@ -27,8 +27,7 @@ use crate::tgeometry::GeometryRegistry;
 /// [`GeometryRegistry`] side-table.
 pub fn curve_on_surface(edge: &Edge, face: &Face) -> Option<Arc<dyn Curve2d>> {
     let reg = GeometryRegistry::global();
-    let face_key = GeometryRegistry::shape_key(&face.0);
-    let pcs = reg.edge_pcurves(&edge.0, face_key);
+    let pcs = reg.edge_pcurves_on_face(&edge.0, &face.0);
     // `BRep_Tool::CurveOnSurface(E, F)` (`BRep_Tool.cxx:310-314`) reverses a
     // copy of the edge when the face is REVERSED, then the closed-surface arm
     // (`cxx:354-357`) returns `PCurve2` for that copy and `PCurve` otherwise.
@@ -56,9 +55,8 @@ pub fn seam_reads_pcurve2(edge: &Edge, face: &Face) -> bool {
 /// `CurveOnPlane` and sets `First/Last` to the 3D edge `f,l` (`cxx:418-419`).
 pub fn curve_on_surface_range(edge: &Edge, face: &Face) -> Option<(Arc<dyn Curve2d>, f64, f64)> {
     if let Some(pc) = curve_on_surface(edge, face) {
-        let face_key = GeometryRegistry::shape_key(&face.0);
         let reg = GeometryRegistry::global();
-        if let Some((t1, t2)) = reg.pcurve_range(&edge.0, face_key) {
+        if let Some((t1, t2)) = reg.pcurve_range_on_face(&edge.0, &face.0) {
             if t1.is_finite() && t2.is_finite() {
                 return Some((pc, t1, t2));
             }
@@ -98,5 +96,11 @@ fn pcurve_on_plane_face(edge: &Edge, face: &Face) -> Option<Arc<dyn Curve2d>> {
         return None;
     }
     let curve = reg.edge_curve(&edge.0)?;
+    let relative = edge.0.location().predivided(face.0.location());
+    let curve = if relative.is_identity() {
+        curve
+    } else {
+        Arc::from(curve.transformed(&relative.transformation()))
+    };
     occt_geom::projlib_project_on_plane::curve_on_plane(curve.as_ref(), surf.as_ref())
 }

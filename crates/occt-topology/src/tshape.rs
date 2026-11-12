@@ -1,15 +1,16 @@
 //! TShape — underlying shape data (geometric + topological content).
 //! Source: `TopoDS_TShape`
-use std::collections::HashMap;
-use std::ops::Index;
-use std::sync::{Arc, RwLock};
-use std::fmt;
+use crate::abs::{ShapeFlags, ShapeType};
+use crate::shape::TopoShape;
+use occt_core::poly::Triangulation;
+use occt_core::toploc::TopLocLocation;
 use occt_geom::{Curve, Surface};
 use occt_geom2d::curve::Curve2d;
-use crate::abs::{ShapeType, ShapeFlags};
-use crate::shape::TopoShape;
-use occt_core::toploc::TopLocLocation;
-use occt_core::poly::Triangulation;
+use std::fmt;
+use std::sync::{Arc, RwLock};
+
+mod ordered_slots;
+pub use ordered_slots::OrderedSlots;
 
 /// Thread-safe shared handle to a TShape (replaces Handle(TopoDS_TShape)).
 pub type HandleTShape = Arc<RwLock<TShape>>;
@@ -58,7 +59,12 @@ impl fmt::Debug for TShape {
     // Do not recurse into children (that would loop on cyclic topology);
     // print type + child count instead.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "TShape({} children={})", self.shape_type.to_str(), self.children.len())
+        write!(
+            f,
+            "TShape({} children={})",
+            self.shape_type.to_str(),
+            self.children.len()
+        )
     }
 }
 
@@ -77,19 +83,45 @@ impl TShape {
         }
     }
 
-    pub fn shape_type(&self) -> ShapeType { self.shape_type }
-    pub fn free(&self) -> bool { self.flags.free }
-    pub fn set_free(&mut self, v: bool) { self.flags.free = v; }
-    pub fn is_closed(&self) -> bool { self.flags.closed }
-    pub fn set_closed(&mut self, v: bool) { self.flags.closed = v; }
-    pub fn infinite(&self) -> bool { self.flags.infinite }
-    pub fn set_infinite(&mut self, v: bool) { self.flags.infinite = v; }
-    pub fn modified(&self) -> bool { self.flags.modified }
-    pub fn set_modified(&mut self, v: bool) { self.flags.modified = v; }
-    pub fn nb_children(&self) -> usize { self.children.len() }
-    pub fn set_location(&mut self, l: &TopLocLocation) { self.location = l.clone(); }
-    pub fn child(&self, i: usize) -> Option<TopoShape> { self.children.get(i).cloned() }
-    pub fn add_child(&mut self, c: TopoShape) { self.children.push(c); }
+    pub fn shape_type(&self) -> ShapeType {
+        self.shape_type
+    }
+    pub fn free(&self) -> bool {
+        self.flags.free
+    }
+    pub fn set_free(&mut self, v: bool) {
+        self.flags.free = v;
+    }
+    pub fn is_closed(&self) -> bool {
+        self.flags.closed
+    }
+    pub fn set_closed(&mut self, v: bool) {
+        self.flags.closed = v;
+    }
+    pub fn infinite(&self) -> bool {
+        self.flags.infinite
+    }
+    pub fn set_infinite(&mut self, v: bool) {
+        self.flags.infinite = v;
+    }
+    pub fn modified(&self) -> bool {
+        self.flags.modified
+    }
+    pub fn set_modified(&mut self, v: bool) {
+        self.flags.modified = v;
+    }
+    pub fn nb_children(&self) -> usize {
+        self.children.len()
+    }
+    pub fn set_location(&mut self, l: &TopLocLocation) {
+        self.location = l.clone();
+    }
+    pub fn child(&self, i: usize) -> Option<TopoShape> {
+        self.children.get(i).cloned()
+    }
+    pub fn add_child(&mut self, c: TopoShape) {
+        self.children.push(c);
+    }
 
     /// The edge's pcurve store, created on first use (only meaningful for
     /// `ShapeType::Edge`; other shapes are simply never asked).
@@ -98,7 +130,9 @@ impl TShape {
     }
 
     /// The edge's pcurve store, if it has one yet.
-    pub fn edge_pcurves(&self) -> Option<&EdgePcurves> { self.edge_pcurves.as_ref() }
+    pub fn edge_pcurves(&self) -> Option<&EdgePcurves> {
+        self.edge_pcurves.as_ref()
+    }
 
     /// The edge's 3D geometry store, created on first use (T-25 batch 2).
     pub fn edge_core_mut(&mut self) -> &mut EdgeGeomCore {
@@ -106,7 +140,9 @@ impl TShape {
     }
 
     /// The edge's 3D geometry, if it has one yet.
-    pub fn edge_core(&self) -> Option<&EdgeGeomCore> { self.edge_core.as_ref() }
+    pub fn edge_core(&self) -> Option<&EdgeGeomCore> {
+        self.edge_core.as_ref()
+    }
 
     /// The vertex's geometry store, created on first use (T-25 batch 3).
     pub fn vertex_core_mut(&mut self) -> &mut VertexGeomCore {
@@ -114,7 +150,9 @@ impl TShape {
     }
 
     /// The vertex's geometry, if it has one yet.
-    pub fn vertex_core(&self) -> Option<&VertexGeomCore> { self.vertex_core.as_ref() }
+    pub fn vertex_core(&self) -> Option<&VertexGeomCore> {
+        self.vertex_core.as_ref()
+    }
 
     /// The face's geometry store, created on first use (T-25 batch 4).
     pub fn face_core_mut(&mut self) -> &mut FaceGeomCore {
@@ -122,7 +160,9 @@ impl TShape {
     }
 
     /// The face's geometry, if it has one yet.
-    pub fn face_core(&self) -> Option<&FaceGeomCore> { self.face_core.as_ref() }
+    pub fn face_core(&self) -> Option<&FaceGeomCore> {
+        self.face_core.as_ref()
+    }
 
     /// `BRep_TFace::Triangulation(Poly_MeshPurpose_NONE)` (`BRep_TFace.cxx:47-53`):
     /// the active triangulation, if any.
@@ -132,7 +172,8 @@ impl TShape {
     /// answerable.
     pub fn face_triangulation(&self) -> Option<&Arc<Triangulation>> {
         let core = self.face_core()?;
-        core.active_triangulation.and_then(|i| core.triangulations.get(i))
+        core.active_triangulation
+            .and_then(|i| core.triangulations.get(i))
     }
 
     /// `BRep_TFace::Triangulations()` (`BRep_TFace.hxx:112-115`): every
@@ -325,7 +366,10 @@ impl VertexGeomCore {
                 return;
             }
         }
-        self.points.push(PointRepresentation::OnCurve { curve: Arc::clone(c), parameter: p });
+        self.points.push(PointRepresentation::OnCurve {
+            curve: Arc::clone(c),
+            parameter: p,
+        });
     }
 
     /// `UpdatePoints(lpr, p, PC, S, L)` (`BRep_Builder.cxx:436-463`).
@@ -460,7 +504,8 @@ impl fmt::Debug for EdgeGeomCore {
             .field("first", &self.first)
             .field("last", &self.last)
             .field("tolerance", &self.tolerance)
-            .finish()    }
+            .finish()
+    }
 }
 
 impl Default for EdgeGeomCore {
@@ -484,141 +529,6 @@ impl Default for EdgeGeomCore {
     }
 }
 
-/// Keyed slots with the traversal order of an OCCT list.
-///
-/// `BRep_TEdge::myCurves` is an `NCollection_List` (`BRep_TEdge.hxx:81`) and
-/// `BRep_Builder::UpdateCurves` (`BRep_Builder.cxx:104-167`) *removes* the
-/// representation it is about to replace and *appends* the new one at the end,
-/// so `BRep_Tool::CurveOnSurface(E, ..., Index)` walks the representations in
-/// append order. The port needs the same order for the same decisions, which a
-/// `HashMap` cannot give (its iteration order is seeded per process): every
-/// caller that reads "the first representation" would otherwise see a different
-/// one on every run.
-///
-/// Lookup stays hash-based; only iteration follows `order`.
-#[derive(Clone)]
-pub struct OrderedSlots<V> {
-    order: Vec<usize>,
-    map: HashMap<usize, V>,
-}
-
-impl<V> Default for OrderedSlots<V> {
-    fn default() -> Self {
-        Self { order: Vec::new(), map: HashMap::new() }
-    }
-}
-
-impl<V> OrderedSlots<V> {
-    /// `BRep_Builder::UpdateCurves` (`BRep_Builder.cxx:104-167`): the
-    /// representation on this key is removed and the new one is **appended**,
-    /// so writing a pcurve that is already there moves it to the end of the
-    /// list.
-    pub fn set(&mut self, key: usize, value: V) -> Option<V> {
-        self.order.retain(|k| *k != key);
-        self.order.push(key);
-        self.map.insert(key, value)
-    }
-
-    /// `ShapeBuild_Edge::CopyPCurves` (`ShapeBuild_Edge.cxx:395-399`): a key
-    /// that is already present keeps its position in the list.
-    pub fn insert(&mut self, key: usize, value: V) -> Option<V> {
-        if !self.map.contains_key(&key) {
-            self.order.push(key);
-        }
-        self.map.insert(key, value)
-    }
-
-    pub fn get(&self, key: &usize) -> Option<&V> { self.map.get(key) }
-
-    pub fn get_mut(&mut self, key: &usize) -> Option<&mut V> { self.map.get_mut(key) }
-
-    pub fn contains_key(&self, key: &usize) -> bool { self.map.contains_key(key) }
-
-    pub fn remove(&mut self, key: &usize) -> Option<V> {
-        let out = self.map.remove(key);
-        if out.is_some() {
-            self.order.retain(|k| k != key);
-        }
-        out
-    }
-
-    /// Re-key in place (the representation keeps its position in the list).
-    pub fn rename_key(&mut self, from: usize, to: usize) {
-        if from == to {
-            return;
-        }
-        let Some(value) = self.map.remove(&from) else {
-            return;
-        };
-        match self.order.iter().position(|k| *k == from) {
-            Some(pos) => self.order[pos] = to,
-            None => self.order.push(to),
-        }
-        self.map.insert(to, value);
-        let Self { order, map } = self;
-        let mut seen = std::collections::HashSet::new();
-        order.retain(|k| map.contains_key(k) && seen.insert(*k));
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (&usize, &V)> {
-        self.order.iter().filter_map(move |k| self.map.get(k).map(|v| (k, v)))
-    }
-
-    pub fn keys(&self) -> impl Iterator<Item = &usize> {
-        self.order.iter().filter(|k| self.map.contains_key(k))
-    }
-
-    /// Same key order as `self`, with each key remapped (`BRepBuilderAPI_Copy`
-    /// re-keying the representations onto the copied surfaces).
-    pub fn map_keys(&self, f: impl Fn(usize) -> usize) -> Self
-    where
-        V: Clone,
-    {
-        let mut out = Self::default();
-        for (k, v) in self.iter() {
-            out.insert(f(*k), v.clone());
-        }
-        out
-    }
-
-    /// Run `f` on every value in list order. The `&mut` form of
-    /// [`OrderedSlots::iter`]: an iterator of `&mut` cannot borrow the map
-    /// repeatedly, so the traversal is driven by the order list instead.
-    pub fn for_each_mut(&mut self, mut f: impl FnMut(&usize, &mut V)) {
-        let Self { order, map } = self;
-        for k in order.iter() {
-            if let Some(v) = map.get_mut(k) {
-                f(k, v);
-            }
-        }
-    }
-
-    pub fn len(&self) -> usize { self.map.len() }
-
-    pub fn is_empty(&self) -> bool { self.map.is_empty() }
-}
-
-impl<V> Index<&usize> for OrderedSlots<V> {
-    type Output = V;
-    fn index(&self, key: &usize) -> &V {
-        self.map.get(key).expect("ordered slot key")
-    }
-}
-
-impl<'a, V> IntoIterator for &'a OrderedSlots<V> {
-    type Item = (&'a usize, &'a V);
-    type IntoIter = Box<dyn Iterator<Item = (&'a usize, &'a V)> + 'a>;
-    fn into_iter(self) -> Self::IntoIter {
-        Box::new(self.iter())
-    }
-}
-
-impl<V: fmt::Debug> fmt::Debug for OrderedSlots<V> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_map().entries(self.iter()).finish()
-    }
-}
-
 /// Per-face 2D pcurves of an edge, and their `BRep_GCurve` ranges.
 ///
 /// Lifted from `GeometryRegistry`'s `EdgeGeom` payload (`tgeometry/mod.rs`)
@@ -637,21 +547,53 @@ pub struct EdgePcurves {
     pub curves: OrderedSlots<Vec<Arc<dyn Curve2d>>>,
     /// `BRep_GCurve` First/Last of the CurveOnSurface representation.
     pub ranges: OrderedSlots<(f64, f64)>,
+    /// `BRep_CurveRepresentation::Location` relative to the owning edge.
+    pub locations: OrderedSlots<TopLocLocation>,
 }
 
 impl EdgePcurves {
     /// Attach the (single) pcurve on `face_key`, replacing any previous ones
     /// (`EdgeGeom::set_pcurve`, `tgeometry/mod.rs`).
     pub fn set_pcurve(&mut self, face_key: usize, c: Arc<dyn Curve2d>, first: f64, last: f64) {
+        self.set_pcurve_at(face_key, TopLocLocation::identity(), c, first, last);
+    }
+
+    pub fn set_pcurve_at(
+        &mut self,
+        face_key: usize,
+        location: TopLocLocation,
+        c: Arc<dyn Curve2d>,
+        first: f64,
+        last: f64,
+    ) {
         self.curves.set(face_key, vec![c.clone()]);
+        self.locations.set(face_key, location);
         self.init_range(face_key, Some(c.as_ref()), first, last);
     }
 
     /// Replace the pcurves on `face_key` (one for a normal edge, two in
     /// forward-then-reversed order for a seam edge).
-    pub fn set_pcurves(&mut self, face_key: usize, cs: Vec<Arc<dyn Curve2d>>, first: f64, last: f64) {
+    pub fn set_pcurves(
+        &mut self,
+        face_key: usize,
+        cs: Vec<Arc<dyn Curve2d>>,
+        first: f64,
+        last: f64,
+    ) {
+        self.set_pcurves_at(face_key, TopLocLocation::identity(), cs, first, last);
+    }
+
+    pub fn set_pcurves_at(
+        &mut self,
+        face_key: usize,
+        location: TopLocLocation,
+        cs: Vec<Arc<dyn Curve2d>>,
+        first: f64,
+        last: f64,
+    ) {
         let head = cs.first().cloned();
         self.curves.set(face_key, cs);
+        self.locations.set(face_key, location);
         self.init_range(face_key, head.as_deref(), first, last);
     }
 
@@ -677,6 +619,13 @@ impl EdgePcurves {
     pub fn pcurves(&self, face_key: usize) -> Vec<Arc<dyn Curve2d>> {
         self.curves.get(&face_key).cloned().unwrap_or_default()
     }
+
+    pub fn location(&self, face_key: usize) -> TopLocLocation {
+        self.locations
+            .get(&face_key)
+            .cloned()
+            .unwrap_or_else(TopLocLocation::identity)
+    }
 }
 
 impl fmt::Debug for EdgePcurves {
@@ -684,6 +633,7 @@ impl fmt::Debug for EdgePcurves {
         f.debug_struct("EdgePcurves")
             .field("curves", &self.curves.len())
             .field("ranges", &self.ranges.len())
+            .field("locations", &self.locations.len())
             .finish()
     }
 }
@@ -702,7 +652,9 @@ pub struct EdgeShape {
 
 /// Wire shape data.
 #[derive(Debug)]
-pub struct WireShape { pub base: TShape }
+pub struct WireShape {
+    pub base: TShape,
+}
 
 /// Face shape data — surface (from BRep_TFace).
 #[derive(Debug)]
@@ -714,24 +666,81 @@ pub struct FaceShape {
 
 /// Shell shape data.
 #[derive(Debug)]
-pub struct ShellShape { pub base: TShape }
+pub struct ShellShape {
+    pub base: TShape,
+}
 
 /// Solid shape data.
 #[derive(Debug)]
-pub struct SolidShape { pub base: TShape }
+pub struct SolidShape {
+    pub base: TShape,
+}
 
 /// Compound shape data — groups arbitrary sub-shapes.
 #[derive(Debug)]
-pub struct CompoundShape { pub base: TShape }
+pub struct CompoundShape {
+    pub base: TShape,
+}
 
-impl VertexShape { pub fn new(p: occt_core::gp::GpPnt) -> Self { Self { base: TShape::new(ShapeType::Vertex), point: p, tolerance: occt_core::precision::REAL_EPSILON } } }
+impl VertexShape {
+    pub fn new(p: occt_core::gp::GpPnt) -> Self {
+        Self {
+            base: TShape::new(ShapeType::Vertex),
+            point: p,
+            tolerance: occt_core::precision::REAL_EPSILON,
+        }
+    }
+}
 impl EdgeShape {
-    pub fn new() -> Self { Self { base: TShape::new(ShapeType::Edge), first: f64::NEG_INFINITY, last: f64::INFINITY, tolerance: occt_core::precision::REAL_EPSILON, same_parameter: false, same_range: false, degenerated: false } } }
-impl WireShape { pub fn new() -> Self { Self { base: TShape::new(ShapeType::Wire) } } }
-impl FaceShape { pub fn new() -> Self { Self { base: TShape::new(ShapeType::Face), tolerance: occt_core::precision::REAL_EPSILON, natural_restriction: false } } }
-impl ShellShape { pub fn new() -> Self { Self { base: TShape::new(ShapeType::Shell) } } }
-impl SolidShape { pub fn new() -> Self { Self { base: TShape::new(ShapeType::Solid) } } }
-impl CompoundShape { pub fn new() -> Self { Self { base: TShape::new(ShapeType::Compound) } } }
+    pub fn new() -> Self {
+        Self {
+            base: TShape::new(ShapeType::Edge),
+            first: f64::NEG_INFINITY,
+            last: f64::INFINITY,
+            tolerance: occt_core::precision::REAL_EPSILON,
+            same_parameter: false,
+            same_range: false,
+            degenerated: false,
+        }
+    }
+}
+impl WireShape {
+    pub fn new() -> Self {
+        Self {
+            base: TShape::new(ShapeType::Wire),
+        }
+    }
+}
+impl FaceShape {
+    pub fn new() -> Self {
+        Self {
+            base: TShape::new(ShapeType::Face),
+            tolerance: occt_core::precision::REAL_EPSILON,
+            natural_restriction: false,
+        }
+    }
+}
+impl ShellShape {
+    pub fn new() -> Self {
+        Self {
+            base: TShape::new(ShapeType::Shell),
+        }
+    }
+}
+impl SolidShape {
+    pub fn new() -> Self {
+        Self {
+            base: TShape::new(ShapeType::Solid),
+        }
+    }
+}
+impl CompoundShape {
+    pub fn new() -> Self {
+        Self {
+            base: TShape::new(ShapeType::Compound),
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -739,7 +748,7 @@ mod tests {
 
     #[test]
     fn vertex_defaults() {
-        let v = VertexShape::new(occt_core::gp::GpPnt::new(1.,2.,3.));
+        let v = VertexShape::new(occt_core::gp::GpPnt::new(1., 2., 3.));
         assert_eq!(v.base.shape_type(), ShapeType::Vertex);
         assert_eq!(v.point.x(), 1.0);
     }

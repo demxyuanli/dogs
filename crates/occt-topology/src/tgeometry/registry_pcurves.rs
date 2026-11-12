@@ -1,7 +1,6 @@
 use super::*;
 
 impl GeometryRegistry {
-
     /// The pcurve of edge `s` on the face identified by `face_key` (see
     /// `shape_key`), if one has been attached. For a seam edge this is the
     /// forward pcurve; use [`GeometryRegistry::edge_pcurves`] to get both.
@@ -23,6 +22,25 @@ impl GeometryRegistry {
             .unwrap_or_default()
     }
 
+    /// `BRep_Tool::CurveOnSurface(E, F)`: match both the surface handle and
+    /// `F.Location().Predivided(E.Location())`.
+    pub fn edge_pcurves_on_face(
+        &self,
+        edge: &TopoShape,
+        face: &TopoShape,
+    ) -> Vec<Arc<dyn Curve2d>> {
+        let key = self.repr_key(Self::shape_key(face));
+        let wanted = face.location().predivided(edge.location());
+        let ts = edge.tshape.read().unwrap();
+        let Some(pcurves) = ts.edge_pcurves() else {
+            return Vec::new();
+        };
+        if !pcurves.location(key).is_equal(&wanted) {
+            return Vec::new();
+        }
+        pcurves.pcurves(key)
+    }
+
     /// Attach a pcurve to edge `s` for the face identified by `face_key`.
     /// Mirrors `BRep_Builder::UpdateEdge(edge, curve2d, face, tol)`.
     pub fn set_edge_pcurve(&self, s: &TopoShape, face_key: usize, curve: Arc<dyn Curve2d>) {
@@ -40,7 +58,11 @@ impl GeometryRegistry {
         }
         let (first, last) = self.edge_parameters(s);
         let key = self.repr_key(face_key);
-        s.tshape.write().unwrap().edge_pcurves_mut().set_pcurve(key, curve, first, last);
+        s.tshape
+            .write()
+            .unwrap()
+            .edge_pcurves_mut()
+            .set_pcurve(key, curve, first, last);
     }
 
     /// Replace the pcurves of edge `s` on the face identified by `face_key`.
@@ -62,7 +84,11 @@ impl GeometryRegistry {
         }
         if crate::debug_flags::pc_s2d() && curves.len() >= 2 {
             let (e0, e1) = self.edge_parameters(s);
-            let mut line = format!("PCS2 edge={:p} face={face_key} n={}", Arc::as_ptr(&s.tshape), curves.len());
+            let mut line = format!(
+                "PCS2 edge={:p} face={face_key} n={}",
+                Arc::as_ptr(&s.tshape),
+                curves.len()
+            );
             for (q, c) in curves.iter().enumerate() {
                 let (mut a, mut b) = (c.first_parameter(), c.last_parameter());
                 if !(a.is_finite() && b.is_finite()) {
@@ -94,7 +120,29 @@ impl GeometryRegistry {
         }
         let (first, last) = self.edge_parameters(s);
         let key = self.repr_key(face_key);
-        s.tshape.write().unwrap().edge_pcurves_mut().set_pcurves(key, curves, first, last);
+        s.tshape
+            .write()
+            .unwrap()
+            .edge_pcurves_mut()
+            .set_pcurves(key, curves, first, last);
+    }
+
+    /// `BRep_Builder::UpdateEdge(E, C1, C2, F, Tol)`: store the
+    /// CurveOnSurface representation location relative to the edge.
+    pub fn set_edge_pcurves_on_face(
+        &self,
+        edge: &TopoShape,
+        face: &TopoShape,
+        curves: Vec<Arc<dyn Curve2d>>,
+    ) {
+        let (first, last) = self.edge_parameters(edge);
+        let key = self.repr_key(Self::shape_key(face));
+        let location = face.location().predivided(edge.location());
+        edge.tshape
+            .write()
+            .unwrap()
+            .edge_pcurves_mut()
+            .set_pcurves_at(key, location, curves, first, last);
     }
 
     /// `ShapeBuild_Edge::CopyPCurves` (`ShapeBuild_Edge.cxx:360-413`) at the
@@ -112,10 +160,10 @@ impl GeometryRegistry {
         if Arc::ptr_eq(&from.tshape, &to.tshape) {
             return;
         }
-        let (curves, ranges) = {
+        let (curves, ranges, locations) = {
             let fts = from.tshape.read().expect("poisoned TShape lock");
             match fts.edge_pcurves() {
-                Some(g) => (g.curves.clone(), g.ranges.clone()),
+                Some(g) => (g.curves.clone(), g.ranges.clone(), g.locations.clone()),
                 None => return,
             }
         };
@@ -129,6 +177,9 @@ impl GeometryRegistry {
         }
         for (k, v) in ranges.iter() {
             slot.ranges.insert(*k, *v);
+        }
+        for (k, v) in locations.iter() {
+            slot.locations.insert(*k, v.clone());
         }
     }
 
@@ -149,6 +200,17 @@ impl GeometryRegistry {
         let key = self.repr_key(face_key);
         let ts = s.tshape.read().unwrap();
         ts.edge_pcurves()?.ranges.get(&key).copied()
+    }
+
+    pub fn pcurve_range_on_face(&self, edge: &TopoShape, face: &TopoShape) -> Option<(f64, f64)> {
+        let key = self.repr_key(Self::shape_key(face));
+        let wanted = face.location().predivided(edge.location());
+        let ts = edge.tshape.read().unwrap();
+        let pcurves = ts.edge_pcurves()?;
+        if !pcurves.location(key).is_equal(&wanted) {
+            return None;
+        }
+        pcurves.ranges.get(&key).copied()
     }
 
     /// `BRep_Builder::Range(edge, face, first, last)` (`BRep_Builder.cxx:1121`)
@@ -217,6 +279,43 @@ impl GeometryRegistry {
         out
     }
 
+    /// CurveOnSurface representations including
+    /// `BRep_CurveRepresentation::Location`.
+    pub fn edge_pcurve_reps_with_location(
+        &self,
+        s: &TopoShape,
+    ) -> Vec<(Arc<dyn Surface>, Arc<dyn Curve2d>, f64, f64, TopLocLocation)> {
+        let by_ptr = self.surface_by_ptr.read().unwrap();
+        let (slot, three_d) = {
+            let ts = s.tshape.read().unwrap();
+            let Some(core) = ts.edge_core() else {
+                return Vec::new();
+            };
+            (ts.edge_pcurves().cloned(), (core.first, core.last))
+        };
+        let Some(g) = slot else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for (&key, curves) in g.curves.iter() {
+            let Some(surface) = by_ptr.get(&key) else {
+                continue;
+            };
+            let (first, last) = g.ranges.get(&key).copied().unwrap_or(three_d);
+            let location = g.location(key);
+            for pcurve in curves {
+                out.push((
+                    surface.clone(),
+                    pcurve.clone(),
+                    first,
+                    last,
+                    location.clone(),
+                ));
+            }
+        }
+        out
+    }
+
     /// `BRep_Builder::UpdateEdge(E, C2, S, L, Tol)` (`BRep_Builder.cxx:655-672`
     /// through `UpdateCurves` `cxx:104-167` and `cxx:149-164`): the pcurve of
     /// `edge` on the `Geom_Surface` `surface` is replaced, keeping the 3D
@@ -244,6 +343,7 @@ impl GeometryRegistry {
                 let g = ts.edge_pcurves_mut();
                 g.curves.remove(&key);
                 g.ranges.remove(&key);
+                g.locations.remove(&key);
             }
         }
         let c = ts.edge_core_mut();
@@ -283,6 +383,7 @@ impl GeometryRegistry {
         if let Some(g) = ts.edge_pcurves.as_mut() {
             g.curves.remove(&want_key);
             g.ranges.remove(&want_key);
+            g.locations.remove(&want_key);
         }
     }
 
@@ -291,5 +392,4 @@ impl GeometryRegistry {
     pub fn shape_key(s: &TopoShape) -> usize {
         key(s)
     }
-
 }

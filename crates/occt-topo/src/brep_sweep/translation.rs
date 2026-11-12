@@ -149,7 +149,8 @@ impl SweepOps for Translation {
         // `cxx:124-132`: `gp_Lin(P, myVec)`.
         let p = BRepTool::vertex_point_world(&Vertex(gen.clone()));
         let Ok(dir) = GpDir::from_vec(&self.vec) else {
-            self.tables.fail("BRepSweep_Translation::MakeEmptyDirectingEdge");
+            self.tables
+                .fail("BRepSweep_Translation::MakeEmptyDirectingEdge");
             return TopoShape::new(ShapeType::Edge);
         };
         let tol = BRepTool::vertex_tolerance(&Vertex(gen.clone()));
@@ -241,16 +242,6 @@ impl SweepOps for Translation {
         };
         let face = TopoBuilder::new().make_face(surface, &[]);
         GeometryRegistry::global().set_face_tolerance(&face.0, tol);
-        if crate::debug_flags::sweep_dbg() {
-            eprintln!(
-                "[mef] dir idx={} ty={:?} gen_loc={:?} face_loc={:?} surf={}",
-                dir.index,
-                dir.ty,
-                gen.location().transformation(),
-                face.0.location().transformation(),
-                face.0.tshape.read().unwrap().face_core().is_some(),
-            );
-        }
         face.0
     }
     fn set_parameters(
@@ -310,7 +301,7 @@ impl SweepOps for Translation {
         if closed {
             let curves = reg.edge_pcurves(gen_e, face_key);
             if curves.len() >= 2 {
-                reg.set_edge_pcurves(new_edge, GeometryRegistry::shape_key(new_face), curves);
+                reg.set_edge_pcurves_on_face(new_edge, new_face, curves);
                 return;
             }
         }
@@ -446,12 +437,7 @@ fn face_is_plane(face: &TopoShape) -> bool {
 /// `GeomAdaptor_SurfaceOfLinearExtrusion::GetType` (`cxx:269-328`), `Plane`
 /// (`cxx:332-370`) and `Cylinder` (`cxx:375-386`). Any other type stays
 /// `Geom_SurfaceOfLinearExtrusion`.
-fn canon_extrusion(
-    curve: &dyn Curve,
-    direction: GpDir,
-    first: f64,
-    last: f64,
-) -> Arc<dyn Surface> {
+fn canon_extrusion(curve: &dyn Curve, direction: GpDir, first: f64, last: f64) -> Arc<dyn Surface> {
     let extrusion = Arc::new(GeomSurfaceOfLinearExtrusion::new(
         Arc::from(curve.clone_dyn()),
         direction,
@@ -502,7 +488,12 @@ fn is_normal_tol(a: &GpDir, b: &GpDir, tol: f64) -> bool {
     (a.angle_tol(b) - PI / 2.0).abs() <= tol
 }
 
-fn extrusion_plane(curve: &dyn Curve, direction: GpDir, mut first: f64, mut last: f64) -> Option<occt_core::gp::GpPln> {
+fn extrusion_plane(
+    curve: &dyn Curve,
+    direction: GpDir,
+    mut first: f64,
+    mut last: f64,
+) -> Option<occt_core::gp::GpPln> {
     // `Plane` (`GeomAdaptor_SurfaceOfLinearExtrusion.cxx:332-370`).
     if Precision::is_negative_infinite(first) && Precision::is_positive_infinite(last) {
         first = -100.0;
@@ -524,7 +515,9 @@ fn extrusion_plane(curve: &dyn Curve, direction: GpDir, mut first: f64, mut last
         if d1.magnitude() <= CONFUSION {
             continue;
         }
-        new_z = d1.normalized().crossed(&GpVec::new(direction.x(), direction.y(), direction.z()));
+        new_z = d1
+            .normalized()
+            .crossed(&GpVec::new(direction.x(), direction.y(), direction.z()));
         if new_z.magnitude() > 1.0e-12 {
             break;
         }

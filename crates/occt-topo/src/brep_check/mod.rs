@@ -20,14 +20,16 @@ use crate::shell_check::shell_is_closed;
 use crate::tgeometry::{EdgeGeom, GeometryRegistry};
 use crate::topo_tools::{faces_of, ShapeMapKey};
 
+mod edge_context;
 mod edge_tolerance;
 mod face;
+mod polygon_on_triangulation;
 mod prec;
 mod wire_closed;
 pub use edge_tolerance::edge_tolerance;
+pub(crate) use face::face_check;
 pub use prec::{prec_curve, prec_surface};
 pub use wire_closed::wire_closed;
-pub(crate) use face::face_check;
 
 /// `BRepCheck_Status` (`BRepCheck_Status.hxx:20-59`), declaration order kept.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,12 +78,32 @@ pub enum Status {
 pub struct CheckResult {
     pub shape: TopoShape,
     pub statuses: Vec<Status>,
+    context_statuses: HashMap<ShapeMapKey, Vec<Status>>,
 }
 
 impl CheckResult {
-    /// True when every recorded status is [`Status::NoError`].
+    /// True when every minimum and contextual status is [`Status::NoError`].
     pub fn is_valid(&self) -> bool {
         self.statuses.iter().all(|s| *s == Status::NoError)
+            && self
+                .context_statuses
+                .values()
+                .flatten()
+                .all(|s| *s == Status::NoError)
+    }
+
+    /// Statuses cached by `InContext` for `context`.
+    pub fn status_on_shape(&self, context: &TopoShape) -> Option<&[Status]> {
+        self.context_statuses
+            .get(&shape_key(context))
+            .map(Vec::as_slice)
+    }
+
+    /// Every cached contextual status list.
+    pub fn context_results(&self) -> impl Iterator<Item = (&ShapeMapKey, &[Status])> {
+        self.context_statuses
+            .iter()
+            .map(|(shape, statuses)| (shape, statuses.as_slice()))
     }
 }
 
@@ -115,7 +137,12 @@ fn basis_window_3d(c: &dyn Curve) -> (bool, f64, f64, f64) {
             basis.first_parameter(),
             basis.last_parameter(),
         ),
-        None => (c.is_periodic(), c.period(), c.first_parameter(), c.last_parameter()),
+        None => (
+            c.is_periodic(),
+            c.period(),
+            c.first_parameter(),
+            c.last_parameter(),
+        ),
     }
 }
 
@@ -129,7 +156,12 @@ fn basis_window_2d(c: &dyn Curve2d) -> (bool, f64, f64, f64) {
             basis.first_parameter(),
             basis.last_parameter(),
         ),
-        None => (c.is_periodic(), c.period(), c.first_parameter(), c.last_parameter()),
+        None => (
+            c.is_periodic(),
+            c.period(),
+            c.first_parameter(),
+            c.last_parameter(),
+        ),
     }
 }
 
@@ -222,6 +254,15 @@ fn edge_check(e: &Edge) -> Vec<Status> {
     if lst.is_empty() {
         lst.push(Status::NoError);
     }
+    match polygon_on_triangulation::check_polygon_on_triangulation(e) {
+        Ok(Status::NoError) => {}
+        Ok(status) => {
+            if !lst.contains(&status) {
+                lst.push(status);
+            }
+        }
+        Err(()) => lst.push(Status::CheckFail),
+    }
     lst
 }
 
@@ -273,6 +314,7 @@ impl Analyzer {
             results: HashMap::new(),
         };
         a.perform(&shape);
+        a.perform_edge_contexts(&shape);
         a
     }
 
@@ -302,8 +344,28 @@ impl Analyzer {
             CheckResult {
                 shape: s.clone(),
                 statuses,
+                context_statuses: HashMap::new(),
             },
         );
+    }
+
+    /// The edge-context phase of `BRepCheck_Analyzer::Perform`: every distinct
+    /// edge of every face is checked once in that face and cached on the edge
+    /// result under the face key.
+    fn perform_edge_contexts(&mut self, shape: &TopoShape) {
+        for face_shape in explore(shape, ShapeType::Face) {
+            for edge_shape in explore(&face_shape, ShapeType::Edge) {
+                let key = shape_key(&edge_shape);
+                let Some(result) = self.results.get_mut(&key) else {
+                    continue;
+                };
+                let statuses = edge_context::edge_in_context(&Edge(edge_shape), &face_shape);
+                result
+                    .context_statuses
+                    .entry(shape_key(&face_shape))
+                    .or_insert(statuses);
+            }
+        }
     }
 
     /// `IsValid()`.
@@ -337,6 +399,7 @@ pub fn check_face(f: &Face) -> CheckResult {
     CheckResult {
         shape: f.0.clone(),
         statuses: face_check(f),
+        context_statuses: HashMap::new(),
     }
 }
 
@@ -345,6 +408,7 @@ pub fn check_shell(sh: &Shell) -> CheckResult {
     CheckResult {
         shape: sh.0.clone(),
         statuses: shell_check_one(sh),
+        context_statuses: HashMap::new(),
     }
 }
 
@@ -353,6 +417,7 @@ pub fn check_solid(s: &Solid) -> CheckResult {
     CheckResult {
         shape: s.0.clone(),
         statuses: solid_check(s),
+        context_statuses: HashMap::new(),
     }
 }
 
@@ -361,6 +426,7 @@ pub fn check_wire(w: &Wire) -> CheckResult {
     CheckResult {
         shape: w.0.clone(),
         statuses: wire_check(w),
+        context_statuses: HashMap::new(),
     }
 }
 
@@ -369,5 +435,20 @@ pub fn check_edge(e: &Edge) -> CheckResult {
     CheckResult {
         shape: e.0.clone(),
         statuses: edge_check(e),
+        context_statuses: HashMap::new(),
+    }
+}
+
+/// `BRepCheck_Edge::InContext` for an explicit wire, face, or solid context.
+pub fn check_edge_in_context(e: &Edge, context: &TopoShape) -> CheckResult {
+    let mut context_statuses = HashMap::new();
+    context_statuses.insert(
+        shape_key(context),
+        edge_context::edge_in_context(e, context),
+    );
+    CheckResult {
+        shape: e.0.clone(),
+        statuses: edge_check(e),
+        context_statuses,
     }
 }

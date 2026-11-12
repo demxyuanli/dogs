@@ -1,4 +1,4 @@
-﻿//! `BRepSweep_Rotation` geometric hooks and `BRepSweep_Trsf::Process`.
+//! `BRepSweep_Rotation` geometric hooks and `BRepSweep_Trsf::Process`.
 //!
 //! Sources: `BRepSweep_Rotation.cxx`, `BRepSweep_Trsf.cxx`.
 //! `SetContinuity` (`BRepSweep_Trsf.cxx:97-201`) writes edge continuity through
@@ -27,9 +27,9 @@ use crate::topexp::Explorer;
 use crate::topo_tools::is_same;
 
 use super::grid::{SweepOps, SweepTables};
+use super::num_shape::{NumShape, NumShapeIterator};
 use super::quilt::Quilt;
 use super::revolution_surface::revolution_surface;
-use super::num_shape::{NumShape, NumShapeIterator};
 
 const PI: f64 = std::f64::consts::PI;
 
@@ -150,8 +150,12 @@ impl SweepOps for Rotation {
         let _tol = BRepTool::vertex_tolerance(&Vertex(gen.clone()));
         let builder = TopoBuilder::new();
         if origin.distance(&p) <= CONFUSION {
-            let axis = GpAx2::new(origin, dirz, GpDir::from_axis(occt_core::gp::dir::DirAxis::X))
-                .unwrap_or_else(|_| GpAx2::default());
+            let axis = GpAx2::new(
+                origin,
+                dirz,
+                GpDir::from_axis(occt_core::gp::dir::DirAxis::X),
+            )
+            .unwrap_or_else(|_| GpAx2::default());
             let edge = builder.make_edge(
                 Arc::new(GeomCircle::new(GpCirc::new(axis, 0.0))),
                 0.0,
@@ -164,7 +168,11 @@ impl SweepOps for Rotation {
             let axis = GpAx2::new(origin, dirz, xdir).unwrap_or_else(|_| GpAx2::default());
             let radius = origin.distance(&p);
             builder
-                .make_edge(Arc::new(GeomCircle::new(GpCirc::new(axis, radius))), 0.0, 2.0 * PI)
+                .make_edge(
+                    Arc::new(GeomCircle::new(GpCirc::new(axis, radius))),
+                    0.0,
+                    2.0 * PI,
+                )
                 .0
         }
     }
@@ -521,24 +529,32 @@ pub(super) fn vertex_parameter(vertex: &TopoShape, edge: &TopoShape) -> f64 {
     }
 }
 
-pub(super) fn set_the_pcurve(edge: &TopoShape, face: &TopoShape, orien: Orientation, curve: Arc<dyn Curve2d>) {
+pub(super) fn set_the_pcurve(
+    edge: &TopoShape,
+    face: &TopoShape,
+    orien: Orientation,
+    curve: Arc<dyn Curve2d>,
+) {
     if BRepTool::is_degenerated(&Edge(edge.clone())) {
-        GeometryRegistry::global().raise_edge_tolerance(edge, BRepTool::edge_tolerance(&Edge(edge.clone())));
+        GeometryRegistry::global()
+            .raise_edge_tolerance(edge, BRepTool::edge_tolerance(&Edge(edge.clone())));
     }
     let tol = pcurve_tolerance(edge, face, curve.as_ref());
-    let face_key = GeometryRegistry::shape_key(face);
     let plane = face_is_plane(face);
     let existing = if plane {
         None
     } else {
-        GeometryRegistry::global().edge_pcurve(edge, face_key)
+        GeometryRegistry::global()
+            .edge_pcurves_on_face(edge, face)
+            .into_iter()
+            .next()
     };
     let curves = match existing {
         None => vec![curve],
         Some(old) if orien == Orientation::Reversed => vec![old, curve],
         Some(old) => vec![curve, old],
     };
-    GeometryRegistry::global().set_edge_pcurves(edge, face_key, curves);
+    GeometryRegistry::global().set_edge_pcurves_on_face(edge, face, curves);
     GeometryRegistry::global().raise_edge_tolerance(edge, tol);
 }
 
@@ -574,7 +590,12 @@ fn pcurve_tolerance(edge: &TopoShape, face: &TopoShape, pc: &dyn Curve2d) -> f64
     d
 }
 
-fn generating_line(rot: &Rotation, face: &TopoShape, edge: &TopoShape, dir_v: NumShape) -> Geom2dLine {
+fn generating_line(
+    rot: &Rotation,
+    face: &TopoShape,
+    edge: &TopoShape,
+    dir_v: NumShape,
+) -> Geom2dLine {
     let surf = BRepTool::face_surface_world(&Face(face.clone()));
     let dx = GpDir2d::new(1.0, 0.0).unwrap_or_default();
     let dy = GpDir2d::new(0.0, 1.0).unwrap_or_default();
@@ -595,8 +616,7 @@ fn generating_line(rot: &Rotation, face: &TopoShape, edge: &TopoShape, dir_v: Nu
         let (u, v) = slib::plane_parameters(&pln.position(), &loc);
         let dir = gl.direction();
         let ax3 = pln.position();
-        let d2 = GpDir2d::new(dir.dot(ax3.x_direction()), dir.dot(ax3.y_direction()))
-            .unwrap_or(dx);
+        let d2 = GpDir2d::new(dir.dot(ax3.x_direction()), dir.dot(ax3.y_direction())).unwrap_or(dx);
         return Geom2dLine::from_pnt_dir(GpPnt2d::new(u, v), d2);
     }
     if let Some(tor) = surf.gp_torus() {
@@ -608,7 +628,12 @@ fn generating_line(rot: &Rotation, face: &TopoShape, edge: &TopoShape, dir_v: Nu
         let (mut u, mut v) = if point.distance(&tor.location()) < CONFUSION {
             (0.0, PI)
         } else {
-            slib::torus_parameters(&tor.position(), tor.major_radius(), tor.minor_radius(), &point)
+            slib::torus_parameters(
+                &tor.position(),
+                tor.major_radius(),
+                tor.minor_radius(),
+                &point,
+            )
         };
         v = clib2d::in_period(v, 0.0, 2.0 * PI);
         if (2.0 * PI - v) <= PCONFUSION {
@@ -637,7 +662,12 @@ fn generating_line(rot: &Rotation, face: &TopoShape, edge: &TopoShape, dir_v: Nu
     fallback(ang)
 }
 
-fn directing_pcurve(rot: &Rotation, face: &TopoShape, gen_e: &TopoShape, gen_v: &TopoShape) -> Arc<dyn Curve2d> {
+fn directing_pcurve(
+    rot: &Rotation,
+    face: &TopoShape,
+    gen_e: &TopoShape,
+    gen_v: &TopoShape,
+) -> Arc<dyn Curve2d> {
     let dx = GpDir2d::new(1.0, 0.0).unwrap_or_default();
     let dy = GpDir2d::new(0.0, 1.0).unwrap_or_default();
     let par = vertex_parameter(gen_v, gen_e);
@@ -673,7 +703,12 @@ fn directing_pcurve(rot: &Rotation, face: &TopoShape, gen_e: &TopoShape, gen_v: 
         let (_, v2) = if p2c.distance(&tor.location()) < CONFUSION {
             (0.0, PI)
         } else {
-            slib::torus_parameters(&tor.position(), tor.major_radius(), tor.minor_radius(), &p2c)
+            slib::torus_parameters(
+                &tor.position(),
+                tor.major_radius(),
+                tor.minor_radius(),
+                &p2c,
+            )
         };
         let mut v1 = v1;
         let mut v2 = v2;
@@ -681,7 +716,11 @@ fn directing_pcurve(rot: &Rotation, face: &TopoShape, gen_e: &TopoShape, gen_v: 
         let mut u1 = u1;
         let mut u2 = u1 + rot.angle;
         clib2d::adjust_periodic(-PI, PI, PCONFUSION, &mut u1, &mut u2);
-        let vv = if gen_v.orientation() == Orientation::Forward { v1 } else { v2 };
+        let vv = if gen_v.orientation() == Orientation::Forward {
+            v1
+        } else {
+            v2
+        };
         return Arc::new(Geom2dLine::from_pnt_dir(GpPnt2d::new(u1, vv), dx));
     }
     Arc::new(Geom2dLine::from_pnt_dir(GpPnt2d::new(0.0, par), dx))
@@ -706,7 +745,11 @@ fn direct_solid(gen: &TopoShape, axe: &GpAx1) -> Orientation {
     let mut vx = tx * (v1 + v2);
     let (mut p, mut du, mut dv) = surf.d1(ux, vx);
     let loc = *axe.location();
-    let dir = GpVec::new(axe.direction().x(), axe.direction().y(), axe.direction().z());
+    let dir = GpVec::new(
+        axe.direction().x(),
+        axe.direction().y(),
+        axe.direction().z(),
+    );
     let mut radial = GpVec::from_pnts(&loc, &p);
     radial = radial.crossed(&dir);
     let tol2 = CONFUSION * CONFUSION;
@@ -727,4 +770,3 @@ fn direct_solid(gen: &TopoShape, axe: &GpAx1) -> Orientation {
         Orientation::Reversed
     }
 }
-

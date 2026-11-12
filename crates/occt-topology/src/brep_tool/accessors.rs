@@ -85,6 +85,20 @@ impl BRepTool {
         Some(repr.polygon.clone())
     }
 
+    /// Every polygon-on-triangulation representation in
+    /// `BRep_TEdge::Curves()` order. This is the representation-level access
+    /// used by `BRepCheck_Edge::CheckPolygonOnTriangulation`
+    /// (`BRepCheck_Edge.cxx:711-839`), which must inspect both the polygon and
+    /// its owning triangulation rather than perform a keyed lookup.
+    pub fn edge_polygons_on_triangulation(
+        edge: &Edge,
+    ) -> Vec<crate::tshape::PolygonOnTriangulationRepr> {
+        let ts = edge.0.tshape.read().unwrap();
+        ts.edge_core()
+            .map(|core| core.polygons_on_triangulation.clone())
+            .unwrap_or_default()
+    }
+
     /// Version of Tolerance with a minimal value -- a port of
     /// `BRep_Tool::Tolerance(Vertex)` (`BRep_Tool.cxx:1314-1332`):
     ///

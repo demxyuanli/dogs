@@ -24,11 +24,9 @@
 //!   `GeomAdaptor_Surface::Value`).
 //! - `myHCurve` is `None` here: the port's `Minimum` pass does not retain an
 //!   adaptor, so `First`/`Last` always come from the edge range.
-//! - The per-representation `TopLoc_Location` of `cxx:627-628` and `cxx:644`
-//!   is absent from the port's representation model; only the shape location is
-//!   applied, exactly like the `Minimum` port documents
-//!   (`brep_check/mod.rs:154-158`). The second pcurve of a closed surface takes
-//!   no shape location at all, as `cxx:657-658` uses `cr->Location()` alone.
+//! - The first pcurve uses `edge.Location() * representation.Location()`
+//!   (`cxx:644`); the second pcurve of a closed representation uses the
+//!   representation location alone (`cxx:657-658`).
 //! - Representations are keyed by their `Geom_Surface` handle, which is what
 //!   `BRep_CurveRepresentation::IsCurveOnSurface(S, l)` compares as well; the
 //!   visiting order of distinct surfaces follows the registry's pcurve map, so
@@ -76,7 +74,7 @@ pub fn edge_tolerance(e: &Edge) -> f64 {
     let reg = GeometryRegistry::global();
     let curve3d = reg.edge_curve(&e.0);
     let degenerated = reg.is_degenerated_edge(&e.0);
-    let reps = reg.edge_pcurve_reps(&e.0);
+    let reps = reg.edge_pcurve_reps_with_location(&e.0);
 
     // `TE->Curves().Extent()` (`cxx:601`): one 3D representation plus one per
     // `CurveOnSurface`. A closed-surface representation counts once, which is
@@ -113,22 +111,31 @@ pub fn edge_tolerance(e: &Edge) -> f64 {
     // second pcurve of a closed-surface representation.
     let mut i = 0;
     while i < reps.len() {
-        let (surf, pc1, _, _) = &reps[i];
+        let (surf, pc1, _, _, rep_loc) = &reps[i];
         // The closed-surface second pcurve is the next entry on the same
         // surface (`GeometryRegistry::edge_pcurves` keeps forward-then-reversed
         // order).
-        let has_second =
-            reps.get(i + 1).map_or(false, |(s2, _, _, _)| same_surface(s2, surf));
-        let sref = if loc.is_identity() {
+        let has_second = reps
+            .get(i + 1)
+            .is_some_and(|(s2, _, _, _, l2)| same_surface(s2, surf) && l2.is_equal(rep_loc));
+        let first_loc = loc.transformation().multiplied(&rep_loc.transformation());
+        let sref = if first_loc.form() == occt_core::gp::TrsfForm::Identity {
             surf.clone()
         } else {
-            Arc::from(surf.transformed(&loc.transformation()))
+            Arc::from(surf.transformed(&first_loc))
         };
         the_rep.push(TolRep::CurveOnSurface(pc1.clone(), sref));
         if has_second {
-            // `cxx:653-666`: `PCurve2` with the representation's own location,
-            // which the port does not model, so the untransformed surface.
-            the_rep.push(TolRep::CurveOnSurface(reps[i + 1].1.clone(), surf.clone()));
+            // `cxx:653-666`: `PCurve2` with the representation location only.
+            let second_surface = if rep_loc.is_identity() {
+                surf.clone()
+            } else {
+                Arc::from(surf.transformed(&rep_loc.transformation()))
+            };
+            the_rep.push(TolRep::CurveOnSurface(
+                reps[i + 1].1.clone(),
+                second_surface,
+            ));
             nb_rep += 1;
             i += 2;
         } else {
@@ -177,12 +184,22 @@ fn push_centre(the_rep: &mut Vec<TolRep>, centre: TolRep) {
 
 /// Number of `CurveOnSurface` representations: one per distinct surface, two
 /// pcurves on the same surface still being one closed-surface representation.
-fn count_surface_reps(reps: &[(Arc<dyn Surface>, Arc<dyn Curve2d>, f64, f64)]) -> usize {
+fn count_surface_reps(
+    reps: &[(
+        Arc<dyn Surface>,
+        Arc<dyn Curve2d>,
+        f64,
+        f64,
+        occt_core::toploc::TopLocLocation,
+    )],
+) -> usize {
     let mut count = 0;
     let mut i = 0;
     while i < reps.len() {
         count += 1;
-        let closed = reps.get(i + 1).map_or(false, |(s2, _, _, _)| same_surface(s2, &reps[i].0));
+        let closed = reps.get(i + 1).is_some_and(|(s2, _, _, _, location)| {
+            same_surface(s2, &reps[i].0) && location.is_equal(&reps[i].4)
+        });
         i += if closed { 2 } else { 1 };
     }
     count

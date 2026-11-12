@@ -14,9 +14,10 @@
 //! Source: `BRep_TVertex` / `BRep_TEdge` / `BRep_TFace` (TKBRep).
 
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock, OnceLock};
+use std::sync::{Arc, OnceLock, RwLock};
 
 use occt_core::gp::GpPnt;
+use occt_core::toploc::TopLocLocation;
 use occt_geom::{Curve, Surface};
 use occt_geom2d::curve::Curve2d;
 
@@ -115,8 +116,12 @@ impl EdgeGeom {
             pcurve_ranges: OrderedSlots::default(),
         }
     }
-    pub fn curve(&self) -> Arc<dyn Curve> { self.curve.clone() }
-    pub fn parameters(&self) -> (f64, f64) { (self.first, self.last) }
+    pub fn curve(&self) -> Arc<dyn Curve> {
+        self.curve.clone()
+    }
+    pub fn parameters(&self) -> (f64, f64) {
+        (self.first, self.last)
+    }
 
     /// Attach the (single) pcurve of this edge on the face identified by
     /// `face_key`, replacing any previously attached pcurves.
@@ -182,7 +187,9 @@ impl FaceGeom {
             natural_restriction: false,
         }
     }
-    pub fn surface(&self) -> Arc<dyn Surface> { self.surface.clone() }
+    pub fn surface(&self) -> Arc<dyn Surface> {
+        self.surface.clone()
+    }
 }
 
 /// Process-wide geometry side-table keyed by `TShape` pointer identity.
@@ -221,7 +228,6 @@ fn key(s: &TopoShape) -> usize {
 fn shape_id(s: &TopoShape) -> u64 {
     s.shape_id()
 }
-
 
 mod registry_core;
 mod registry_faces;

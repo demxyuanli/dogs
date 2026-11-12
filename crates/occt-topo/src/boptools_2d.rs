@@ -34,8 +34,6 @@ use occt_core::precision::{ANGULAR, PCONFUSION, RESOLUTION};
 use occt_geom2d::curve::Curve2d;
 
 use crate::abs::Orientation;
-use crate::brep_surface::SurfaceKind;
-use crate::pcurve_full::classify_surface_kind;
 use crate::shape::{Edge, Face};
 use crate::tgeometry::GeometryRegistry;
 
@@ -68,7 +66,6 @@ pub fn make_2d(edge: &Edge, face: &Face) -> Result<Arc<dyn Curve2d>, String> {
     crate::pcurve_full::make_pcurve_full(edge, face)
 }
 
-
 /// `BRep_Tool::CurveOnSurface(edge, surface)`: a seam on a closed surface
 /// returns `PCurve2` when the edge is `REVERSED` (`BRep_Tool.cxx:354-361`),
 /// and `orient` then swaps the range (`ShapeAnalysis_Edge.cxx:201-206`).
@@ -96,26 +93,26 @@ fn pcurve_on_surface_rep(
     pick_reversed: bool,
     swap_range: bool,
 ) -> Option<(Arc<dyn Curve2d>, f64, f64)> {
-    let face_key = GeometryRegistry::shape_key(&face.0);
-    let pcs = GeometryRegistry::global().edge_pcurves(&edge.0, face_key);
+    let reg = GeometryRegistry::global();
+    let pcs = reg.edge_pcurves_on_face(&edge.0, &face.0);
     let pc = if pcs.len() >= 2 && pick_reversed {
         pcs[1].clone()
     } else if let Some(stored) = pcs.first() {
         stored.clone()
     } else {
         // `BRep_Tool::CurveOnSurface` (`BRep_Tool.cxx:367-372`): no stored
-        // representation -> `CurveOnPlane` projection, planar surfaces only.
-        let reg0 = GeometryRegistry::global();
-        let surf = reg0.face_surface(&face.0)?;
-        if classify_surface_kind(surf.as_ref()) != SurfaceKind::Plane {
-            return None;
+        // representation -> `CurveOnPlane`, including curve/face locations.
+        let (pc, mut first, mut last) =
+            occt_topology::brep_tool_curve_on_surface::curve_on_surface_range(edge, face)?;
+        if swap_range {
+            std::mem::swap(&mut first, &mut last);
         }
-        let curve = reg0.edge_curve(&edge.0)?;
-        crate::pcurve::curve_on_plane(curve.as_ref(), surf.as_ref())?
+        return Some((pc, first, last));
     };
-    let reg = GeometryRegistry::global();
+    let face_key = GeometryRegistry::shape_key(&face.0);
     let (mut t1, mut t2) = reg
-        .pcurve_range(&edge.0, face_key)
+        .pcurve_range_on_face(&edge.0, &face.0)
+        .or_else(|| reg.pcurve_range(&edge.0, face_key))
         .unwrap_or_else(|| reg.edge_parameters(&edge.0));
     if !(t1.is_finite() && t2.is_finite()) {
         t1 = pc.first_parameter();
@@ -272,10 +269,7 @@ pub fn attach_existing_pcurve(
 /// curve is built with [`make_2d`] and registered with
 /// [`attach_existing_pcurve`], so subsequent [`curve_on_surface`] /
 /// [`has_curve_on_surface`] calls see it.
-pub fn build_pcurve_for_edge_on_face(
-    edge: &Edge,
-    face: &Face,
-) -> Result<Arc<dyn Curve2d>, String> {
+pub fn build_pcurve_for_edge_on_face(edge: &Edge, face: &Face) -> Result<Arc<dyn Curve2d>, String> {
     if let Some(pc) = curve_on_surface(edge, face) {
         return Ok(pc);
     }
@@ -345,15 +339,27 @@ mod tests {
         let t0 = edge_tangent(edge, 0.25).expect("tangent t=0.25");
         let t1 = edge_tangent(edge, 0.75).expect("tangent t=0.75");
         // Constant direction along +X.
-        assert!((t0.x() - 1.0).abs() < 1e-9 && (t0.y() - 0.0).abs() < 1e-9, "t0 {:?}", t0);
-        assert!((t1.x() - 1.0).abs() < 1e-9 && (t1.y() - 0.0).abs() < 1e-9, "t1 {:?}", t1);
+        assert!(
+            (t0.x() - 1.0).abs() < 1e-9 && (t0.y() - 0.0).abs() < 1e-9,
+            "t0 {:?}",
+            t0
+        );
+        assert!(
+            (t1.x() - 1.0).abs() < 1e-9 && (t1.y() - 0.0).abs() < 1e-9,
+            "t1 {:?}",
+            t1
+        );
         assert_eq!(t0, t1);
 
         // A REVERSED edge runs against the stored curve direction.
         let mut rev = edge.clone();
         rev.0.set_orientation(Orientation::Reversed);
         let tr = edge_tangent(&rev, 0.5).expect("reversed tangent");
-        assert!((tr.x() + 1.0).abs() < 1e-9 && (tr.y() - 0.0).abs() < 1e-9, "rev {:?}", tr);
+        assert!(
+            (tr.x() + 1.0).abs() < 1e-9 && (tr.y() - 0.0).abs() < 1e-9,
+            "rev {:?}",
+            tr
+        );
     }
 
     #[test]
