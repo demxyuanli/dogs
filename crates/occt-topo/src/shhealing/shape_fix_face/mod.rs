@@ -8,22 +8,11 @@
 //! (`ShapeFix_Face.hxx:285-295`, `ClearModes` at `cxx:130-145`); every step of
 //! `Perform` reads them through the `NeedFix(...)` helpers on that struct.
 //!
-//! `ShapeFix_Face::Perform` (`cxx:345-780`) is driven from the two reader
-//! pipelines rather than from a `Perform` method here:
-//! `step/read_topology/translate_face.rs` and
-//! `iges_read/iges_process_shape.rs` run the wire rounds, and
-//! `step/read_topology/shape_fix_face_perform.rs` holds the second-part loop.
-//! See `specs/_a3n00_gap_analysis.md` §9.35 for what is still missing there.
+//! `ShapeFix_Face::Perform` (`cxx:345-736`) is available as
+//! [`ShapeFixFace::perform`]. Reader-specific setup may still select different
+//! [`WireFixModes`] before calling it.
 
 mod prelude {
-    pub(crate) use std::sync::Arc;
-    pub(crate) use std::f64::consts::PI;
-    pub(crate) use occt_core::bnd::BndBox2d;
-    pub(crate) use occt_core::gp::{GpDir2d, GpPnt2d, GpVec2d};
-    pub(crate) use occt_core::precision::{Precision, CONFUSION, INFINITE, PCONFUSION};
-    pub(crate) use occt_geom::{GeomRectangularTrimmedSurface, Surface};
-    pub(crate) use occt_geom2d::curve::Curve2d;
-    pub(crate) use occt_geom2d::line::Geom2dLine;
     pub(crate) use crate::abs::{Orientation, ShapeType};
     pub(crate) use crate::boptools_2d;
     pub(crate) use crate::brep_tool::BRepTool;
@@ -32,12 +21,22 @@ mod prelude {
     pub(crate) use crate::shape::{Edge, Face, TopoShape, Wire};
     pub(crate) use crate::shape_analysis::is_outer_bound;
     pub(crate) use crate::shape_fix_compose_shell::{
-        compose_adjust_to_period, reverse_wire_data_on_face, CompositeSurface, ComposeShell, Parametrisation,
-        ReShape,
+        compose_adjust_to_period, reverse_wire_data_on_face, ComposeShell, CompositeSurface,
+        Parametrisation, ReShape,
     };
-    pub(crate) use crate::shhealing::{adjust_by_period, first_vertex, fix_reorder_wire, last_vertex};
+    pub(crate) use crate::shhealing::{
+        adjust_by_period, first_vertex, fix_reorder_wire, last_vertex,
+    };
     pub(crate) use crate::tgeometry::GeometryRegistry;
     pub(crate) use crate::topo_tools::{edges_of_wire, wires_of_face};
+    pub(crate) use occt_core::bnd::BndBox2d;
+    pub(crate) use occt_core::gp::{GpDir2d, GpPnt2d, GpVec2d};
+    pub(crate) use occt_core::precision::{Precision, CONFUSION, INFINITE, PCONFUSION};
+    pub(crate) use occt_geom::{GeomRectangularTrimmedSurface, Surface};
+    pub(crate) use occt_geom2d::curve::Curve2d;
+    pub(crate) use occt_geom2d::line::Geom2dLine;
+    pub(crate) use std::f64::consts::PI;
+    pub(crate) use std::sync::Arc;
 }
 
 use prelude::*;
@@ -73,7 +72,11 @@ pub fn healing_check_wire(
     let isuopen = {
         let delta = vec_x.abs() - d_u;
         if delta.abs() < 0.1 * d_u {
-            if vec_x > 0.0 { 1 } else { -1 }
+            if vec_x > 0.0 {
+                1
+            } else {
+                -1
+            }
         } else {
             0
         }
@@ -81,7 +84,11 @@ pub fn healing_check_wire(
     let isvopen = {
         let delta = vec_y.abs() - d_v;
         if delta.abs() < 0.1 * d_v {
-            if vec_y > 0.0 { 1 } else { -1 }
+            if vec_y > 0.0 {
+                1
+            } else {
+                -1
+            }
         } else {
             0
         }
@@ -223,6 +230,10 @@ pub struct ShapeFixFace {
     pub context: crate::shape_fix_compose_shell::SharedReShape,
     /// `ShapeFix_Root::MaxTolerance` (`FromSTEP.FixShape.MaxTolerance3d`).
     pub max_tol: f64,
+    /// `ShapeFix_Root::Precision()`.
+    pub precision: f64,
+    /// Modes of the owned `ShapeFix_Wire` used by both wire rounds.
+    pub wire_modes: crate::shhealing::WireFixModes,
     /// `ShapeFix_Face::myResult`.
     pub result: Option<TopoShape>,
     /// `ShapeFix_Face`'s mode fields (`ShapeFix_Face.hxx:285-295`), i.e. the
@@ -251,6 +262,8 @@ impl Default for ShapeFixFace {
             status: 0,
             context: crate::shape_fix_compose_shell::SharedReShape::new(),
             max_tol: 1.0,
+            precision: CONFUSION,
+            wire_modes: crate::shhealing::WireFixModes::default(),
             result: None,
             modes: ShapeFixFaceModes::default(),
             map_wires: Vec::new(),
@@ -281,6 +294,8 @@ impl ShapeFixFace {
             status: 0,
             context: crate::shape_fix_compose_shell::SharedReShape::new(),
             max_tol: 1.0,
+            precision: CONFUSION,
+            wire_modes: crate::shhealing::WireFixModes::default(),
             result: None,
             modes: ShapeFixFaceModes::default(),
             map_wires: Vec::new(),
@@ -371,12 +386,12 @@ impl ShapeFixFace {
         }
         true
     }
-
 }
 
 mod missing_seam;
 mod modes;
 mod orientation;
+mod perform;
 mod periodic_degenerated;
 mod small_area_wire;
 

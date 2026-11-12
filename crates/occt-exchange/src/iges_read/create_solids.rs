@@ -10,7 +10,7 @@ use occt_topo::builder::TopoBuilder;
 use occt_topo::fclass2d::FaceState;
 use occt_topo::shape::{Shell, TopoShape};
 use occt_topo::shape_fix_compose_shell::{ReShape, SharedReShape};
-use occt_topo::topo_tools::{edges_of, faces_of, is_same, vertices_of, vertex_position};
+use occt_topo::topo_tools::{edges_of, faces_of, is_same, vertex_position, vertices_of};
 
 struct ShellHoles {
     shell: TopoShape,
@@ -163,13 +163,16 @@ fn cached_state(status: &[(TopoShape, i32)], shell: &TopoShape) -> Option<FaceSt
 
 /// Hole status (`cxx:383-386`): a bound `0` is `OUT`, unlike the outer shell.
 fn hole_state(status: &[(TopoShape, i32)], shell: &TopoShape) -> Option<FaceState> {
-    status.iter().find(|(item, _)| is_same(item, shell)).map(|(_, st)| {
-        if *st == 1 {
-            FaceState::In
-        } else {
-            FaceState::Out
-        }
-    })
+    status
+        .iter()
+        .find(|(item, _)| is_same(item, shell))
+        .map(|(_, st)| {
+            if *st == 1 {
+                FaceState::In
+            } else {
+                FaceState::Out
+            }
+        })
 }
 
 fn explorer_solids(shape: &TopoShape) -> Vec<TopoShape> {
@@ -243,7 +246,10 @@ fn create_solids(shape: &TopoShape) -> Option<Vec<TopoShape>> {
     let mut face_shells: Vec<(TopoShape, Vec<TopoShape>)> = Vec::new();
     for shell in &shells {
         for face in faces_of(shell) {
-            if let Some(slot) = face_shells.iter_mut().find(|(key, _)| is_same(key, &face.0)) {
+            if let Some(slot) = face_shells
+                .iter_mut()
+                .find(|(key, _)| is_same(key, &face.0))
+            {
                 if !contains_shape(&slot.1, shell) {
                     slot.1.push(shell.clone());
                 }
@@ -284,11 +290,15 @@ fn create_solids(shape: &TopoShape) -> Option<Vec<TopoShape>> {
         }
     }
     done = out.len() > 1 || done;
-    if done { Some(out) } else { None }
+    if done {
+        Some(out)
+    } else {
+        None
+    }
 }
 
 /// `ShapeFix_Solid::Perform` multi-shell arm (`cxx:577-640`).
-pub(in crate::iges_read) fn replace_multi_shell(shape: &TopoShape, ctx: &mut SharedReShape) {
+pub(crate) fn replace_multi_shell(shape: &TopoShape, ctx: &mut SharedReShape) {
     let Some(solids) = create_solids(shape) else {
         return;
     };

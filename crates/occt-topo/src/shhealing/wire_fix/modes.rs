@@ -111,6 +111,37 @@ impl Default for WireFixModes {
 }
 
 impl WireFixModes {
+    pub fn from_parameters(parameters: &crate::shhealing::ShapeFixParameters) -> Self {
+        let mut modes = Self::default();
+        modes.geom_mode = parameters.modify_geometry_mode > 0;
+        modes.topo_mode = parameters.modify_topology_mode > 0;
+        modes.closed_mode = parameters.closed_wire_mode > 0;
+        modes.preference_2d = parameters.preference_pcurve_mode > 0;
+        modes.remove_loop_mode = parameters.remove_loop_mode;
+        modes.fix_reversed2d_mode = parameters.fix_reversed_2d_mode;
+        modes.fix_add_pcurve_mode = parameters.fix_add_pcurve_mode;
+        modes.fix_add_curve3d_mode = parameters.fix_add_curve_3d_mode;
+        modes.fix_shifted_mode = parameters.fix_shifted_mode;
+        modes.fix_same_parameter_mode = parameters.fix_edge_same_parameter_mode;
+        modes.fix_notched_edges_mode = parameters.fix_notched_edges_mode;
+        modes.fix_self_intersecting_edge_mode = parameters.fix_self_intersecting_edge_mode;
+        modes.fix_intersecting_edges_mode = parameters.fix_intersecting_edges_mode;
+        modes.fix_non_adjacent_intersecting_edges_mode =
+            parameters.fix_non_adjacent_intersecting_edges_mode;
+        modes.fix_reorder_mode = parameters.fix_reorder_mode;
+        modes.fix_small_mode = parameters.fix_small_mode;
+        modes.fix_connected_mode = parameters.fix_connected_mode;
+        modes.fix_edge_curves_mode = parameters.fix_edge_curves_mode;
+        modes.fix_degenerated_mode = parameters.fix_degenerated_mode;
+        modes.fix_self_intersection_mode = parameters.fix_self_intersection_mode;
+        modes.fix_lacking_mode = parameters.fix_lacking_mode;
+        // Not injected because the underlying fixers are absent:
+        // FixRemovePCurve (ShapeFix_Wire.cxx:637), FixRemoveCurve3d
+        // (cxx:866), FixSeam (cxx:1615-1670), and FixTails
+        // (cxx:4316-4425). Their DE defaults keep all four paths inert.
+        modes
+    }
+
     /// `ClearModes` defaults (`ShapeFix_Wire.cxx:167-201`), i.e. a naked
     /// `ShapeFix_Wire` before any `ShapeProcess` operator touches it.
     pub fn naked() -> Self {
@@ -142,13 +173,13 @@ impl WireFixModes {
         m.geom_mode = true; // `ModifyGeometryMode` = `Fix`
         m.closed_mode = true; // `ClosedWireMode` = `Fix`
         m.preference_2d = true; // `PreferencePCurveMode` = `Fix`
-        // `ShapeProcess_OperLibrary.cxx:854-866`: integer modes.
-        // `DE_ShapeFixParameters.hxx:69-73` `FixMode::NotFix` for the three
-        // same-parameter / seam / tail keys below.
+                                // `ShapeProcess_OperLibrary.cxx:854-866`: integer modes.
+                                // `DE_ShapeFixParameters.hxx:69-73` `FixMode::NotFix` for the three
+                                // same-parameter / seam / tail keys below.
         m.fix_seam_mode = FIX_OR_NOT;
         m.fix_same_parameter_mode = NOT_FIX; // `FixEdgeSameParameterMode`, hxx:75
         m.fix_tail_mode = NOT_FIX; // hxx:77
-        // `DE_ShapeFixParameters.hxx:29-33` / `STEPControl_Controller.cxx:262-263`.
+                                   // `DE_ShapeFixParameters.hxx:29-33` / `STEPControl_Controller.cxx:262-263`.
         m.max_tail_angle_sine = 0.0_f64.to_radians().sin();
         m.max_tail_width = -1.0;
         m

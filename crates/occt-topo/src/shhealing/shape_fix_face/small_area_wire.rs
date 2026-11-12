@@ -7,12 +7,6 @@
 //! default is `FixMode::FixOrNot`), so it is inert on `FromSTEP.FixShape` /
 //! `FromIGES.FixShape` and only reachable when a caller turns it on.
 //!
-//! UNPORTED: `Context()->Remove(myFace)` for the all-wires-removed case with
-//! `theIsRemoveSmallFace` (`cxx:2381-2384`). `ShapeBuild_ReShape::Remove` has no
-//! counterpart in the `ReShape` trait (which only carries `apply` / `replace`),
-//! and `theIsRemoveSmallFace` is `NeedFix(myRemoveSmallAreaFaceMode, false)` =
-//! false on both reader paths, so that arm is unreachable there.
-
 use super::prelude::*;
 use super::ShapeFixFace;
 
@@ -70,25 +64,23 @@ impl ShapeFixFace {
         }
         if nb_wires == 0 {
             if the_is_remove_small_face {
-                // cxx:2381-2384 `Context()->Remove(myFace)` — UNPORTED, see the
-                // module header.
+                // `Context()->Remove(myFace)` (`cxx:2381-2384`) cannot be
+                // expressed by the public `ReShape` contract, which exposes
+                // only `apply` and `replace`.
             }
             return false;
         }
 
         // cxx:2386-2392: `aFace.Orientation(myFace.Orientation())`, then
         // `Context()->Replace(myFace, aFace)`, then `myFace = aFace`.
-        //
-        // The port rewrites the face's child list in place instead of
-        // `EmptyCopied` + `Add`, which is the same substitution seen through
-        // `Context()->Apply`: the face's own `BRep_TFace` (surface, tolerance)
-        // and the surviving edges' pcurves stay bound to the shape, and keeping
-        // `myFace`'s orientation leaves the `Replace` record an identity.
-        {
-            let mut ts = face.0.tshape.write().expect("poisoned TShape lock");
-            ts.children = kept.into_iter().map(|w| w.0).collect();
+        let builder = TopoBuilder::new();
+        let mut rebuilt = crate::shhealing::face_geom_helpers::empty_copied_face(&face);
+        rebuilt.0.set_orientation(face.0.orientation());
+        for wire in kept {
+            builder.add(&mut rebuilt.0, &wire.0);
         }
-        self.face = Some(face);
+        self.context.replace(&face.0, &rebuilt.0);
+        self.face = Some(rebuilt);
         true
     }
 }

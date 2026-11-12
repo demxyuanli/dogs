@@ -21,6 +21,7 @@ impl<'a> Resolver<'a> {
             edge_curve_ref: RefCell::new(HashMap::new()),
             resolving: RefCell::new(HashSet::new()),
             warnings: RefCell::new(Vec::new()),
+            shape_fix_parameters: occt_topo::shhealing::ShapeFixParameters::step_reader(),
             heal_context: RefCell::new(Vec::new()),
         }
     }
@@ -72,7 +73,9 @@ impl<'a> Resolver<'a> {
     /// `myResult = Context()->Apply(S)` (`cxx:257`) - the substitution of every
     /// sub-shape a face fix recorded, including on the faces it did not touch.
     /// Returns the owned context to `Apply` when this call opened the pass.
-    pub(super) fn open_heal_context(&self) -> Option<occt_topo::shape_fix_compose_shell::SharedReShape> {
+    pub(super) fn open_heal_context(
+        &self,
+    ) -> Option<occt_topo::shape_fix_compose_shell::SharedReShape> {
         // See `current_heal_context`: the shared `FixShape` context is the only
         // path (OCCT has no switch for it).
         if self.heal_context.borrow().is_empty() {
@@ -98,11 +101,19 @@ impl<'a> Resolver<'a> {
         owned: &Option<occt_topo::shape_fix_compose_shell::SharedReShape>,
         shape: TopoShape,
     ) -> TopoShape {
-        let modes = occt_topo::shhealing::ShapeFixShapeModes::step_reader();
+        let modes =
+            occt_topo::shhealing::ShapeFixShapeModes::from_parameters(&self.shape_fix_parameters);
         match self.pop_heal_context(owned) {
             // cxx:257: myResult = Context()->Apply(S)
             Some(mut ctx) => {
                 let mut result = ctx.apply(&shape);
+                if modes.need_fix_vertex_position() {
+                    occt_topo::shhealing::fix_vertex_position(
+                        &mut result,
+                        self.shape_fix_parameters.tolerance_3d,
+                        &mut ctx,
+                    );
+                }
                 // cxx:259-261 `NeedFix(myFixSameParameterMode)`:
                 // `ShapeFix_Shape::SameParameter(shape, false, ...)`
                 // (`cxx:307-311`) is `ShapeFix::SameParameter(sh, enforce, 0.0)`.

@@ -106,18 +106,27 @@ fn largest_group(faces: &[FaceRec], edge_faces: &HashMap<usize, Vec<usize>>) -> 
     best
 }
 
+/// Result branch of `ShapeFix_Shell::FixFaceOrientation`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShellFaceOrientationStatus {
+    Unchanged,
+    Oriented,
+    MultiConnected,
+    Disconnected,
+    Mobius,
+}
+
 /// `GetShells` (`ShapeFix_Shell.cxx:308-648`) for one closed manifold shell.
 ///
-/// Returns the rebuilt face list when at least one face was reversed and every
-/// face of the single connected group landed in that shell. Multi-connex edges
-/// (`AddMultiConexityFaces`, `:656`), Mobius error faces (`:492-497`,
-/// `:1522-1570`) and a split into several shells (`:1620-1630`) are left
-/// untouched: those arms replace the shell by a compound, which the STEP
-/// solid reader does not expand here.
-fn orient_shell_faces(shell: &TopoShape) -> Option<Vec<TopoShape>> {
+/// The one-shell orientation arm is implemented. Branches that require
+/// `AddMultiConexityFaces`, Mobius error shells, or a compound of disconnected
+/// shells are reported explicitly and leave the input untouched.
+fn orient_shell_faces(
+    shell: &TopoShape,
+) -> Result<Option<Vec<TopoShape>>, ShellFaceOrientationStatus> {
     let raw = composed_faces(shell);
     if raw.len() < 2 {
-        return None;
+        return Ok(None);
     }
     let faces: Vec<FaceRec> = raw
         .into_iter()
@@ -139,14 +148,14 @@ fn orient_shell_faces(shell: &TopoShape) -> Option<Vec<TopoShape>> {
     // `FixFaceOrientation` passes `isAccountMultiConex = true` (`cxx:1486`).
     // An edge on more than two faces takes `AddMultiConexityFaces`.
     if edge_faces.values().any(|v| v.len() > 2) {
-        return None;
+        return Err(ShellFaceOrientationStatus::MultiConnected);
     }
 
     let mut processing = largest_group(&faces, &edge_faces);
     if processing.len() != faces.len() {
         // A second connected group is appended to the unconnected list and
         // becomes its own shell (`cxx:621-637`, `:1594-1604`).
-        return None;
+        return Err(ShellFaceOrientationStatus::Disconnected);
     }
 
     let mut processed: HashMap<usize, (bool, bool)> = HashMap::new();
@@ -193,7 +202,7 @@ fn orient_shell_faces(shell: &TopoShape) -> Option<Vec<TopoShape>> {
         }
         // Mobius: both orientations already accepted (`cxx:492-497`).
         if good != 0 && bad != 0 {
-            return None;
+            return Err(ShellFaceOrientationStatus::Mobius);
         }
         if good != 0 || bad != 0 || faces_in_shell == 1 {
             let mut f = faces[fi].shape.clone();
@@ -220,27 +229,33 @@ fn orient_shell_faces(shell: &TopoShape) -> Option<Vec<TopoShape>> {
     }
 
     if !done || shell_faces.len() != faces.len() {
-        return None;
+        return Ok(None);
     }
-    Some(shell_faces)
+    Ok(Some(shell_faces))
+}
+
+/// Detailed callable path for the `UnifyEdges` shell-orientation tail.
+pub fn fix_shell_face_orientation_detailed(
+    shell: TopoShape,
+) -> (TopoShape, ShellFaceOrientationStatus) {
+    if shell.shape_type() != ShapeType::Shell {
+        return (shell, ShellFaceOrientationStatus::Unchanged);
+    }
+    let faces = match orient_shell_faces(&shell) {
+        Ok(Some(faces)) => faces,
+        Ok(None) => return (shell, ShellFaceOrientationStatus::Unchanged),
+        Err(status) => return (shell, status),
+    };
+    let faces: Vec<crate::shape::Face> = faces.into_iter().map(crate::shape::Face).collect();
+    let rebuilt = TopoBuilder::new().make_shell(&faces);
+    (rebuilt.0, ShellFaceOrientationStatus::Oriented)
 }
 
 /// `ShapeFix_Shell::FixFaceOrientation` when it produces exactly one shell
 /// (`cxx:1614-1618`, `Context()->Replace` at `:1637`). `None`-equivalent: the
 /// shell is returned unchanged.
-pub fn fix_shell_face_orientation(mut shell: TopoShape) -> TopoShape {
-    if shell.shape_type() != ShapeType::Shell {
-        return shell;
-    }
-    let Some(faces) = orient_shell_faces(&shell) else {
-        return shell;
-    };
-    // Replacement shell is `B.MakeShell` (`cxx:321`), orientation FORWARD.
-    shell.set_orientation(Orientation::Forward);
-    if let Ok(mut t) = shell.tshape.write() {
-        t.children = faces;
-    }
-    shell
+pub fn fix_shell_face_orientation(shell: TopoShape) -> TopoShape {
+    fix_shell_face_orientation_detailed(shell).0
 }
 
 /// `ShapeFix_Shell::FixFaceOrientation` closed-flag update

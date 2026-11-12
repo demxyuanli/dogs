@@ -21,21 +21,19 @@
 //! driver therefore leaves those three shape types untouched and returns
 //! `false` (no fix recorded), rather than inventing a second preset-less path.
 //!
-//! UNPORTED and inert here: `ShapeFix::FixVertexPosition` (`cxx:118-121`,
-//! `ShapeFix.cxx:290-350`). Its gate is `NeedFix(myFixVertexPositionMode)` and
-//! the ctor default is `0` (`ShapeFix_Shape.cxx:47`), so a freshly built
-//! `ShapeFix_Shape` never calls it.
+//! `ShapeFix::FixVertexPosition` (`ShapeFix.cxx:565-787`) runs before the
+//! shape-type switch under `NeedFix(myFixVertexPositionMode)` (`cxx:118-121`).
+//! Its default mode is `0`, so callers must explicitly enable it.
 
 use super::prelude::*;
 use super::*;
 
 use crate::shape_extend::{
-    decode_status, SHAPEEXTEND_DONE1, SHAPEEXTEND_DONE2, SHAPEEXTEND_DONE3,
-    SHAPEEXTEND_DONE4, SHAPEEXTEND_OK,
+    decode_status, SHAPEEXTEND_DONE1, SHAPEEXTEND_DONE2, SHAPEEXTEND_DONE3, SHAPEEXTEND_DONE4,
+    SHAPEEXTEND_OK,
 };
 use crate::shape_fix_compose_shell::{ReShape, SharedReShape};
-use crate::shhealing::wire_fix::{check_order_3d, FIX_OR_NOT, NOT_FIX, WireFixModes};
-use occt_core::precision::CONFUSION;
+use crate::shhealing::wire_fix::{check_order_3d, WireFixModes, FIX_OR_NOT, NOT_FIX};
 use occt_core::toploc::TopLocLocation;
 
 /// `ShapeFix_Shape` (`ShapeFix_Shape.hxx:143-149`): the mode set lives in
@@ -71,22 +69,26 @@ impl ShapeFixShape {
     /// `SetMaxTolerance` start at `Precision::Confusion()`
     /// (`ShapeFix_Root.cxx:26-28`).
     pub fn new(shape: &TopoShape) -> Self {
+        Self::with_parameters(shape, &ShapeFixParameters::default())
+    }
+
+    pub fn with_parameters(shape: &TopoShape, parameters: &ShapeFixParameters) -> Self {
         ShapeFixShape {
-            modes: ShapeFixShapeModes::default(),
+            modes: ShapeFixShapeModes::from_parameters(parameters),
             my_shape: shape.clone(),
             my_result: shape.clone(),
             my_status: SHAPEEXTEND_OK,
-            my_precision: CONFUSION,
-            my_min_tol: CONFUSION,
-            my_max_tol: CONFUSION,
+            my_precision: parameters.tolerance_3d,
+            my_min_tol: parameters.min_tolerance_3d,
+            my_max_tol: parameters.max_tolerance_3d,
             // `Init` (`cxx:73-78`): `SetContext(new ShapeBuild_ReShape)` with
             // `ModeConsiderLocation() = true`. The port's `MapReShape` keys on
             // `(TShape, location)` (`topo_tools::ShapeMapKey`), which is that
             // mode.
             my_context: SharedReShape::new(),
             my_map_fixing_shape: HashSet::new(),
-            face_modes: ShapeFixFaceModes::default(),
-            wire_modes: WireFixModes::default(),
+            face_modes: ShapeFixFaceModes::from_parameters(parameters),
+            wire_modes: WireFixModes::from_parameters(parameters),
         }
     }
 
@@ -150,9 +152,7 @@ impl ShapeFixShape {
         let mut shape_null_loc = self.my_shape.clone();
         shape_null_loc.set_location(&TopLocLocation::identity());
         let key = ptr(&shape_null_loc);
-        if self.my_context.is_recorded(&self.my_shape)
-            || self.my_map_fixing_shape.contains(&key)
-        {
+        if self.my_context.is_recorded(&self.my_shape) || self.my_map_fixing_shape.contains(&key) {
             self.my_result = self.my_context.apply(&self.my_shape);
             return true;
         }
@@ -161,8 +161,10 @@ impl ShapeFixShape {
         // `cxx:117`: `S = Context()->Apply(myShape)`. The `.cxx` had already
         // stripped the location from `myShape` at `cxx:115`; the port keeps the
         // caller's shape intact and only strips it for the guard key.
-        let s = self.my_context.apply(&self.my_shape);
-        // `cxx:118-121`: UNPORTED, see the module note.
+        let mut s = self.my_context.apply(&self.my_shape);
+        if self.modes.need_fix_vertex_position() {
+            fix_vertex_position(&mut s, self.my_precision, &mut self.my_context);
+        }
 
         match s.shape_type() {
             ShapeType::Compound | ShapeType::CompSolid => {

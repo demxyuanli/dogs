@@ -14,13 +14,12 @@ use occt_topo::abs::{Orientation, ShapeType};
 use occt_topo::shape::{Face, TopoShape, Wire};
 use occt_topo::shape_fix_compose_shell::{ReShape, SharedReShape};
 use occt_topo::shhealing::{
-    align_shell_closed_to_free_bounds, clear_shell_closed_if_analysis_free, fix_connected_closed, fix_reorder_wire_3d, fix_shell_face_orientation,
-    fix_small_all, fix_add_curve3d_or_drop,
-    fix_vertex_tolerance_edge, fix_vertex_tolerances_after_same_parameter,
-    grown_vertex_tolerances_on_face, perform_wire_first_round, perform_wire_second_round,
-    shape_fix_same_parameter, split_face_after_removed_segment,
-    split_loop_wires, least_edge_size, ShapeFixFace, ShapeFixFaceModes,
-    ShapeFixShapeModes, ShapeFixShellModes, ShapeFixSolidModes, WireFixModes,
+    align_shell_closed_to_free_bounds, clear_shell_closed_if_analysis_free,
+    fix_shell_face_orientation, fix_vertex_tolerance_edge,
+    fix_vertex_tolerances_after_same_parameter, least_edge_size, perform_wire_first_round,
+    perform_wire_second_round, shape_fix_same_parameter, split_face_after_removed_segment,
+    split_loop_wires, ShapeFixFace, ShapeFixFaceModes, ShapeFixShapeModes, ShapeFixShellModes,
+    ShapeFixSolidModes, WireFixModes,
 };
 use occt_topo::tgeometry::GeometryRegistry;
 use occt_topo::topo_tools::{edges_of, edges_of_wire, faces_of, vertices_of};
@@ -40,14 +39,15 @@ const ENCODE_REGULARITY_ANGLE: f64 = 0.01;
 
 pub(in crate::iges_read) fn process_iges_shape(shape: &TopoShape, model: &IgesModel) -> TopoShape {
     let theeps = used_tolerance(model);
-    let max_tol = (super::iges_to_brep_basic_curve::eps_geom(model.resolution) * model.unit_factor)
-        .max(MAX_PRECISION_VAL);
+    let parameters = occt_topo::shhealing::ShapeFixParameters::iges_reader();
+    let preci = parameters.tolerance_3d;
+    let max_tol = parameters.max_tolerance_3d;
     // `ShapeFix_Shape::Perform`'s stage gates: `ShapeProcess_OperLibrary.cxx:
     // 810-816` copies the `FromIGES.FixShape` keys (`IGESData.cxx:113-123`,
     // `:163-164`).
-    let modes = ShapeFixShapeModes::iges_reader();
+    let modes = ShapeFixShapeModes::from_parameters(&parameters);
     let mut ctx = SharedReShape::new();
-    process_node(shape, &mut ctx, theeps, max_tol, &modes);
+    process_node(shape, &mut ctx, preci, max_tol, &modes, &parameters);
     // `ShapeFix_Shape.cxx:257`.
     let mut result = ctx.apply(shape);
     // `cxx:259-261` under `NeedFix(myFixSameParameterMode)`.
@@ -86,9 +86,13 @@ fn process_node(
     preci: f64,
     max_tol: f64,
     modes: &ShapeFixShapeModes,
+    parameters: &occt_topo::shhealing::ShapeFixParameters,
 ) {
     // `ShapeFix_Shape.cxx:117`: `S = Context()->Apply(myShape)`.
-    let applied = ctx.apply(shape);
+    let mut applied = ctx.apply(shape);
+    if modes.need_fix_vertex_position() {
+        occt_topo::shhealing::fix_vertex_position(&mut applied, preci, ctx);
+    }
     match applied.shape_type() {
         ShapeType::Compound | ShapeType::CompSolid => {
             // `cxx:132-149`. `FixSameParameter` and `FixVertexTol` are cleared
@@ -97,31 +101,31 @@ fn process_node(
             let sub = modes.sub_shape_modes();
             let children = applied.tshape.read().unwrap().children.clone();
             for child in &children {
-                process_node(child, ctx, preci, max_tol, &sub);
+                process_node(child, ctx, preci, max_tol, &sub, parameters);
             }
         }
         ShapeType::Face => {
             // `cxx:193-207`. `NeedFix(myFixFaceMode)` is true (`IGESData.cxx:122`).
             if modes.need_fix_face() {
-                perform_face(&Face(applied), ctx, preci, max_tol);
+                perform_face(&Face(applied), ctx, preci, max_tol, parameters);
             }
         }
         ShapeType::Shell => {
             // `cxx:181-192`. `NeedFix(myFixShellMode)` is true (`IGESData.cxx:120`).
             if modes.need_fix_shell() {
-                perform_iges_shell(&applied, ctx, preci, max_tol);
+                perform_iges_shell(&applied, ctx, preci, max_tol, parameters);
             }
         }
         ShapeType::Solid => {
             // `cxx:159-179`. `NeedFix(myFixSolidMode)` is true (`IGESData.cxx:117`).
             if modes.need_fix_solid() {
-                perform_iges_solid(&applied, ctx, preci, max_tol);
+                perform_iges_solid(&applied, ctx, preci, max_tol, parameters);
             }
         }
         ShapeType::Wire => {
             // `cxx:209-237`. `NeedFix(myFixWireMode)` is true (`IGESData.cxx:124`).
             if modes.need_fix_free_wire() {
-                perform_free_wire(&applied, ctx, preci, max_tol);
+                perform_free_wire(&applied, ctx, preci, max_tol, parameters);
             }
         }
         ShapeType::Edge => {
@@ -138,8 +142,14 @@ fn process_node(
 /// `NeedFix(myFixFaceMode)` and `NeedFix(myFixOrientationMode)` are both true
 /// (tool defaults `-1`, `IGESData.cxx:120-121`). `CreateSolids` is not this
 /// function.
-fn perform_iges_shell(shell: &TopoShape, ctx: &mut SharedReShape, preci: f64, max_tol: f64) {
-    let shell_modes = ShapeFixShellModes::reader();
+fn perform_iges_shell(
+    shell: &TopoShape,
+    ctx: &mut SharedReShape,
+    preci: f64,
+    max_tol: f64,
+    parameters: &occt_topo::shhealing::ShapeFixParameters,
+) {
+    let shell_modes = ShapeFixShellModes::from_parameters(parameters);
     // `cxx:112`.
     let shell = ctx.apply(shell);
     if shell.shape_type() != ShapeType::Shell {
@@ -149,7 +159,7 @@ fn perform_iges_shell(shell: &TopoShape, ctx: &mut SharedReShape, preci: f64, ma
     // through `ShapeFix_Face::Perform`.
     if shell_modes.need_fix_face() {
         for face in shell_faces_composed(&shell) {
-            perform_face(&face, ctx, preci, max_tol);
+            perform_face(&face, ctx, preci, max_tol, parameters);
         }
     }
     // `cxx:139-142` under `NeedFix(myFixOrientationMode)`, then the closed-flag
@@ -172,13 +182,19 @@ fn perform_iges_shell(shell: &TopoShape, ctx: &mut SharedReShape, preci: f64, ma
 /// `ShapeFix_Solid::Perform` (`ShapeFix_Solid.cxx:460-643`).
 /// `CreateOpenSolidMode` is 1 (`IGESData.cxx:119`). Several shells take
 /// `CreateSolids` (`cxx:577-640`) when the shell count is not 1.
-fn perform_iges_solid(solid: &TopoShape, ctx: &mut SharedReShape, preci: f64, max_tol: f64) {
-    let solid_modes = ShapeFixSolidModes::iges_reader();
+fn perform_iges_solid(
+    solid: &TopoShape,
+    ctx: &mut SharedReShape,
+    preci: f64,
+    max_tol: f64,
+    parameters: &occt_topo::shhealing::ShapeFixParameters,
+) {
+    let solid_modes = ShapeFixSolidModes::from_parameters(parameters);
     // `cxx:483-500`. `NeedFix(myFixShellMode)` is true (`IGESData.cxx:120`).
     if solid_modes.need_fix_shell() {
         let shells = shells_in(solid);
         for shell in &shells {
-            perform_iges_shell(shell, ctx, preci, max_tol);
+            perform_iges_shell(shell, ctx, preci, max_tol, parameters);
         }
     }
     // `cxx:514`. `NeedFix(myFixShellOrientationMode)` is true
@@ -201,44 +217,24 @@ fn perform_iges_solid(solid: &TopoShape, ctx: &mut SharedReShape, preci: f64, ma
 /// `SetFace` is null, so `IsReady` is false (`ShapeFix_Wire.lxx:68-70`).
 /// Face fixes return immediately. `ModifyTopologyMode` is forced true, and
 /// `ClosedWireMode` follows `S.Closed()`.
-fn perform_free_wire(shape: &TopoShape, ctx: &mut SharedReShape, preci: f64, max_tol: f64) {
-    let mut wire = Wire(shape.clone());
-    let closed = shape.is_closed();
-    let (reorder_ok, status) = fix_reorder_wire_3d(&wire);
-    let mut fixed = status != occt_topo::meshing::wire_order::WireOrderStatus::Same;
-    let bare = Face(TopoShape::new(ShapeType::Face));
-    fixed |= fix_small_all(&mut wire, &bare, preci, occt_core::precision::CONFUSION, !reorder_ok);
-    if reorder_ok {
-        fixed |= fix_connected_closed(&mut wire, preci, max_tol, closed);
-    }
-    fixed |= add_curve3d_or_drop(&mut wire, &bare, preci);
-    copy_vertex_tolerances(&wire, ctx);
-    if closed {
-        let _ = fix_reorder_wire_3d(&wire);
-    }
-    copy_vertex_tolerances(&wire, ctx);
+fn perform_free_wire(
+    shape: &TopoShape,
+    ctx: &mut SharedReShape,
+    preci: f64,
+    max_tol: f64,
+    parameters: &occt_topo::shhealing::ShapeFixParameters,
+) {
+    let modes = WireFixModes::from_parameters(parameters);
+    let (fixed, wire) = occt_topo::shhealing::perform_free_wire(
+        shape,
+        ctx,
+        preci,
+        parameters.min_tolerance_3d,
+        max_tol,
+        &modes,
+    );
     if fixed {
-        ctx.replace(shape, &wire.0);
-    }
-}
-
-/// `FixAddCurve3d` (`ShapeFix_Wire.cxx:881-918`), shared with
-/// `ShapeFix_Wire::perform_wire_first_round`'s `FixEdgeCurves` arm. The free
-/// wire has no face, so the bare face is passed and the face-dependent
-/// sub-calls of `FixClosed` (`cxx:909`) return false.
-fn add_curve3d_or_drop(wire: &mut Wire, face: &Face, precision: f64) -> bool {
-    fix_add_curve3d_or_drop(wire, face, precision)
-}
-
-/// `FixVertexTolerance(edge, null face)` with a context (`ShapeFix_Edge.cxx:674-677`).
-fn copy_vertex_tolerances(wire: &Wire, ctx: &mut SharedReShape) {
-    let bare = Face(TopoShape::new(ShapeType::Face));
-    for edge in edges_of_wire(wire) {
-        let Some(grown) = grown_vertex_tolerances_on_face(&edge, &bare) else {
-            continue;
-        };
-        ctx.copy_vertex(&grown.v1.0, grown.toler1);
-        ctx.copy_vertex(&grown.v2.0, grown.toler2);
+        ctx.replace(shape, &wire);
     }
 }
 
@@ -290,7 +286,12 @@ fn collect_shells(shape: &TopoShape, out: &mut Vec<TopoShape>) {
         out.push(shape.clone());
         return;
     }
-    let children = shape.tshape.read().expect("poisoned TShape lock").children.clone();
+    let children = shape
+        .tshape
+        .read()
+        .expect("poisoned TShape lock")
+        .children
+        .clone();
     for child in children {
         collect_shells(&child, out);
     }
@@ -298,7 +299,13 @@ fn collect_shells(shape: &TopoShape, out: &mut Vec<TopoShape>) {
 
 /// Ported tail of `ShapeFix_Face::Perform` (`ShapeFix_Face.cxx:482-716`),
 /// the same order `step/read_topology/translate_face.rs` uses after the face is built.
-fn perform_face(face: &Face, ctx: &mut SharedReShape, preci: f64, max_tol: f64) {
+fn perform_face(
+    face: &Face,
+    ctx: &mut SharedReShape,
+    preci: f64,
+    max_tol: f64,
+    parameters: &occt_topo::shhealing::ShapeFixParameters,
+) {
     let applied = ctx.apply(&face.0);
     let face = if applied.is_face() {
         Face(applied)
@@ -309,10 +316,11 @@ fn perform_face(face: &Face, ctx: &mut SharedReShape, preci: f64, max_tol: f64) 
     // `NeedFix(myFixWireMode)` (`cxx:365`), with lacking and self-intersection
     // forced off (`WireFixModes::first_wire_round`) and at the auto-corrected
     // precision (`cxx:386-397`).
-    let wire_modes = WireFixModes::iges_face();
+    let mut wire_modes = WireFixModes::from_parameters(parameters);
+    wire_modes.topo_mode = true;
     let first_round = wire_modes.first_wire_round();
     let second_round = wire_modes.second_wire_round();
-    let face_modes = ShapeFixFaceModes::reader();
+    let face_modes = ShapeFixFaceModes::from_parameters(parameters);
     let wire_preci = if face_modes.need_fix_wire() && face_modes.auto_correct_precision() {
         let size = least_edge_size(&face.0);
         let newpreci = preci.min(size / 2.0) * 1.00001;

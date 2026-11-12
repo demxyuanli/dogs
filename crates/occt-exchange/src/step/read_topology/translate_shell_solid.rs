@@ -16,7 +16,10 @@ impl<'a> Resolver<'a> {
                 // `NeedFix(myFixOrientationMode)` (`cxx:140`) with
                 // `myNonManifold` from the pass context (`cxx:142`).
                 let mut applied = self.close_heal_context(&owned, shell);
-                if occt_topo::shhealing::ShapeFixShellModes::reader().need_fix_orientation() {
+                let shell_modes = occt_topo::shhealing::ShapeFixShellModes::from_parameters(
+                    &self.shape_fix_parameters,
+                );
+                if shell_modes.need_fix_orientation() {
                     // `FixFaceOrientation` first corrects the shell's `Closed`
                     // flag from its `MapShapesAndAncestors` free-boundary count
                     // (`cxx:1455-1479`), then orients the faces.
@@ -97,7 +100,8 @@ impl<'a> Resolver<'a> {
         // open shell turns the root into the bare shell (`cxx:559-567`) and never
         // enters `SolidFromShell`.
         let mut s = s;
-        let modes = occt_topo::shhealing::ShapeFixSolidModes::step_reader();
+        let modes =
+            occt_topo::shhealing::ShapeFixSolidModes::from_parameters(&self.shape_fix_parameters);
         if !modes.need_fix_shell_orientation() {
             return Ok(self.b.make_solid(&[Shell(s)]).0);
         }
@@ -135,7 +139,10 @@ impl<'a> Resolver<'a> {
     /// solid's first shell; every `ORIENTED_CLOSED_SHELL` of the `voids` set
     /// becomes an inner shell, reversed when its `orientation` attribute is
     /// `.F.` (`cxx:237-241`).
-    pub(in crate::step) fn resolve_brep_with_voids(&self, rec: &'a Record) -> Result<TopoShape, String> {
+    pub(in crate::step) fn resolve_brep_with_voids(
+        &self,
+        rec: &'a Record,
+    ) -> Result<TopoShape, String> {
         // One `FixShape` pass for the whole solid, outer shell and voids alike
         // (`ShapeFix_Shape.cxx:158-160` -> `ShapeFix_Solid`).
         let owned = self.open_heal_context();
@@ -149,7 +156,10 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    pub(super) fn resolve_brep_with_voids_shells(&self, rec: &'a Record) -> Result<TopoShape, String> {
+    pub(super) fn resolve_brep_with_voids_shells(
+        &self,
+        rec: &'a Record,
+    ) -> Result<TopoShape, String> {
         let outer_ref = parse_ref(&rec.args[1]).ok_or("BREP_WITH_VOIDS: bad outer ref")?;
         let outer = self.resolve_shape(outer_ref)?;
         if !outer.is_shell() {
@@ -165,7 +175,19 @@ impl<'a> Resolver<'a> {
                 Err(e) => self.warn(format!("void #{void}: {e}")),
             }
         }
-        Ok(self.b.make_solid(&shells).0)
+        let solid = self.b.make_solid(&shells).0;
+        let mut pass = self.current_heal_context();
+        let in_pass = pass.is_some();
+        let mut scratch = occt_topo::shape_fix_compose_shell::SharedReShape::new();
+        let ctx = match pass.as_mut() {
+            Some(c) => c,
+            None => &mut scratch,
+        };
+        crate::iges_read::create_solids::replace_multi_shell(&solid, ctx);
+        if in_pass {
+            return Ok(solid);
+        }
+        Ok(occt_topo::shape_fix_compose_shell::ReShape::value(ctx, &solid).unwrap_or(solid))
     }
 
     /// `StepToTopoDS_Builder::Init(ShellBasedSurfaceModel)`
@@ -241,5 +263,4 @@ impl<'a> Resolver<'a> {
         }
         Ok(s)
     }
-
 }

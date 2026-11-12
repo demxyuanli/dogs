@@ -19,6 +19,7 @@
 //! same set; `reader` exists only to state where the values come from.
 
 use crate::shhealing::wire_fix::{need_fix, FIX, FIX_OR_NOT};
+use crate::shhealing::ShapeFixParameters;
 
 /// The `ShapeFix_Face` mode set (`ShapeFix_Face.hxx:285-295`).
 #[derive(Debug, Clone, PartialEq)]
@@ -76,6 +77,22 @@ impl Default for ShapeFixFaceModes {
 }
 
 impl ShapeFixFaceModes {
+    pub fn from_parameters(parameters: &ShapeFixParameters) -> Self {
+        Self {
+            fix_wire_mode: parameters.fix_wire_mode,
+            fix_orientation_mode: parameters.fix_orientation_mode,
+            fix_add_natural_bound_mode: parameters.fix_add_natural_bound_mode,
+            fix_missing_seam_mode: parameters.fix_missing_seam_mode,
+            fix_small_area_wire_mode: parameters.fix_small_area_wire_mode,
+            remove_small_area_face_mode: parameters.remove_small_area_face_mode,
+            fix_loop_wires_mode: parameters.fix_loop_wires_mode,
+            fix_intersecting_wires_mode: parameters.fix_intersecting_wires_mode,
+            fix_split_face_mode: parameters.fix_split_face_mode,
+            auto_correct_precision_mode: parameters.auto_correct_precision_mode,
+            fix_periodic_degenerated: FIX_OR_NOT,
+        }
+    }
+
     /// The mode set `ShapeProcess_OperLibrary::fixshape` produces on the
     /// `FromSTEP.FixShape` / `FromIGES.FixShape` operators
     /// (`ShapeProcess_OperLibrary.cxx:818-836`).

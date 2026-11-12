@@ -40,20 +40,16 @@
 //!   `solid_from_one_shell` and
 //!   `step/read_topology/translate_shell_solid.rs::resolve_solid_shells`.
 //!
-//! UNPORTED, and inert on both reader paths:
-//! * `ShapeFix::FixVertexPosition` (`ShapeFix.cxx:290-350`): its gate is
-//!   `NeedFix(myFixVertexPositionMode)` and both readers register the key as
-//!   `0` (`STEPControl_Controller.cxx:258`, `IGESData.cxx:163`), i.e.
-//!   `FixMode::NotFix`.
+//! Inert on both default reader paths:
+//! * `ShapeFix::FixVertexPosition` (`ShapeFix.cxx:565-787`) is ported, but both
+//!   readers register its key as `0` (`STEPControl_Controller.cxx:258`,
+//!   `IGESData.cxx:163`), i.e. `FixMode::NotFix`.
 //! * `ShapeFix_Shell`'s `NonManifold` arm: only `FixFaceOrientation`'s
 //!   multi-connex branch reads it (`ShapeFix_Shell.cxx:1487-1496`), and the
 //!   port's `orient_shell_faces` already declines that case
 //!   (`shhealing/shape_fix_shell.rs`).
-//! * `ShapeFix_Solid`'s multi-shell arm (`CreateSolids`, `cxx:577-640`) on the
-//!   STEP reader: the port only reaches `CreateSolids` from the IGES path
-//!   (`iges_read/create_solids.rs`); no gate is missing there, the arm itself
-//!   is not wired into `resolve_solid_shells`.
 
+use super::ShapeFixParameters;
 use crate::shhealing::wire_fix::{need_fix, FIX_OR_NOT, NOT_FIX};
 
 /// `ShapeFix_Shape`'s mode fields (`ShapeFix_Shape.hxx:143-149`).
@@ -95,6 +91,18 @@ impl Default for ShapeFixShapeModes {
 }
 
 impl ShapeFixShapeModes {
+    pub fn from_parameters(parameters: &ShapeFixParameters) -> Self {
+        Self {
+            fix_solid_mode: parameters.fix_solid_mode,
+            fix_shell_mode: parameters.fix_free_shell_mode,
+            fix_face_mode: parameters.fix_free_face_mode,
+            fix_wire_mode: parameters.fix_free_wire_mode,
+            fix_same_parameter_mode: parameters.fix_same_parameter_mode,
+            fix_vertex_position_mode: parameters.fix_vertex_position_mode,
+            fix_vertex_tol_mode: parameters.fix_vertex_tolerance_mode,
+        }
+    }
+
     /// `FromSTEP.FixShape`'s values (`STEPControl_Controller.cxx:208-218`,
     /// `:258-259`) as `ShapeProcess_OperLibrary.cxx:810-816` copies them.
     pub fn step_reader() -> Self {
@@ -176,6 +184,14 @@ impl Default for ShapeFixSolidModes {
 }
 
 impl ShapeFixSolidModes {
+    pub fn from_parameters(parameters: &ShapeFixParameters) -> Self {
+        Self {
+            fix_shell_mode: parameters.fix_shell_mode,
+            fix_shell_orientation_mode: parameters.fix_shell_orientation_mode,
+            create_open_solid_mode: parameters.create_open_solid_mode > 0,
+        }
+    }
+
     /// `FromSTEP.FixShape` (`STEPControl_Controller.cxx:213-215`): the two modes
     /// are `-1` and `CreateOpenSolidMode` is `0`
     /// (`ShapeProcess_OperLibrary.cxx:820-822`).
@@ -229,6 +245,16 @@ impl Default for ShapeFixShellModes {
 }
 
 impl ShapeFixShellModes {
+    pub fn from_parameters(parameters: &ShapeFixParameters) -> Self {
+        Self {
+            fix_face_mode: parameters.fix_face_mode,
+            fix_orientation_mode: parameters.fix_face_orientation_mode,
+            // Not injected: the multi-connex non-manifold branch of
+            // ShapeFix_Shell.cxx:1487-1496 is not ported.
+            non_manifold: false,
+        }
+    }
+
     /// The reader value set (`ShapeProcess_OperLibrary.cxx:818-820`): no key
     /// changes either mode away from `-1`, and `SetNonManifold` is only called
     /// for an explicit `NonManifold` parameter

@@ -20,71 +20,75 @@
 //! their existing side-table entries remain valid.
 mod prelude {
 
-pub(crate) use std::collections::{HashMap, HashSet};
-pub(crate) use std::sync::Arc;
+    pub(crate) use std::collections::{HashMap, HashSet};
+    pub(crate) use std::sync::Arc;
 
-pub(crate) use occt_core::gp::{GpDir, GpLin, GpPnt, GpVec};
-pub(crate) use occt_geom::GeomLine;
+    pub(crate) use occt_core::gp::{GpDir, GpLin, GpPnt, GpVec};
+    pub(crate) use occt_geom::GeomLine;
 
-pub(crate) use crate::abs::ShapeType;
-#[cfg(test)]
-pub(crate) use crate::brep_measure::edge_length;
-pub(crate) use crate::builder::TopoBuilder;
-pub(crate) use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Vertex, Wire};
-pub(crate) use crate::tgeometry::GeometryRegistry;
-pub(crate) use crate::topo_tools::{
-    edges_of, edges_of_wire, edge_vertices, faces_of, is_same, vertex_position, vertices_of,
-    wires_of, wires_of_face,
-};
-
+    pub(crate) use crate::abs::ShapeType;
+    #[cfg(test)]
+    pub(crate) use crate::brep_measure::edge_length;
+    pub(crate) use crate::builder::TopoBuilder;
+    pub(crate) use crate::shape::{Edge, Face, Shell, Solid, TopoShape, Vertex, Wire};
+    pub(crate) use crate::tgeometry::GeometryRegistry;
+    pub(crate) use crate::topo_tools::{
+        edge_vertices, edges_of, edges_of_wire, faces_of, is_same, vertex_position, vertices_of,
+        wires_of, wires_of_face,
+    };
 }
 
-
+mod box_bnd_tree;
 mod common;
-mod wire_heal;
-mod wire_fix;
-mod wire_self_inter;
-mod wire_self_inter_driver;
-mod wire_self_inter_fix;
-mod split_tool;
+mod face_geom_helpers;
+mod face_natural_bound;
+mod face_split;
+mod free_bounds;
 mod intersection_tool;
+mod loop_wire;
 mod pcurve_ranges;
 mod shape_build_edge;
 mod shape_fix_edge;
 mod shape_fix_face;
-mod shape_fix_shape_modes;
-mod shape_fix_shape;
 mod shape_fix_face_wires;
-mod shape_fix_shell;
+mod shape_fix_parameters;
 mod shape_fix_same_parameter;
-mod face_geom_helpers;
-mod face_natural_bound;
-mod face_split;
-mod loop_wire;
+mod shape_fix_shape;
+mod shape_fix_shape_modes;
+mod shape_fix_shell;
+mod shape_fix_vertex_position;
+mod shape_upgrade_unify_same_domain;
 mod small_area;
+mod split_tool;
+mod wire_fix;
+mod wire_heal;
+mod wire_self_inter;
+mod wire_self_inter_driver;
+mod wire_self_inter_fix;
 mod xsalgo_check_pcurve;
-mod box_bnd_tree;
-mod free_bounds;
-pub use free_bounds::*;
 pub use common::*;
-pub use wire_heal::*;
-pub use wire_fix::*;
-pub use wire_self_inter::*;
-pub use wire_self_inter_driver::*;
-pub use wire_self_inter_fix::*;
-pub use split_tool::*;
+pub use face_split::split_face_after_removed_segment;
+pub use free_bounds::*;
 pub use intersection_tool::*;
+pub use loop_wire::*;
 pub use pcurve_ranges::*;
 pub use shape_build_edge::*;
 pub use shape_fix_edge::*;
 pub use shape_fix_face::*;
-pub use shape_fix_shape_modes::*;
-pub use shape_fix_shape::*;
-pub use shape_fix_shell::*;
+pub use shape_fix_parameters::*;
 pub use shape_fix_same_parameter::*;
-pub use face_split::split_face_after_removed_segment;
-pub use loop_wire::*;
+pub use shape_fix_shape::*;
+pub use shape_fix_shape_modes::*;
+pub use shape_fix_shell::*;
+pub use shape_fix_vertex_position::*;
+pub(crate) use shape_upgrade_unify_same_domain::UnifySameDomain;
 pub use small_area::*;
+pub use split_tool::*;
+pub use wire_fix::*;
+pub use wire_heal::*;
+pub use wire_self_inter::*;
+pub use wire_self_inter_driver::*;
+pub use wire_self_inter_fix::*;
 pub use xsalgo_check_pcurve::*;
 
 /// `ShapeAnalysis_Curve` projection helpers (`ShapeAnalysis_Curve.cxx`).

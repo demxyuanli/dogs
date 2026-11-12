@@ -43,6 +43,7 @@ pub(in crate::step) struct Resolver<'a> {
     pub(in crate::step) edge_curve_ref: RefCell<HashMap<usize, usize>>,
     pub(in crate::step) resolving: RefCell<HashSet<usize>>,
     pub(in crate::step) warnings: RefCell<Vec<String>>,
+    pub(in crate::step) shape_fix_parameters: occt_topo::shhealing::ShapeFixParameters,
     /// `ShapeFix_Shape::myContext` (`ShapeFix_Shape.cxx:75`): the
     /// `ShapeBuild_ReShape` handle shared by every fix tool of one `FixShape`
     /// pass. `FromSTEP.exec.op` is exactly `FixShape`
@@ -54,5 +55,6 @@ pub(in crate::step) struct Resolver<'a> {
     /// rewrites a face whose *neighbor* was split (T0M face 1693 vs 1695).
     /// The stack is pushed per root in `resolve_shell` / `resolve_solid` and
     /// popped together with that `Apply`.
-    pub(in crate::step) heal_context: RefCell<Vec<occt_topo::shape_fix_compose_shell::SharedReShape>>,
+    pub(in crate::step) heal_context:
+        RefCell<Vec<occt_topo::shape_fix_compose_shell::SharedReShape>>,
 }

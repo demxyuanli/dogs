@@ -23,6 +23,7 @@ pub mod iges_read;
 pub mod image_texture;
 pub mod model;
 pub mod rwmesh;
+pub mod shape_fix_parameters;
 pub mod step;
 pub mod tdata_std_named_data;
 pub mod vrml;

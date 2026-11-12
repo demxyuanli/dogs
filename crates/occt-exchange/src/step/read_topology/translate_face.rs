@@ -23,8 +23,7 @@ impl<'a> Resolver<'a> {
         let is_bspline_surface_entity = self
             .record(surf_ref)
             .map(|r| {
-                r.type_name == "B_SPLINE_SURFACE"
-                    || r.type_name == "B_SPLINE_SURFACE_WITH_KNOTS"
+                r.type_name == "B_SPLINE_SURFACE" || r.type_name == "B_SPLINE_SURFACE_WITH_KNOTS"
             })
             .unwrap_or(false);
         let surface = if is_bspline_surface_entity {
@@ -58,10 +57,8 @@ impl<'a> Resolver<'a> {
                 || surface.is_bspline_surface()
                 || surface.is_surface_of_revolution())
         {
-            let mut face = occt_topo::brep_lib_make_face::make_face_from_surface(
-                surface,
-                self.precision,
-            );
+            let mut face =
+                occt_topo::brep_lib_make_face::make_face_from_surface(surface, self.precision);
             face.0.set_orientation(if same_sense {
                 Orientation::Forward
             } else {
@@ -99,15 +96,18 @@ impl<'a> Resolver<'a> {
         // `ShapeFix_Shape`/`ShapeProcess_OperLibrary::fixshape` values with the
         // per-round overrides of `WireFixModes::first_wire_round` /
         // `second_wire_round` applied.
-        let wire_modes = occt_topo::shhealing::WireFixModes::step_face();
+        let mut wire_modes =
+            occt_topo::shhealing::WireFixModes::from_parameters(&self.shape_fix_parameters);
+        wire_modes.topo_mode = true;
         let first_round = wire_modes.first_wire_round();
         let second_round = wire_modes.second_wire_round();
         // `ShapeFix_Face::Perform`'s face mode set (`ShapeFix_Face.hxx:285-295`).
-        let face_modes = occt_topo::shhealing::ShapeFixFaceModes::reader();
+        let face_modes =
+            occt_topo::shhealing::ShapeFixFaceModes::from_parameters(&self.shape_fix_parameters);
         // `aSavPreci = Precision()` (`ShapeFix_Face.cxx:363`) survives until
         // `cxx:700-701`; `wire_preci` is the value the first and second wire
         // rounds actually run at (`cxx:386-397`).
-        let mut wire_preci = self.precision;
+        let mut wire_preci = self.shape_fix_parameters.tolerance_3d;
         // Associate each wire edge's SURFACE_CURVE pcurve with this face's
         // surface (`BRep_Builder::UpdateEdge(edge, pcurve, face, tol)`).
         let face_ori = face.0.orientation();
@@ -188,7 +188,11 @@ impl<'a> Resolver<'a> {
                 }
                 None => face.clone(),
             };
-            wire_preci = first_round_precision(&face_modes, &applied_face, preci);
+            wire_preci = first_round_precision(
+                &face_modes,
+                &applied_face,
+                self.shape_fix_parameters.tolerance_3d,
+            );
             if face_modes.need_fix_wire() {
                 if self.current_heal_context().is_some() {
                     // `TopoDS_Iterator iter(S, false)` (`ShapeFix_Face.cxx:400`):
@@ -399,7 +403,6 @@ impl<'a> Resolver<'a> {
             _ => false,
         }
     }
-
 }
 
 /// `ShapeFix_Face::Perform`'s precision for the first wire round.
