@@ -2,7 +2,7 @@
 //! `SurfData` of the neighbouring band.
 //!
 //! Source: `ModelingAlgorithms/TKFillet/ChFi3d/ChFi3d_Builder_2.cxx:1162-1520`
-//! (OCCT 8.0.0).
+//! (OCCT 8.0.1 #1407).
 //!
 //! Where the first overload ([`super::start_sol`], `cxx:900-1108`) searches the
 //! guideline for a first section, this one takes the last section of an
@@ -57,24 +57,27 @@ use crate::topopebrep::tool::adaptor::SurfaceAdaptor;
 
 use super::ChFi3dBuilder;
 
-/// `prepareDefaultReturn` lambda (`cxx:1369-1375`): back to the input face, with
-/// the p-curve of the arc on it.
+/// `prepareDefaultReturn` lambda (`cxx:1391-1404`, OCCT 8.0.1 #1407): attempt to
+/// set HS / W / aPCurve / pons to the default return values.
 ///
-/// Answers `false` where OCCT would dereference a null p-curve
-/// (`aPCurve->Value(W)`).
+/// Returns `false` when the arc has no pcurve on `F` (null guard before
+/// `HS->Initialize`).
 #[allow(clippy::too_many_arguments)]
 fn prepare_default_return(
     hs: &mut SurfaceAdaptor,
     f: &Face,
     arc: &Edge,
     param: f64,
+    w: &mut f64,
     pons: &mut GpPnt2d,
     a_p_curve: &mut Option<Arc<dyn Curve2d>>,
 ) -> bool {
-    hs.initialize(f);
+    // `cxx:1392-1397`: getCurveOnSurface first; null aborts without Initialize.
     let Some((pc, _, _)) = curve_on_surface_range(arc, f) else {
         return false;
     };
+    hs.initialize(f);
+    *w = param;
     *pons = pc.d0(param);
     *a_p_curve = Some(pc);
     true
@@ -132,46 +135,39 @@ impl ChFi3dBuilder {
         // TopoDS_Face F = TopoDS::Face(DStr.Shape(SD->Index(ons)));`
         // (`cxx:1189-1191`).
         let mut f_ref = hs_ref.face().cloned();
+        // `cxx:1197-1200` (OCCT 8.0.1 #1407): null face -> IsDone false path.
         let Some(f) = self
             .my_ds
             .shape(sd.index(ons), true)
             .and_then(Face::wrap)
         else {
-            return Err("StartSol: no face at SD->Index(ons)".into());
+            return Ok(false);
         };
         // `const ChFiDS_CommonPoint& aCommonPoint = SD->Vertex(isfirst, ons);
-        // HSBis.Nullify();` (`cxx:1192-1193`).
+        // HSBis.Nullify();` (`cxx:1201-1202`).
         let common_point = sd.vertex(is_first, ons);
         *hs_bis = None;
 
-        // `if (aCommonPoint.IsOnArc()) { ... }` (`cxx:1195-1220`).
+        // `if (aCommonPoint.IsOnArc()) { ... }` (`cxx:1204-1230`).
         if common_point.is_on_arc() {
             let not_ons = if ons == 1 { 2 } else { 1 };
             let common_point_bis = sd.vertex(is_first, not_ons);
             if common_point_bis.is_on_arc() {
-                // `const double ts = SD->Interference(ons).Parameter(isfirst);
-                // const double tns = SD->Interference(notons).Parameter(isfirst);`
-                // (`cxx:1204-1205`).
                 let ts = sd.interference(ons).parameter(is_first);
                 let tns = sd.interference(not_ons).parameter(is_first);
-                // `const bool isExtend = isfirst ? (ts - tns > 100 * tolesp)
-                // : (tns - ts > 100 * tolesp);` (`cxx:1207-1208`).
                 let is_extend = if is_first {
                     ts - tns > 100.0 * self.tolesp
                 } else {
                     tns - ts > 100.0 * self.tolesp
                 };
-                // `if (isExtend && !aCommonPoint.Point().IsEqual(CPbis.Point(), 0))`
-                // (`cxx:1209`).
                 if is_extend
                     && common_point.point().distance(common_point_bis.point()) > 0.0
                 {
-                    hs.initialize(&f);
+                    // `cxx:1220-1227` (OCCT 8.0.1 #1407): null pcurve before Initialize.
                     let Some(pc) = sd.interference(ons).p_curve_on_face().cloned() else {
-                        return Err("StartSol: null p-curve on SD->Interference(ons)".into());
+                        return Ok(false);
                     };
-                    // `RecS = false; pons = aPCurve->Value(tns); return false;`
-                    // (`cxx:1213-1216`).
+                    hs.initialize(&f);
                     *rec_s = false;
                     *pons = pc.d0(tns);
                     return Ok(false);
@@ -180,16 +176,20 @@ impl ChFi3dBuilder {
         }
 
         // `if (aCommonPoint.IsVertex() && !HC.IsNull() && !decroch)`
-        // (`cxx:1221`).
+        // (`cxx:1232`).
         if common_point.is_vertex() && hc.is_some() && !decroch {
             let Some(vcp) = common_point.vertex().cloned() else {
-                return Err("StartSol: vertex common point without vertex".into());
+                return Ok(false);
             };
             let Some(hc_cur) = hc.as_ref() else {
-                return Err("StartSol: null obstacle".into());
+                return Ok(false);
             };
-            // `const TopoDS_Edge EHC = HC->Edge();` (`cxx:1225`).
+            // `const TopoDS_Edge EHC = HC->Edge();` (`cxx:1236`).
             let ehc = hc_cur.edge().clone();
+            // `cxx:1238-1241` (OCCT 8.0.1 #1407): null VCP/EHC/Fref/HSref/HCref.
+            if ehc.0.is_null() || f_ref.is_none() || hs_ref.face().is_none() {
+                return Ok(false);
+            }
 
             // `TopoDS_Edge newedge; TopoDS_Edge edgereg; TopoDS_Face facereg;
             // TopoDS_Face bidface = Fref; bidface.Orientation(TopAbs_FORWARD);`
@@ -351,15 +351,15 @@ impl ChFi3dBuilder {
             let Some(fv_face) = fv.clone() else {
                 return Err("StartSol : chain is not possible, new obstacle not found".into());
             };
-            // `HS->Initialize(Fv); W = BRep_Tool::Parameter(VCP, newedge);
-            // HCref->Initialize(newedge, Fref);` (`cxx:1334-1337`).
-            hs.initialize(&fv_face);
-            *w = BRepTool::parameter_of_vertex(&new_edge.0, &vcp);
-            *hc_ref = Curve2dAdaptor::of_edge_face(&new_edge, &f_ref.clone().unwrap_or_else(Face::new));
-            // `TopoDS_Face newface = Fv; newface.Orientation(TopAbs_FORWARD);
-            // for (TopExp_Explorer ex(newface, TopAbs_EDGE); ...)
-            // if (ex.Current().IsSame(newedge)) { newedge =
-            // TopoDS::Edge(ex.Current()); break; }` (`cxx:1338-1346`).
+            // `cxx:1347-1353` / `cxx:1363-1369` (OCCT 8.0.1 #1407): null pcurves
+            // on Fref / Fv abort before Initialize.
+            let f_ref_face = f_ref.clone().ok_or_else(|| {
+                "StartSol : chain is not possible, new obstacle not found".to_string()
+            })?;
+            if curve_on_surface_range(&new_edge, &f_ref_face).is_none() {
+                return Ok(false);
+            }
+            // `TopoDS_Face newface = Fv; newface.Orientation(TopAbs_FORWARD);`
             let new_face = Face(fv_face.0.oriented(Orientation::Forward));
             let mut oriented_new_edge = new_edge.clone();
             for e in topo_tools::edges_of(&new_face.0) {
@@ -368,11 +368,17 @@ impl ChFi3dBuilder {
                     break;
                 }
             }
+            if curve_on_surface_range(&oriented_new_edge, &fv_face).is_none() {
+                return Ok(false);
+            }
+            // `HS->Initialize(Fv); W = ...; HCref->Initialize(newedge, Fref);`
+            hs.initialize(&fv_face);
+            *w = BRepTool::parameter_of_vertex(&new_edge.0, &vcp);
+            *hc_ref = Curve2dAdaptor::of_edge_face(&new_edge, &f_ref_face);
             // `HC->Initialize(newedge, Fv); pons = HC->Value(W);`
-            // (`cxx:1347-1348`).
             let adaptor = Curve2dAdaptor::of_edge_face(&oriented_new_edge, &fv_face);
             let Some(point) = adaptor.d0(*w) else {
-                return Err("StartSol: null obstacle curve".into());
+                return Ok(false);
             };
             *pons = point;
             *hc = Some(adaptor);
@@ -399,38 +405,48 @@ impl ChFi3dBuilder {
 
         if common_point.is_on_arc() {
             // `const TopoDS_Edge& anArcEdge = aCommonPoint.Arc();`
-            // (`cxx:1366`).
+            // (`cxx:1391`, OCCT 8.0.1 #1407 null guard).
             let Some(arc_shape) = common_point.arc().cloned() else {
-                return Err("StartSol: common point on arc without arc".into());
+                return Ok(false);
             };
             let Some(arc_edge) = Edge::wrap(arc_shape) else {
-                return Err("StartSol: common point arc is not an edge".into());
+                return Ok(false);
             };
+            if arc_edge.0.is_null() {
+                return Ok(false);
+            }
             let Some(param_arc) = common_point.parameter_on_arc() else {
-                return Err("StartSol: common point on arc without parameter".into());
+                return Ok(false);
             };
 
-            // `if (decroch) { HS->Initialize(Fref); W = ...
-            // aPCurve = getCurveOnSurface(anArcEdge, Fref); pons = ...;
-            // RecS = true; return true; }` (`cxx:1377-1385`).
+            // `if (decroch)` (`cxx:1406-1421`, OCCT 8.0.1 #1407).
             if decroch {
                 let Some(f_ref_face) = f_ref.clone() else {
-                    return Err("StartSol: decroch without reference face".into());
+                    prepare_default_return(
+                        hs, &f, &arc_edge, param_arc, w, pons, &mut a_p_curve,
+                    );
+                    return Ok(false);
+                };
+                let Some((pc, _, _)) = curve_on_surface_range(&arc_edge, &f_ref_face) else {
+                    prepare_default_return(
+                        hs, &f, &arc_edge, param_arc, w, pons, &mut a_p_curve,
+                    );
+                    return Ok(false);
                 };
                 hs.initialize(&f_ref_face);
                 *w = param_arc;
-                let Some((pc, _, _)) = curve_on_surface_range(&arc_edge, &f_ref_face) else {
-                    return Err("StartSol: null p-curve on the reference face".into());
-                };
                 *pons = pc.d0(*w);
                 *rec_s = true;
                 return Ok(true);
             }
 
-            // `if (SearchFace(Spine, aCommonPoint, F, Fv))` (`cxx:1387`).
+            // `if (SearchFace(Spine, aCommonPoint, F, Fv))` (`cxx:1423`).
             if self.search_face(spine, &common_point, Some(&f), &mut fv) {
                 let Some(fv_face) = fv.clone() else {
-                    return Err("StartSol: SearchFace answered without face".into());
+                    prepare_default_return(
+                        hs, &f, &arc_edge, param_arc, w, pons, &mut a_p_curve,
+                    );
+                    return Ok(false);
                 };
                 // `HS->Initialize(Fv); RecS = true;` (`cxx:1389-1390`).
                 hs.initialize(&fv_face);
@@ -492,37 +508,48 @@ impl ChFi3dBuilder {
                     // aPCurve->Value(aCommonPoint.ParameterOnArc()); }`
                     // (`cxx:1419-1425`).
                     if is_tangent_to_arc(&common_point, 0.1) {
+                        // `cxx:1472-1478` (OCCT 8.0.1 #1407).
                         let Some((pc, _, _)) = curve_on_surface_range(&arc_edge, &f) else {
-                            return Err("StartSol: null p-curve on the input face".into());
+                            prepare_default_return(
+                                hs, &f, &arc_edge, param_arc, w, pons, &mut a_p_curve,
+                            );
+                            return Ok(false);
                         };
                         *hs_bis = Some(SurfaceAdaptor::of_face(&f));
                         *p_bis = pc.d0(param_arc);
                         a_p_curve = Some(pc);
                     }
-                    // `aPCurve = getCurveOnSurface(newedge, Fv);`
-                    // (`cxx:1427`).
+                    // `cxx:1482-1486` (OCCT 8.0.1 #1407): null newedge.
                     let Some(new_edge) = new_edge else {
-                        return Err("StartSol: the guideline arc is not on the new face".into());
+                        prepare_default_return(
+                            hs, &f, &arc_edge, param_arc, w, pons, &mut a_p_curve,
+                        );
+                        return Ok(false);
                     };
                     let Some((pc, _, _)) = curve_on_surface_range(&new_edge, &fv_forward) else {
-                        return Err("StartSol: null p-curve on the new face".into());
+                        prepare_default_return(
+                            hs, &f, &arc_edge, param_arc, w, pons, &mut a_p_curve,
+                        );
+                        return Ok(false);
                     };
                     a_p_curve = Some(pc);
                 } else {
-                    // `TopoDS_Edge newedge = anArcEdge; newedge.Reverse();
-                    // Fv.Orientation(TopAbs_FORWARD); aPCurve =
-                    // getCurveOnSurface(newedge, Fv);` (`cxx:1430-1435`).
                     let new_edge = Edge(arc_edge.0.oriented(Orientation::Reversed));
                     let fv_forward = Face(fv_face.0.oriented(Orientation::Forward));
                     let Some((pc, _, _)) = curve_on_surface_range(&new_edge, &fv_forward) else {
-                        return Err("StartSol: null p-curve on the new face".into());
+                        prepare_default_return(
+                            hs, &f, &arc_edge, param_arc, w, pons, &mut a_p_curve,
+                        );
+                        return Ok(false);
                     };
                     a_p_curve = Some(pc);
                 }
-                // `pons = aPCurve->Value(aCommonPoint.ParameterOnArc());
-                // return true;` (`cxx:1436-1437`).
+                // `cxx:1495-1500` (OCCT 8.0.1 #1407): null aPCurve.
                 let Some(pc) = a_p_curve.as_ref() else {
-                    return Err("StartSol: null p-curve".into());
+                    prepare_default_return(
+                        hs, &f, &arc_edge, param_arc, w, pons, &mut a_p_curve,
+                    );
+                    return Ok(false);
                 };
                 *pons = pc.d0(param_arc);
                 return Ok(true);
@@ -543,15 +570,17 @@ impl ChFi3dBuilder {
                     }
                 }
                 if *c1_obstacle {
-                    // `HS->Initialize(Fv); HSref->Initialize(F); W = ...
-                    // HC = new BRepAdaptor_Curve2d();` (`cxx:1454-1457`).
+                    // `cxx:1519-1524` (OCCT 8.0.1 #1407): null HSref/HCref.
+                    if hs_ref.face().is_none() {
+                        prepare_default_return(
+                            hs, &f, &arc_edge, param_arc, w, pons, &mut a_p_curve,
+                        );
+                        return Ok(false);
+                    }
                     hs.initialize(&fv_face);
                     hs_ref.initialize(&f);
                     *w = param_arc;
                     *hc = Some(Curve2dAdaptor::new());
-                    // `TopoDS_Face newface = Fv; newface.Orientation(TopAbs_FORWARD);
-                    // for (TopExp_Explorer ex(newface, TopAbs_EDGE); ...) ...
-                    // (`cxx:1459-1469`).
                     let new_face = Face(fv_face.0.oriented(Orientation::Forward));
                     let mut new_edge = None;
                     for e in topo_tools::edges_of(&new_face.0) {
@@ -562,11 +591,12 @@ impl ChFi3dBuilder {
                     }
                     match new_edge {
                         Some(new_edge) => {
-                            // `HC->Initialize(newedge, Fv); pons = HC->Value(W);
-                            // HCref->Initialize(anArcEdge, F);` (`cxx:1472-1474`).
                             let adaptor = Curve2dAdaptor::of_edge_face(&new_edge, &fv_face);
                             let Some(point) = adaptor.d0(*w) else {
-                                return Err("StartSol: null obstacle curve".into());
+                                prepare_default_return(
+                                    hs, &f, &arc_edge, param_arc, w, pons, &mut a_p_curve,
+                                );
+                                return Ok(false);
                             };
                             *pons = point;
                             *hc = Some(adaptor);
@@ -584,18 +614,22 @@ impl ChFi3dBuilder {
                         None => {
                             // `prepareDefaultReturn(); return false;`
                             // (`cxx:1487-1491`).
-                            prepare_default_return(hs, &f, &arc_edge, param_arc, pons, &mut a_p_curve);
+                            prepare_default_return(
+                                hs, &f, &arc_edge, param_arc, w, pons, &mut a_p_curve,
+                            );
                             return Ok(false);
                         }
                     }
                 } else {
                     // `prepareDefaultReturn(); return false;` (`cxx:1493-1498`).
-                    prepare_default_return(hs, &f, &arc_edge, param_arc, pons, &mut a_p_curve);
+                    prepare_default_return(
+                        hs, &f, &arc_edge, param_arc, w, pons, &mut a_p_curve,
+                    );
                     return Ok(false);
                 }
             } else {
                 // `prepareDefaultReturn(); return false;` (`cxx:1500-1505`).
-                prepare_default_return(hs, &f, &arc_edge, param_arc, pons, &mut a_p_curve);
+                prepare_default_return(hs, &f, &arc_edge, param_arc, w, pons, &mut a_p_curve);
                 return Ok(false);
             }
         } else {

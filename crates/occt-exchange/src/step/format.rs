@@ -213,11 +213,19 @@ impl Default for StepHeader {
     }
 }
 
+/// `StepLong` (`StepData_StepWriter.hxx`): max characters per physical line.
+pub(super) const STEP_LONG: usize = 72;
+
 /// Incremental STEP writer — emits `#N=...;` records with an internal counter.
 pub struct StepWriter {
     pub(super) next_id: usize,
     pub(super) lines: Vec<String>,
     pub(super) header: StepHeader,
+    /// `thecurr` / `thelevel` / `theindent` / `theindval` for `AddString`.
+    pub(super) curr: String,
+    pub(super) level: usize,
+    pub(super) indent: bool,
+    pub(super) indval: usize,
 }
 
 impl StepWriter {
@@ -226,6 +234,62 @@ impl StepWriter {
             next_id: 1,
             lines: Vec::new(),
             header: StepHeader::default(),
+            curr: String::new(),
+            level: 0,
+            indent: true,
+            indval: 0,
+        }
+    }
+
+    /// `StepData_StepWriter::AddString` (`StepData_StepWriter.cxx:1229-1285`,
+    /// OCCT 8.0.1 #1318): chunk an oversized string across physical lines.
+    pub(super) fn add_string(&mut self, astr: &str, more: usize) {
+        let lnstr = astr.len();
+        let flush_line = |this: &mut Self, the_required: usize| {
+            this.lines.push(std::mem::take(&mut this.curr));
+            let mut indst = this.level * 2;
+            if this.indent {
+                indst += this.indval;
+            }
+            let initial = if indst < STEP_LONG && indst + the_required <= STEP_LONG {
+                indst
+            } else {
+                0
+            };
+            this.curr = " ".repeat(initial);
+        };
+
+        if lnstr + more <= STEP_LONG {
+            while self.curr.len() + lnstr + more > STEP_LONG {
+                flush_line(self, lnstr + more);
+            }
+            self.curr.push_str(astr);
+            return;
+        }
+
+        let bytes = astr.as_bytes();
+        let mut a_start = 0usize;
+        let mut a_rest = lnstr;
+        while a_rest > 0 {
+            if self.curr.len() + a_rest + more <= STEP_LONG {
+                self.curr
+                    .push_str(std::str::from_utf8(&bytes[a_start..a_start + a_rest]).unwrap_or(""));
+                return;
+            }
+            let a_room = STEP_LONG.saturating_sub(self.curr.len());
+            if a_room == 0 || (a_rest + more <= STEP_LONG && a_room < a_rest + more) {
+                flush_line(self, if a_rest + more <= STEP_LONG { a_rest + more } else { 0 });
+                continue;
+            }
+            let a_chunk = a_rest.min(a_room);
+            self.curr.push_str(
+                std::str::from_utf8(&bytes[a_start..a_start + a_chunk]).unwrap_or(""),
+            );
+            a_start += a_chunk;
+            a_rest -= a_chunk;
+            if a_rest > 0 {
+                flush_line(self, if a_rest + more <= STEP_LONG { a_rest + more } else { 0 });
+            }
         }
     }
 
@@ -243,10 +307,23 @@ impl StepWriter {
     }
 
     /// Emit one entity body (`TYPE(a,b,...)`) and return its record id.
+    /// Oversized bodies are chunked via [`Self::add_string`] (OCCT 8.0.1 #1318).
     pub fn emit(&mut self, entity: String) -> usize {
         let id = self.next_id;
         self.next_id += 1;
-        self.lines.push(format!("#{id}={entity};"));
+        let record = format!("#{id}={entity};");
+        if record.len() <= STEP_LONG {
+            self.lines.push(record);
+        } else {
+            // Flush any pending current line, then chunk the record.
+            if !self.curr.is_empty() {
+                self.lines.push(std::mem::take(&mut self.curr));
+            }
+            self.add_string(&record, 0);
+            if !self.curr.is_empty() {
+                self.lines.push(std::mem::take(&mut self.curr));
+            }
+        }
         id
     }
 

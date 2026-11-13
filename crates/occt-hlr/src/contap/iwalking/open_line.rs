@@ -139,6 +139,8 @@ impl ContapTheIWalking {
             save_n = 0;
             let mut index_of_path_point_do_not_check = 0i32;
             let mut a_nb_iter = 10;
+            // Consecutive iterations where Root > Tolerance (`gxx:1569`, OCCT 8.0.1).
+            let mut a_nb_bad_root_iter = 0i32;
 
             while !arrive {
                 cadre = self.cadrage(&mut born_inf, &mut born_sup, &mut uvap, &mut pas_c, step_sign);
@@ -155,11 +157,16 @@ impl ContapTheIWalking {
 
                 if solver.is_done() {
                     if func.root().abs() > func.tolerance() {
-                        // `gxx:1584-1601`: no solution for the tolerance.
+                        // `gxx:1596-1610`: no solution for the tolerance.
                         pas_c /= 2.0;
+                        a_nb_bad_root_iter += 1;
                         let pas_cu = (pas_c * self.previous_d2d.x()).abs();
                         let pas_cv = (pas_c * self.previous_d2d.y()).abs();
-                        if pas_cu <= self.vec_tolerance[0] && pas_cv <= self.vec_tolerance[1] {
+                        // Step collapsed, or Cadrage keeps resetting after too
+                        // many bad-root attempts (`MaxDivision`).
+                        if (pas_cu <= self.vec_tolerance[0] && pas_cv <= self.vec_tolerance[1])
+                            || a_nb_bad_root_iter > super::deflection::MAX_DIVISION
+                        {
                             if current_line.nb_points() == 1 {
                                 break;
                             }
@@ -172,6 +179,7 @@ impl ContapTheIWalking {
                             self.seq_ajout.push(idx);
                         }
                     } else {
+                        a_nb_bad_root_iter = 0;
                         let root = solver.root();
                         uvap[0] = root.value(1);
                         uvap[1] = root.value(2);

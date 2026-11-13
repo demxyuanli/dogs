@@ -19,8 +19,6 @@
 //! (`#ifdef OCCT_DEBUG`), so a release build always runs the `1` variant and
 //! the port does the same.
 
-use std::sync::atomic::{AtomicI32, Ordering};
-
 use occt_core::precision::CONFUSION;
 
 use crate::abs::{Orientation, ShapeType, State};
@@ -42,9 +40,12 @@ use super::super::solid_builder::SolidBuilder;
 use super::super::wire_edge_set::WireEdgeSet;
 use super::Builder;
 
-/// `STATIC_SOLIDINDEX` (`Builder.cxx:1609`, `:1618`, `:1828-1835`): the
-/// operand `SplitShapes` classifies a touched edge against.
-static STATIC_SOLID_INDEX: AtomicI32 = AtomicI32::new(0);
+// `STATIC_SOLIDINDEX` (`Builder.cxx:70-72`, `:1609`, `:1618`, `:1828-1835`):
+// the operand `SplitShapes` classifies a touched edge against.
+// OCCT 8.0.1: `static` -> `thread_local` so concurrent builds do not race.
+thread_local! {
+    static STATIC_SOLID_INDEX: std::cell::Cell<i32> = const { std::cell::Cell::new(0) };
+}
 
 impl Builder {
     /// `SplitEdge(E, ToBuild1, ToBuild2)` (`cxx:925-936`).
@@ -435,11 +436,11 @@ impl Builder {
         let mut sfs = ShellFaceSet::new();
 
         // cxx:1609-1622
-        STATIC_SOLID_INDEX.store(1, Ordering::SeqCst);
+        STATIC_SOLID_INDEX.with(|c| c.set(1));
         for s_cur in &ls1 {
             self.fill_solid(s_cur, to_build1, &ls2, to_build2, &mut sfs, rev_ori1);
         }
-        STATIC_SOLID_INDEX.store(2, Ordering::SeqCst);
+        STATIC_SOLID_INDEX.with(|c| c.set(2));
         for s_cur in &ls2 {
             self.fill_solid(s_cur, to_build2, &ls1, to_build1, &mut sfs, rev_ori2);
         }
@@ -585,7 +586,7 @@ impl Builder {
                     } else {
                         // cxx:1826-1861 (3d): classify a fixed probe point of
                         // the edge against the other operand solid.
-                        let sol = if STATIC_SOLID_INDEX.load(Ordering::SeqCst) == 1 {
+                        let sol = if STATIC_SOLID_INDEX.with(|c| c.get()) == 1 {
                             self.my_shape2.clone()
                         } else {
                             self.my_shape1.clone()

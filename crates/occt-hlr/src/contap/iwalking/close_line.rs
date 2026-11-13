@@ -159,6 +159,8 @@ impl ContapTheIWalking {
             // `gxx:2470` read, so the initial store is dead in OCCT as well.
 
             let mut a_nb_iter = 10;
+            // Consecutive iterations where Root > Tolerance (`gxx:2165`, OCCT 8.0.1).
+            let mut a_nb_bad_root_iter = 0i32;
 
             while !arrive {
                 cadre = self.cadrage(&mut born_inf, &mut born_sup, &mut uvap, &mut pas_c, step_sign);
@@ -177,11 +179,14 @@ impl ContapTheIWalking {
 
                 if solver.is_done() {
                     if func.root().abs() > func.tolerance() {
-                        // `gxx:2174-2219`.
+                        // `gxx:2191-2219`.
                         pas_c /= 2.0;
+                        a_nb_bad_root_iter += 1;
                         let pas_cu = (pas_c * self.previous_d2d.x()).abs();
                         let pas_cv = (pas_c * self.previous_d2d.y()).abs();
-                        if pas_cu <= self.vec_tolerance[0] && pas_cv <= self.vec_tolerance[1] {
+                        if (pas_cu <= self.vec_tolerance[0] && pas_cv <= self.vec_tolerance[1])
+                            || a_nb_bad_root_iter > super::deflection::MAX_DIVISION
+                        {
                             if current_line.nb_points() == 1 {
                                 self.remove_two_end_points(i as i32);
                                 break;
@@ -210,6 +215,7 @@ impl ContapTheIWalking {
                             }
                         }
                     } else {
+                        a_nb_bad_root_iter = 0;
                         let root = solver.root();
                         uvap[0] = root.value(1);
                         uvap[1] = root.value(2);

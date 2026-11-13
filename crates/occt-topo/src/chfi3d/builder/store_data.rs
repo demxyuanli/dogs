@@ -2,7 +2,9 @@
 //! `ChFiDS_SurfData`.
 //!
 //! Source: `ModelingAlgorithms/TKFillet/ChFi3d/ChFi3d_Builder_6.cxx:629-1005`
-//! (OCCT 8.0.0).
+//! (OCCT 8.0.1 #1407: `checkcurve` is `thread_local` in cxx; the port has no
+//! process-wide static adaptor — each `StoreData` builds a fresh trimmed
+//! curve, so the race the cxx fix addresses does not exist here).
 //!
 //! Divergences that are not heuristics:
 //! - the member function becomes a free function over `&mut SurfData` and

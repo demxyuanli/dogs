@@ -27,7 +27,9 @@
 //!   `:628-635`, `:701-771`) have no Rust counterpart and are not needed: the
 //!   evaluations below are total.
 
-use occt_core::gp::GpVec;
+use occt_core::elib::clib;
+use occt_core::gp::{GpVec, GpXyz};
+use occt_core::math_trig_roots::TrigonometricFunctionRoots;
 use occt_core::precision::PCONFUSION;
 use occt_geom2d::curve::Curve2d;
 use occt_math::{
@@ -43,6 +45,32 @@ const REAL_LAST: f64 = f64::MAX;
 
 /// `aMaxKnots` (`cxx:436`): the largest knot array fed to `FillSubIntervals`.
 const A_MAX_KNOTS: usize = 101;
+
+/// Origin / Cos / Sin coefficients for Circle or Ellipse
+/// (`ElementaryMaximum` getCoefficients, OCCT 8.0.1).
+fn elementary_trig_coeffs(curve: &dyn Curve) -> Option<(GpXyz, GpXyz, GpXyz)> {
+    if let Some(circle) = curve.gp_circ() {
+        let origin = *circle.location().xyz();
+        let cos = circle.x_axis().direction().xyz().multiplied(circle.radius());
+        let sin = circle.y_axis().direction().xyz().multiplied(circle.radius());
+        return Some((origin, cos, sin));
+    }
+    if let Some(ellipse) = curve.gp_ellipse() {
+        let origin = *ellipse.location().xyz();
+        let cos = ellipse
+            .x_axis()
+            .direction()
+            .xyz()
+            .multiplied(ellipse.major_radius());
+        let sin = ellipse
+            .y_axis()
+            .direction()
+            .xyz()
+            .multiplied(ellipse.minor_radius());
+        return Some((origin, cos, sin));
+    }
+    None
+}
 
 /// `GeomLib_CheckCurveOnSurface_TargetFunc` (`cxx:52-205`).
 struct TargetFunc<'a> {
@@ -70,6 +98,105 @@ impl<'a> TargetFunc<'a> {
     /// `LastParameter()` (`cxx:189-191`).
     fn last_parameter(&self) -> f64 {
         self.last
+    }
+
+    /// `ElementaryMaximum` (`GeomLib_CheckCurveOnSurface.cxx` OCCT 8.0.1,
+    /// added before private section of `TargetFunc`): exact max for Line/Line
+    /// and Circle/Ellipse pairs; skips PSO + Newton when true.
+    fn elementary_maximum(&self, best_value: &mut f64, best_parameter: &mut f64) -> bool {
+        let line1 = self.curve1.gp_line().is_some();
+        let line2 = self.curve2.gp_line().is_some();
+        if line1 && line2 {
+            let mut first_value = REAL_LAST;
+            let mut last_value = REAL_LAST;
+            if !self.value_scalar(self.first, &mut first_value)
+                || !self.value_scalar(self.last, &mut last_value)
+            {
+                return false;
+            }
+            if first_value <= last_value {
+                *best_value = first_value;
+                *best_parameter = self.first;
+            } else {
+                *best_value = last_value;
+                *best_parameter = self.last;
+            }
+            return true;
+        }
+
+        let coeffs1 = elementary_trig_coeffs(self.curve1);
+        let coeffs2 = elementary_trig_coeffs(self.curve2);
+        let (Some((origin1, cos1, sin1)), Some((origin2, cos2, sin2))) = (coeffs1, coeffs2) else {
+            return false;
+        };
+
+        let offset = origin1.subtracted(&origin2);
+        let cos_coeff = cos1.subtracted(&cos2);
+        let sin_coeff = sin1.subtracted(&sin2);
+
+        // Derivative of squared distance in trigonometric form (`cxx` 8.0.1).
+        let cos_cos = 2.0 * cos_coeff.dot(&sin_coeff);
+        let cos_sin = 0.5 * (sin_coeff.square_modulus() - cos_coeff.square_modulus());
+        let cos = offset.dot(&sin_coeff);
+        let sin = -offset.dot(&cos_coeff);
+        let constant = -cos_coeff.dot(&sin_coeff);
+
+        if cos_cos == 0.0 && cos_sin == 0.0 && cos == 0.0 && sin == 0.0 && constant == 0.0 {
+            *best_parameter = self.first;
+            return self.value_scalar(self.first, best_value);
+        }
+
+        let period = 2.0 * std::f64::consts::PI;
+        let a_first = clib::in_period(self.first, 0.0, period);
+        let a_shift = a_first - self.first;
+        let a_last = a_first + (self.last - self.first).min(period);
+        let a_scale = cos_cos
+            .abs()
+            .max(cos_sin.abs())
+            .max(cos.abs())
+            .max(sin.abs())
+            .max(constant.abs());
+        if a_scale == 0.0 {
+            return false;
+        }
+        let roots = TrigonometricFunctionRoots::new_abcde(
+            cos_cos / a_scale,
+            cos_sin / a_scale,
+            cos / a_scale,
+            sin / a_scale,
+            constant / a_scale,
+            a_first,
+            a_last,
+        );
+        if !roots.is_done()
+            || roots.infinite_roots()
+            || ((self.last - self.first) >= period && roots.nb_solutions() == 0)
+        {
+            return false;
+        }
+
+        *best_value = REAL_LAST;
+        *best_parameter = self.first;
+        let mut update_best = |parameter: f64| -> bool {
+            let mut value = REAL_LAST;
+            if !self.value_scalar(parameter, &mut value) {
+                return false;
+            }
+            if value < *best_value {
+                *best_value = value;
+                *best_parameter = parameter;
+            }
+            true
+        };
+        if !update_best(self.first) || !update_best(self.last) {
+            return false;
+        }
+        for index in 1..=roots.nb_solutions() {
+            if !update_best(roots.value(index) - a_shift) {
+                return false;
+            }
+        }
+        true
     }
 
     /// `Value(const double theX, double& theFVal)` (`cxx:74-93`):
@@ -432,6 +559,11 @@ fn min_computing(
     par_sup.set_value(1, func.last_parameter());
     *best_parameter = par_inf.value(1);
     *best_value = REAL_LAST;
+
+    // OCCT 8.0.1: ElementaryMaximum before PSO (`MinComputing` after ParInf seed).
+    if func.elementary_maximum(best_value, best_parameter) {
+        return true;
+    }
 
     if !pso_perform(
         func,

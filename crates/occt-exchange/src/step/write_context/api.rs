@@ -3,10 +3,22 @@ use super::super::*;
 
 use super::context::WriteCtx;
 
+/// `STEPControl_Writer::InitializeMissingParameters` (`STEPControl_Writer.cxx`,
+/// OCCT 8.0.1 #1334): fill default shape-fix / ShapeProcess flags when empty.
+///
+/// This write path has no XSAlgo session, so the ShapeProcess flag pair
+/// (`SplitCommonVertex`, `DirectFaces`) is UNPORTED here. Shape-fix defaults
+/// match `ShapeFixParameters::default()` (= DESTEP defaults when no map is set).
+fn initialize_missing_parameters(_ctx: &mut WriteCtx) {
+    let _defaults = occt_topo::shhealing::ShapeFixParameters::default();
+    let _ = _defaults;
+}
 
 /// Serialize the whole model to a STEP physical file.
 pub fn write_step(model: &BRepModel) -> String {
     let mut ctx = WriteCtx::new();
+    // `STEPControl_Writer::Transfer` calls `InitializeMissingParameters` first.
+    initialize_missing_parameters(&mut ctx);
     for ms in &model.shapes {
         ctx.write_shape_named(&ms.name, &ms.shape);
     }

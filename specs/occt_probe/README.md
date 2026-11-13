@@ -28,7 +28,7 @@ The probe is one executable built from several translation units (the monolithic
 | `delaun_probe.cpp` | `--delauncheck` / `--delaunfeed` / `--delaunstruct` / `--delaunsteps` / `--delaunwhy` |
 | `boundary_probe.cpp` | `--boundary` |
 | `structdump_probe.cpp` | `--lens`, `--structdump`, `--dcstruct`, `--srfnodes` (`ZZ*Algo` subclasses) |
-| `srfparams_probe.cpp` | `--srparams`, `--facestats`, `--facedump`, `--edgedu` |
+| `srfparams_probe.cpp` | `--srparams`, `--facestats`, `--facedump`, `--edgedu` (CLI `<angle>` is **degrees**, same as `--dcstruct` / `--structdump`; converted to radians in `main`) |
 | `meshdbg_probe.cpp` | `--torusdbg`, `--healerdbg`, `--ctxdbg`, `--rangereplay`, `--algospy` |
 | `wiredbg_probe.cpp` | `--orderdbg`, `--wiredbg`, `--wiredbgi` |
 | `iges_probe.cpp` | `--iges`, `--igespc` |

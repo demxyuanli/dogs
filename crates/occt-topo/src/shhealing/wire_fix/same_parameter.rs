@@ -7,7 +7,7 @@ use crate::meshing::edge_discret::CurveOnSurface;
 /// True when `check_pcurve_rep_range` runs the `cxx:175`
 /// `XSAlgo_ShapeProcessor::CheckPCurve` call. ENABLED (t336); see the call site
 /// for the on/off measurements that replaced the earlier block on it.
-pub(in crate::shhealing) const T312_WIRE_XSALGO_CHECKPCURVE: bool = true;
+pub(in crate::shhealing) const T312_WIRE_XSALGO_CHECKPCURVE: bool = false;
 
 /// `Extrema_LocateExtPC::Perform` + `IsDone` + `SquareDistance`
 /// (`BRepLib_ValidateEdge.cxx:188-190`, `:204-206`, `:209-211`, `:219-221`):

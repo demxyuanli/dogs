@@ -1,10 +1,10 @@
 # dogs — OCCT → Rust 忠实移植
 
-本仓库把 **Open CASCADE Technology 8.0.0**（OCCT）按控制流逐步搬迁到 Rust：以官方 C++ 行为为准绳，用真实几何对拍既有基线，而不是另写一套「看起来差不多」的几何库。
+本仓库把 **Open CASCADE Technology 8.0.1**（OCCT）按控制流逐步搬迁到 Rust：以官方 C++ 行为为准绳，用真实几何对拍既有基线，而不是另写一套「看起来差不多」的几何库。本地对照源码：`D:\source\OCCT-src`（tag `V8_0_1`）。
 
 | | |
 |---|---|
-| 标准答案 | OCCT 8.0.0 源码行为；缺分支就标注文件:行号 |
+| 标准答案 | OCCT 8.0.1 源码行为；缺分支就标注文件:行号 |
 | 验收方式 | 对拍既有基线（网格 v/f、体积、拓扑）；不为对齐新写测试 |
 | 读者入口 | [`specs/occt_port_interface_review_2026-11-12.pdf`](specs/occt_port_interface_review_2026-11-12.pdf)（图文综合说明） |
 

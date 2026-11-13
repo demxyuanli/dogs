@@ -30,8 +30,28 @@ pub fn rough_barycenter(shape: &TopoShape) -> GpPnt {
     GpPnt::from_xyz(&acc.divided(verts.len() as f64))
 }
 
-/// Number of Gauss points for integrating along a curve (EdgeTool::IntegrationOrder).
+/// Number of Gauss points for integrating along a curve
+/// (`BRepGProp_EdgeTool::IntegrationOrder`, OCCT 8.0.1).
+///
+/// Bezier / BSpline use the curve's own `NbPoles()` (via `bspline_poles` /
+/// `bezier_poles` / `as_bspline_curve`); down-casting a null `Curve()` handle
+/// for curve-on-surface edges is what #1382 removed.
 pub fn curve_integration_order(c: &dyn Curve, a: f64, b: f64) -> usize {
+    // `GeomAbs_BezierCurve` / `GeomAbs_BSplineCurve`: `2 * BAC.NbPoles() - 1`.
+    let nb_poles = c
+        .bspline_poles()
+        .map(|p| p.len())
+        .or_else(|| c.as_bspline_curve().map(|b| b.nb_poles()))
+        .or_else(|| c.bezier_poles().map(|p| p.len()));
+    if let Some(n) = nb_poles {
+        if n > 0 {
+            return 2 * n - 1;
+        }
+    }
+    // `GeomAbs_Parabola`.
+    if c.gp_parabola().is_some() {
+        return 5;
+    }
     let kind = classify_arc_kind(c, a, b);
     match kind {
         ArcKind::Line => 2,

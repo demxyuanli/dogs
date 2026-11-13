@@ -17,11 +17,15 @@ impl GeomBSplineCurve {
     fn eval_span(&self, u: f64) -> (f64, i32, &[f64], &[i32]) {
         let uknots = self.distinct.as_slice();
         let umults = self.mults.as_slice();
+        // `Geom_BSplineCurve::PeriodicNormalization` before locate
+        // (`Geom_BSplineCurve_1.cxx` EvalD* / `cxx:1219`, OCCT 8.0.1 #1329).
+        let mut u_norm = u;
+        self.periodic_normalization(&mut u_norm);
         let (mut span, new_u) = occt_core::bspl::locate::locate_parameter(
             self.degree as i32,
             uknots,
             Some(umults),
-            u,
+            u_norm,
             self.periodic,
             0,
         );

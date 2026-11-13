@@ -410,6 +410,8 @@ fn walk_dir(
     let mut u = u0;
     let mut v = v0;
     let mut nb_div = 0;
+    // `aNbBadRootIter` (`gxx:1569`, OCCT 8.0.1): consecutive Root > Tolerance.
+    let mut a_nb_bad_root_iter = 0i32;
     let mut prev_d3d = d3d;
     for _ in 0..8000 {
         let mut binf = (um, vm);
@@ -432,13 +434,16 @@ fn walk_dir(
             continue;
         };
         if func.root().abs() > func.tolerance() {
+            // `IntWalk_IWalking.gxx:1596-1601` (OCCT 8.0.1): stop after
+            // `MaxDivision` (60) consecutive bad-root subdivisions.
             pasc *= 0.5;
-            nb_div += 1;
-            if nb_div > 12 || pas_too_small(pasc, d2d, tol_u, tol_v) {
+            a_nb_bad_root_iter += 1;
+            if pas_too_small(pasc, d2d, tol_u, tol_v) || a_nb_bad_root_iter > 60 {
                 break;
             }
             continue;
         }
+        a_nb_bad_root_iter = 0;
         let pn = func.point();
         if line.points.iter().any(|q| q.p.square_distance(&pn) <= CONFUSION * CONFUSION)
         {

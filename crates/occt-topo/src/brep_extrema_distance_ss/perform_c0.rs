@@ -74,11 +74,11 @@ pub(super) fn perform_c0(
     // `cxx:500-513`.
     for i_e in 0..2 {
         let (e, e_other) = if i_e == 0 { (s1, s2) } else { (s2, s1) };
-        // `cxx:515-518`.
+        // `cxx:515-522` (OCCT 8.0.1 #1382): null 3D curve aborts PERFORM_C0.
         let (a_first, a_last) = BRepTool::edge_parameters(e);
         let p_curv = match BRepTool::edge_curve(e) {
             Some(c) => c,
-            None => continue,
+            None => return,
         };
         let (a_f_other, a_l_other) = BRepTool::edge_parameters(e_other);
         let p_curv_other = match BRepTool::edge_curve(e_other) {

@@ -1,11 +1,12 @@
 //! `BRepCheck_Face` — face validity checks.
 //!
-//! Source: `ModelingAlgorithms/TKTopAlgo/BRepCheck/BRepCheck_Face.cxx`. Ported
-//! here: `ClassifyWires` (`cxx:302-434`), `OrientationOfWires` (`cxx:436-557`),
-//! `IntersectWires` (`cxx:169-296`), the static `Intersect`
-//! (`cxx:626-797`), `IsInside` (`cxx:802-875`) and `CheckThin` (`cxx:877-952`).
-//! `OrientationOfWires` is ported but not wired into [`face_check`] yet — see
-//! [`ORIENTATION_OF_WIRES`].
+//! Source: `ModelingAlgorithms/TKTopAlgo/BRepCheck/BRepCheck_Face.cxx`
+//! (OCCT 8.0.1 #1375). Ported here: `ClassifyWires` (`cxx:302-434` + UV-box
+//! rejection), `OrientationOfWires` (`cxx:436-557`), `IntersectWires`
+//! (`cxx:169-296`), the static `Intersect` (`cxx:626-797`), `IsInside`
+//! (`cxx:802-875`), `CheckThin` (`cxx:877-952`), and `ComputeWireUVBounds`
+//! (`cxx:825-867`). `OrientationOfWires` is ported but not wired into
+//! [`face_check`] yet — see [`ORIENTATION_OF_WIRES`].
 //!
 //! `BRepTopAdaptor_FClass2d` is [`crate::brep_top_adaptor_fclass2d`].
 
@@ -140,7 +141,49 @@ struct WireEntry {
     contains: Vec<Wire>,
 }
 
-/// `BRepCheck_Face::ClassifyWires` (`BRepCheck_Face.cxx:302-434`).
+/// `ComputeWireUVBounds` (`BRepCheck_Face.cxx:825-867`, OCCT 8.0.1 #1375).
+///
+/// Precomputes a reliable UV box for cheap rejection of disjoint wire pairs.
+/// Returns `false` when the wire is open, a pcurve is missing, the edge range
+/// is infinite / outside the adaptor, or the box is void / open.
+fn compute_wire_uv_bounds(face: &Face, wire: &Wire) -> Option<BndBox2d> {
+    // `cxx:831-834`: only closed wires get a rejection box.
+    if !BRepTool::is_closed(&wire.0) {
+        return None;
+    }
+    let mut uv_box = BndBox2d::new();
+    for edge in crate::topo_tools::edges_of_wire(wire) {
+        let (pc, first, last) = pcurve_on_face(&edge, face)?;
+        // `cxx:848-853`: IsInside uses the original edge range, so a clamped
+        // box cannot safely reject the wire.
+        if Precision::is_infinite(first)
+            || Precision::is_infinite(last)
+            || first < pc.first_parameter()
+            || last > pc.last_parameter()
+        {
+            return None;
+        }
+        crate::bnd_lib_add2d::add_geom2d_range(
+            pc.as_ref(),
+            first,
+            last,
+            PCONFUSION,
+            &mut uv_box,
+        );
+    }
+    // `cxx:855-860`.
+    if uv_box.is_void()
+        || uv_box.is_open_xmin()
+        || uv_box.is_open_xmax()
+        || uv_box.is_open_ymin()
+        || uv_box.is_open_ymax()
+    {
+        return None;
+    }
+    Some(uv_box)
+}
+
+/// `BRepCheck_Face::ClassifyWires` (`BRepCheck_Face.cxx:302-434`, OCCT 8.0.1 #1375).
 ///
 /// Returns the status together with the filled `myMapImb`, which
 /// [`orientation_of_wires`] reads. The throwaway `BRep_Builder` face of
@@ -158,6 +201,12 @@ fn classify_wires(f: &Face) -> (Status, Vec<WireEntry>) {
         return (Status::NoError, Vec::new());
     }
 
+    // `cxx:354-365` (OCCT 8.0.1 #1375): precompute UV boxes for cheap rejection.
+    let wire_boxes: Vec<Option<BndBox2d>> = wires
+        .iter()
+        .map(|w| compute_wire_uv_bounds(&face, w))
+        .collect();
+
     let mut map: Vec<WireEntry> = wires
         .iter()
         .map(|w| WireEntry {
@@ -167,7 +216,7 @@ fn classify_wires(f: &Face) -> (Status, Vec<WireEntry>) {
         })
         .collect();
 
-    for wir1 in &wires {
+    for (i1, wir1) in wires.iter().enumerate() {
         // `cxx:355-360`: a face made of this wire alone, on the same surface.
         let fclass2d = BrepTopAdaptorFClass2d::new_with_wires(
             &face,
@@ -181,9 +230,17 @@ fn classify_wires(f: &Face) -> (Status, Vec<WireEntry>) {
                 e.orientation = e.orientation.reversed();
             }
         }
-        for wir2 in &wires {
+        let box1 = wire_boxes[i1].as_ref();
+        for (i2, wir2) in wires.iter().enumerate() {
             if is_same(&wir2.0, &wir1.0) {
                 continue;
+            }
+            // `cxx:398-402` (OCCT 8.0.1 #1375): disjoint UV boxes cannot contain
+            // one another.
+            if let (Some(b1), Some(b2)) = (box1, wire_boxes[i2].as_ref()) {
+                if b1.is_out_box(b2) {
+                    continue;
+                }
             }
             if is_inside(wir2, wire_bien_oriente, &fclass2d, &face) {
                 // `cxx:379`.

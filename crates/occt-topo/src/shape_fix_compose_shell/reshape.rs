@@ -437,6 +437,11 @@ impl SharedReShape {
         self.0.borrow_mut().status_last(s)
     }
 
+    /// `Apply` answering null as `None` (removed shape); see [`MapReShape::apply_option`].
+    pub fn apply_option(&mut self, s: &TopoShape) -> Option<TopoShape> {
+        self.0.borrow_mut().apply_option(s)
+    }
+
     /// `BRepTools_ReShape::CopyVertex(V, tol)` (`BRepTools_ReShape.cxx:613-637`).
     /// A vertex that is not yet recorded is empty-copied and `Replace`d. A
     /// recorded vertex is `Apply`'d and `UpdateVertex`'d in place.

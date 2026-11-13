@@ -344,13 +344,13 @@ pub(super) fn edge_face_impl(
         }
     }
 
-    // `cxx:1097-1186`: the `GeomAbs_C0` continuation.
+    // `cxx:1097-1186` (OCCT 8.0.1 #1382): null 3D curve aborts the C0 arm.
     let (a_first, a_last) = BRepTool::edge_parameters(the_s1);
     let p_curv = match BRepTool::edge_curve(the_s1) {
         Some(c) => c,
         None => return,
     };
-    // `cxx:1099`.
+    // `cxx:1107`.
     if p_curv.continuity() != 0 {
         return;
     }

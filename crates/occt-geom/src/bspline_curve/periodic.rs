@@ -4,7 +4,71 @@ use occt_core::gp::GpPnt;
 
 use super::curve::GeomBSplineCurve;
 
+/// `std::nextafter(x, toward)` for the residual-overshoot arm of
+/// `PeriodicNormalization` (`Geom_BSplineCurve.cxx:1251-1258`).
+fn next_after_toward(x: f64, toward: f64) -> f64 {
+    if x.is_nan() || toward.is_nan() {
+        return f64::NAN;
+    }
+    if x == toward {
+        return toward;
+    }
+    if x == 0.0 {
+        return if toward < 0.0 {
+            -f64::from_bits(1)
+        } else {
+            f64::from_bits(1)
+        };
+    }
+    let bits = x.to_bits();
+    let bits = if (toward > x) == (x > 0.0) {
+        bits + 1
+    } else {
+        bits - 1
+    };
+    f64::from_bits(bits)
+}
+
 impl GeomBSplineCurve {
+    /// `Geom_BSplineCurve::PeriodicNormalization` (`Geom_BSplineCurve.cxx:1219-1260`,
+    /// OCCT 8.0.1 #1329): one-shot period shift via `floor`, not a while-loop.
+    /// Allows `parameter == last` (same point as first on a periodic curve).
+    pub fn periodic_normalization(&self, parameter: &mut f64) {
+        if !self.periodic {
+            return;
+        }
+        let a_first = self.knots[self.degree];
+        let a_last = self.knots[self.knots.len() - 1 - self.degree];
+        if *parameter >= a_first && *parameter <= a_last {
+            return;
+        }
+        let a_period = a_last - a_first;
+        if a_period == 0.0 {
+            return;
+        }
+        // Shift by the exact number of full periods in one step - O(1).
+        let a_nb_periods = ((*parameter - a_first) / a_period).floor();
+        if a_nb_periods != 0.0 {
+            *parameter -= a_nb_periods * a_period;
+        }
+        // One-step correction for floating-point residual overshoot.
+        if *parameter > a_last {
+            let a_new = *parameter - a_period;
+            *parameter = if a_new == *parameter {
+                next_after_toward(a_new, a_first)
+            } else {
+                a_new
+            };
+        } else if *parameter < a_first {
+            let a_new = *parameter + a_period;
+            *parameter = if a_new == *parameter {
+                next_after_toward(a_new, a_last)
+            } else {
+                a_new
+            };
+        }
+    }
+
     /// `Geom_BSplineCurve::SetNotPeriodic()` (`Geom_BSplineCurve.cxx:974-1019`):
     /// `BSplCLib::PrepareUnperiodize` + `BSplCLib::Unperiodize` (`BSplCLib.cxx:2967-3080`)
     /// followed by `updateKnots()`.

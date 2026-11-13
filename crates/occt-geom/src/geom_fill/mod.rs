@@ -98,7 +98,9 @@ pub use frenet::Frenet;
 pub use function_draft::FunctionDraft;
 pub use function_guide::FunctionGuide;
 pub use generator::generator_surface;
-pub use gordon::{Gordon, GordonBuilder};
+pub use gordon::{
+    ApproximationMode, BuildReport, BuildStage, Gordon, NetworkSurface, ResultStatus,
+};
 pub use guide_trihedron_ac::GuideTrihedronAC;
 pub use guide_trihedron_plan::GuideTrihedronPlan;
 pub use trihedron_with_guide::{TrihedronWithGuide, TrihedronWithGuideState};

@@ -20,7 +20,7 @@
 
 | 对象 | 口径 | 工具 |
 |---|---|---|
-| OCCT 侧源码根 | `D:\source\OCCT-src\src`（OCCT 8.0.0） | `Get-ChildItem -Recurse` |
+| OCCT 侧源码根 | `D:\source\OCCT-src\src`（OCCT 8.0.1 / tag `V8_0_1`） | `Get-ChildItem -Recurse` |
 | OCCT 行数 | `.cxx` + `.hxx`（计划口径）；另标 `.lxx` / `.gxx` / `GTests` | `Get-Content \| Measure-Object -Line` |
 | Rust 侧 | `crates/{occt-core,occt-math,occt-geom,occt-geom2d,occt-topo}`，**排除 `target/`** | 同上 |
 | Rust 行数 | 逐文件求和，**含 `tests/` 与 `examples/`** | 同上 |

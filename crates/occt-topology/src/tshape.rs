@@ -572,8 +572,8 @@ impl Default for EdgeGeomCore {
             first: f64::NEG_INFINITY,
             last: f64::INFINITY,
             tolerance: occt_core::precision::REAL_EPSILON,
-            same_parameter: false,
-            same_range: false,
+            same_parameter: true,
+            same_range: true,
             degenerated: false,
             vertex_params: Vec::new(),
             polygon3d: None,
@@ -782,13 +782,15 @@ impl VertexShape {
 }
 impl EdgeShape {
     pub fn new() -> Self {
+        // `BRep_TEdge::BRep_TEdge()` (`BRep_TEdge.cxx:31-38`): SameParameter /
+        // SameRange start true on a freshly built edge.
         Self {
             base: TShape::new(ShapeType::Edge),
             first: f64::NEG_INFINITY,
             last: f64::INFINITY,
             tolerance: occt_core::precision::REAL_EPSILON,
-            same_parameter: false,
-            same_range: false,
+            same_parameter: true,
+            same_range: true,
             degenerated: false,
         }
     }

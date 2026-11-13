@@ -12,8 +12,9 @@ use super::ContapTheIWalking;
 const COS_REF_3D: f64 = 0.98;
 /// `CosRef2D` (`gxx:2609`).
 const COS_REF_2D: f64 = 0.88;
-/// `MaxDivision` (`gxx:2611`).
-const MAX_DIVISION: i32 = 60;
+/// `MaxDivision` (`gxx:39` / formerly `:2611`, OCCT 8.0.1): max consecutive
+/// bad-root subdivisions before `ComputeOpenLine` / `ComputeCloseLine` stop.
+pub(super) const MAX_DIVISION: i32 = 60;
 
 impl ContapTheIWalking {
     /// `TestDeflection(sp, Finished, UV, StatusPrecedent, NbDivision, Step,

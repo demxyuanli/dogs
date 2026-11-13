@@ -244,7 +244,12 @@ fn min_step_3d(
     dt_max
 }
 
-/// `GetFaceDir`.
+/// `GetFaceDir` (`BOPTools_AlgoTools.cxx:2110-2160`).
+///
+/// Returns `(b_found, a_dn, a_db)`. When the hatcher / approx path fails, OCCT
+/// still leaves the first-path bi-normal in `aDB` and answers `false`
+/// (`cxx:2152-2158`); the port mirrors that so `GetFaceOff` can apply the
+/// OCCT 8.0.1 near-zero-angle hardening.
 fn face_dir(
     edge: &Edge,
     face: &Face,
@@ -256,7 +261,7 @@ fn face_dir(
     origin: &GpPnt,
     n_pl: &GpDir,
     dt: f64,
-) -> Option<(GpDir, GpDir)> {
+) -> Option<(bool, GpDir, GpDir)> {
     let mut dn = normal_to_face_on_edge_at(edge, face, t, ctx)?;
     if face.0.orientation() == Orientation::Reversed {
         dn = dn.reversed();
@@ -269,13 +274,18 @@ fn face_dir(
         false
     };
     if !found {
-        let (px, dn2) = approx_normal(edge, face, t, ctx)?;
+        // `cxx:2148-2158`: approx normal; projection failure keeps first-path dirs.
+        let Some((px, dn2)) = approx_normal(edge, face, t, ctx) else {
+            return Some((false, dn, db));
+        };
         let pxp = project_on_plane(&px, origin, n_pl);
         let vec = GpVec::from_pnts(p, &pxp);
-        db = GpDir::from_vec(&vec).ok()?;
-        return Some((dn2, db));
+        let Ok(db2) = GpDir::from_vec(&vec) else {
+            return Some((false, dn, db));
+        };
+        return Some((true, dn2, db2));
     }
-    Some((dn, db))
+    Some((true, dn, db))
 }
 
 /// `BOPTools_AlgoTools::GetFaceOff`.
@@ -298,7 +308,7 @@ pub fn face_off(
     let or1 = e1.0.orientation();
     let mut small = false;
     let dt3d = min_step_3d(e1, f1, lcs_off, &px, ctx, &mut small);
-    let (dn1, dbf) = face_dir(e1, f1, &px, t, &dtgt, small, ctx, &px, &dtgt, dt3d)?;
+    let (_b1, dn1, dbf) = face_dir(e1, f1, &px, t, &dtgt, small, ctx, &px, &dtgt, dt3d)?;
     let dtf = dn1.crossed(&dbf).ok()?;
     let criteria = CONFUSION;
     let mut ok = true;
@@ -318,18 +328,24 @@ pub fn face_off(
             None => e2.0.orientation() == or1,
         };
         let dtgt2 = if same_dir { dtgt } else { dtgt.reversed() };
-        let Some((_dn2, dbf2)) =
+        let Some((b_is_computed, _dn2, dbf2)) =
             face_dir(&e2, &f2, &px, t, &dtgt2, small, ctx, &px, &dtgt, dt3d)
         else {
             continue;
         };
         let mut angle = angle_with_ref(&dbf, &dbf2, &dtf);
         if angle.abs() < ANGULAR {
-            // `BOPTools_AlgoTools.cxx:1064-1072`: `aF2 == theF1` is `IsEqual`
-            // (`TopoDS_Shape.hxx:282`), then `aF2.IsSame(theF1)`.
+            // `BOPTools_AlgoTools.cxx:1064-1081`: `aF2 == theF1` is `IsEqual`
+            // (`TopoDS_Shape.hxx:282`), then `aF2.IsSame(theF1)`, then the
+            // OCCT 8.0.1 near-zero / !bIsComputed hardening (`cxx:1074-1081`).
             if is_equal(&f2.0, &f1.0) {
                 angle = std::f64::consts::PI;
             } else if is_same(&f2.0, &f1.0) {
+                angle = two_pi;
+            } else if !b_is_computed {
+                // Near-zero angle between different faces where the bi-normal
+                // could not be reliably computed (near-degenerate geometry).
+                // Treat as maximum angle (2*PI) to avoid picking this face.
                 angle = two_pi;
             }
         }

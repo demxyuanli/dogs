@@ -291,7 +291,10 @@ pub(crate) fn same_number_by_polar_method(
         let mut curve = BRepTool::edge_curve_adaptor_world(&ecur);
         let mut pps = curve_value(&curve, 0.1 * (u1 + 9.0 * u2));
 
-        // `cxx:1308-1317`: the `i`-th counterpart of the first edge's vertices.
+        // `cxx:1308-1317` (OCCT 8.0.1): correspondence chain shorter than the
+        // section index fails gracefully (`itF.More() && itL.More()` guard).
+        // Indexed `get(skip)` is the same exhaustion check as advancing the
+        // OCCT list iterators past the end.
         let list_f = vf.as_ref().and_then(|v| vertex_map_get(&map_vlv, v));
         let list_l = vl.as_ref().and_then(|v| vertex_map_get(&map_vlv, v));
         let skip = i - ideb;

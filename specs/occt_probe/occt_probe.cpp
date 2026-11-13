@@ -362,35 +362,38 @@ int main(int argc, char** argv)
                            std::atof(argv[i + 4]),
                            std::atof(argv[i + 5]));
     }
-    // TEMP T-101: `--facestats <defl> <angle>` -- per-model-face nodes/triangles/bbox.
+    // TEMP T-101: `--facestats <defl> <angleDeg>` -- per-model-face nodes/triangles/bbox.
+    // Angle CLI unit matches `--dcstruct` / `--structdump`: degrees, converted here.
     if (std::string(argv[i]) == "--facestats" && i + 2 < argc)
     {
-      return runFaceStats(aShape, std::atof(argv[i + 1]), std::atof(argv[i + 2]));
+      return runFaceStats(aShape,
+                          std::atof(argv[i + 1]),
+                          std::atof(argv[i + 2]) * M_PI / 180.0);
     }
-    // TEMP T-101b: `--facedump <faceIdx> <defl> <angle>` -- one model face's mesh arrays.
+    // TEMP T-101b: `--facedump <faceIdx> <defl> <angleDeg>` -- one model face's mesh arrays.
     if (std::string(argv[i]) == "--facedump" && i + 3 < argc)
     {
       return runFaceDump(aShape,
                          std::atoi(argv[i + 1]),
                          std::atof(argv[i + 2]),
-                         std::atof(argv[i + 3]));
+                         std::atof(argv[i + 3]) * M_PI / 180.0);
     }
-    // TEMP T-132: `--srparams <faceIdx> <defl> <angle>` -- the raw splitter parameters
+    // TEMP T-132: `--srparams <faceIdx> <defl> <angleDeg>` -- the raw splitter parameters
     // behind one model face's generated grid.
     if (std::string(argv[i]) == "--srparams" && i + 3 < argc)
     {
       return runSrfParams(aShape,
                           std::atoi(argv[i + 1]),
                           std::atof(argv[i + 2]),
-                          std::atof(argv[i + 3]));
+                          std::atof(argv[i + 3]) * M_PI / 180.0);
     }
-    // TEMP T-121: `--edgedu <faceIdx> <defl> <angle>` -- `EvaluateDu` inputs per edge.
+    // TEMP T-121: `--edgedu <faceIdx> <defl> <angleDeg>` -- `EvaluateDu` inputs per edge.
     if (std::string(argv[i]) == "--edgedu" && i + 3 < argc)
     {
       return runEdgeDu(aShape,
                        std::atoi(argv[i + 1]),
                        std::atof(argv[i + 2]),
-                       std::atof(argv[i + 3]));
+                       std::atof(argv[i + 3]) * M_PI / 180.0);
     }
     // TEMP T-103: `--torusdbg <defl> <angle>` -- replay OCCT's torus range
     // splitter per torus face of the discrete model (see _dbg/ZZ_TorusRangeSplitter.cxx).

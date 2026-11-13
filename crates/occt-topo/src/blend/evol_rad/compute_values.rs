@@ -4,6 +4,11 @@
 //! Source: `ModelingAlgorithms/TKFillet/BlendFunc/BlendFunc_EvolRad.cxx:195-680`
 //! (OCCT 8.0.0). The `Order == 2` arm is in
 //! [`super::compute_values_order2`].
+//!
+//! AUDIT (OCCT 8.0.1 `static` -> `thread_local` scratch): OCCT reused process-
+//! static `gp_Vec` / `gp_Pnt` locals across calls; the port keeps those on
+//! `EvolRad` (`ptgui`, `d1gui`, …) guarded by `my_x_order` / `my_t_order`.
+//! No process-global scratch — no code change.
 
 use occt_core::gp::{GpPnt2d, GpVec};
 use occt_math::MathVector;

@@ -1,14 +1,15 @@
 ﻿// Splitter-parameter dumps: `--srparams`, `--facestats`, `--facedump`, `--edgedu`.
 #include "occt_probe_common.h"
 
-// --- TEMP T-101 (`--facestats <defl> <angle>`) -------------------------------------
+// --- TEMP T-101 (`--facestats <defl> <angleDeg>`) ---------------------------------
 // Per-model-face `nodes/triangles/bbox` with the *same* mesher parameters the port
 // uses, in the model's own face order (`IMeshData_Model::GetFace`), so a face can be
 // paired with the port's `model_probe --fstats` by the six bbox coordinates.
+// CLI angle is degrees (converted to radians in `main`, same as `--dcstruct`).
 // `--uvsum` cannot be used for this: that branch meshes with a hard-coded 0.5 rad
 // angle (its per-face `triangles=` sums to 8054 on a3n00 while the 20-degree mesh has
 // 12324), so its counts are not comparable with the port's.
-// TEMP T-132 (`--srparams <faceIdx> <defl> <angle>`): prints the raw U/V parameter
+// TEMP T-132 (`--srparams <faceIdx> <defl> <angleDeg>`): prints the raw U/V parameter
 // sets a factory-selected UV range splitter hands to its grain filter, together with
 // the grid those parameters produce (`BRepMesh_NURBSRangeSplitter::
 // GenerateSurfaceNodes`, BRepMesh_NURBSRangeSplitter.cxx:314-400), so the port's
@@ -452,10 +453,10 @@ int runFaceStats(const TopoDS_Shape& theShape, const double theDeflection,
   return 0;
 }
 
-// --- TEMP T-121 (`--edgedu <faceIdx> <defl> <angle>`) -------------------------------
-// TEMP T-101b (`--facedump <faceIdx> <defl> <angle>`): the node and triangle arrays of
-// one *model* face (`IMeshData_Model::GetFace`, same indexing as `--facestats`), so a
-// per-face count divergence can be read as geometry instead of a total.
+// --- TEMP T-101b (`--facedump <faceIdx> <defl> <angleDeg>`) -------------------------
+// The node and triangle arrays of one *model* face (`IMeshData_Model::GetFace`,
+// same indexing as `--facestats`), so a per-face count divergence can be read as
+// geometry instead of a total. CLI angle is degrees (converted in `main`).
 int runFaceDump(const TopoDS_Shape& theShape, const int theFaceIdx,
                        const double theDeflection, const double theAngle)
 {
@@ -504,12 +505,14 @@ int runFaceDump(const TopoDS_Shape& theShape, const int theFaceIdx,
   return 0;
 }
 
-// --- TEMP T-121 (`--edgedu <faceIdx> <defl> <angle>`) -------------------------------// Prints, for every edge occurrence of one face, the `BRepAdaptor_Curve` type and the
+// --- TEMP T-121 (`--edgedu <faceIdx> <defl> <angleDeg>`) ----------------------------
+// Prints, for every edge occurrence of one face, the `BRepAdaptor_Curve` type and the
 // exact inputs of `GCPnts_TangentialDeflection::EvaluateDu` (`cxx:302-322`) at the
 // edge's first parameter: `|T|`, `|N|`, `|N x T|` and `Ln = |N x T| / |T|`. The
 // resulting `du_init = sqrt(8 * max(curvatureDeflection, minLen) / Ln)` is printed for
 // both the face deflection and half of it, so a divergence in the first tessellation
 // step can be attributed to the curve (`Ln`) or to the deflection (`D`).
+// CLI angle is degrees (converted in `main`).
 int runEdgeDu(const TopoDS_Shape& theShape, const int theFaceIdx,
                      const double theDeflection, const double theAngle)
 {

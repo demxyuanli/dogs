@@ -196,6 +196,16 @@ fn projected_pole_curve(curve: &dyn Curve, pln: &GpPln) -> Option<Arc<dyn Curve2
 /// *basis* plane behind a trimmed / offset surface wrapper
 /// (`ShapeConstruct_ProjectCurveOnSurface.cxx:848-897`).
 pub fn project_curve_on_plane(curve: &dyn Curve, pln: &GpPln) -> Option<Arc<dyn Curve2d>> {
+    // `BRep_Tool::CurveOnPlane` wraps `Geom_TrimmedCurve(C,f,l)` then
+    // `GeomProjLib::ProjectOnPlane`. OCCT's trim keeps basis parameters; unwrap
+    // to the basis for the pole / analytic arms so a basis-parameter trim does
+    // not force the KeepParam fallback.
+    let basis = curve
+        .untrimmed_basis()
+        .map(|(c, _, _)| c)
+        .unwrap_or_else(|| Arc::from(curve.clone_dyn()));
+    let basis = basis.as_ref();
+
     // `ProjLib_ComputeApprox.cxx:1197-1252`: for a B-spline or Bezier 3D curve
     // on a plane the projection is not approximated -- every pole is projected
     // onto the plane's `(u, v)` and the knots / multiplicities / weights are
@@ -204,16 +214,14 @@ pub fn project_curve_on_plane(curve: &dyn Curve, pln: &GpPln) -> Option<Arc<dyn 
     // the concrete class matters for the consumers that branch on it, e.g.
     // `GeomBndLib_Curve2d` picks `GeomBndLib_BSplineCurve2d::Box` (pole hull,
     // `GeomBndLib_BSplineCurve2d.cxx:52-57`) instead of the sampling box.
-    if !curve.is_geom_trimmed() {
-        if let Some(pc) = projected_pole_curve(curve, pln) {
-            return Some(pc);
-        }
+    if let Some(pc) = projected_pole_curve(basis, pln) {
+        return Some(pc);
     }
     // `GeomProjLib.cxx:339-343`: a trimmed 3D curve stays KeepParam on its
-    // own `[First, Last]` (our STEP trim is remapped to `[0, 1]`).
+    // own `[First, Last]` when the basis is not a concrete pole curve.
     if curve.is_geom_trimmed()
-        || curve.bspline_poles().is_some()
-        || curve.bezier_poles().is_some()
+        || basis.bspline_poles().is_some()
+        || basis.bezier_poles().is_some()
     {
         // Trimmed / BSpline / Bezier: KeepParam UV of C3D(t). Pole-copy 2d
         // BSpline is non-rational (`Geom2dBSplineCurve`) and same-t of a
