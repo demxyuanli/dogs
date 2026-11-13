@@ -1,5 +1,56 @@
 use super::prelude::*;
 use super::*;
+use occt_core::bspl::surface_cache::SurfaceCache;
+
+/// `GeomAdaptor_Surface::EvalD0` BSpline arm (`GeomAdaptor_Surface.cxx:1062-1073`):
+/// when the surface has no `EvalRepresentation`, D0 goes through `BSplSLib_Cache`
+/// rather than raw `Geom_BSplineSurface::D0`. `BRepMesh_DefaultRangeSplitter`
+/// samples via the face adaptor, so length / delta must use the same path.
+struct AdaptorSurfaceD0<'a> {
+    surface: &'a dyn Surface,
+    cache: Option<SurfaceCache>,
+}
+
+impl<'a> AdaptorSurfaceD0<'a> {
+    fn new(surface: &'a dyn Surface) -> Self {
+        let cache = if surface.is_bspline_surface() {
+            let uk = surface.bspline_surface_uknots().unwrap_or(&[]);
+            let vk = surface.bspline_surface_vknots().unwrap_or(&[]);
+            if !uk.is_empty() && !vk.is_empty() {
+                Some(SurfaceCache::new(
+                    surface.u_degree(),
+                    surface.is_u_periodic(),
+                    uk,
+                    surface.v_degree(),
+                    surface.is_v_periodic(),
+                    vk,
+                    surface.bspline_surface_weights(),
+                ))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        Self { surface, cache }
+    }
+
+    fn d0(&mut self, u: f64, v: f64) -> GpPnt {
+        let Some(cache) = self.cache.as_mut() else {
+            return self.surface.d0(u, v);
+        };
+        let Some(poles) = self.surface.bspline_surface_poles() else {
+            return self.surface.d0(u, v);
+        };
+        let uk = self.surface.bspline_surface_uknots().unwrap_or(&[]);
+        let vk = self.surface.bspline_surface_vknots().unwrap_or(&[]);
+        let weights = self.surface.bspline_surface_weights();
+        if !cache.is_cache_valid(u, v) {
+            cache.build_cache(u, v, uk, vk, poles, weights);
+        }
+        cache.d0(u, v)
+    }
+}
 
 impl DefaultRangeSplitter {
     /// Creates an empty splitter.
@@ -107,9 +158,10 @@ impl DefaultRangeSplitter {
         let mut long = 0.0;
         let du = 0.05 * (u1 - u0);
         let v_ave = 0.5 * (v1 + v0);
-        let mut p11 = s.d0(u0, v0);
-        let mut p21 = s.d0(u0, v_ave);
-        let mut p31 = s.d0(u0, v1);
+        let mut eval = AdaptorSurfaceD0::new(s);
+        let mut p11 = eval.d0(u0, v0);
+        let mut p21 = eval.d0(u0, v_ave);
+        let mut p31 = eval.d0(u0, v1);
         // TEMP T-133 (LENSDBG): sample dump for `occt_probe --lens`, so the two
         // `computeLengthU/V` replays can be diffed point by point.
         let lens_dbg = crate::debug_flags::lens_dbg();
@@ -121,9 +173,9 @@ impl DefaultRangeSplitter {
         }
         let mut u = u0 + du;
         for k in 1..=20 {
-            let p12 = s.d0(u, v0);
-            let p22 = s.d0(u, v_ave);
-            let p32 = s.d0(u, v1);
+            let p12 = eval.d0(u, v0);
+            let p22 = eval.d0(u, v_ave);
+            let p32 = eval.d0(u, v1);
             long += p11.distance(&p12) + p21.distance(&p22) + p31.distance(&p32);
             p11 = p12;
             p21 = p22;
@@ -150,9 +202,10 @@ impl DefaultRangeSplitter {
         let mut long = 0.0;
         let dv = 0.05 * (v1 - v0);
         let u_ave = 0.5 * (u1 + u0);
-        let mut p11 = s.d0(u0, v0);
-        let mut p21 = s.d0(u_ave, v0);
-        let mut p31 = s.d0(u1, v0);
+        let mut eval = AdaptorSurfaceD0::new(s);
+        let mut p11 = eval.d0(u0, v0);
+        let mut p21 = eval.d0(u_ave, v0);
+        let mut p31 = eval.d0(u1, v0);
         let lens_dbg = crate::debug_flags::lens_dbg();
         if lens_dbg {
             eprintln!(
@@ -162,9 +215,9 @@ impl DefaultRangeSplitter {
         }
         let mut v = v0 + dv;
         for k in 1..=20 {
-            let p12 = s.d0(u0, v);
-            let p22 = s.d0(u_ave, v);
-            let p32 = s.d0(u1, v);
+            let p12 = eval.d0(u0, v);
+            let p22 = eval.d0(u_ave, v);
+            let p32 = eval.d0(u1, v);
             long += p11.distance(&p12) + p21.distance(&p22) + p31.distance(&p32);
             p11 = p12;
             p21 = p22;

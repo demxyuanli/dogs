@@ -12,7 +12,7 @@ use crate::bspl::build_knots::build_knots;
 use crate::bspl::knots::pole_index;
 use crate::bspl::locate::locate_parameter;
 use crate::bspl::plib_rational;
-use crate::gp::{GpPnt, GpVec};
+use crate::gp::{GpPnt, GpPnt2d, GpVec};
 
 /// `BSplCLib::IsRational` (`BSplCLib.cxx`).
 pub(crate) fn is_rational_span(weights: &[f64], i1: i32, i2: i32) -> bool {
@@ -267,5 +267,113 @@ pub fn curve_d3(
                 p.poles[3 * dim + 2],
             ),
         )
+    }
+}
+
+/// `BSplCLib_BuildEval` for `gp_Pnt2d` (`BSplCLib_1.cxx:258-266` /
+/// `BSplCLib_CurveComputation.pxx` with `Dimension == 2`). Homogeneous buffer is
+/// `(x, y)` or `(x*w, y*w, w)`.
+fn build_eval_2d(
+    degree: i32,
+    index: i32,
+    poles: &[GpPnt2d],
+    weights: Option<&[f64]>,
+) -> (i32, Vec<f64>) {
+    let p_lower = 1i32;
+    let p_upper = poles.len() as i32;
+    let mut ip = p_lower + index - 1;
+    if weights.is_none() {
+        let mut lp = vec![0.0; ((degree + 1) * 2).max(0) as usize];
+        let mut pole = 0usize;
+        for _ in 0..=degree {
+            ip += 1;
+            if ip > p_upper {
+                ip = p_lower;
+            }
+            let p = poles[(ip - 1) as usize];
+            lp[pole] = p.x();
+            lp[pole + 1] = p.y();
+            pole += 2;
+        }
+        (2, lp)
+    } else {
+        let wts = weights.unwrap();
+        let mut lp = vec![0.0; ((degree + 1) * 3).max(0) as usize];
+        let mut pole = 0usize;
+        for _ in 0..=degree {
+            ip += 1;
+            if ip > p_upper {
+                ip = p_lower;
+            }
+            let p = poles[(ip - 1) as usize];
+            let w = wts[(ip - 1) as usize];
+            lp[pole + 2] = w;
+            lp[pole] = p.x() * w;
+            lp[pole + 1] = p.y() * w;
+            pole += 3;
+        }
+        (3, lp)
+    }
+}
+
+/// `PrepareEval_T` for `Dimension == 2` (`pxx:777-830` via `BSplCLib_1.cxx:258`).
+pub fn prepare_curve_eval_2d(
+    u: f64,
+    index: i32,
+    degree: i32,
+    periodic: bool,
+    poles: &[GpPnt2d],
+    weights: Option<&[f64]>,
+    knots: &[f64],
+    mults: Option<&[i32]>,
+) -> CurvePrepared {
+    let (mut knot_index, uu) = locate_parameter(degree, knots, mults, u, periodic, index);
+    let local_knots = build_knots(degree, knot_index, periodic, knots, mults);
+    if mults.is_none() {
+        knot_index -= 1 + degree;
+    } else if let Some(m) = mults {
+        knot_index = pole_index(degree, knot_index, periodic, m);
+    }
+    let mut rational = weights.is_some();
+    if rational {
+        let w_lower = 1 + knot_index;
+        rational = is_rational_span(weights.unwrap(), w_lower, w_lower + degree);
+    }
+    let (dim, poles) = if rational {
+        build_eval_2d(degree, knot_index, poles, weights)
+    } else {
+        build_eval_2d(degree, knot_index, poles, None)
+    };
+    CurvePrepared {
+        u: uu,
+        dim,
+        rational,
+        knots: local_knots,
+        poles,
+    }
+}
+
+/// `BSplCLib::D0` for `gp_Pnt2d` (`BSplCLib_CurveComputation.pxx` Dimension==2).
+pub fn curve_d0_2d(
+    u: f64,
+    index: i32,
+    degree: i32,
+    periodic: bool,
+    poles: &[GpPnt2d],
+    weights: Option<&[f64]>,
+    knots: &[f64],
+    mults: Option<&[i32]>,
+) -> GpPnt2d {
+    let mut p = prepare_curve_eval_2d(u, index, degree, periodic, poles, weights, knots, mults);
+    bohm(p.u, degree, 0, &p.knots, p.dim, &mut p.poles);
+    if p.rational {
+        let w = p.poles[2];
+        if w.abs() > 0.0 {
+            GpPnt2d::new(p.poles[0] / w, p.poles[1] / w)
+        } else {
+            GpPnt2d::new(p.poles[0], p.poles[1])
+        }
+    } else {
+        GpPnt2d::new(p.poles[0], p.poles[1])
     }
 }

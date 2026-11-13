@@ -109,3 +109,106 @@ pub fn build_cache(
     }
     cache
 }
+
+/// `BSplSLib::BuildCache` writing a flat `Array2<double>` (`cxx:2549-2664`).
+///
+/// Layout matches `BSplSLib_Cache::myPolesWeights`: `cache_rows` rows of
+/// `cache_cols` floats, filled row-major with `aCacheShift` floats per
+/// `(aRow, aCol)` cell (`aRow` = max-degree index, `aCol` = min-degree index).
+pub fn build_cache_array(
+    u: f64,
+    v: f64,
+    u_span: f64,
+    v_span: f64,
+    u_per: bool,
+    v_per: bool,
+    u_degree: i32,
+    v_degree: i32,
+    u_index: i32,
+    v_index: i32,
+    u_flat: &[f64],
+    v_flat: &[f64],
+    poles: &[Vec<GpPnt>],
+    weights: Option<&[Vec<f64>]>,
+    is_rational_on_param: bool,
+    cache_rows: usize,
+    cache_cols: usize,
+) -> Vec<f64> {
+    let u_rat = is_rational_on_param;
+    let v_rat = is_rational_on_param;
+    let mut prep = prepare_eval(
+        u, v, u_index, v_index, u_degree, v_degree, u_rat, v_rat, u_per, v_per, poles, weights,
+        u_flat, v_flat, None, None,
+    );
+    let d1p1 = prep.d1 + 1;
+    let d2p1 = prep.d2 + 1;
+    let dim = if prep.rational { 4 } else { 3 };
+    // `cxx:2598-2600`: keep a weight slot when the surface is rational on input
+    // but locally polynomial in this span.
+    let cache_shift = if is_rational_on_param && !prep.rational {
+        dim + 1
+    } else {
+        dim
+    };
+    bohm(
+        prep.u1,
+        prep.d1,
+        prep.d1,
+        &prep.knots1,
+        dim * d2p1,
+        &mut prep.poles,
+    );
+    let stride = (dim * d2p1) as usize;
+    for kk in 0..=prep.d1 {
+        let start = (kk as usize) * stride;
+        bohm(
+            prep.u2,
+            prep.d2,
+            prep.d2,
+            &prep.knots2,
+            dim,
+            &mut prep.poles[start..],
+        );
+    }
+    let (dom0, dom1) = if prep.ufirst {
+        (u_span, v_span)
+    } else {
+        (v_span, u_span)
+    };
+    let mut out = vec![0.0f64; cache_rows * cache_cols];
+    let mut factor1_outer = 1.0e0;
+    let mut write = 0usize;
+    for a_row in 0..=prep.d2 {
+        let mut factor0 = 1.0e0;
+        for a_col in 0..=prep.d1 {
+            let mut index = a_col * d2p1 + a_row;
+            index = if prep.rational {
+                index << 2
+            } else {
+                (index << 1) + index
+            };
+            let f = factor0 * factor1_outer;
+            let ix = index as usize;
+            if write + cache_shift as usize <= out.len() {
+                for i in 0..dim as usize {
+                    out[write + i] = f * prep.poles[ix + i];
+                }
+                if cache_shift > dim {
+                    out[write + dim as usize] = 0.0;
+                }
+            }
+            write += cache_shift as usize;
+            factor0 *= dom0 / ((a_col + 1) as f64);
+        }
+        factor1_outer *= dom1 / ((a_row + 1) as f64);
+    }
+    if cache_shift > dim && !out.is_empty() {
+        // `cxx:2660-2662`: weight of the constant term is 1.
+        let w_col = cache_shift as usize - 1;
+        if w_col < cache_cols {
+            out[w_col] = 1.0;
+        }
+    }
+    let _ = d1p1;
+    out
+}

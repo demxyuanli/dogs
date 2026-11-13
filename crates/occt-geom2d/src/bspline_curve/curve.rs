@@ -1,6 +1,8 @@
 use occt_core::bspl::knots;
 use occt_core::gp::{GpPnt, GpPnt2d};
 
+use crate::curve::Curve2d;
+
 /// 2D B-spline curve (non-rational), stored as separate x/y pole arrays.
 #[derive(Clone)]
 pub struct Geom2dBSplineCurve {
@@ -312,6 +314,40 @@ impl Geom2dBSplineCurve {
         } else {
             (i1, i1 + 1)
         }
+    }
+
+    /// `Geom2d_BSplineCurve::LocalD0` (`Geom2d_BSplineCurve_1.cxx:435-456`).
+    pub fn local_d0(&self, u: f64, from_k1: i32, to_k2: i32) -> GpPnt2d {
+        if from_k1 == to_k2 {
+            return Curve2d::d0(self, u);
+        }
+        let (_, mults) = self.distinct_knots_and_mults();
+        let (index, u) = occt_core::bspl::locate::locate_parameter_flat(
+            self.degree as i32,
+            &self.knots,
+            u,
+            self.periodic,
+            from_k1,
+            to_k2,
+        );
+        let index =
+            occt_core::bspl::locate::flat_index(self.degree as i32, index, &mults, self.periodic);
+        let poles: Vec<GpPnt2d> = self
+            .xs
+            .iter()
+            .zip(self.ys.iter())
+            .map(|(&x, &y)| GpPnt2d::new(x, y))
+            .collect();
+        occt_core::bspl::curve_eval::curve_d0_2d(
+            u,
+            index,
+            self.degree as i32,
+            self.periodic,
+            &poles,
+            self.weights.as_deref(),
+            &self.knots,
+            None,
+        )
     }
 
     /// Lift `(x, y)` poles to `z = 0` for `BSplCLib` evaluators.

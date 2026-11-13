@@ -1,6 +1,109 @@
 //! `IncrementalMesh::discretize_pcurves` — pcurve discretization for a model.
 
 use super::*;
+use occt_core::bspl::curve_cache::CurveCache;
+use occt_core::gp::GpPnt2d;
+use occt_core::precision::PCONFUSION;
+use occt_geom2d::bspline_curve::Geom2dBSplineCurve;
+use occt_geom2d::curve::Curve2d;
+
+/// `Geom2dAdaptor_Curve::EvalD0` BSpline arm (`Geom2dAdaptor_Curve.cxx:753-772`).
+struct AdaptorCurve2dD0<'a> {
+    curve: &'a dyn Curve2d,
+    first: f64,
+    last: f64,
+    cache: Option<CurveCache>,
+    poles: Option<Vec<GpPnt2d>>,
+}
+
+fn resolve_bspline2d(curve: &dyn Curve2d) -> Option<&Geom2dBSplineCurve> {
+    curve
+        .bspline2d()
+        .or_else(|| curve.trimmed_basis().and_then(|b| b.bspline2d()))
+}
+
+impl<'a> AdaptorCurve2dD0<'a> {
+    fn new(curve: &'a dyn Curve2d, first: f64, last: f64) -> Self {
+        let (cache, poles) = if curve.is_bspline2d() {
+            let flat = curve.bspline_knots2d().unwrap_or(&[]);
+            let deg = curve.bspline_degree().unwrap_or(0) as i32;
+            if !flat.is_empty() && deg >= 0 {
+                let poles = curve.poles2d();
+                let cache = Some(CurveCache::new_2d(
+                    deg,
+                    curve.is_periodic(),
+                    flat,
+                    curve.bspline_weights2d(),
+                ));
+                (cache, poles)
+            } else {
+                (None, None)
+            }
+        } else {
+            (None, None)
+        };
+        Self {
+            curve,
+            first,
+            last,
+            cache,
+            poles,
+        }
+    }
+
+    /// `Geom2dAdaptor_Curve::IsBoundary` (`cxx:668-701`) then
+    /// `Geom2d_BSplineCurve::LocalD0` (`cxx:753-755` EvalD0 arm).
+    fn boundary_local_d0(&self, u: f64) -> Option<GpPnt2d> {
+        let bs = resolve_bspline2d(self.curve)?;
+        if u != self.first && u != self.last {
+            return None;
+        }
+        // `PosTol = Precision::PConfusion() / 2` (`Geom2dAdaptor_Curve.cxx:69`).
+        let pos_tol = PCONFUSION / 2.0;
+        let (mut span_start, mut span_finish) = if u == self.first {
+            bs.locate_u(self.first, pos_tol)
+        } else {
+            bs.locate_u(self.last, pos_tol)
+        };
+        if u == self.first {
+            if span_start < 1 {
+                span_start = 1;
+            }
+            if span_start >= span_finish {
+                span_finish = span_start + 1;
+            }
+        } else {
+            let nb = bs.nb_knots() as i32;
+            if span_finish > nb {
+                span_finish = nb;
+            }
+            if span_start >= span_finish {
+                span_start = span_finish - 1;
+            }
+        }
+        Some(bs.local_d0(u, span_start, span_finish))
+    }
+
+    fn d0(&mut self, u: f64) -> GpPnt2d {
+        // `Geom2dAdaptor_Curve::EvalD0` BSpline arm (`cxx:746-765`):
+        // IsBoundary -> LocalD0; else CurveCache (rebuild when invalid).
+        if let Some(p) = self.boundary_local_d0(u) {
+            return p;
+        }
+        let Some(cache) = self.cache.as_mut() else {
+            return self.curve.d0(u);
+        };
+        let Some(poles) = self.poles.as_ref() else {
+            return self.curve.d0(u);
+        };
+        let flat = self.curve.bspline_knots2d().unwrap_or(&[]);
+        let weights = self.curve.bspline_weights2d();
+        if !cache.is_cache_valid(u) {
+            cache.build_cache_2d(u, flat, poles, weights);
+        }
+        cache.d0_2d(u)
+    }
+}
 
 impl IncrementalMesh {
     /// Discretize every edge's 3D curve once (the shared 3D polyline, OCCT
@@ -525,11 +628,12 @@ impl IncrementalMesh {
                 EdgeParameterProvider::with_stored(pf, pl, old_first, old_last)
             };
             let cos = CurveOnSurface::new(pc.clone(), surface.clone(), pf, pl);
+            let mut pc_d0 = AdaptorCurve2dD0::new(pc.as_ref(), pf, pl);
             for (&t, p3d) in params.iter().zip(pts3d.iter()) {
                 // `BRepMesh_EdgeParameterProvider::Parameter` (`hxx:109-139`)
                 // + `Tessellate2d` (`BRepMesh_EdgeDiscret.cxx:312-317`).
                 let u = provider.parameter_of(t, p3d, &cos);
-                pcurve.add_point(pc.d0(u), t);
+                pcurve.add_point(pc_d0.d0(u), t);
             }
             // TEMP PCW: full precision pcurve point dump, to be lined up with
             // the OCCT probe's `OCCTEPC w= e= pcId= k= u= v= t=` entries.

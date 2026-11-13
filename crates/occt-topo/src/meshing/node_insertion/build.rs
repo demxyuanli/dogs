@@ -323,9 +323,11 @@ u=[{:.17e},{:.17e}] v=[{:.17e},{:.17e}]",
         Ok((uv, p3d, constraints, wires_uv))
     }
 
-    /// Frontier/Fixed links from each pcurve in parameter order.
-    /// Source: `BRepMesh_BaseMeshAlgo::initDataStructure` (`BRepMesh_BaseMeshAlgo.cxx:75-128`)
-    /// via `NodeInsertionMeshAlgo::initDataStructure` returning `BaseAlgo::initDataStructure()`.
+    /// Frontier/Fixed links from the wire-occurrence pcurve only.
+    /// Source: `BRepMesh_BaseMeshAlgo::initDataStructure` (`BRepMesh_BaseMeshAlgo.cxx:75-145`,
+    /// OCCT 8.0.1 #1338): a wire defines one topological occurrence of an edge;
+    /// only that occurrence's pcurve creates mesh links. Other face pcurves still
+    /// receive node indices for `Poly_PolygonOnTriangulation`.
     pub(super) fn init_data_structure(
         &mut self,
         model: &mut MeshModel,
@@ -345,7 +347,7 @@ u=[{:.17e},{:.17e}] v=[{:.17e},{:.17e}]",
                 } else {
                     let mut edges = Vec::new();
                     for j in 0..wire.edges_nb() {
-                        edges.push(wire.edge(j)?);
+                        edges.push((wire.edge(j)?, wire.edge_orientation(j)?));
                     }
                     (false, edges)
                 }
@@ -353,29 +355,33 @@ u=[{:.17e},{:.17e}] v=[{:.17e},{:.17e}]",
             if skip {
                 continue;
             }
-            // `BRepMesh_BaseMeshAlgo::initDataStructure` (`cxx:87-125`): for every
-            // wire slot, *every* pcurve of that edge on this face is registered,
-            // in `aDEdge->GetPCurves(myDFace)` order (the faces' pcurve index
-            // list). A seam edge the wire walks twice therefore contributes both
-            // of its period copies, and the walk order is the pcurve's own point
-            // order - OCCT never consults the CheckOrder slot orientation here.
-            // The link orientation is `fixSeamEdgeOrientation` (`cxx:197-225`).
-            for edge_index in slot_edges {
-                // `model` is borrowed independently of `self`, so the pcurve
-                // and discretization point slices can be read in place while
-                // nodes and links are registered; copying them per pcurve
-                // (a seam edge contributes two) only churned memory.
+            // OCCT 8.0.1 (`cxx:89-145`): register the wire-occurrence pcurve with
+            // links, then copy node indices onto every other face pcurve without
+            // adding duplicate seam constraints.
+            for (edge_index, wire_ori) in slot_edges {
                 let edge = model.edge(edge_index)?;
                 let pts3d = edge.discretization().points();
+                let all_pc = edge.pcurves_for(face_index);
+                // `GetPCurve(face, wireOrientation)` (`cxx:92-93`): prefer the
+                // pcurve whose orientation matches the wire occurrence.
+                let primary_index = all_pc
+                    .iter()
+                    .copied()
+                    .find(|&i| {
+                        edge.pcurve(i)
+                            .map(|p| p.orientation() == wire_ori)
+                            .unwrap_or(false)
+                    })
+                    .or_else(|| all_pc.last().copied());
+                let Some(primary_index) = primary_index else {
+                    continue;
+                };
+
                 let mut pc_registrations: Vec<(usize, Vec<i32>)> = Vec::new();
-                for pc_index in edge.pcurves_for(face_index) {
-                    let pc = edge.pcurve(pc_index)?;
-                    let ori = Self::fix_seam_edge_orientation(&edge, pc_index, face_index)?;
+                {
+                    let pc = edge.pcurve(primary_index)?;
+                    let ori = Self::fix_seam_edge_orientation(&edge, primary_index, face_index)?;
                     let pts = pc.points();
-                    // TEMPORARY diagnostic (DELREGSKEL): the registration skeleton in the
-                    // `occt_probe --structdump` `OCCTSTRUCT E` line format, so the pcurve
-                    // visit order and the effective link orientation can be diffed against
-                    // `BRepMesh_BaseMeshAlgo::initDataStructure`.
                     if crate::debug_flags::del_reg_skel() {
                         let first = pts.first().copied().unwrap_or_else(GpPnt2d::zero);
                         let last = pts.last().copied().unwrap_or_else(GpPnt2d::zero);
@@ -384,7 +390,7 @@ u=[{:.17e},{:.17e}] v=[{:.17e},{:.17e}]",
                             face_index,
                             wire_it,
                             edge_index,
-                            pc_index,
+                            primary_index,
                             ori,
                             pts.len(),
                             first.x(),
@@ -396,9 +402,6 @@ u=[{:.17e},{:.17e}] v=[{:.17e},{:.17e}]",
                     let mut prev = -1i32;
                     let mut pc_nodes: Vec<i32> = Vec::with_capacity(pts.len());
                     for (i, &uv) in pts.iter().enumerate() {
-                        // MeshEdge stores the first-seen occurrence's world
-                        // polyline; transform into this pcurve's wire-occurrence
-                        // frame (prism top vs bottom profile edges).
                         let p3d_raw = pts3d.get(i).copied().unwrap_or_else(GpPnt::zero);
                         let p3d = occurrence_world_point(edge.edge(), pc.occurrence(), &p3d_raw);
                         let node = self.register_node(p3d, uv, VertexState::Frontier, false);
@@ -413,15 +416,26 @@ u=[{:.17e},{:.17e}] v=[{:.17e},{:.17e}]",
                         }
                         prev = node;
                     }
+                    pc_registrations.push((primary_index, pc_nodes));
+                }
+
+                // Other pcurves: node indices only, no mesh links (`cxx:126-144`).
+                for pc_index in all_pc {
+                    if pc_index == primary_index {
+                        continue;
+                    }
+                    let pc = edge.pcurve(pc_index)?;
+                    let pts = pc.points();
+                    let mut pc_nodes: Vec<i32> = Vec::with_capacity(pts.len());
+                    for (i, &uv) in pts.iter().enumerate() {
+                        let p3d_raw = pts3d.get(i).copied().unwrap_or_else(GpPnt::zero);
+                        let p3d = occurrence_world_point(edge.edge(), pc.occurrence(), &p3d_raw);
+                        let node = self.register_node(p3d, uv, VertexState::Frontier, false);
+                        pc_nodes.push(node);
+                    }
                     pc_registrations.push((pc_index, pc_nodes));
                 }
-                // `BRepMesh_BaseMeshAlgo::initDataStructure`
-                // (`BRepMesh_BaseMeshAlgo.cxx:108`):
-                // `aPCurve->GetIndex(aPointIndex) = aNodeIndex`, written after
-                // the walk so the pcurve stays borrowed while its points are
-                // read. `registerNode` pre-binds frontier nodes with the identity
-                // mapping (`cxx:144-153`), so these stay valid as
-                // `Poly_Triangulation` indices.
+
                 for (pc_index, pc_nodes) in pc_registrations {
                     let pcurve = model.edge_mut(edge_index)?.pcurve_mut(pc_index)?;
                     for (i, &node) in pc_nodes.iter().enumerate() {
